@@ -118,7 +118,7 @@ Tag builds (`vX.Y.Z`) additionally run the release pipeline (spec §15). A budge
 | Gate | Workflow / job |
 |---|---|
 | 1 to 6 | `.github/workflows/ci.yml`, job `ci` (checks `ci (windows-latest)` and `ci (macos-14)`) |
-| 7 (smoke / end-to-end) | added by issue T-04 |
+| 7 (smoke / end-to-end) | `ci.yml`, jobs `smoke-macos` and `smoke-windows` (build, launch, wait for the ready file; `pnpm smoke`). Both must be added to the required checks of `develop` once they have run once. The WebDriver test of the window (`pnpm test:e2e`, Windows) is `e2e-windows.yml`, manual or weekly and not a gate: GitHub-hosted runners run elevated and WebView2 then ignores the flags msedgedriver passes. Run it locally before merging UI changes |
 | 8 (title) | `.github/workflows/pr-title.yml`, check `pr-title` |
 
 Run the same commands locally before pushing (see the README). Third-party actions are pinned by commit SHA, first-party ones by major version; Dependabot keeps them current.

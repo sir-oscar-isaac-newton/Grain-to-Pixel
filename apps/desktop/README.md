@@ -11,10 +11,29 @@ pnpm install
 pnpm dev          # from the repo root: starts Vite on 127.0.0.1:1420 and the Tauri window
 pnpm --filter @gtp/desktop test        # Vitest component tests
 cargo test -p grain-to-pixel-desktop   # Rust unit tests
-pnpm --filter @gtp/desktop exec tauri build --no-bundle   # release binary at target/release/
+pnpm build:app    # release binary at target/release/ (no installer)
 ```
 
 Prerequisites: Windows needs the WebView2 runtime and Visual Studio Build Tools ("Desktop development with C++"); macOS needs the Xcode command line tools.
+
+## Smoke and end-to-end tests (CI gate 7)
+
+Both need a release build first (`pnpm build:app`).
+
+```bash
+pnpm smoke        # starts the built app and waits for it to load its page (macOS and Windows)
+pnpm test:e2e     # Windows only: drives the real window through tauri-driver (WebDriver)
+```
+
+- **Smoke** (`tools/scripts/smoke/smoke.mjs`): runs the binary with `GTP_READY_FILE` set; the app writes that file when its page has finished loading (`src-tauri/src/lib.rs`). The test fails if the app exits early or is not ready within 90 s. Its own tests use fake binaries (crash, hang, ready).
+- **End-to-end** (`apps/desktop/tests/e2e/window.e2e.mjs`): Selenium WebDriver against `tauri-driver`. It checks the window title, that the footer shows the backend version (UI, IPC and the Rust command), and the view switch. One-time setup on Windows:
+
+  ```bash
+  cargo install tauri-driver --locked --version 2.1.0
+  powershell -File tools/scripts/e2e/install-edgedriver.ps1   # downloads the msedgedriver that matches WebView2 into .cache/
+  ```
+
+  Tauri has no WebDriver for macOS WebKit, so macOS is covered by the smoke test only.
 
 ## Layout
 

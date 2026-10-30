@@ -1,7 +1,7 @@
-name: CI
+﻿name: CI
 
-# Gates 1-6 of docs/workflow.md section 8 on Windows and macOS (arm64).
-# Gate 7 (smoke / end-to-end) is added by issue T-04, gate 8 lives in pr-title.yml.
+# Gates 1-6 of docs/workflow.md section 8 on Windows and macOS (arm64) in job `ci`;
+# gate 7 in jobs `smoke-macos` and `smoke-windows` (launch test); the WebDriver test is e2e-windows.yml; gate 8 lives in pr-title.yml.
 on:
   pull_request:
   push:
@@ -81,3 +81,65 @@ jobs:
 
       - name: IPC bindings are up to date
         run: pnpm check:ipc
+
+  # Gate 7a: the built app starts and renders its page on macOS (Tauri has no WebDriver for WebKit).
+  smoke-macos:
+    name: smoke-macos
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the app (release binary, no installer)
+        run: pnpm build:app
+
+      - name: Smoke test (launch and wait for ready)
+        run: pnpm smoke
+
+
+  # Gate 7b: the same launch test on Windows (the WebDriver test of the window is e2e-windows.yml).
+  smoke-windows:
+    name: smoke-windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the app (release binary, no installer)
+        run: pnpm build:app
+
+      - name: Smoke test (launch and wait for ready)
+        run: pnpm smoke

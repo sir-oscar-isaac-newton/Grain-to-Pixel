@@ -183,7 +183,7 @@ Authoritative list: [convention.md §8](convention.md). A PR is mergeable only w
 7. macOS build and launch smoke test; Windows `tauri-driver` end-to-end test
 8. PR title is a Conventional Commit; branch is up to date with `develop`; no unresolved review comments
 
-Gates 1 to 6 and 8 run in GitHub Actions (`ci.yml`, `pr-title.yml`); gate 7 arrives with issue T-04, so until then state in the PR that it was not run. Run the same commands locally before pushing and paste the summary lines in the PR. Never merge by lowering a gate.
+Gates 1 to 8 run in GitHub Actions (`ci.yml`: jobs `ci`, `smoke-macos`, `smoke-windows`; `pr-title.yml`; `e2e-windows.yml` is manual or weekly). Run the same commands locally before pushing and paste the summary lines in the PR (the smoke and e2e tests need a release build: `pnpm build:app`, then `pnpm smoke` and, on Windows, `pnpm test:e2e`). Never merge by lowering a gate.
 
 **Human-verified tags:** the same rule applies to `[data]`, `[mac]` and `[human]` criteria defined in [issues.md](issues.md): the assistant prepares the steps, the human acts or supplies the data and reports, and the assistant records it.
 

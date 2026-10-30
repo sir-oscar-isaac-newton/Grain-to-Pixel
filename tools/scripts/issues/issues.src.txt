@@ -860,10 +860,11 @@ legacy: GTP-052
 deps: U-02, L-08
 adr: no
 spec: specification section 4.2 (Film base, Invert)
-desc: Panel for the film base (roll default, click or drag-a-box sampling on the rebate) and inversion levels, with recipe autosave.
+desc: Panel for the film base (roll default, click or drag-a-box sampling on the rebate) and inversion levels with white-point and black-point pickers, with recipe autosave.
 ac:
 - Clicking the rebate sets a manual base for the frame (the median of a small area around the click); dragging a box on the rebate sets it from that region; the roll default can be set from a frame
 - Auto levels can be re-run; manual black/white values override
+- A white-point picker and a black-point picker set the white and black of the Invert block from the density under a click or dragged box (maths in P-14)
 - Changes autosave through recipe_save (debounced 500 ms)
 tech:
 FILES: apps/desktop/src/features/develop/panels/BaseInvertPanel.tsx; packages/ui/src/Slider.tsx (Radix).
@@ -881,10 +882,12 @@ legacy: GTP-053
 deps: U-02, L-08
 adr: no
 spec: specification sections 4.1 and 13
-desc: Colour (red/cyan, green/magenta, blue/yellow, temperature, tint, saturation) and Tone (exposure, contrast, highlights, shadows, whites, blacks) panels and an accessible curve editor.
+desc: Colour (red/cyan, green/magenta, blue/yellow, temperature, tint, saturation, vibrance, a neutral picker and a black-and-white mode with a channel mix) and Tone (exposure, contrast, highlights, shadows, whites, blacks, dehaze) panels and an accessible curve editor.
 ac:
 - Sliders and curve points update the preview live and autosave
 - The colour sliders can be driven by the shortcuts of U-13 (a press moves 10 steps, Shift 1 step)
+- The neutral picker sets the colour axes so a clicked grey becomes neutral (maths in P-14)
+- Black-and-white mode shows a channel mix and hides the colour sliders it makes redundant
 - The curve editor is fully keyboard operable (arrow keys move points)
 - vitest-axe clean
 tech:
@@ -1522,3 +1525,61 @@ tech:
 FILES: apps/desktop/src/shared/keymap/{defaults.ts, useShortcuts.ts}; apps/desktop/src/features/settings/KeyboardSection.tsx; develop panels call the shared hook.
 ROUTES used: settings_get, settings_set.
 TESTS: default bindings step 10 and Shift 1, rebinding persists via mocked ipc, conflict rejected, no firing in inputs, axe.
+
+
+## P-14
+title: Picker maths - white, black and neutral points
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+deps: P-06, P-08
+adr: no
+spec: specification sections 4.1 and 4.2 steps 5 and 6
+desc: The functions behind the Develop view pickers: set the Invert white or black point from a sampled area, and compute colour axes that make a sampled grey neutral.
+ac:
+- levels_from_sample sets the Invert white or black of each channel from the median density of an area and keeps white above black
+- neutral_balance returns red_cyan, green_magenta and blue_yellow values inside the Recipe ranges; applying them to the sample gives equal channels within 1 percent
+- An empty, black or non-finite sample returns InvalidInput; nothing panics
+tech:
+FILES: crates/gtp-negative/src/picker.rs (levels_from_sample); crates/gtp-edit/src/neutral.rs (neutral_balance).
+INTERFACES: `levels_from_sample(&ImageF32, Rect, PointKind, &Invert) -> Result<Invert>`; `neutral_balance(sample: [f32; 3], &Color) -> Result<Color>`.
+TESTS: synthetic negatives with a known grey patch; clamping; error cases.
+
+## P-15
+title: Output sharpening
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+deps: P-09
+adr: no
+spec: specification section 4.2 step 9
+desc: An unsharp mask applied to the final resized image at export, with amount and radius in the Recipe output block.
+ac:
+- Amount 0 is the identity; a flat image stays flat; it never runs on the working image, only after the final resize
+- The Recipe output block gains sharpen.amount (0 to 150) and sharpen.radius_px (0.3 to 3) with clamping, and the spec lists them
+- The radius is defined relative to the output size and documented
+tech:
+FILES: crates/gtp-edit/src/sharpen.rs; crates/gtp-core/src/recipe (output block, clamp).
+INTERFACES: `sharpen(&mut ImageF32, &Sharpen)`.
+TESTS: identity at 0, flat image, edge contrast increases with amount, clamping and JSON round trip.
+
+## P-16
+title: Flat-field correction for camera copies
+milestone: M5
+type: feature
+size: M
+estimate: 1d
+deps: H-05
+adr: no
+spec: specification sections 4.2 step 1 and 11
+desc: Correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.
+ac:
+- A reference exposure per colour channel is stored with the roll or capture session
+- Dividing by the normalized reference makes a synthetic shaded flat field flat within 1 percent; a uniform reference is the identity
+- A reference with zero, negative or non-finite values is rejected with InvalidInput
+tech:
+FILES: crates/gtp-negative/src/flat_field.rs; storage of the reference follows the capture session design.
+INTERFACES: `flat_field_correct(&mut ImageF32, &FlatField) -> Result<()>`.
+TESTS: synthetic shading with the P-02 generator, identity, invalid references.

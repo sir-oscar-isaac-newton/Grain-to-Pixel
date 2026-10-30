@@ -134,16 +134,25 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      - name: Cache tauri-driver
+      - name: Restore tauri-driver
         id: tauri-driver-cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cargo/bin/tauri-driver.exe
           key: tauri-driver-2.1.0-${{ runner.os }}
 
       - name: Install tauri-driver
+        id: tauri-driver-install
         if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
         run: cargo install tauri-driver --locked --version 2.1.0
+
+      # Saved right after a successful install so a later test failure does not discard it.
+      - name: Save tauri-driver
+        if: steps.tauri-driver-install.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cargo/bin/tauri-driver.exe
+          key: tauri-driver-2.1.0-${{ runner.os }}
 
       - name: Install the msedgedriver that matches WebView2
         shell: pwsh
@@ -169,5 +178,21 @@ jobs:
           (Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}').pv
           Get-Process msedgewebview2, msedgedriver, tauri-driver -ErrorAction SilentlyContinue | Select-Object Name, Id
 
+      # tauri-driver starts msedgedriver itself and cannot pass it flags, so wrap it to get a verbose log.
+      - name: Wrap msedgedriver to write a verbose log
+        shell: pwsh
+        run: |
+          $dir = (Resolve-Path .cache/edgedriver).Path
+          $wrapper = Join-Path $dir 'msedgedriver-verbose.cmd'
+          $lines = @('@echo off', "`"$dir\msedgedriver.exe`" --verbose --log-path=`"$dir\msedgedriver.log`" %*")
+          Set-Content -Path $wrapper -Value $lines -Encoding ascii
+          "GTP_E2E_EDGEDRIVER=$wrapper" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
       - name: End-to-end test
         run: pnpm test:e2e
+
+      - name: Show the msedgedriver log
+        if: failure()
+        run: |
+          ls -la .cache/edgedriver || true
+          tail -n 120 .cache/edgedriver/msedgedriver.log || echo "no msedgedriver log"

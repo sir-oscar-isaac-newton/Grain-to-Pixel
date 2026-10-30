@@ -178,6 +178,11 @@ jobs:
           (Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}').pv
           Get-Process msedgewebview2, msedgedriver, tauri-driver -ErrorAction SilentlyContinue | Select-Object Name, Id
 
+      - name: Diagnostics - launch the app the way msedgedriver does, without the driver
+        continue-on-error: true
+        shell: pwsh
+        run: ./tools/scripts/e2e/diagnose-webview2.ps1
+
       # tauri-driver starts msedgedriver itself and cannot pass it flags, so wrap it to get a verbose log.
       - name: Wrap msedgedriver to write a verbose log
         shell: pwsh

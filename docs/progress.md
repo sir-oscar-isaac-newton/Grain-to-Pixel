@@ -52,9 +52,9 @@
       "number": 6,
       "title": "Smoke and end-to-end tests in CI",
       "branch": "feat/issue-6-smoke-and-end-to-end-tests-in-ci",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 81,
-      "commit": null
+      "commit": "4ffdb55"
     },
     {
       "id": "D-03",
@@ -62,7 +62,7 @@
       "title": "Logging, panic hook and client error reporting",
       "branch": "feat/issue-7-logging-panic-hook-and-client-error-reporting",
       "status": "in_progress",
-      "pr": null,
+      "pr": 87,
       "commit": null
     }
   ]

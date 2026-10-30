@@ -143,7 +143,7 @@
       "title": "Spike - nkscan with the modded LS-50",
       "branch": "feat/issue-8-spike-nkscan-with-the-modded-ls-50",
       "status": "in_progress",
-      "pr": null,
+      "pr": 111,
       "commit": null,
       "note": "Windows done; macOS confirmation pending"
     }

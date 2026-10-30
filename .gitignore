@@ -10,3 +10,5 @@ samples/private/*
 .claude/settings.local.json
 # Tauri generated schemas
 apps/desktop/src-tauri/gen/
+# Downloaded test tooling (msedgedriver)
+.cache/

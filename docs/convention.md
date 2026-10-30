@@ -118,7 +118,7 @@ Tag builds (`vX.Y.Z`) additionally run the release pipeline (spec §15). A budge
 | Gate | Workflow / job |
 |---|---|
 | 1 to 6 | `.github/workflows/ci.yml`, job `ci` (checks `ci (windows-latest)` and `ci (macos-14)`) |
-| 7 (smoke / end-to-end) | added by issue T-04 |
+| 7 (smoke / end-to-end) | `ci.yml`, job `smoke-macos` (build, launch, wait for the ready file; `pnpm smoke`) and job `e2e-windows` (WebDriver test of the real window through `tauri-driver`; `pnpm test:e2e`). Both must be added to the required checks of `develop` once they have run once |
 | 8 (title) | `.github/workflows/pr-title.yml`, check `pr-title` |
 
 Run the same commands locally before pushing (see the README). Third-party actions are pinned by commit SHA, first-party ones by major version; Dependabot keeps them current.

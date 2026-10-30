@@ -46,6 +46,15 @@
       "status": "completed",
       "pr": 73,
       "commit": "ca5567c"
+    },
+    {
+      "id": "T-04",
+      "number": 6,
+      "title": "Smoke and end-to-end tests in CI",
+      "branch": "feat/issue-6-smoke-and-end-to-end-tests-in-ci",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

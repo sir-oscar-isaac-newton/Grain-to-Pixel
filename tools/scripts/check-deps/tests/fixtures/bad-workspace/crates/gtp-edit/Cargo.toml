@@ -1,0 +1,9 @@
+[package]
+name = "gtp-edit"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Deliberately forbidden: feature crates must not depend on each other.
+[dependencies]
+gtp-negative = { path = "../gtp-negative" }

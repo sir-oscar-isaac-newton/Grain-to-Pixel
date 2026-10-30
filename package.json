@@ -1,10 +1,31 @@
-﻿{
+{
   "name": "grain-to-pixel",
   "private": true,
-  "packageManager": "pnpm@9.12.0",
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "pnpm --filter @gtp/desktop dev",
     "build": "pnpm -r build",
-    "test": "cargo test --workspace && pnpm -r test --if-present"
+    "lint": "eslint .",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "test:rust": "cargo test --workspace",
+    "test:tools": "node --test tools/scripts/check-deps/check-deps.test.mjs",
+    "check:deps": "node tools/scripts/check-deps/check-deps.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1"
   }
 }

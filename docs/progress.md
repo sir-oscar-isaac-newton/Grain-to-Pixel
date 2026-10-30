@@ -34,8 +34,17 @@
       "number": 4,
       "title": "Typed IPC and AppError",
       "branch": "feat/issue-4-typed-ipc-and-apperror",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 72,
+      "commit": "341713a"
+    },
+    {
+      "id": "T-03",
+      "number": 5,
+      "title": "CI workflow, PR template and Dependabot",
+      "branch": "feat/issue-5-ci-workflow-pr-template-and-dependabot",
+      "status": "in_progress",
+      "pr": 73,
       "commit": null
     }
   ]

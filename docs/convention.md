@@ -113,6 +113,48 @@ Every PR must pass on Windows and macOS (arm64) `[CI]`, and `develop` (the defau
 
 Tag builds (`vX.Y.Z`) additionally run the release pipeline (spec §15). A budget miss from spec §11 blocks a release.
 
+### Where the gates run
+
+| Gate | Workflow / job |
+|---|---|
+| 1 to 6 | `.github/workflows/ci.yml`, job `ci` (checks `ci (windows-latest)` and `ci (macos-14)`) |
+| 7 (smoke / end-to-end) | added by issue T-04 |
+| 8 (title) | `.github/workflows/pr-title.yml`, check `pr-title` |
+
+Run the same commands locally before pushing (see the README). Third-party actions are pinned by commit SHA, first-party ones by major version; Dependabot keeps them current.
+
+### Branch protection (settings to apply once, by the owner)
+
+Apply to `develop` (the default branch) in Settings > Branches (or via a ruleset). `main` gets the same rules, plus "restrict who can push" to the owner, since it only receives release merges.
+
+- Require a pull request before merging; **squash merge only** (disable merge commits and rebase merging in Settings > General).
+- Require status checks to pass: `ci (windows-latest)`, `ci (macos-14)`, `pr-title`. Require branches to be up to date before merging. (A check name can only be selected after it has run once.)
+- Require conversation resolution before merging.
+- Block force pushes and branch deletion.
+- Automatically delete head branches after merge.
+
+Command-line equivalent for `develop`:
+
+```bash
+gh api -X PUT repos/<owner>/<repo>/branches/develop/protection --input protection.json
+```
+
+with `protection.json`:
+
+```json
+{
+  "required_status_checks": { "strict": true, "contexts": ["ci (windows-latest)", "ci (macos-14)", "pr-title"] },
+  "enforce_admins": false,
+  "required_pull_request_reviews": null,
+  "restrictions": null,
+  "required_conversation_resolution": true,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+```
+
+`required_pull_request_reviews` is `null` because the project has one maintainer; a PR is still required through the status checks. Setting `enforce_admins` to `true` also binds the owner, which is stricter than needed for a solo project.
+
 ## 9. Commits and pull requests
 
 - **Conventional Commits:** `type(scope): summary`, imperative, at most 72 chars. Types: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, `chore`. Scope is a crate or area: `negative`, `edit`, `capture`, `ingest`, `catalog`, `io`, `core`, `desktop`, `ui`, `ipc`, `docs`, `adr`. Breaking changes: `!` plus a `BREAKING CHANGE:` footer.

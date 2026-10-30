@@ -1,0 +1,29 @@
+name: PR title
+
+# Gate 8 of docs/workflow.md section 8: the PR title is a Conventional Commit (docs/convention.md section 9).
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          re='^(feat|fix|perf|refactor|test|docs|build|ci|chore)(\([a-z0-9-]+\))?!?: .+$'
+          if [[ ! "$TITLE" =~ $re ]]; then
+            echo "::error::PR title must look like 'type(scope): summary' with type one of feat, fix, perf, refactor, test, docs, build, ci, chore. Got: $TITLE"
+            exit 1
+          fi
+          if [ "${#TITLE}" -gt 72 ]; then
+            echo "::error::PR title is ${#TITLE} characters; the limit is 72."
+            exit 1
+          fi
+          echo "ok: $TITLE"

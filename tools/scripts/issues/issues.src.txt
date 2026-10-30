@@ -881,9 +881,10 @@ legacy: GTP-053
 deps: U-02, L-08
 adr: no
 spec: specification sections 4.1 and 13
-desc: Temperature, tint, saturation, exposure, contrast and an accessible curve editor.
+desc: Colour (red/cyan, green/magenta, blue/yellow, temperature, tint, saturation) and Tone (exposure, contrast, highlights, shadows, whites, blacks) panels and an accessible curve editor.
 ac:
 - Sliders and curve points update the preview live and autosave
+- The colour sliders can be driven by the shortcuts of U-13 (a press moves 10 steps, Shift 1 step)
 - The curve editor is fully keyboard operable (arrow keys move points)
 - vitest-axe clean
 tech:
@@ -1501,3 +1502,23 @@ ac:
 tech:
 FILES: .github/workflows/ci.yml, .github/workflows/e2e-windows.yml, apps/desktop/tests/e2e/window.e2e.mjs, apps/desktop/src-tauri (only if the hook option is chosen).
 TESTS: the e2e run itself, green on CI. Evidence so far: runtime updated 155 to 156 and flags still ignored; runas /trustlevel does not lower integrity on the runner.
+
+## U-13
+title: Customizable keyboard shortcuts
+milestone: M3
+type: feature
+size: M
+estimate: 1d
+deps: U-04, U-07
+adr: no
+spec: specification section 13 (accessibility, keyboard)
+desc: A user-editable key map with defaults, applied to the Develop view colour sliders first.
+ac:
+- Defaults: Q adds red, A cyan, W green, S magenta, E blue, D yellow; a press moves the slider 10 steps, Shift+press 1 step; tone sliders have no keys yet
+- Settings has a Keyboard section to rebind an action; the key map is a user setting (action name to key) that persists across restarts and has a reset to defaults
+- A key assigned to two actions is rejected with a clear message; shortcuts are ignored while typing in a text field
+- Every action stays reachable without its shortcut; axe clean; strings via t()
+tech:
+FILES: apps/desktop/src/shared/keymap/{defaults.ts, useShortcuts.ts}; apps/desktop/src/features/settings/KeyboardSection.tsx; develop panels call the shared hook.
+ROUTES used: settings_get, settings_set.
+TESTS: default bindings step 10 and Shift 1, rebinding persists via mocked ipc, conflict rejected, no firing in inputs, axe.

@@ -70,9 +70,9 @@
       "number": 13,
       "title": "Core domain types and Recipe v1",
       "branch": "feat/issue-13-core-domain-types-and-recipe-v1",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 89,
-      "commit": null
+      "commit": "f9a911b"
     }
   ]
 }

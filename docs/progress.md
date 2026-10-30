@@ -44,7 +44,7 @@
       "title": "CI workflow, PR template and Dependabot",
       "branch": "feat/issue-5-ci-workflow-pr-template-and-dependabot",
       "status": "in_progress",
-      "pr": null,
+      "pr": 73,
       "commit": null
     }
   ]

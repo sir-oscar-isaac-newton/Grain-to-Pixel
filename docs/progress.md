@@ -8,7 +8,7 @@
       "title": "Initialize Git repository and LFS",
       "branch": "feat/issue-1-initialize-git-repository-and-lfs",
       "status": "in_progress",
-      "pr": null,
+      "pr": 69,
       "commit": null
     }
   ]

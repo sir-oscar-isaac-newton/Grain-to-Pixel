@@ -5,6 +5,11 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+gtp-core = { version = "0.0.0", path = "../gtp-core" }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+gtp-core = { path = "../gtp-core", version = "0.0.0", features = ["testing"] }
+proptest = "1.12.0"

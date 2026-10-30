@@ -42,6 +42,11 @@ test('core may not depend on any workspace crate', () => {
   assert.equal(findViolations(pkgs, ALLOWED).length, 1);
 });
 
+test('a crate naming itself (to enable its own test feature) is not an edge', () => {
+  const packages = [{ name: 'gtp-core', dependencies: [{ name: 'gtp-core' }] }];
+  assert.deepEqual(findViolations(packages), []);
+});
+
 test('unknown workspace packages are reported', () => {
   const v = findViolations([{ name: 'gtp-mystery', dependencies: [] }], ALLOWED);
   assert.match(v[0], /unknown workspace package "gtp-mystery"/);

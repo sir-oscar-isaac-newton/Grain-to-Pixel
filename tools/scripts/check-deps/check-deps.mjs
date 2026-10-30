@@ -44,6 +44,8 @@ export function findViolations(packages, allowed = ALLOWED) {
     }
     for (const dep of pkg.dependencies) {
       if (!members.has(dep.name)) continue; // external crate, handled by cargo-deny
+      // A crate may name itself in [dev-dependencies] to switch on its own test-only feature.
+      if (dep.name === pkg.name) continue;
       if (!rule.includes(dep.name)) {
         violations.push(
           `${pkg.name} -> ${dep.name} is not allowed (allowed: ${rule.join(', ') || 'none'})`,

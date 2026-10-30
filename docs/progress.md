@@ -53,7 +53,7 @@
       "title": "Smoke and end-to-end tests in CI",
       "branch": "feat/issue-6-smoke-and-end-to-end-tests-in-ci",
       "status": "in_progress",
-      "pr": null,
+      "pr": 81,
       "commit": null
     }
   ]

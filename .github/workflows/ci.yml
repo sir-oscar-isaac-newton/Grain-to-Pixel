@@ -1,7 +1,7 @@
-name: CI
+﻿name: CI
 
 # Gates 1-6 of docs/workflow.md section 8 on Windows and macOS (arm64) in job `ci`;
-# gate 7 in jobs `smoke-macos` (launch test) and `e2e-windows` (WebDriver test); gate 8 lives in pr-title.yml.
+# gate 7 in jobs `smoke-macos` and `smoke-windows` (launch test); the WebDriver test is e2e-windows.yml; gate 8 lives in pr-title.yml.
 on:
   pull_request:
   push:
@@ -111,9 +111,10 @@ jobs:
       - name: Smoke test (launch and wait for ready)
         run: pnpm smoke
 
-  # Gate 7b: drive the real window with WebDriver on Windows (title, backend version over IPC, view switch).
-  e2e-windows:
-    name: e2e-windows
+
+  # Gate 7b: the same launch test on Windows (the WebDriver test of the window is e2e-windows.yml).
+  smoke-windows:
+    name: smoke-windows
     runs-on: windows-latest
     timeout-minutes: 45
     defaults:
@@ -134,87 +135,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      - name: Restore tauri-driver
-        id: tauri-driver-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: ~/.cargo/bin/tauri-driver.exe
-          key: tauri-driver-2.1.0-${{ runner.os }}
-
-      - name: Install tauri-driver
-        id: tauri-driver-install
-        if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
-        run: cargo install tauri-driver --locked --version 2.1.0
-
-      # Saved right after a successful install so a later test failure does not discard it.
-      - name: Save tauri-driver
-        if: steps.tauri-driver-install.outcome == 'success'
-        uses: actions/cache/save@v6
-        with:
-          path: ~/.cargo/bin/tauri-driver.exe
-          key: tauri-driver-2.1.0-${{ runner.os }}
-
-      # Experiment: the runner image ships an older WebView2 runtime than current Edge, and on it
-      # WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS (used by msedgedriver) is ignored. Update to the latest.
-      - name: Update the WebView2 runtime (evergreen bootstrapper)
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
-          "before: " + (Get-ItemProperty $key).pv
-          $exe = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
-          Invoke-WebRequest -UseBasicParsing -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $exe
-          $p = Start-Process -FilePath $exe -ArgumentList '/silent', '/install' -Wait -PassThru
-          "installer exit code: " + $p.ExitCode
-          "after: " + (Get-ItemProperty $key).pv
-
-      - name: Install the msedgedriver that matches WebView2
-        shell: pwsh
-        run: ./tools/scripts/e2e/install-edgedriver.ps1
-
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build the app (release binary, no installer)
         run: pnpm build:app
 
-      # Diagnostics for the runner (kept while the WebDriver session start is being investigated).
-      - name: Diagnostics - does the app start on this runner?
-        continue-on-error: true
+      - name: Smoke test (launch and wait for ready)
         run: pnpm smoke
-
-      - name: Diagnostics - user, elevation and WebView2
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          whoami
-          whoami /groups | Select-String 'Mandatory Level'
-          (Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}').pv
-          Get-Process msedgewebview2, msedgedriver, tauri-driver -ErrorAction SilentlyContinue | Select-Object Name, Id
-
-      - name: Diagnostics - launch the app the way msedgedriver does, without the driver
-        continue-on-error: true
-        shell: pwsh
-        run: ./tools/scripts/e2e/diagnose-webview2.ps1
-
-      # tauri-driver starts msedgedriver itself and cannot pass it flags, so wrap it to get a verbose log.
-      - name: Wrap msedgedriver to write a verbose log
-        shell: pwsh
-        run: |
-          $dir = (Resolve-Path .cache/edgedriver).Path
-          $wrapper = Join-Path $dir 'msedgedriver-verbose.cmd'
-          $lines = @('@echo off', "`"$dir\msedgedriver.exe`" --verbose --log-path=`"$dir\msedgedriver.log`" %*")
-          Set-Content -Path $wrapper -Value $lines -Encoding ascii
-          "GTP_E2E_EDGEDRIVER=$wrapper" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-
-      # GitHub-hosted Windows runners run jobs elevated; WebView2 then ignores the environment overrides
-      # msedgedriver uses (no DevToolsActivePort), so the test runs with a non-elevated token.
-      - name: End-to-end test (non-elevated token)
-        shell: pwsh
-        run: ./tools/scripts/e2e/run-e2e-limited.ps1
-
-      - name: Show the msedgedriver log
-        if: failure()
-        run: |
-          ls -la .cache/edgedriver || true
-          tail -n 120 .cache/edgedriver/msedgedriver.log || echo "no msedgedriver log"

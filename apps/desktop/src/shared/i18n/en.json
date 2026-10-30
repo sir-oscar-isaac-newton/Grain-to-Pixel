@@ -1,0 +1,25 @@
+{
+  "app": { "title": "Grain to Pixel" },
+  "nav": {
+    "label": "Main views",
+    "library": "Library",
+    "develop": "Develop",
+    "import": "Import"
+  },
+  "library": {
+    "title": "Library",
+    "placeholder": "Your rolls and frames will appear here."
+  },
+  "develop": {
+    "title": "Develop",
+    "placeholder": "Convert and edit a frame here."
+  },
+  "import": {
+    "title": "Import",
+    "placeholder": "Scan a roll, capture RGB exposures, or import files here."
+  },
+  "footer": {
+    "version": "Version {{version}}",
+    "unknown": "unknown"
+  }
+}

@@ -1,0 +1,22 @@
+[package]
+name = "grain-to-pixel-desktop"
+description = "Grain to Pixel desktop shell (Tauri adapter over gtp-app)"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "grain_to_pixel_desktop_lib"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true

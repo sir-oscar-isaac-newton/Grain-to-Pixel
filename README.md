@@ -36,7 +36,7 @@ Local checks (the same gates CI will run; see [docs/convention.md](docs/conventi
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo deny check
+cargo deny check --hide-inclusion-graph
 pnpm lint && pnpm typecheck && pnpm test:tools
 pnpm check:deps          # crate dependency rules (docs/architecture.md section 3.3)
 ```

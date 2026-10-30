@@ -16,8 +16,17 @@
       "number": 2,
       "title": "Lint, format and dependency-rule tooling",
       "branch": "feat/issue-2-lint-format-and-dependency-rule-tooling",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 70,
+      "commit": "863b9f0"
+    },
+    {
+      "id": "D-01",
+      "number": 3,
+      "title": "Tauri 2 desktop skeleton",
+      "branch": "feat/issue-3-tauri-2-desktop-skeleton",
+      "status": "in_progress",
+      "pr": null,
       "commit": null
     }
   ]

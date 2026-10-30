@@ -1,4 +1,4 @@
-﻿target/
+target/
 node_modules/
 dist/
 .DS_Store
@@ -8,3 +8,5 @@ Thumbs.db
 samples/private/*
 !samples/private/.gitkeep
 .claude/settings.local.json
+# Tauri generated schemas
+apps/desktop/src-tauri/gen/

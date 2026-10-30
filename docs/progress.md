@@ -71,7 +71,7 @@
       "title": "Core domain types and Recipe v1",
       "branch": "feat/issue-13-core-domain-types-and-recipe-v1",
       "status": "in_progress",
-      "pr": null,
+      "pr": 89,
       "commit": null
     }
   ]

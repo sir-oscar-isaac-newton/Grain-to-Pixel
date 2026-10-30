@@ -101,7 +101,7 @@ A PR is not mergeable without these `[review]` unless noted:
 
 ## 8. CI gates
 
-Every PR must pass on Windows and macOS (arm64) `[CI]`, and `main` is protected: PR required, CI green, squash merge.
+Every PR must pass on Windows and macOS (arm64) `[CI]`, and `develop` (the default branch) is protected: PR required, CI green, squash merge. `main` is the release branch; it only receives merges from `develop` at release time (Q-07).
 
 1. `cargo fmt --check`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
@@ -119,7 +119,7 @@ Tag builds (`vX.Y.Z`) additionally run the release pipeline (spec §15). A budge
 - One logical change per commit and per PR; keep PRs small enough to review in one sitting. No unrelated reformatting.
 - PR description: what and why, how it was tested (see §7), budget/perf impact, docs/ADR updated. Link the milestone from spec §16.
 - Decisions that change architecture, dependencies, storage or hardware approach need an ADR in `decisions/` in the same PR.
-- Never force-push `main`. Don't commit generated build output, scans from `samples/private`, or secrets.
+- Branches are named `feat/issue-<github-number>-<title-kebab>` and PRs target `develop`. Never force-push `main` or `develop`. Don't commit generated build output, scans from `samples/private`, or secrets.
 - `CHANGELOG.md` is generated from commits; write messages as if they were release notes.
 
 ## 10. Security and privacy

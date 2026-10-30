@@ -117,7 +117,7 @@ Tag builds (`vX.Y.Z`) additionally run the release pipeline (spec §15). A budge
 
 | Gate | Workflow / job |
 |---|---|
-| 1 to 6 | `.github/workflows/ci.yml`, job `ci` (checks `ci (windows-latest)` and `ci (macos-14)`) |
+| 1 to 6 | `.github/workflows/ci.yml`, job `ci` (checks `ci (windows-latest)` and `ci (macos-15)`) |
 | 7 (smoke / end-to-end) | `ci.yml`, jobs `smoke-macos` and `smoke-windows` (build, launch, wait for the ready file; `pnpm smoke`). Both must be added to the required checks of `develop` once they have run once. The WebDriver test of the window (`pnpm test:e2e`, Windows) is `e2e-windows.yml`, manual or weekly and not a gate: GitHub-hosted runners run elevated and WebView2 then ignores the flags msedgedriver passes. Run it locally before merging UI changes |
 | 8 (title) | `.github/workflows/pr-title.yml`, check `pr-title` |
 
@@ -128,7 +128,7 @@ Run the same commands locally before pushing (see the README). Third-party actio
 Apply to `develop` (the default branch) in Settings > Branches (or via a ruleset). `main` gets the same rules, plus "restrict who can push" to the owner, since it only receives release merges.
 
 - Require a pull request before merging; **squash merge only** (disable merge commits and rebase merging in Settings > General).
-- Require status checks to pass: `ci (windows-latest)`, `ci (macos-14)`, `pr-title`. Require branches to be up to date before merging. (A check name can only be selected after it has run once.)
+- Require status checks to pass: `ci (windows-latest)`, `ci (macos-15)`, `smoke-macos`, `smoke-windows`, `pr-title`. Require branches to be up to date before merging. (A check name can only be selected after it has run once.)
 - Require conversation resolution before merging.
 - Block force pushes and branch deletion.
 - Automatically delete head branches after merge.
@@ -143,7 +143,7 @@ with `protection.json`:
 
 ```json
 {
-  "required_status_checks": { "strict": true, "contexts": ["ci (windows-latest)", "ci (macos-14)", "pr-title"] },
+  "required_status_checks": { "strict": true, "contexts": ["ci (windows-latest)", "ci (macos-15)", "smoke-macos", "smoke-windows", "pr-title"] },
   "enforce_admins": false,
   "required_pull_request_reviews": { "required_approving_review_count": 0 },
   "restrictions": null,

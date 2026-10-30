@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 # Gates 1-6 of docs/workflow.md section 8 on Windows and macOS (arm64) in job `ci`;
 # gate 7 in jobs `smoke-macos` and `smoke-windows` (launch test); the WebDriver test is e2e-windows.yml; gate 8 lives in pr-title.yml.
@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-14]
+        os: [windows-latest, macos-15]
     defaults:
       run:
         shell: bash
@@ -85,7 +85,7 @@ jobs:
   # Gate 7a: the built app starts and renders its page on macOS (Tauri has no WebDriver for WebKit).
   smoke-macos:
     name: smoke-macos
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7

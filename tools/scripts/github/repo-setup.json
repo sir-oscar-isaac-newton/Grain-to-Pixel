@@ -1,0 +1,158 @@
+{
+  "labels": [
+    {
+      "name": "area:tooling",
+      "color": "1d76db",
+      "description": "Tooling, CI and release"
+    },
+    {
+      "name": "area:research",
+      "color": "1d76db",
+      "description": "Research spikes"
+    },
+    {
+      "name": "area:pipeline",
+      "color": "1d76db",
+      "description": "Image pipeline"
+    },
+    {
+      "name": "area:library",
+      "color": "1d76db",
+      "description": "Library and data"
+    },
+    {
+      "name": "area:hardware",
+      "color": "1d76db",
+      "description": "Hardware ingest and capture"
+    },
+    {
+      "name": "area:desktop-shell",
+      "color": "1d76db",
+      "description": "Desktop shell (Tauri)"
+    },
+    {
+      "name": "area:ui",
+      "color": "1d76db",
+      "description": "User interface"
+    },
+    {
+      "name": "area:quality",
+      "color": "1d76db",
+      "description": "Quality, docs and release verification"
+    },
+    {
+      "name": "type:feature",
+      "color": "5319e7",
+      "description": "Issue type: feature"
+    },
+    {
+      "name": "type:chore",
+      "color": "5319e7",
+      "description": "Issue type: chore"
+    },
+    {
+      "name": "type:test",
+      "color": "5319e7",
+      "description": "Issue type: test"
+    },
+    {
+      "name": "type:docs",
+      "color": "5319e7",
+      "description": "Issue type: docs"
+    },
+    {
+      "name": "type:spike",
+      "color": "5319e7",
+      "description": "Issue type: spike"
+    },
+    {
+      "name": "size:S",
+      "color": "c2e0c6",
+      "description": "About half a day"
+    },
+    {
+      "name": "size:M",
+      "color": "fbca04",
+      "description": "About a day"
+    },
+    {
+      "name": "needs:hw",
+      "color": "d93f0b",
+      "description": "Needs real hardware; the human runs it and reports"
+    },
+    {
+      "name": "needs:data",
+      "color": "d93f0b",
+      "description": "Needs files only the human has"
+    },
+    {
+      "name": "needs:mac",
+      "color": "d93f0b",
+      "description": "Needs a macOS check until CI covers it"
+    },
+    {
+      "name": "needs:human",
+      "color": "d93f0b",
+      "description": "Needs an action only the human can do"
+    },
+    {
+      "name": "adr",
+      "color": "0e8a16",
+      "description": "Requires or updates an ADR"
+    },
+    {
+      "name": "status:proposed",
+      "color": "bfdadc",
+      "description": "Proposal posted, waiting for approval"
+    },
+    {
+      "name": "status:in-progress",
+      "color": "bfdadc",
+      "description": "Approved and being implemented"
+    },
+    {
+      "name": "status:in-review",
+      "color": "bfdadc",
+      "description": "PR open"
+    },
+    {
+      "name": "status:blocked",
+      "color": "b60205",
+      "description": "Blocked; reason in the last comment"
+    }
+  ],
+  "milestones": [
+    {
+      "title": "M0 Foundations",
+      "description": "App launches on Windows x64 and macOS; hardware spikes answered"
+    },
+    {
+      "title": "M1 Pipeline on files",
+      "description": "Quality metric calibrated; budgets met on fixtures"
+    },
+    {
+      "title": "M2 Library",
+      "description": "Create library, import 36 frames, tag, search under budget"
+    },
+    {
+      "title": "M3 Develop UI",
+      "description": "Full file-based workflow usable end to end"
+    },
+    {
+      "title": "M4 LS-50 ingest",
+      "description": "Full-roll scan with IR on each OS"
+    },
+    {
+      "title": "M5 RGB triplets (files)",
+      "description": "D600 NEF triplet converts correctly"
+    },
+    {
+      "title": "M6 Guided RGB capture",
+      "description": "Roll captured with Scanlight + D600 on macOS, then Windows"
+    },
+    {
+      "title": "M7 MVP release v0.1.0",
+      "description": "Budgets and quality metric met; release checklist passed"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+# Idea one‑pager
+- Working name: Grain to Pixel
+- Problem (one sentence): An all-in-one app for scanning, converting, editing, and organizing film negatives.
+- Who has it (persona): Personal app for only sharing with close friends. 
+- Why now: There are many new apps with some or all of the features, but the cost for licensing in prohibitive
+- Non‑goals (out of scope): Advanced photo editing tools such as masking, AI generation
+- Core workflow (3–5 steps): Ingest images via Nikon Coolscan LS-50 or separate RGB images via camera tethering adding tags for organization; determine frame area and measure film base; convert to a positive image; edit image color balance, tone, geometry, IR/ICE dust removal (for LS-50 scanned images); organize in searchable archive via tags.
+- Surfaces: Windows 10/11, MacOS
+- Monetization (if any): none
+- Success metrics (1–3): activation, and results comparable to Nikon Scan 4 or Trichroma Lab
+- Risks & assumptions: limited data from sample color negative images
+- Constraints: limited to Claude Pro

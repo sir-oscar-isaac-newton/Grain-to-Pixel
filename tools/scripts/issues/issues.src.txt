@@ -1,0 +1,1484 @@
+# Source of truth for the issue backlog. Edit here, then run:  node tools/scripts/issues/build-issues.mjs
+# Format: "## ID" starts an issue. Keys (lowercase, at line start): title milestone type size estimate legacy deps needs adr labels spec desc ac tech
+# Lists are comma separated; "ac:" lines start with "- "; everything after "tech:" until the next key is free text.
+# Tags: T tooling/CI/release, R research spikes, P pipeline (core,io,negative,edit,app pipeline), L library/data, H hardware (ingest,capture), D desktop shell (src-tauri), U UI, Q quality/docs/release verification.
+
+## T-01
+title: Initialize Git repository and LFS
+milestone: M0
+type: chore
+size: S
+estimate: 0.5d
+legacy: GTP-001
+deps:
+needs: human
+adr: no
+spec: structure.md section 6; convention section 9
+desc: Put the scaffold under version control on branch main and prove that the ignore and Git LFS rules in .gitignore and .gitattributes work.
+ac:
+- Git and Git LFS are installed (human) and `git --version`, `git lfs version` work
+- Repository on `main` with one commit containing the scaffold; `git status` is clean
+- `git check-ignore samples/private/x.tif` and `git check-ignore target/` report both ignored
+- `git lfs track` lists the TIFF, TIFF, DNG, NEF and ICC patterns (NEF added if missing)
+tech:
+FILES: .gitattributes (add `*.nef filter=lfs diff=lfs merge=lfs -text` if missing).
+COMMANDS: `git init -b main`, `git lfs install`, `git add .`, `git commit -m "chore: scaffold monorepo"`.
+ROUTES / MIGRATIONS: none.
+TESTS: paste the outputs of the check-ignore and lfs track commands in the report.
+OUT OF SCOPE: creating the GitHub remote or pushing (the human does that).
+
+## T-02
+title: Lint, format and dependency-rule tooling
+milestone: M0
+type: chore
+size: M
+estimate: 1d
+legacy: GTP-002
+deps: T-01
+adr: no
+spec: convention sections 1, 3, 8; architecture section 3.3
+desc: Make the convention rules enforceable locally: pinned toolchain, workspace lints, formatters, licence policy, ESLint/Prettier/tsconfig, and a script that enforces the allowed crate dependency edges.
+ac:
+- rust-toolchain.toml pins stable; `[workspace.lints]` denies unwrap_used, expect_used, panic, todo, print_stdout, print_stderr, dbg_macro and forbids unsafe_code; every crate inherits them
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` and `cargo deny check` pass
+- ESLint (typescript-eslint, jsx-a11y, no-console, no literal strings in JSX), Prettier and a strict tsconfig base exist; `pnpm lint`, `pnpm typecheck`, `pnpm test` run
+- `tools/scripts/check-deps` enforces the allowed-edges table of architecture.md section 3.3, passes on the workspace and fails on a bad fixture
+tech:
+FILES: rust-toolchain.toml, rustfmt.toml, deny.toml (licence allowlist), .nvmrc (20), eslint.config.js, .prettierrc, tsconfig.base.json; root Cargo.toml `[workspace.lints.rust] unsafe_code = "forbid"` and `[workspace.lints.clippy]` deny list; every crates/*/Cargo.toml gets `[lints] workspace = true`; package.json scripts lint, typecheck, test (`pnpm -r --if-present`), format; tools/scripts/check-deps/ (small Rust bin using `cargo metadata`) with tests/fixtures/bad-workspace (gtp-edit depends on gtp-negative); .gitattributes unchanged.
+INTERFACES: `check-deps [--manifest-path <Cargo.toml>]` exits 1 and prints each forbidden edge. Allowed edges: core -> none; io, negative, edit, catalog, capture -> core; ingest -> core, io; app -> all gtp crates; src-tauri -> app, core; tools/benchmark -> app, core.
+ROUTES / MIGRATIONS: none.
+TESTS: integration test: check-deps passes on this workspace, fails on the bad fixture; a deliberate `unwrap()` fails clippy (show, then remove).
+PREREQUISITES (human): pnpm installed.
+
+## D-01
+title: Tauri 2 desktop skeleton
+milestone: M0
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-003
+deps: T-02
+needs: mac
+adr: no
+spec: specification sections 2, 3, 9; architecture sections 3.1, 4
+desc: Scaffold apps/desktop (React + TypeScript + Vite UI, Tauri 2 shell) so a window launches on Windows and macOS with the project layout, strict CSP and minimal capabilities.
+ac:
+- `pnpm dev` opens the window on Windows; the macOS launch is confirmed by the human
+- CSP is `default-src 'self'`, no shell plugin, capabilities list only what the stub needs
+- src-tauri is a Cargo workspace member and passes the workspace lints and check-deps
+- A UI test renders the app shell and switches between Library, Develop and Import views
+tech:
+FILES: apps/desktop/{package.json, vite.config.ts, tsconfig.json, index.html}; src/{main.tsx, App.tsx}; src/app/store.ts (Zustand, view = 'library' | 'develop' | 'import'); src/features/{library,develop,import}/*View.tsx placeholders using t(); src/shared/{ipc.ts, i18n/index.ts, i18n/en.json, styles/tokens.css}; src-tauri/{Cargo.toml, tauri.conf.json, build.rs, capabilities/default.json}; src-tauri/src/{main.rs, lib.rs, state.rs, commands/mod.rs, commands/system.rs}.
+ROUTES: stub `library_info() -> LibraryInfo { app_version }`.
+MIGRATIONS: none.
+TESTS: Vitest renders App and switches views; manual launch recorded.
+PREREQUISITES (human): Windows needs WebView2 and MSVC build tools; macOS needs Xcode command line tools.
+OUT OF SCOPE: real features, CI.
+
+## D-02
+title: Typed IPC and AppError
+milestone: M0
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-004
+deps: D-01
+adr: no
+spec: specification sections 3, 6; architecture sections 3.4, 4.2
+desc: Make Rust the single source of truth for command, event and error types with tauri-specta, and add the shared AppError with the error codes of the spec.
+ac:
+- `pnpm gen:ipc` regenerates packages/ipc-types and a second run produces no diff
+- `AppError { code, message, details? }` serializes as specified; a unit test per error code
+- The UI calls `library_info` only through the typed wrapper in shared/ipc.ts
+- tools/scripts/check-ipc fails when generated bindings are stale
+tech:
+FILES: crates/gtp-core/src/error.rs (ErrorCode: NotFound, InvalidInput, Io, Db, UnsupportedFormat, ScannerUnavailable, ScanFailed, Cancelled, LibraryTooNew, Internal; AppError); apps/desktop/src-tauri/src/{error.rs (map crate errors to AppError), events.rs}; packages/ipc-types/{package.json, src/index.ts, src/bindings.ts (GENERATED)}; root script `pnpm gen:ipc`; tools/scripts/check-ipc/.
+ROUTES: `library_info()` registered through tauri-specta.
+MIGRATIONS: none.
+TESTS: AppError JSON shape per code; check-ipc test on a deliberately stale file.
+OUT OF SCOPE: new commands.
+
+## T-03
+title: CI workflow, PR template and Dependabot
+milestone: M0
+type: chore
+size: M
+estimate: 1d
+legacy: GTP-005
+deps: T-01, T-02, D-02
+needs: human
+adr: no
+spec: specification section 8; convention section 8; workflow sections 5 and 8
+desc: Run the CI gates on every pull request on Windows and macOS, with the PR template, the PR-title check and dependency updates.
+ac:
+- GitHub repo exists and the remote is added (human)
+- A test PR runs all gates on windows-latest and macos-14 and passes; a PR with a deliberate lint error fails
+- The PR template matches workflow.md section 5 Step 6; PR titles must be Conventional Commits
+- Branch protection settings are documented in convention.md section 8 and applied by the human
+tech:
+FILES: .github/workflows/ci.yml (matrix windows-latest, macos-14; cargo fmt --check, clippy -D warnings, cargo test --workspace, pnpm install --frozen-lockfile, lint, typecheck, test, cargo deny check, pnpm audit --prod, check-deps, check-ipc; Swatinem/rust-cache and pnpm store caching); .github/workflows/pr-title.yml; .github/pull_request_template.md; .github/dependabot.yml (cargo, npm, github-actions weekly); convention.md section 8 gains a "Branch protection" list.
+ROUTES / MIGRATIONS: none.
+TESTS: throwaway PRs, one clean and one with a lint error.
+OUT OF SCOPE: smoke/e2e (T-04), release workflow (T-06).
+
+## T-04
+title: Smoke and end-to-end tests in CI
+milestone: M0
+type: test
+size: M
+estimate: 1d
+legacy: GTP-006
+deps: D-01, T-03
+adr: no
+spec: specification section 8; convention section 8
+desc: Add CI gate 7: a macOS build-and-launch smoke test and a Windows tauri-driver WebDriver test.
+ac:
+- The macOS smoke job passes and fails when the app crashes at startup
+- The Windows e2e job checks the window title and the library_info result and passes
+- Both jobs are required checks
+tech:
+FILES: apps/desktop/tests/smoke/mac-launch.sh (build, start, wait for a "ready" log line, kill, non-zero exit on crash); apps/desktop/tests/e2e/{wdio.conf.ts, window.e2e.ts} using tauri-driver; ci.yml jobs `smoke-macos` and `e2e-windows`.
+ROUTES / MIGRATIONS: none.
+TESTS: each job once green and once with a deliberate failure.
+
+## D-03
+title: Logging, panic hook and client error reporting
+milestone: M0
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-007
+deps: D-02
+adr: no
+spec: specification section 12; convention sections 5 and 6
+desc: Observability baseline: rolling JSON logs, a panic hook with crash notes, a client-event command and React error handling.
+ac:
+- A log file is created in the OS log dir and rotated daily, keeping 7 days with a 50 MB cap (tested with a small cap)
+- A panic in a subprocess test leaves a crash note and the next start reports it
+- A client error reaches the log with level and message; UI text never shows a stack trace
+- No println!/console.log remain (lints pass)
+tech:
+FILES: apps/desktop/src-tauri/src/logging.rs (`init(log_dir, dev)`, `job_span(job_id, kind)`, `stage_span(stage)`); src-tauri/src/lib.rs panic hook writing crash-<timestamp>.txt and a last_crash marker, emitting `app://crash-report` next start; commands/system.rs `log_client_event(level: LogLevel, msg: String)`; apps/desktop/src/app/error-boundary.tsx and window.onerror / unhandledrejection hooks.
+TYPES: `enum LogLevel { Error, Warn, Info, Debug }`.
+MIGRATIONS: none.
+TESTS: rotation with a tiny cap in a temp dir; subprocess panic test; Vitest for the error boundary; log_client_event writes level and message.
+OUT OF SCOPE: diagnostics zip (D-05).
+
+## R-01
+title: Spike - nkscan with the modded LS-50
+milestone: M0
+type: spike
+size: M
+estimate: 1d
+legacy: GTP-008
+deps: T-01
+needs: hw
+adr: yes
+labels: spike
+spec: specification section 6; ADR 0003; docs/research/nkscan.md
+desc: Decide whether nkscan can drive the whole-roll LS-50 (SA-30 roll adapter via coolscan-mods firmware): detection, 16-bit RGB + IR output, advance across 3+ frames, and the Windows driver stack.
+ac:
+- Device detected and identified as an SA-30 roll adapter on Windows and macOS (human reports)
+- 16-bit RGB and a separate IR plane obtained; format and size recorded
+- Advance across 3 consecutive frames works, or the failure is characterized
+- Windows driver outcome recorded (VueScan driver vs WinUSB/Zadig)
+- docs/research/nkscan.md checklist filled; ADR 0003 set to Accepted, amended or Rejected with a recommendation
+tech:
+SCOPE: build nkscan (crate/CLI) on both OS; `nkscan --list`; single-frame `nkscan scan --ir`; advance and scan frames 1-3; test with VueScan's driver installed. Throwaway code stays in the scratchpad or tools/scripts/spikes, never in crates/.
+OUTPUT: update docs/research/nkscan.md and decisions/0003-ls-50-via-nkscan.md; recommendation (contribute to nkscan, or rely on TIFF import); proposed follow-up issues.
+PROCESS: the assistant prepares exact commands and a checklist; the human runs them on the hardware and reports; the assistant records results and never ticks hardware items itself.
+
+## R-02
+title: Spike - Scanlight V4 serial control
+milestone: M0
+type: spike
+size: M
+estimate: 1d
+legacy: GTP-009
+deps: T-01
+needs: hw
+adr: yes
+labels: spike
+spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md
+desc: Confirm the Scanlight V4 binary serial protocol on the real device (rev B), measure timing and temperature, and capture packet recordings to use as test vectors.
+ac:
+- Serial port opens on macOS and Windows without extra drivers; firmware ID recorded (rev B expected)
+- Each colour lights alone via SET_COLOR with save flag 0; switch latency and needed settle time recorded
+- LED_TEMP over a 3-colour sequence recorded and warn/abort limits justified
+- Pulse length that reliably fires the D600 recorded, with or without SET_FOCUS, using the owned remote cable
+- Captured packets saved under samples/public/scanlight/ and the research note updated
+tech:
+SCOPE: packet format `0xFE`, header, length, data. Host commands: SET_COLOR (header 0; R, G, B, W, IR, save flag; save always 0), GET_FW_VERSION (2), SHUTTER_PULSE (3; 10 ms units), SET_FOCUS (7; PCB 26a902b). Device packets: LED_TEMP (1, int32 millidegrees C), VBUS (2, mV), FW_VERSION (3). No acks, no VID/PID: probe ports with GET_FW_VERSION. Throwaway script (python/pyserial or Rust) outside crates/.
+OUTPUT: docs/research/scanlight-capture.md, ADR 0004 amendments, recorded packets as test vectors, follow-up issues. The light must be off at the end of every run.
+PROCESS: assistant prepares commands; human runs; assistant records; hardware items never ticked by the assistant.
+
+## R-03
+title: Spike - libgphoto2 and D600 on macOS
+milestone: M0
+type: spike
+size: M
+estimate: 1d
+legacy: GTP-010
+deps: T-01
+needs: hw, mac
+adr: yes
+labels: spike
+spec: specification section 6.1; ADR 0004
+desc: Decide whether the libgphoto2 camera backend is viable on Apple Silicon: D600 support, capture and download of a NEF, USB claim problems, a Rust binding, and how to bundle the libraries in the .app.
+ac:
+- D600 supported; a NEF captured and downloaded by command line (human reports)
+- macOS USB-claim workaround documented
+- A Rust binding compiles and lists the camera
+- Bundling approach written down (dylibs, camera/port driver dirs, env paths, ad-hoc signing) with a go/no-go for the M6 cut line
+- docs/research/scanlight-capture.md updated and ADR 0004 amended
+tech:
+SCOPE: install or build libgphoto2 (Homebrew or source); `gphoto2 --auto-detect`, `--capture-image-and-download`; handle the macOS camera daemon claiming the device; build the `gphoto2` crate; test relocatable bundling inside a throwaway .app. Spike code stays out of crates/.
+OUTPUT: research note, ADR 0004 amendment, go/no-go, follow-up issues.
+PROCESS: human runs hardware steps and reports; assistant records.
+
+## R-04
+title: Spike - digiCamControl on Windows
+milestone: M0
+type: spike
+size: S
+estimate: 0.5d
+legacy: GTP-011
+deps: R-02
+needs: hw
+adr: no
+labels: spike
+spec: specification section 6.1
+desc: Confirm the Windows capture path: Scanlight pulse fires the D600, digiCamControl downloads the NEF into a session folder, and the app can watch that folder.
+ac:
+- D600 recognized by digiCamControl; pulse-fired shots appear in the chosen folder without digiCamControl triggering them
+- Typical file write time and partial-file behaviour recorded
+- docs/research/scanlight-capture.md updated
+tech:
+SCOPE: configure digiCamControl session folder; fire with SHUTTER_PULSE (length from R-02); observe temp/partial file naming and stable-size timing; note D600 support status of digiCamControl.
+OUTPUT: research note; recommendation for the WatchedFolder file-complete rule.
+PROCESS: human runs; assistant records.
+
+## R-05
+title: Spike - NEF decode with rawler
+milestone: M0
+type: spike
+size: S
+estimate: 0.5d
+legacy: GTP-012
+deps: T-01
+needs: data
+adr: no
+labels: spike
+spec: specification section 4.2 step 1 and section 11
+desc: Prove that D600 NEFs decode to usable linear data and set the fallback decoder.
+ac:
+- The human supplies one R/G/B NEF triplet in samples/private/
+- Decode returns linear data; black level and CFA pattern recorded
+- Decode plus bilinear demosaic time per file measured against the 10 s triplet budget
+- Decision recorded: rawler, or a LibRaw binding; new docs/research/nef-decode.md
+tech:
+SCOPE: throwaway program using `rawler` (no white balance, no tone curve); bilinear demosaic; take the channel matching each light (R from red-lit, G from green-lit, B from blue-lit); measure timings.
+OUTPUT: docs/research/nef-decode.md; update specification section 2 if the decoder changes.
+
+## P-01
+title: Core domain types and Recipe v1
+milestone: M1
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-020
+deps: T-02
+adr: no
+spec: specification sections 4, 4.1; architecture section 3.4
+desc: The shared domain model and a versioned, validated Recipe in gtp-core, with no I/O.
+ac:
+- Recipe round-trips through JSON; unknown fields ignored; missing fields default
+- Clamping is idempotent (property test) and covers every documented range
+- `migrate` handles v1 and rejects unknown future versions with UnsupportedFormat
+- ID types parse and reject malformed input
+tech:
+FILES (crates/gtp-core): src/{lib.rs, ids.rs, image.rs}; src/model/{roll,frame,source,tag}.rs; src/recipe/{mod,v1,clamp,migrate}.rs.
+TYPES: ULID newtypes RollId, FrameId, TagId; `ImageF32 { width, height, channels, data: Vec<f32> }` (linear, row-major); Roll, Frame, FrameKind {ScanRgbIr, RgbTriplet}, SourceFile, SourceRole {Rgb, Ir, R, G, B}, Tag; Recipe v1 per spec 4.1 (geometry, base, invert, color, tone with curve points, dust, output); `Recipe::clamp()`; `migrate(json: &str) -> Result<Recipe>`.
+ROUTES / MIGRATIONS: none.
+TESTS: JSON round trip, unknown/missing fields, clamp idempotence and ranges (proptest), migrate rejects v2, ID parse failures.
+OUT OF SCOPE: TIFF I/O, pipeline stages.
+
+## P-02
+title: Synthetic negative test fixtures
+milestone: M1
+type: test
+size: M
+estimate: 1d
+legacy: GTP-021
+deps: P-01
+adr: no
+spec: specification sections 4.2 and 8
+desc: A dev-only deterministic generator of synthetic negatives with analytical ground truth, so tests do not depend on real film.
+ac:
+- Same seed produces identical output
+- The forward model (positive to density to transmittance times base) is documented with its formula in the module docs
+- The generator returns ground truth: film base, black/white points, frame rectangle, dust mask, expected positive
+- Feature-gated; not compiled into release builds
+tech:
+FILES: crates/gtp-core/src/testing/{mod.rs, synthetic.rs} behind Cargo feature `testing`.
+INTERFACES: `synthetic::negative(seed, params) -> Synthetic { image: ImageF32, ir: Option<ImageF32>, truth: Truth }`; content: density-step wedge with known base and per-channel gamma, colour patch chart, rebate border around a known frame rect, IR plane with known dust spots.
+ROUTES / MIGRATIONS: none.
+TESTS: determinism, ground-truth consistency with the forward model, feature absent from default build.
+DOCS: samples/README.md mentions synthetic fixtures.
+
+## P-03
+title: TIFF read/write with input limits
+milestone: M1
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-022
+deps: P-01
+adr: no
+spec: specification sections 5.1 and 9; convention section 4
+desc: Safe 16-bit TIFF reading and writing in gtp-io for scans, IR planes and library originals, with size limits checked before allocation.
+ac:
+- Round trip is bit-exact for RGB and gray
+- A crafted header with huge dimensions is rejected without a large allocation
+- Corrupt and truncated files return typed errors and never panic
+- Deflate + predictor output is smaller than raw on the synthetic image
+tech:
+FILES (crates/gtp-io): src/{lib.rs, limits.rs, tiff.rs, hash.rs}.
+INTERFACES: `Limits { max_side: 20_000, max_decoded_bytes: 2 GiB }`; `read_tiff16(path, &Limits) -> Result<Tiff16>`; `Tiff16 { width, height, channels, data: Vec<u16> }`; `to_f32_linear(&Tiff16) -> ImageF32` (scale only, no gamma); `write_tiff16(path, &Tiff16, Compression::DeflatePredictor)`; `mark_read_only(path)`; `sha256_file(path) -> Result<String>`.
+ROUTES / MIGRATIONS: none.
+TESTS: round trip, crafted oversize header, corrupt/truncated files, compression ratio.
+OUT OF SCOPE: NEF decode (H-05), ICC (P-04).
+
+## P-04
+title: Output colour transform and export encoders
+milestone: M1
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-023
+deps: P-03
+needs: mac
+adr: no
+spec: specification sections 4.2 step 9 and 5
+desc: Convert the linear Rec.2020 working space to sRGB, Adobe RGB or ProPhoto with ICC embedded, and encode 16-bit TIFF and JPEG.
+ac:
+- Reference colour patches convert within ΔE2000 of 1 of known values
+- Output files contain the expected ICC profile (parsed back in a test)
+- JPEG quality changes file size monotonically
+- Builds on Windows; macOS confirmed by the human until CI covers it
+tech:
+FILES (crates/gtp-io): src/icc.rs, src/export/{tiff16.rs, jpeg.rs}.
+INTERFACES: `enum OutputSpace { Srgb, AdobeRgb, ProPhoto }`; `to_output(&ImageF32, OutputSpace) -> Result<Tiff16Output>` (lcms2); `encode_tiff16(img, space, path)`; `encode_jpeg(img, space, quality, path)`.
+ROUTES / MIGRATIONS: none.
+TESTS: known patch conversions, ICC parse-back, JPEG size monotonic.
+
+## P-05
+title: Film-base measurement and normalize
+milestone: M1
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-024
+deps: P-02
+adr: no
+spec: specification section 4.2 step 4
+desc: Measure the film base (manual sample or automatic from the unexposed border), combine bases per roll, and normalize the scan by it.
+ac:
+- On synthetic images the auto base is within 1 percent of ground truth per channel
+- Normalize maps the base to 1.0 and never yields NaN or infinity for zero input
+- `roll_base` ignores an outlier frame
+tech:
+FILES (crates/gtp-negative/src): lib.rs, film_base.rs, normalize.rs.
+INTERFACES: `sample_film_base(img: &ImageF32, region: Rect) -> [f32; 3]`; `auto_film_base(img) -> BaseEstimate { rgb, confidence }`; `roll_base(bases: &[[f32; 3]]) -> [f32; 3]`; `normalize(img: &mut ImageF32, base: [f32; 3])` (T = I / base, epsilon-guarded).
+ROUTES / MIGRATIONS: none.
+TESTS: against gtp-core `testing` fixtures: base accuracy, clipping, outlier handling.
+
+## P-06
+title: Inversion and auto levels
+milestone: M1
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-025
+deps: P-05
+adr: no
+spec: specification section 4.2 step 5; rules/colour-pipeline.md
+desc: Density-domain inversion with per-channel black and white points estimated from histogram percentiles.
+ac:
+- Synthetic round trip is within a documented per-channel tolerance
+- Output is monotonic in input density (property test)
+- Auto levels fills the Invert block and explicit recipe values override it
+tech:
+FILES: crates/gtp-negative/src/invert.rs.
+INTERFACES: `invert(img: &mut ImageF32, params: &Invert)` using D = -log10(T); `auto_levels(img: &ImageF32, lo_pct: f32, hi_pct: f32) -> Invert` (defaults 0.5 and 99.5).
+ROUTES / MIGRATIONS: none.
+TESTS: round-trip tolerance, monotonicity (proptest), override behaviour, no NaN/inf.
+
+## P-07
+title: Frame-area detection
+milestone: M1
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-026
+deps: P-05
+adr: no
+spec: specification section 4.2 (frame detection)
+desc: Detect the exposed frame rectangle from the base-normalized luminance with a confidence value.
+ac:
+- On synthetic frames the rectangle matches ground truth within 0.5 percent of each side
+- Blank or noisy input returns low confidence and the full frame
+- Works with rebate on four sides and on two sides
+tech:
+FILES: crates/gtp-negative/src/frame_detect.rs.
+INTERFACES: `detect_frame(img: &ImageF32) -> FrameDetection { rect: NormRect, confidence: f32 }` using edge profiles along each axis.
+ROUTES / MIGRATIONS: none.
+TESTS: ground-truth rectangles, low-confidence fallback, partial rebate.
+
+## P-08
+title: Colour and tone stages
+milestone: M1
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-027
+deps: P-06
+adr: no
+spec: specification sections 4.1 and 4.2 steps 6-7
+desc: Temperature/tint, saturation, exposure, contrast and curves as in-place stages in gtp-edit.
+ac:
+- The default recipe is the identity within 1e-6
+- +1 EV doubles linear values; contrast 0 is identity
+- Curves are monotone for monotone control points; invalid points are rejected or clamped
+- A 21 MP buffer is processed in place with no extra full-size allocation
+tech:
+FILES (crates/gtp-edit/src): lib.rs, color.rs, tone.rs, curve.rs.
+INTERFACES: `apply_color(&mut ImageF32, &Color)` (temperature/tint as per-channel gains, mapping documented; saturation luma-preserving in linear Rec.2020); `apply_tone(&mut ImageF32, &Tone)` (exposure EV, contrast about mid-grey, master + R/G/B curves); `Curve::new(&[(f32, f32)]) -> Result<Curve>` monotone spline with a 4096-entry LUT.
+ROUTES / MIGRATIONS: none.
+TESTS: identity, EV doubling, curve monotonicity, in-place check; criterion bench for apply_tone on 21 MP.
+
+## P-09
+title: Geometry stage
+milestone: M1
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-028
+deps: P-01
+adr: no
+spec: specification sections 4.1 and 4.2 step 8
+desc: Crop, rotate, flip and straighten with a single resample.
+ac:
+- Four rot90 steps are identity; flips are involutions; angle 0 is identity
+- Crop is clamped to bounds; degenerate crops return InvalidInput
+- Straightening resamples once (compared with a combined transform)
+tech:
+FILES: crates/gtp-edit/src/geometry.rs.
+INTERFACES: `apply_geometry(&ImageF32, &Geometry) -> Result<ImageF32>`; `output_size(w, h, &Geometry) -> (u32, u32)`; normalized crop, rot90, flips, arbitrary angle.
+ROUTES / MIGRATIONS: none.
+TESTS: unit and property tests listed in the acceptance criteria.
+
+## P-10
+title: Application layer gtp-app - pipeline, proxy and analyze
+milestone: M1
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-029
+deps: P-06, P-07, P-08, P-09
+adr: yes
+labels: adr
+spec: specification sections 3, 4.2, 6; ADR 0005; architecture sections 3.1 to 3.5
+desc: Create the gtp-app application-layer crate (ADR 0005) with the render pipeline in the fixed stage order, the proxy builder and analyze (crop, base, histogram, auto recipe).
+ac:
+- ADR 0005 accepted by the human; structure.md, crates/README.md and convention section 3 already match
+- End-to-end render of a synthetic negative equals the analytical expectation within tolerance
+- A test asserts the stage order
+- Proxy builder produces 2048 and 1600 px long-edge buffers with fast_image_resize
+- `analyze` returns crop, base, histogram and an auto recipe that renders without error; 1600 px render time recorded against the 100 ms budget
+tech:
+FILES: crates/gtp-app/{Cargo.toml, src/{lib.rs, context.rs}, src/pipeline/{mod.rs, stages.rs, proxy.rs, analyze.rs}}; update tools/scripts/check-deps edge table; benches in crates/gtp-app/benches.
+INTERFACES: `PipelineInput { rgb: Arc<ImageF32>, ir: Option<Arc<ImageF32>>, film_base: Option<[f32; 3]> }`; `enum RenderTarget { Preview { max_edge: u32 }, Full }`; `render(&PipelineInput, &Recipe, RenderTarget) -> Result<ImageF32>`; `analyze(&PipelineInput) -> Result<Analysis>`; `build_proxy(&ImageF32, max_edge) -> ImageF32`; `to_rgba8_srgb(&ImageF32)`. Stage order: IR dust hook (no-op for now), crop, normalize, invert, color, tone, geometry.
+ROUTES / MIGRATIONS: none.
+TESTS: analytical end-to-end, stage-order spy, proxy sizes, analyze, criterion bench.
+OUT OF SCOPE: services, Tauri, IR dust.
+
+## Q-01
+title: Golden-image harness and ΔE2000
+milestone: M1
+type: test
+size: M
+estimate: 1d
+legacy: GTP-030
+deps: P-10
+adr: no
+spec: specification section 8; convention section 7
+desc: Regression tests on whole-pipeline output with a perceptual metric and an explicit bless command.
+ac:
+- ΔE2000 matches published test pairs (a handful of the Sharma dataset)
+- A changed pipeline output fails the golden test; `bless` updates it with a reviewable diff
+- `cargo test --workspace` runs the goldens without network or private data
+tech:
+FILES: tools/benchmark/{Cargo.toml, src/{main.rs, delta_e.rs, diff.rs, golden.rs}} added to the Cargo workspace members; samples/public/golden/*.tif (Git LFS) from synthetic fixtures; samples/README.md and tools/README.md updated.
+INTERFACES: `delta_e2000(lab1, lab2) -> f32`; `ImageDiff { mean, p95, max }`; CLI `benchmark golden [--bless]`.
+ROUTES / MIGRATIONS: none.
+TESTS: published ΔE pairs, golden pass/fail, bless flow.
+
+## Q-02
+title: Benchmarks against reference renders
+milestone: M1
+type: test
+size: M
+estimate: 1d
+legacy: GTP-031
+deps: Q-01
+needs: data
+adr: no
+spec: specification sections 1, 8, 11
+desc: Measure quality against Nikon Scan 4 / Trichroma Lab renders and speed against the budgets.
+ac:
+- At least 10 reference pairs supplied by the human and listed in the manifest
+- The report command prints per-frame and summary ΔE2000 (median, p95)
+- Criterion benches (decode, 1600 px render, analyze, full-resolution render) run and results land in docs/research/benchmark.md
+tech:
+FILES: tools/benchmark/src/{reference.rs, report.rs}, tools/benchmark/benches/pipeline.rs; manifest `samples/*/reference/<set>/manifest.toml` with `[[frame]] id, source, kind, render`; docs/research/benchmark.md.
+CLI: `benchmark reference --set <dir>`, `benchmark report`.
+ROUTES / MIGRATIONS: none.
+TESTS: run on synthetic data in CI; on the real references manually.
+
+## Q-03
+title: Calibrate quality metric and budgets
+milestone: M1
+type: docs
+size: S
+estimate: 0.5d
+legacy: GTP-032
+deps: Q-02
+needs: data
+adr: no
+spec: specification sections 1, 11, 16
+desc: Turn the proposed quality thresholds and performance budgets into measured values and close milestone M1.
+ac:
+- Numbers computed on the human's reference set
+- Spec sections 1 and 11 updated with calibrated values approved by the human
+- The human confirms the M1 exit criteria are met
+tech:
+SCOPE: run the benchmark; propose final ΔE2000 thresholds (currently median 6 for auto and 3 after tweaks) and confirm the section 11 budgets on the reference machine. Do not tune the pipeline here; propose follow-up issues for misses.
+FILES: docs/specification.md sections 1 and 11, docs/research/benchmark.md.
+
+## L-01
+title: Job manager with progress, cancel and events
+milestone: M2
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-040
+deps: D-02, D-03, P-10
+adr: no
+spec: specification sections 3 and 6; architecture section 3.4
+desc: Long-running work runs as jobs with ids, progress events, cooperative cancel and a sink trait that src-tauri implements.
+ac:
+- Progress arrives in order; done or error is delivered exactly once
+- Cancel stops cooperatively and is harmless after the job finished
+- `job_cancel(JobId)` command and `job://progress|done|error` events work and ipc-types is regenerated
+tech:
+FILES: crates/gtp-app/src/jobs/{mod.rs, manager.rs, cancel.rs}; apps/desktop/src-tauri/src/sink.rs (`TauriJobSink`); commands/system.rs `job_cancel`.
+INTERFACES: `JobId(Ulid)`, `JobKind`, `JobCtx { progress(stage, fraction), is_cancelled() }`, `JobManager::spawn(kind, FnOnce(JobCtx) -> Result<JobResult>) -> JobId`, `JobManager::cancel(JobId)`, `trait JobSink: Send + Sync { progress, done, error }`.
+ROUTES: `job_cancel(JobId)`. EVENTS: `job://progress {id, stage, fraction}`, `job://done {id, result}`, `job://error {id, error}`.
+MIGRATIONS: none.
+TESTS: fake JobSink: ordering, cancel, single terminal event, cancel-after-finish.
+
+## L-02
+title: Catalog schema, migrations, backup and integrity
+milestone: M2
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-041
+deps: P-01
+adr: no
+spec: specification sections 5.2 and 5.3; architecture section 4.1
+desc: The SQLite catalog crate with repositories, forward-only migrations, pre-migration backup and integrity check.
+ac:
+- Migrations apply on an empty database on both OS and reopening is idempotent
+- A backup `library.db.bak-v<N>` is created before migrating
+- Cascade deletes work; tag names are unique case-insensitively
+- A newer schema returns LibraryTooNew
+tech:
+FILES: crates/gtp-catalog/{Cargo.toml, src/{lib.rs, db.rs, backup.rs, fts.rs}, src/repo/{roll,frame,source,recipe,tag,search,meta}.rs, migrations/{0001_init.sql, 0002_search.sql, 0003_export_log.sql}}.
+MIGRATIONS: 0001_init = roll, frame, source_file, recipe, tag (COLLATE NOCASE unique), frame_tag, meta, indexes idx_frame_roll and idx_frame_tag_tag, ON DELETE CASCADE (spec 5.2); 0002_search = `CREATE VIRTUAL TABLE search USING fts5(frame_id UNINDEXED, text)`; 0003_export_log = export_log table. Pragmas: WAL, foreign_keys=ON, synchronous=NORMAL. rusqlite (bundled) + rusqlite_migration.
+INTERFACES: `Catalog::open(path) -> Result<Catalog>`, `integrity_check()`, repositories per entity.
+ROUTES: none.
+TESTS: migrate from empty, idempotent reopen, backup created, cascade, NOCASE uniqueness, LibraryTooNew, FTS rows maintained in the same transaction.
+
+## L-03
+title: Library create/open, folder layout and settings
+milestone: M2
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-042
+deps: L-02
+adr: no
+spec: specification sections 5.1, 5.3, 5.4, 6, 10
+desc: The managed library folder (originals, thumbs, exports, library.db), safe path handling, app settings with feature flags, and the library and settings commands.
+ac:
+- `library_create` and `library_open` create and reopen the layout; a newer-version library opens read-only
+- Paths are canonicalized and must stay inside the library or a user-selected directory
+- `settings_get/settings_set` round-trip settings.json (last library, window size, flags with defaults from spec section 10)
+- Free space can be queried
+tech:
+FILES: crates/gtp-app/src/{library_fs.rs, paths.rs}; services/{library.rs, settings.rs}; context.rs holds the open Library; apps/desktop/src-tauri/src/commands/{library.rs, system.rs}.
+LAYOUT: `<Library>/{library.db, originals/<roll_id>/<frame_id>/, thumbs/<frame_id>.jpg, exports/}`.
+ROUTES: `library_create(path, name) -> LibraryInfo`, `library_open(path) -> LibraryInfo`, `library_info() -> LibraryInfo`, `settings_get() -> Settings`, `settings_set(SettingsPatch)`.
+MIGRATIONS: none new.
+VALIDATION: names trimmed and at most 200 chars; paths canonicalized.
+TESTS: temp library create/reopen, read-only on newer schema, path escape attempts rejected, settings defaults and round trip.
+
+## L-04
+title: Roll and frame commands
+milestone: M2
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-043
+deps: L-03
+adr: no
+spec: specification sections 4, 5.3, 6
+desc: CRUD for rolls and frames over the catalog through gtp-app services and thin Tauri commands.
+ac:
+- All roll and frame commands work with typed errors and regenerated ipc-types
+- Deleting frames or rolls removes files only after the DB transaction commits and leaves files if the transaction fails
+- Names are validated (trimmed, at most 200 chars) and ids parsed
+tech:
+FILES: crates/gtp-app/src/services/roll_frame.rs; apps/desktop/src-tauri/src/commands/{roll.rs, frame.rs}.
+ROUTES: `roll_create(RollInput) -> Roll`, `roll_update(RollId, RollPatch) -> Roll`, `roll_list() -> Roll[]`, `roll_delete(RollId)`, `roll_set_film_base(RollId, [f32;3]) -> Roll`, `frame_list(FrameQuery { roll_id?, page, page_size }) -> Page<FrameSummary>`, `frame_get(FrameId) -> Frame`, `frame_delete(FrameId[])`, `frame_set_note(FrameId, String)`.
+MIGRATIONS: none.
+TESTS: services against a temp library, injected transaction failure keeps files, command-layer error mapping.
+
+## L-05
+title: TIFF import job with hashing and thumbnails
+milestone: M2
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-044
+deps: L-01, P-03, L-03
+adr: no
+spec: specification sections 5.1, 6, 11
+desc: Import existing 16-bit TIFF scans (with optional IR plane) as frames: copy, compress, hash, thumbnail and commit per frame.
+ac:
+- Importing 5 synthetic TIFFs produces files, rows, thumbnails and matching hashes
+- Cancel mid-import keeps finished frames only; no frame is committed without its files
+- Corrupt and oversized files are skipped with a typed reason
+- Per-frame import time is recorded against the 8 s budget
+tech:
+FILES: crates/gtp-ingest/src/files.rs (`scan_tiff_candidates(paths) -> Vec<TiffCandidate>`, IR pair by `*_ir.tif` convention); crates/gtp-app/src/services/import.rs; apps/desktop/src-tauri/src/commands/ingest.rs.
+ROUTES: `import_files(paths: String[], roll_id, kind: ImportKind) -> JobId`; `enum ImportKind { TiffScan, RgbTriplet }` (RgbTriplet reserved for H-06); `ImportResult { imported: u32, skipped: Vec<SkipReason> }`.
+FLOW per frame: write originals (Deflate+predictor), sha256 verify, mark read-only, 512 px JPEG thumbnail, one catalog transaction (frame, source_file rows, default recipe, search text), emit `library://changed`.
+MIGRATIONS: none.
+TESTS: end-to-end import, cancel, corrupt/oversize, timing.
+
+## L-10
+title: Roll film base estimated on first ingested frame
+milestone: M2
+type: feature
+size: S
+estimate: 0.5d
+legacy: new
+deps: P-05, L-04, L-05
+adr: no
+spec: specification section 4.2 (Film base)
+desc: Audit gap. After the first frame of a roll is ingested (import, scan or capture), auto-estimate the film base and store it on the roll so later frames share it; a frame may override it.
+ac:
+- The first ingested frame sets the roll film base when none exists; later frames never overwrite it silently
+- The service exposes one function used by the import, scan and capture services
+- A roll with manual base is left untouched
+tech:
+FILES: crates/gtp-app/src/services/roll_frame.rs (`ensure_roll_base(roll_id, &ImageF32) -> Result<Option<[f32;3]>>`); calls `gtp_negative::auto_film_base` and `roll_set_film_base`.
+ROUTES: none new. MIGRATIONS: none.
+TESTS: first-frame set, second-frame no overwrite, manual base preserved, low-confidence estimate stored with a warning flag.
+
+## L-06
+title: Tags and full-text search
+milestone: M2
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-045
+deps: L-04
+adr: no
+spec: specification sections 5.2, 6, 11
+desc: Tag management and tag/full-text search over the FTS5 table, kept consistent in the same transaction as parent changes.
+ac:
+- apply, remove, rename and delete keep the FTS row correct
+- tags_all uses AND semantics; special characters in text queries are safe
+- Search over 50,000 synthetic frames takes at most 100 ms
+tech:
+FILES: crates/gtp-catalog/src/repo/{tag.rs, search.rs}, src/fts.rs; crates/gtp-app/src/services/tags_search.rs; src-tauri/src/commands/{tags.rs, search.rs}.
+ROUTES: `tag_list() -> Tag[]`, `tag_apply(frame_ids, add: String[], remove: String[])`, `tag_rename(TagId, String)`, `tag_delete(TagId)`, `search(SearchQuery { text?, tags_all[], roll_id?, date_from?, date_to?, film_stock? }, page) -> Page<FrameSummary>`.
+VALIDATION: tags trimmed, lower-cased, at most 64 chars, no control characters, deduplicated; FTS query escaped.
+MIGRATIONS: none new.
+TESTS: FTS consistency, AND semantics, special characters, 50k-frame benchmark, reads during writes (WAL).
+
+## L-07
+title: Library verify job
+milestone: M2
+type: feature
+size: S
+estimate: 0.5d
+legacy: GTP-047
+deps: L-05
+adr: no
+spec: specification section 5.3
+desc: Re-hash all originals and list missing or corrupt files.
+ac:
+- Detects a tampered and a deleted original
+- Runs as a cancellable job with progress
+- Result lists affected frames with reasons
+tech:
+FILES: crates/gtp-app/src/services/library.rs (`verify()`); src-tauri/src/commands/library.rs.
+ROUTES: `library_verify() -> JobId`.
+MIGRATIONS: none.
+TESTS: tamper/delete detection, cancel.
+
+## U-01
+title: Library view
+milestone: M2
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-046
+deps: L-04, L-05, L-06
+adr: no
+spec: specification sections 7, 11, 13
+desc: Roll sidebar, virtualized thumbnail grid, search bar with tag chips, batch tagging and the first-run library dialog.
+ac:
+- Roll create/rename/delete with confirmation; first-run dialog shows free space and location
+- Grid renders only visible rows and scrolls a 5,000-frame fixture smoothly (measured fps reported)
+- Multi-select (click, shift, ctrl/cmd), `[` `]` and arrow navigation, batch tag add/remove
+- vitest-axe clean; all text via t()
+tech:
+FILES: apps/desktop/src/features/library/{LibraryView.tsx, RollSidebar.tsx, FrameGrid.tsx (@tanstack/react-virtual), SearchBar.tsx, use-library.ts, library.module.css}; packages/ui/src/{TagChips.tsx, StatusBadge.tsx, ProgressList.tsx}; strings in shared/i18n/en.json.
+ROUTES used: library_*, roll_*, frame_list, tag_*, search; listens to `library://changed` and `job://*`.
+MIGRATIONS: none.
+TESTS: sidebar, grid selection, search bar, tag chips, virtualization row count, keyboard navigation, axe.
+
+## P-11
+title: Develop service - open, analyze and render
+milestone: M3
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-050
+deps: P-10, L-04, L-05
+adr: no
+spec: specification sections 3, 6, 11; architecture section 3.5
+desc: Backend for interactive editing: load a frame, build and cache the proxy, analyze, and render previews over binary IPC with stale-request dropping.
+ac:
+- `develop_open` loads the original and caches a 2048 px proxy in an LRU of 4
+- `develop_render` returns RGBA8 sRGB bytes with a header and drops superseded requests as Cancelled
+- 1600 px render time recorded against the 100 ms budget; recipe clamped server-side
+- No pixel data in logs; ipc-types regenerated
+tech:
+FILES: crates/gtp-app/src/services/develop.rs; apps/desktop/src-tauri/src/commands/develop.rs.
+ROUTES: `develop_open(FrameId) -> DevelopInfo { width, height, has_ir, recipe, roll_base }`, `develop_analyze(FrameId) -> Analysis`, `develop_render(FrameId, Recipe, max_edge: u32, seq: u64) -> binary` (16-byte header: seq u64, width u32, height u32; then RGBA8) via `tauri::ipc::Response`.
+VALIDATION: max_edge in [256, 4096].
+MIGRATIONS: none.
+TESTS: open/render on synthetic frames, header layout, LRU eviction at the 5th frame, superseded render, clamping, timing.
+
+## L-08
+title: Recipe save and apply to frames
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+legacy: GTP-055
+deps: P-11
+adr: no
+spec: specification sections 4.1 and 6
+desc: Persist recipes and copy selected recipe fields to other frames or a whole roll.
+ac:
+- `recipe_save` writes the recipe row and edited_at; reload returns the same recipe
+- `recipe_apply_to` copies only the selected fields
+- Invalid recipes are clamped before storing
+tech:
+FILES: crates/gtp-app/src/services/develop.rs (`save_recipe`, `apply_to`); src-tauri/src/commands/develop.rs.
+ROUTES: `recipe_save(FrameId, Recipe)`, `recipe_apply_to(FrameId[], source: FrameId, fields: RecipeField[])`; `enum RecipeField { Geometry, Base, Invert, Color, Tone, Dust, Output }`.
+MIGRATIONS: none (recipe table exists).
+TESTS: round trip, selected-field copy, clamping.
+
+## L-09
+title: Regenerate thumbnail when a recipe changes
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+legacy: new
+deps: L-08, L-05
+adr: no
+spec: specification section 5.1 (thumbnails are a rebuildable cache)
+desc: Audit gap. Thumbnails must reflect the saved recipe; regenerate the 512 px thumbnail in the background after recipe_save and for applied frames.
+ac:
+- After recipe_save the thumbnail file is replaced and `library://changed` is emitted
+- Regeneration is debounced and never blocks recipe_save
+- A missing thumbnail is rebuilt on demand
+tech:
+FILES: crates/gtp-app/src/services/develop.rs (thumbnail task using `pipeline::render` Preview at 512 px and `gtp-io` JPEG encode).
+ROUTES / MIGRATIONS: none.
+TESTS: thumbnail changes after recipe change (pixel difference), debounce, rebuild-if-missing.
+
+## U-02
+title: Develop canvas, histogram and before/after
+milestone: M3
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-051
+deps: P-11
+adr: no
+spec: specification sections 3, 7, 13
+desc: The Develop view shell: canvas fed by binary IPC with pan/zoom, filmstrip, histogram and a before/after toggle.
+ac:
+- The canvas draws develop_render output; drag requests 1600 px and release requests 2048 px
+- Stale results are dropped by sequence number
+- `\` toggles before/after; `[` `]` move through the filmstrip
+- vitest-axe clean; all text via t()
+tech:
+FILES: apps/desktop/src/features/develop/{DevelopView.tsx, Canvas.tsx, Filmstrip.tsx, use-develop.ts, develop.module.css}; packages/ui/src/Histogram.tsx.
+ROUTES used: develop_open, develop_analyze, develop_render.
+MIGRATIONS: none.
+TESTS: use-develop (debounce, seq drop, drag vs release sizes with mocked ipc), canvas and histogram component tests, axe.
+
+## U-03
+title: Base and Invert panel with film-base picker
+milestone: M3
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-052
+deps: U-02, L-08
+adr: no
+spec: specification section 4.2 (Film base, Invert)
+desc: Panel for the film base (roll default, click-to-sample on the rebate) and inversion levels, with recipe autosave.
+ac:
+- Clicking the rebate sets a manual base for the frame; the roll default can be set from a frame
+- Auto levels can be re-run; manual black/white values override
+- Changes autosave through recipe_save (debounced 500 ms)
+tech:
+FILES: apps/desktop/src/features/develop/panels/BaseInvertPanel.tsx; packages/ui/src/Slider.tsx (Radix).
+ROUTES used: develop_analyze, roll_set_film_base, recipe_save.
+MIGRATIONS: none.
+TESTS: panel behaviour with mocked ipc, autosave debounce, axe.
+
+## U-04
+title: Colour and Tone panels with curve editor
+milestone: M3
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-053
+deps: U-02, L-08
+adr: no
+spec: specification sections 4.1 and 13
+desc: Temperature, tint, saturation, exposure, contrast and an accessible curve editor.
+ac:
+- Sliders and curve points update the preview live and autosave
+- The curve editor is fully keyboard operable (arrow keys move points)
+- vitest-axe clean
+tech:
+FILES: apps/desktop/src/features/develop/panels/{ColorPanel.tsx, TonePanel.tsx}; packages/ui/src/CurveEditor.tsx.
+ROUTES used: develop_render, recipe_save.
+MIGRATIONS: none.
+TESTS: panels with mocked ipc, CurveEditor keyboard test, axe.
+
+## U-05
+title: Crop and geometry UI
+milestone: M3
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-054
+deps: U-02, L-08
+adr: no
+spec: specification section 4.2 (Frame detection)
+desc: Crop overlay with the auto-detected rectangle and a low-confidence hint, plus rotate, flip and straighten.
+ac:
+- The overlay shows the auto-detected crop; low confidence shows a hint and the full frame
+- Rotate 90, flips and straighten angle work and autosave
+- Keyboard nudging of the crop works; axe clean
+tech:
+FILES: apps/desktop/src/features/develop/panels/GeometryPanel.tsx and a crop overlay inside Canvas.tsx.
+ROUTES used: develop_analyze, develop_render, recipe_save.
+MIGRATIONS: none.
+TESTS: overlay math, hint on low confidence (mocked analysis), keyboard nudging.
+
+## U-06
+title: Apply settings to frames or roll
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+legacy: GTP-055 (UI part)
+deps: L-08, U-01
+adr: no
+spec: specification section 6
+desc: UI to copy selected recipe fields from the current frame to selected frames or the whole roll.
+ac:
+- A menu offers field groups (Geometry, Base, Invert, Color, Tone, Dust) and a target (selection or roll) with confirmation
+- Applying updates the grid thumbnails via library://changed
+- axe clean
+tech:
+FILES: apps/desktop/src/features/develop/ApplySettingsMenu.tsx; hook in use-library.ts for the selection.
+ROUTES used: recipe_apply_to.
+TESTS: menu with mocked ipc, confirmation, axe.
+
+## P-12
+title: Export job - TIFF16 and JPEG with ICC
+milestone: M3
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-056
+deps: P-04, L-01, P-11
+adr: no
+spec: specification sections 6 and 11
+desc: Export edited frames at full resolution with a naming template, colour space and embedded ICC, cancel-safe.
+ac:
+- Exports TIFF16 and JPEG with the right ICC for sRGB, Adobe RGB and ProPhoto
+- Cancel leaves no partial files (temp file then rename); each export is logged in export_log
+- One 21 MP full export meets the 10 s budget on the reference machine (numbers reported)
+tech:
+FILES: crates/gtp-app/src/services/export.rs; apps/desktop/src-tauri/src/commands/export.rs.
+ROUTES: `export_start(FrameId[], ExportOptions { format: Tiff16 | Jpeg, space: OutputSpace, quality, dest_dir, template }) -> JobId`.
+VALIDATION: dest_dir from the OS dialog and canonicalized; template sanitized (`{roll}_{index:03}.{ext}`, no path separators); overwrite needs confirmation.
+MIGRATIONS: none (export_log exists in 0003).
+TESTS: synthetic export, ICC parse-back, cancel cleanup, timing.
+
+## U-11
+title: Export dialog
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+legacy: GTP-056 (UI part)
+deps: P-12, U-01
+adr: no
+spec: specification sections 6 and 7
+desc: Export dialog reachable from the Library and Develop views.
+ac:
+- Choose format, colour space, quality, destination folder (OS dialog) and naming template
+- Shows job progress and a result summary; cancel works
+- axe clean; strings via t()
+tech:
+FILES: apps/desktop/src/features/library/ExportDialog.tsx; wiring in Library and Develop views.
+ROUTES used: export_start, job_cancel.
+TESTS: dialog flow with mocked ipc, validation messages, axe.
+
+## U-07
+title: Settings view and feature flags
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+legacy: GTP-057
+deps: L-03
+adr: no
+spec: specification sections 5.4 and 10
+desc: Settings screen for library location, free space, feature flags and the update-check toggle.
+ac:
+- Flags listed with their defaults from spec section 10 and persisted
+- Library path and free space shown
+- axe clean; strings via t()
+tech:
+FILES: apps/desktop/src/features/settings/{SettingsView.tsx, FlagsList.tsx}.
+ROUTES used: settings_get, settings_set, library_info.
+TESTS: flags toggle persistence with mocked ipc, axe.
+
+## H-01
+title: ScannerSource port and FixtureSource
+milestone: M4
+type: feature
+size: S
+estimate: 0.5d
+legacy: GTP-060
+deps: L-05
+adr: no
+spec: specification section 6 (Scanner abstraction)
+desc: The scanner port with validated parameters and a fixture adapter that replays TIFFs so scan jobs are testable without hardware.
+ac:
+- `ScanParams` validation rejects frames outside 1..=40, unsupported dpi and invalid sample counts
+- FixtureSource replays TIFFs from samples/ through the same trait
+- `GTP_FAKE_HW=1` selects fixture adapters at app start
+tech:
+FILES: crates/gtp-ingest/src/{scanner.rs, fixture.rs}.
+INTERFACES: `trait ScannerSource { fn list_devices(&self) -> Result<Vec<DeviceInfo>>; fn scan(&self, p: &ScanParams, on_frame: &mut dyn FnMut(u32, RawScan) -> Result<()>, progress: &dyn Fn(f32), cancel: &CancelToken) -> Result<()>; }`; `ScanParams { device_id, frames: RangeInclusive<u32>, dpi: u32 (default 4000), samples: u8 (1|2|4|8|16), ir: bool, autofocus: bool }`; `RawScan { rgb16, ir16: Option<_>, dpi, meta }`.
+ROUTES / MIGRATIONS: none.
+TESTS: parameter validation, fixture replay order, cancel.
+
+## H-02
+title: NkscanSource adapter
+milestone: M4
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-061
+deps: H-01, R-01
+needs: hw
+adr: no
+spec: specification section 6; ADR 0003; docs/research/nkscan.md
+desc: Implement ScannerSource on top of nkscan according to the outcome of spike R-01 (crate vs CLI, SA-30 support, fallback).
+ac:
+- The proposal states how R-01 shapes the design; if R-01 is not Done the work stops
+- Compiles on Windows and macOS; nkscan pinned to an exact version
+- A 3-frame roll scan with IR works on each OS (human reports; results recorded in the research note)
+tech:
+FILES: crates/gtp-ingest/src/nkscan.rs; Cargo.toml pin; docs/research/nkscan.md updated.
+INTERFACES: `NkscanSource: ScannerSource`; maps ScanParams to nkscan options (`--ir`, `--samples`, device selection); errors mapped to ScannerUnavailable / ScanFailed.
+ROUTES / MIGRATIONS: none.
+TESTS: parameter mapping unit tests; compile checks; hardware checklist for the human.
+
+## H-03
+title: Roll-scan job - per-frame commit, cancel and resume
+milestone: M4
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-062
+deps: H-02, L-01, L-05, L-10
+adr: no
+spec: specification sections 6 and 11
+desc: Scan 1 to 40 frames into the library, committing each frame as it finishes, with cancel and resume.
+ac:
+- Each finished frame is stored (originals, hash, thumbnail, catalog row) immediately
+- Cancel or an error on frame k keeps frames 1..k-1; resume starts at the next frame number
+- The roll film base is set from the first scanned frame (L-10)
+- `scanner_list` and `scan_start` commands work with FixtureSource in tests
+tech:
+FILES: crates/gtp-app/src/services/scan.rs; apps/desktop/src-tauri/src/commands/ingest.rs.
+ROUTES: `scanner_list() -> DeviceInfo[]`, `scan_start(ScanParams, RollId) -> JobId`.
+MIGRATIONS: none.
+TESTS: FixtureSource drives the whole job; per-frame commit, cancel, resume, error on frame k, validation.
+
+## P-13
+title: IR dust removal stage
+milestone: M4
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-063
+deps: P-10
+adr: no
+spec: specification section 4.2 step 2; rules/colour-pipeline.md
+desc: Remove dust using the IR plane before inversion and plug it into the pipeline.
+ac:
+- Synthetic dust spots are removed (masked pixels filled within tolerance, others unchanged)
+- Threshold and grow are monotonic; no IR plane means the stage is skipped
+- The stage is disabled by flag `dust_removal` or `dust.enabled = false`
+tech:
+FILES: crates/gtp-edit/src/dust.rs; crates/gtp-app/src/pipeline/stages.rs (IR stage before crop).
+INTERFACES: `remove_dust(rgb: &mut ImageF32, ir: &ImageF32, d: &Dust) -> DustReport { masked_px }` (normalize IR, threshold, dilate by grow_px, iterative neighbour-weighted fill).
+ROUTES / MIGRATIONS: none.
+TESTS: synthetic dust, monotonicity, skip without IR, flag off; hardware check on a real IR scan by the human.
+
+## U-12
+title: Dust panel
+milestone: M4
+type: feature
+size: S
+estimate: 0.5d
+legacy: GTP-064 (part)
+deps: P-13, U-02
+needs: hw
+adr: no
+spec: specification section 4.1 (dust)
+desc: Develop-panel controls for dust removal (enable, threshold, grow) shown only when the frame has an IR plane.
+ac:
+- Controls appear only for frames with IR and update the preview
+- Visible dust removal on a real scan confirmed by the human
+- axe clean
+tech:
+FILES: apps/desktop/src/features/develop/panels/DustPanel.tsx.
+ROUTES used: develop_render, recipe_save.
+TESTS: panel visibility by has_ir, controls with mocked ipc, axe.
+
+## U-08
+title: Scanner import UI
+milestone: M4
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-064
+deps: H-03, U-01
+adr: no
+spec: specification section 7
+desc: Scanner section of the Import view: device, frame range, dpi, samples, IR, per-frame progress, cancel and resume.
+ac:
+- Shows the device list and scan settings with validation
+- Per-frame progress list updates from job events; cancel and resume from next frame work
+- axe clean; strings via t()
+tech:
+FILES: apps/desktop/src/features/import/{ImportView.tsx, ScannerSection.tsx}.
+ROUTES used: scanner_list, scan_start, job_cancel.
+TESTS: mocked ipc for progress, cancel, resume, validation messages, axe.
+
+## H-04
+title: Triplet grouping
+milestone: M5
+type: feature
+size: S
+estimate: 0.5d
+legacy: GTP-070
+deps: L-05
+adr: no
+spec: specification section 6 (triplet_group)
+desc: Group NEF files into R/G/B triplets by capture order and EXIF, with user reordering.
+ac:
+- Files group into triples by capture time in R, G, B order; missing or extra shots are flagged
+- Reordering changes channel assignment
+- `triplet_group` command returns candidates
+tech:
+FILES: crates/gtp-ingest/src/triplet.rs (`group_triplets(files: &[ExifFile]) -> Vec<TripletCandidate>`); src-tauri/src/commands/ingest.rs.
+ROUTES: `triplet_group(paths: String[]) -> TripletCandidate[]`.
+MIGRATIONS: none.
+TESTS: grouping by time, missing/extra shot, reorder.
+
+## H-05
+title: NEF decode and RGB channel merge
+milestone: M5
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-071
+deps: R-05, P-03
+needs: data
+adr: no
+spec: specification section 4.2 step 1; docs/research/nef-decode.md
+desc: Decode D600 NEFs to linear data, demosaic, and merge R from the red-lit, G from the green-lit and B from the blue-lit exposure.
+ac:
+- Synthetic Bayer data demosaics and merges exactly on constructed inputs (decoder behind a trait for tests)
+- EXIF mismatch and clipping produce warnings
+- A real D600 triplet converts to a plausible positive (human confirms); merge time recorded against the 10 s budget
+tech:
+FILES: crates/gtp-io/src/raw/{nef.rs, demosaic.rs}; crates/gtp-ingest/src/triplet.rs (`merge_triplet(r, g, b) -> Result<ImageF32>`, `check_exif(&[ExifInfo; 3]) -> Vec<Warning>`, `check_clipping`).
+INTERFACES: `decode_nef(path, &Limits) -> RawLinear { w, h, cfa, black, data }` (linear, no white balance, no tone curve; decoder per R-05); `demosaic_bilinear(&RawLinear) -> ImageF32`.
+ROUTES / MIGRATIONS: none.
+TESTS: synthetic Bayer demosaic and channel pick, warnings, timing on real files.
+
+## H-06
+title: Triplet import job
+milestone: M5
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-072
+deps: H-04, H-05, L-01, L-05, L-10
+adr: no
+spec: specification sections 5.1 and 6
+desc: Import confirmed triplets as RgbTriplet frames with three single-channel 16-bit originals.
+ac:
+- Stores r.tif, g.tif, b.tif as originals with SourceFile roles R, G, B and FrameKind RgbTriplet
+- Merged proxy is built on develop_open; roll base is set from the first frame (L-10)
+- Cancel keeps finished frames; warnings are reported in the job result
+tech:
+FILES: crates/gtp-app/src/services/import.rs (ImportKind::RgbTriplet path); src-tauri import_files with kind RgbTriplet.
+ROUTES: `import_files(paths, roll_id, ImportKind::RgbTriplet) -> JobId`.
+MIGRATIONS: none.
+TESTS: end-to-end with synthetic NEF-like fixtures, cancel, warnings.
+
+## U-09
+title: Triplet files import UI
+milestone: M5
+type: feature
+size: S
+estimate: 0.5d
+legacy: GTP-072 (UI part)
+deps: H-06, U-01
+adr: no
+spec: specification section 7
+desc: Files section of the Import view with grouping preview, reorder and confirm.
+ac:
+- Shows candidate triplets, flags missing/extra shots, lets the user reorder and confirm
+- Starts the import job and shows progress
+- axe clean; strings via t()
+tech:
+FILES: apps/desktop/src/features/import/FilesSection.tsx.
+ROUTES used: triplet_group, import_files, job_cancel.
+TESTS: grouping preview, reorder, confirm with mocked ipc, axe.
+
+## H-07
+title: Scanlight V4 serial driver and FakeLight
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-080
+deps: R-02
+adr: no
+spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md
+desc: Binary protocol driver for the Scanlight V4 over USB CDC serial, with a recording fake for tests.
+ac:
+- Packet encode/decode is byte-exact against the vectors recorded in R-02
+- Decoder never panics on truncated or garbage input; unknown headers dropped; lengths checked
+- SET_COLOR always sends save flag 0; there is no SET_TRIM; levels clamped 0..=255
+- Port probing with GET_FW_VERSION accepts firmware IDs 1 and 2 and warns otherwise
+tech:
+FILES (crates/gtp-capture/src): light.rs (trait LightSource, LightInfo, LightStatus), scanlight/{mod.rs, protocol.rs, port.rs}, fakes.rs (FakeLight).
+INTERFACES: `trait LightSource { fn connect(&mut self, port: Option<&str>) -> Result<LightInfo>; fn set_levels(&mut self, rgb: [u8; 3]) -> Result<()>; fn shutter_pulse(&mut self, tens_of_ms: u8) -> Result<()>; fn status(&self) -> LightStatus; }`. Packets `0xFE`, header, length, data: SET_COLOR (0), GET_FW_VERSION (2), SHUTTER_PULSE (3), SET_FOCUS (7); device packets LED_TEMP (1), VBUS (2), FW_VERSION (3). `serialport` crate; background reader updates status.
+ROUTES / MIGRATIONS: none.
+TESTS: byte-exact vectors, garbage input robustness, save flag never 1, FakeLight records commands. check-deps: gtp-capture depends on gtp-core only.
+
+## H-08
+title: Capture orchestrator, CameraSource, FakeCamera and safety
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-081
+deps: H-07, L-01, H-06
+adr: no
+spec: specification section 6.1; ADR 0004
+desc: The per-frame R, G, B sequence with camera port, fake camera and the hardware-safety rules.
+ac:
+- Sequence order is R, G, B with the configured settle delay; light is off after success, cancel, error, timeout and panic
+- Temperature above temp_abort_c aborts the sequence; above temp_warn_c emits a warning
+- EXIF mismatch and clipping warnings are produced; a triplet frame is stored via the merge path
+- Fakes allow the whole job to run in tests
+tech:
+FILES: crates/gtp-capture/src/{camera.rs, sequence.rs, profile.rs, fakes.rs (FakeCamera)}; crates/gtp-app/src/services/capture.rs.
+INTERFACES: `trait CameraSource { fn arm(&mut self) -> Result<()>; fn trigger(&mut self, light: &mut dyn LightSource) -> Result<()>; fn wait_for_image(&mut self, timeout: Duration) -> Result<CapturedFile>; }`; `CaptureProfile { levels, settle_ms: 200, pulse_10ms: 10, temp_warn_c: 60, temp_abort_c: 75, focus_signal: false, camera_backend, watch_folder }`; sequence per frame: set_levels(one channel) -> settle -> arm -> trigger -> wait_for_image (15 s) -> step event; Drop guard turns the light off.
+ROUTES / MIGRATIONS: none (commands in D-04).
+TESTS: order, light-off on every exit, temperature abort, warnings, timeouts.
+
+## H-09
+title: GphotoCamera backend (macOS)
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-082
+deps: H-08, R-03
+needs: hw, mac
+adr: no
+spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md
+desc: libgphoto2 camera backend for macOS behind Cargo feature `tether`, per the outcome of spike R-03.
+ac:
+- If R-03 concluded no-go, this issue is closed as Dropped and the WatchedFolder backend serves macOS
+- With the feature on, a full R, G, B triplet is captured and downloaded by the app (human reports)
+- A clear error with the documented workaround is shown when macOS holds the USB device
+- The feature builds on macOS in CI and is off for Windows builds
+tech:
+FILES: crates/gtp-capture/src/gphoto.rs (feature `tether`); apps/desktop/src-tauri/Cargo.toml (feature on for macOS targets only); macOS bundle config for libgphoto2 libraries and env paths per R-03.
+INTERFACES: `GphotoCamera: CameraSource`; trigger = PTP capture (ignores the light arg); wait_for_image downloads the NEF to a temp file.
+ROUTES / MIGRATIONS: none.
+TESTS: trait conformance shared with FakeCamera; compile with and without the feature; hardware checklist.
+
+## H-10
+title: WatchedFolder backend
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-083
+deps: H-08, R-04
+needs: hw
+adr: no
+spec: specification section 6.1
+desc: Camera backend that fires the shutter through the Scanlight pulse and waits for NEFs written to a user-selected folder (digiCamControl on Windows).
+ac:
+- trigger sends SHUTTER_PULSE (and SET_FOCUS when the profile enables it); wait_for_image returns the first new .nef whose size is stable for 500 ms
+- Partial or temp files are ignored; timeout returns a clear error
+- A triplet via pulse + digiCamControl works on Windows (human reports)
+tech:
+FILES: crates/gtp-capture/src/watched.rs (`WatchedFolder { dir }`, `notify` crate).
+VALIDATION: watch dir canonicalized and user-selected; files validated like any import.
+ROUTES / MIGRATIONS: none.
+TESTS: temp dir with slow writes, temp-then-rename, partial files, timeout; trait conformance shared with FakeCamera.
+
+## D-04
+title: Capture commands, profile persistence and light safety hooks
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-084
+deps: H-08, L-03
+adr: no
+spec: specification sections 6 and 6.1
+desc: Expose capture to the UI: light and camera commands, test shot, profile persistence, events, and light-off on app exit.
+ac:
+- All capture commands work against fakes (`GTP_FAKE_HW=1`) with regenerated ipc-types
+- The light is switched off on app exit, window close and view unmount
+- Test shot returns histogram and clipped percentage; `capture://step` and `light://status` events are emitted
+- Profile is validated (levels 0..=255, warn < abort) and persisted in settings.json
+tech:
+FILES: apps/desktop/src-tauri/src/commands/capture.rs; exit hook in lib.rs; events `capture://step {channel, state: lit|fired|received}`, `light://status {temp_c, vbus_mv}`.
+ROUTES: `light_list() -> PortInfo[]`, `light_connect(port?) -> LightInfo`, `light_set([u8;3])`, `light_off()`, `camera_list() -> CameraInfo[]`, `capture_profile_get() -> CaptureProfile`, `capture_profile_set(patch)`, `capture_test(Channel) -> TestShot { histogram, clipped_pct }`, `capture_triplet(RollId) -> JobId`.
+MIGRATIONS: none.
+TESTS: command layer with fakes, exit hook turns the light off, validation.
+
+## U-10
+title: Capture view
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-085
+deps: D-04, U-09
+needs: hw
+adr: no
+spec: specification sections 6.1, 7, 11, 13
+desc: Capture section of the Import view: connection status, per-colour level sliders, test shot with histogram, Next frame button, result and counter.
+ac:
+- Status badges for light and camera; sliders per colour; test shot with histogram
+- Large Next frame button (Space) runs capture_triplet and shows the merged result and a roll frame counter
+- Warning banners for temperature, EXIF mismatch and clipping; the light turns off when the view closes
+- Capture per frame (excluding exposure) is at most 15 s on the author's rig (human reports); axe clean
+tech:
+FILES: apps/desktop/src/features/import/CaptureSection.tsx and features/import/capture/{StatusBar.tsx, LevelSliders.tsx, TestShot.tsx, NextFrameButton.tsx}.
+ROUTES used: light_*, camera_list, capture_*, job_cancel.
+TESTS: components with mocked ipc (status, test shot, next frame, errors), unmount turns light off, axe, strings via t().
+OUT OF SCOPE: live view, camera exposure control, automatic film advance.
+
+## T-05
+title: Packaging - NSIS and dmg installers
+milestone: M7
+type: chore
+size: M
+estimate: 1d
+legacy: GTP-090
+deps: T-04
+needs: human
+adr: no
+spec: specification sections 9 and 15
+desc: Build Windows x64 NSIS and macOS arm64 dmg installers (ad-hoc signed) and document the unsigned install steps.
+ac:
+- Installers install and launch on clean Windows and macOS (human reports)
+- macOS bundle uses `signingIdentity: "-"`; the `tether` feature is on for macOS and off for Windows
+- Installer size at most 40 MB; docs/install.md lists SmartScreen and Gatekeeper steps
+tech:
+FILES: apps/desktop/src-tauri/tauri.conf.json bundle settings; docs/install.md.
+ROUTES / MIGRATIONS: none.
+TESTS: bundle build in CI; manual install checks.
+
+## T-06
+title: Updater and release pipeline
+milestone: M7
+type: chore
+size: M
+estimate: 1d
+legacy: GTP-091
+deps: T-05
+needs: human
+adr: no
+spec: specification sections 9 and 15
+desc: Tauri updater with a signed manifest and a tag-triggered draft-release workflow.
+ac:
+- The workflow on a v*.*.* tag runs gates, builds on windows-latest and macos-14 and creates a DRAFT release with installers and signed latest.json
+- The updater finds a newer prerelease, verifies the signature and prompts (never installs silently); a tampered manifest is rejected
+- A setting disables the update check
+- The human created the updater key pair and stored the private key in GitHub secrets
+tech:
+FILES: .github/workflows/release.yml; tauri.conf.json updater endpoint and public key; settings flag `update_check`.
+ROUTES / MIGRATIONS: none.
+TESTS: dry run on a pre-release tag; updater signature tests; verify behaviour on unsigned macOS builds and document it.
+
+## D-05
+title: Diagnostics export and local counters
+milestone: M7
+type: feature
+size: M
+estimate: 1d
+legacy: GTP-092
+deps: D-03, L-03, P-12
+adr: no
+spec: specification sections 12 and 14
+desc: Zip of logs and system info for support, plus local-only activation counters.
+ac:
+- diagnostics_export zips logs, versions, schema version, flags, counters and last job errors; no images and no full paths at info level
+- Counters first_import_at, first_convert_at, first_export_at, frames_imported, frames_exported, scans_failed increment at the right events, once for first_* values
+- Settings shows counters and an Export diagnostics button
+tech:
+FILES: crates/gtp-app/src/services/diagnostics.rs; counters stored in the catalog meta table and incremented from import, develop, export and scan services; Settings UI button.
+ROUTES: `diagnostics_export(dest: String)`.
+MIGRATIONS: none.
+TESTS: zip contents, counter increments, no pixel data.
+
+## Q-04
+title: Accessibility pass
+milestone: M7
+type: test
+size: M
+estimate: 1d
+legacy: GTP-093
+deps: U-10, U-11, U-07
+needs: human
+adr: no
+spec: specification section 13
+desc: Audit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views.
+ac:
+- vitest-axe passes for every view
+- Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected
+- Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md
+tech:
+FILES: fixes across apps/desktop/src and packages/ui; docs/research/a11y.md.
+ROUTES / MIGRATIONS: none.
+TESTS: axe for all views, keyboard tests for grid, curve editor and capture view.
+
+## Q-05
+title: User documentation
+milestone: M7
+type: docs
+size: S
+estimate: 0.5d
+legacy: GTP-094
+deps: U-10
+adr: no
+spec: specification section 15
+desc: User guide for installation, library backup, scanner setup, capture setup and known limitations.
+ac:
+- docs/user-guide.md covers install (SmartScreen, Gatekeeper), library backup (copy the folder), LS-50 setup incl. driver notes, Scanlight/D600 setup on macOS and Windows, known limitations
+- All internal links resolve
+tech:
+FILES: docs/user-guide.md, docs/install.md (from T-05); facts taken from the research notes.
+TESTS: link check.
+
+## Q-06
+title: Budget and quality verification
+milestone: M7
+type: test
+size: M
+estimate: 1d
+legacy: GTP-095
+deps: Q-03, U-10, T-06
+needs: data
+adr: no
+spec: specification sections 1 and 11
+desc: Verify every performance budget and the calibrated quality thresholds on the release candidate.
+ac:
+- tools/benchmark run on the reference machine; every spec section 11 budget and the ΔE2000 thresholds reported in docs/research/benchmark.md
+- Any miss is listed with a proposed issue; a miss blocks the release
+tech:
+FILES: docs/research/benchmark.md; proposed follow-up issues.
+TESTS: benchmark and manual measurements.
+
+## Q-07
+title: Release v0.1.0
+milestone: M7
+type: chore
+size: S
+estimate: 0.5d
+legacy: GTP-096
+deps: T-06, D-05, Q-04, Q-05, Q-06
+needs: human
+adr: no
+spec: specification sections 15 and 16
+desc: Run the release checklist and prepare v0.1.0; the human tags and publishes.
+ac:
+- All CI gates green on main; cargo deny and audit clean
+- Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)
+- Release notes generated from commits; tag command prepared for the human
+- The human publishes; nothing is tagged or pushed without explicit instruction
+tech:
+FILES: docs/release-checklist.md, changelog generation config.
+TESTS: checklist run, reported by the human.

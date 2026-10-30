@@ -1,0 +1,8 @@
+﻿[workspace]
+resolver = "2"
+members = ["crates/*"]   # add "apps/desktop/src-tauri" once the Tauri app is scaffolded
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "LicenseRef-Private"

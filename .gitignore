@@ -1,0 +1,10 @@
+﻿target/
+node_modules/
+dist/
+.DS_Store
+Thumbs.db
+*.log
+# private scan data never leaves the machine
+samples/private/*
+!samples/private/.gitkeep
+.claude/settings.local.json

@@ -1,4 +1,4 @@
-﻿{
+{
   "updated": "2026-10-29",
   "rules": "status is in_progress while the issue's branch exists or its PR is open; completed only after the PR is merged and closed (see docs/workflow.md section 10)",
   "issues": [
@@ -26,7 +26,7 @@
       "title": "Tauri 2 desktop skeleton",
       "branch": "feat/issue-3-tauri-2-desktop-skeleton",
       "status": "in_progress",
-      "pr": null,
+      "pr": 71,
       "commit": null
     }
   ]

@@ -414,7 +414,7 @@ The scan itself is hardware-bound and not budgeted, but the UI must stay respons
 
 - **Targets:** Windows x64 NSIS installer (`.exe`) and macOS arm64 `.dmg` (ad-hoc signed). No native Windows ARM64 build until someone with an ARM device can test it; the x64 installer is the stopgap there.
 - **Versioning:** SemVer, `CHANGELOG.md` kept from conventional commits. One channel (stable); prereleases use `-beta.N` tags and are not offered by the updater unless the user opts in.
-- **Pipeline:** push tag `vX.Y.Z` triggers GitHub Actions: lint/test, then `tauri build` on `windows-latest` and `macos-14`, then a **draft** GitHub Release with installers and the signed `latest.json` for the updater. The author reviews and publishes.
+- **Pipeline:** push tag `vX.Y.Z` triggers GitHub Actions: lint/test, then `tauri build` on `windows-latest` and `macos-15`, then a **draft** GitHub Release with installers and the signed `latest.json` for the updater. The author reviews and publishes.
 - **Updates:** Tauri updater checks `latest.json` at launch (once per day) and prompts; never installs silently. To be verified in the M7 spike: updater behaviour on unsigned macOS builds (quarantine flag on the downloaded bundle).
 - **Rollback:** previous releases stay on GitHub; the library is forward-compatible within a major version (§5.3), and migrations back up the DB so a downgrade is a restore.
 - **Environments:** dev (`pnpm dev`) and release only. No staging.

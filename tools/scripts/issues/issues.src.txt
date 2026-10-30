@@ -1482,3 +1482,22 @@ ac:
 tech:
 FILES: docs/release-checklist.md, changelog generation config.
 TESTS: checklist run, reported by the human.
+
+## T-07
+title: Make the Windows WebDriver e2e run on CI runners
+milestone: M0
+type: test
+size: M
+estimate: 1d
+deps: T-04
+adr: no
+spec: specification section 8; convention section 8
+desc: The WebDriver e2e (tauri-driver + msedgedriver) passes locally but cannot start a session on GitHub-hosted Windows runners, so it is a manual/weekly workflow instead of a required check. Find a way to run it on CI and make it required.
+ac:
+- Root cause is documented: on the runner (elevated session, High integrity) WebView2 ignores WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, so no --remote-debugging-port and no DevToolsActivePort
+- One of these is implemented and proven: an app-side test-only debug-port hook behind a Cargo feature, a throwaway standard user for the test step, or a self-hosted or other runner
+- The e2e job passes on a pull request and is added to the required checks of develop
+- e2e-windows.yml is folded back into ci.yml (or removed) and docs/convention.md section 8 is updated
+tech:
+FILES: .github/workflows/ci.yml, .github/workflows/e2e-windows.yml, apps/desktop/tests/e2e/window.e2e.mjs, apps/desktop/src-tauri (only if the hook option is chosen).
+TESTS: the e2e run itself, green on CI. Evidence so far: runtime updated 155 to 156 and flags still ignored; runas /trustlevel does not lower integrity on the runner.

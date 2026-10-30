@@ -106,8 +106,17 @@
       "number": 18,
       "title": "Inversion and auto levels",
       "branch": "feat/issue-18-inversion-and-auto-levels",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 99,
+      "commit": "0ad56da"
+    },
+    {
+      "id": "P-07",
+      "number": 19,
+      "title": "Frame-area detection",
+      "branch": "feat/issue-19-frame-area-detection",
+      "status": "in_progress",
+      "pr": null,
       "commit": null
     }
   ]

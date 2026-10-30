@@ -169,7 +169,7 @@ Rules: unknown fields are ignored; a missing field means default; `v` bumps only
 
 **Colour management (MVP):** internal working space is linear Rec.2020-primaries f32. Scanner values are assumed linear in that space (no input profile); white balance compensates. Preview assumes an sRGB display. Export spaces: sRGB (default), Adobe RGB, ProPhoto. OS display profiles are post-MVP.
 
-**Frame detection:** on the base-normalized luminance, find the exposed area by edge profiles along each axis (rebate is bright, image is dark in a negative); return a crop rectangle with a confidence value. Low confidence selects the full frame and shows a hint.
+**Frame detection:** on the base-normalized scan the unexposed rebate is about 1.0 and picture pixels are below it, so a pixel counts as rebate when its luminance is within 0.06 of 1.0 (a brightness-step search fails on shadows and on pictures with hard steps). Per axis, the median luminance profile of the columns and of the rows is searched for a rebate band in the first and last quarter; the frame edge is the inner end of each band, and a side without a band keeps the full extent, so one to four rebate sides work. The result is a crop rectangle (the recipe's `geometry.crop`) with a confidence: the share of the outside area that is rebate times the share of the inside area that is not. Confidence below 0.5 selects the full frame and shows a hint.
 
 **Film base:** auto-sample the brightest unexposed border region of the roll's first frame, or the user clicks a rebate pixel. The result is stored on the Roll and used by all frames; a frame can override it (`base.source = manual`).
 

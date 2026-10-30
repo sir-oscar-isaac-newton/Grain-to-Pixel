@@ -65,7 +65,7 @@ fn check_rect(image: &ImageF32, rect: Rect) -> Result<(), AppError> {
 
 /// Median of the values (the mean of the two middle ones for an even count); `None` if empty.
 /// Reorders the slice. The values must not be NaN.
-fn median(values: &mut [f32]) -> Option<f32> {
+pub(crate) fn median(values: &mut [f32]) -> Option<f32> {
     if values.is_empty() {
         return None;
     }

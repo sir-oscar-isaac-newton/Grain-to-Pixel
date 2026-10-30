@@ -100,6 +100,15 @@
       "status": "completed",
       "pr": 97,
       "commit": "b0de074"
+    },
+    {
+      "id": "P-06",
+      "number": 18,
+      "title": "Inversion and auto levels",
+      "branch": "feat/issue-18-inversion-and-auto-levels",
+      "status": "in_progress",
+      "pr": 99,
+      "commit": null
     }
   ]
 }

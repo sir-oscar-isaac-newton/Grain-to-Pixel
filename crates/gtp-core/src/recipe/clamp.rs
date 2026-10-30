@@ -2,7 +2,9 @@
 //! replaces NaN and infinite values by the default, so a damaged file cannot reach the pipeline.
 //! Clamping is idempotent: clamping an already clamped recipe changes nothing.
 
-use super::v1::{Color, Crop, CurvePoint, Dust, Geometry, Invert, Recipe, Tone};
+use super::v1::{
+    Color, Crop, CurvePoint, Dust, Geometry, Invert, Mono, Recipe, Tone, REC2020_LUMA,
+};
 
 /// Smallest crop width or height, as a fraction of the frame.
 pub const MIN_CROP_SIZE: f32 = 0.01;
@@ -21,6 +23,8 @@ pub const SATURATION_MAX: f32 = 2.0;
 pub const EXPOSURE_EV_MAX: f32 = 5.0;
 pub const CURVE_POINTS_MAX: usize = 16;
 pub const DUST_GROW_PX_MAX: u32 = 10;
+/// Limit of each black-and-white mix weight.
+pub const MONO_WEIGHT_MAX: f32 = 2.0;
 
 fn fin(value: f32, lo: f32, hi: f32, default: f32) -> f32 {
     if value.is_finite() {
@@ -55,6 +59,12 @@ fn clamp_invert(invert: &mut Invert) {
     }
 }
 
+fn clamp_mono(mono: &mut Mono) {
+    for (weight, default) in mono.mix.iter_mut().zip(REC2020_LUMA) {
+        *weight = fin(*weight, -MONO_WEIGHT_MAX, MONO_WEIGHT_MAX, default);
+    }
+}
+
 fn clamp_color(color: &mut Color) {
     color.red_cyan = slider(color.red_cyan);
     color.green_magenta = slider(color.green_magenta);
@@ -62,6 +72,7 @@ fn clamp_color(color: &mut Color) {
     color.temperature = slider(color.temperature);
     color.tint = slider(color.tint);
     color.saturation = fin(color.saturation, 0.0, SATURATION_MAX, 1.0);
+    color.vibrance = slider(color.vibrance);
 }
 
 /// Points are limited to the unit square, sorted by input, made unique by input and capped.
@@ -83,6 +94,7 @@ fn clamp_tone(tone: &mut Tone) {
     tone.shadows = slider(tone.shadows);
     tone.whites = slider(tone.whites);
     tone.blacks = slider(tone.blacks);
+    tone.dehaze = slider(tone.dehaze);
     clamp_curve(&mut tone.curve.master);
     clamp_curve(&mut tone.curve.r);
     clamp_curve(&mut tone.curve.g);
@@ -104,6 +116,7 @@ impl Recipe {
         }
         clamp_invert(&mut self.invert);
         clamp_color(&mut self.color);
+        clamp_mono(&mut self.mono);
         clamp_tone(&mut self.tone);
         clamp_dust(&mut self.dust);
     }
@@ -159,6 +172,7 @@ mod tests {
                         temperature: n(),
                         tint: n(),
                         saturation: n(),
+                        vibrance: n(),
                     };
                     r.tone.exposure_ev = n();
                     r.tone.contrast = n();
@@ -166,6 +180,11 @@ mod tests {
                     r.tone.shadows = n();
                     r.tone.whites = n();
                     r.tone.blacks = n();
+                    r.tone.dehaze = n();
+                    r.mono = Mono {
+                        enabled: flag,
+                        mix: [n(), n(), n()],
+                    };
                     r.tone.curve.master = cm;
                     r.tone.curve.r = cr;
                     r.tone.curve.g = cg;
@@ -218,13 +237,24 @@ mod tests {
             k.blue_yellow,
             k.temperature,
             k.tint,
+            k.vibrance,
         ] {
             assert!(in_range(v, -SLIDER_MAX, SLIDER_MAX));
         }
         assert!(in_range(k.saturation, 0.0, SATURATION_MAX));
         let t = &r.tone;
         assert!(in_range(t.exposure_ev, -EXPOSURE_EV_MAX, EXPOSURE_EV_MAX));
-        for v in [t.contrast, t.highlights, t.shadows, t.whites, t.blacks] {
+        for v in r.mono.mix {
+            assert!(in_range(v, -MONO_WEIGHT_MAX, MONO_WEIGHT_MAX));
+        }
+        for v in [
+            t.contrast,
+            t.highlights,
+            t.shadows,
+            t.whites,
+            t.blacks,
+            t.dehaze,
+        ] {
             assert!(in_range(v, -SLIDER_MAX, SLIDER_MAX));
         }
         for curve in [&t.curve.master, &t.curve.r, &t.curve.g, &t.curve.b] {

@@ -115,8 +115,17 @@
       "number": 19,
       "title": "Frame-area detection",
       "branch": "feat/issue-19-frame-area-detection",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 101,
+      "commit": "4f9e9fe"
+    },
+    {
+      "id": "P-08",
+      "number": 20,
+      "title": "Colour and tone stages",
+      "branch": "feat/issue-20-colour-and-tone-stages",
+      "status": "in_progress",
+      "pr": null,
       "commit": null
     }
   ]

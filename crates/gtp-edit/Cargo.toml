@@ -1,7 +1,10 @@
-﻿[package]
+[package]
 name = "gtp-edit"
 version.workspace = true
 edition.workspace = true
 publish = false
 
 [dependencies]
+
+[lints]
+workspace = true

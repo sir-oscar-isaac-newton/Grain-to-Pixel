@@ -22,12 +22,23 @@ An all-in-one desktop app (Windows 10/11, macOS) for scanning, converting, editi
 
 ## Getting started
 
-Prerequisites: Rust (stable), Node 20+, pnpm 9, Git + Git LFS.
+Prerequisites: Rust (the version pinned in `rust-toolchain.toml`, installed automatically by rustup), Node 20+ (`.nvmrc`), pnpm 9 (`npm i -g pnpm@9`), Git + Git LFS, and `cargo-deny` (`cargo install cargo-deny --locked`).
 
 ```bash
 pnpm install
 cargo check --workspace
 pnpm dev        # once apps/desktop is scaffolded
+```
+
+Local checks (the same gates CI will run; see [docs/convention.md](docs/convention.md) section 8):
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo deny check
+pnpm lint && pnpm typecheck && pnpm test:tools
+pnpm check:deps          # crate dependency rules (docs/architecture.md section 3.3)
 ```
 
 See [docs/structure.md](docs/structure.md) for layout and conventions.

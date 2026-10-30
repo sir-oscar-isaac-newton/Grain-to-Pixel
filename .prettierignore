@@ -1,0 +1,13 @@
+target/
+node_modules/
+dist/
+pnpm-lock.yaml
+Cargo.lock
+# docs and generated files are not formatted by Prettier
+docs/
+**/*.md
+packages/ipc-types/src/bindings.ts
+tools/scripts/issues/
+tools/scripts/github/
+tools/scripts/check-deps/tests/fixtures/
+samples/

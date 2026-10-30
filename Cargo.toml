@@ -1,8 +1,23 @@
 ﻿[workspace]
 resolver = "2"
 members = ["crates/*"]   # add "apps/desktop/src-tauri" once the Tauri app is scaffolded
+exclude = ["tools/scripts/check-deps/tests/fixtures"]
 
 [workspace.package]
 version = "0.0.0"
 edition = "2021"
 license = "LicenseRef-Private"
+
+# Convention section 1: no unsafe, no panicking shortcuts, no printing, in committed code.
+# Tests are exempt through clippy.toml. Every crate opts in with `[lints] workspace = true`.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+dbg_macro = "deny"

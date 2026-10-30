@@ -152,9 +152,9 @@
       "number": 22,
       "title": "Application layer gtp-app - pipeline, proxy and analyze",
       "branch": "feat/issue-22-application-layer-gtp-app",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 112,
-      "commit": null
+      "commit": "b0269b7"
     }
   ]
 }

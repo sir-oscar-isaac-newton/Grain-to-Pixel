@@ -356,7 +356,7 @@ PREREQUISITE (human): GitHub repository exists and the remote is added.
 
 TASK: gates 1-8 from workflow §8 run on every PR on Windows and macOS.
 FILES:
-- .github/workflows/ci.yml: matrix windows-latest and macos-14; steps: cargo fmt --check, clippy -D warnings, cargo test --workspace, pnpm install --frozen-lockfile, lint, typecheck, test, cargo deny check, pnpm audit --prod, tools/scripts/check-deps, tools/scripts/check-ipc; caching (Swatinem/rust-cache, pnpm store).
+- .github/workflows/ci.yml: matrix windows-latest and macos-15; steps: cargo fmt --check, clippy -D warnings, cargo test --workspace, pnpm install --frozen-lockfile, lint, typecheck, test, cargo deny check, pnpm audit --prod, tools/scripts/check-deps, tools/scripts/check-ipc; caching (Swatinem/rust-cache, pnpm store).
 - .github/workflows/pr-title.yml: Conventional Commit title check.
 - .github/pull_request_template.md: exactly the template in docs/workflow.md §5 Step 6.
 - .github/dependabot.yml: cargo, npm, github-actions weekly.
@@ -861,7 +861,7 @@ PROCESS: follow docs/workflow.md. Post a proposal and STOP for my approval befor
 PREREQUISITE (human): create the Tauri updater signing key pair; put the private key in GitHub Actions secrets; give you only the public key.
 
 TASK: installers and updates.
-FILES: tauri.conf.json bundle settings (NSIS for Windows x64; dmg for macOS arm64 with `signingIdentity: "-"` ad-hoc), updater endpoint and public key; .github/workflows/release.yml (on tag v*.*.*: lint/test, tauri build matrix windows-latest + macos-14, draft GitHub Release with installers and signed latest.json); docs/install.md (SmartScreen and Gatekeeper steps).
+FILES: tauri.conf.json bundle settings (NSIS for Windows x64; dmg for macOS arm64 with `signingIdentity: "-"` ad-hoc), updater endpoint and public key; .github/workflows/release.yml (on tag v*.*.*: lint/test, tauri build matrix windows-latest + macos-15, draft GitHub Release with installers and signed latest.json); docs/install.md (SmartScreen and Gatekeeper steps).
 TESTS: workflow dry run on a pre-release tag; installers install and launch ([human] on both OS); updater finds a newer prerelease and verifies the signature; a tampered manifest is rejected.
 ACCEPTANCE: GTP-090/091 criteria; release is a DRAFT until I publish; installer size <= 40 MB (spec §11); updater prompts and never installs silently; spec §15 open item (updater behaviour on unsigned macOS builds) answered in docs.
 OUT OF SCOPE: code signing certificates.

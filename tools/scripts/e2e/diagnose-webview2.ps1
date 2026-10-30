@@ -23,6 +23,28 @@ $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $elevated = (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 Write-Host "user: $($identity.Name); elevated (administrator): $elevated"
 
+# Edge / WebView2 policies can disable remote debugging or ignore command-line flags.
+foreach ($k in 'HKLM:\SOFTWARE\Policies\Microsoft\Edge', 'HKCU:\SOFTWARE\Policies\Microsoft\Edge', 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2', 'HKLM:\SOFTWARE\Policies\Microsoft\EdgeWebView', 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended') {
+  if (Test-Path $k) {
+    $props = (Get-ItemProperty $k).PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object { "$($_.Name)=$($_.Value)" }
+    Write-Host "policy key ${k}: $($props -join '; ')"
+  } else { Write-Host "policy key ${k}: (absent)" }
+}
+
+# Shows whether the flags from WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS reached the browser process.
+function Show-BrowserProcess {
+  $procs = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" -ErrorAction SilentlyContinue)
+  $browser = $procs | Where-Object { $_.CommandLine -and $_.CommandLine -notmatch '--type=' } | Select-Object -First 1
+  if ($browser) {
+    $cl = $browser.CommandLine
+    Write-Host ('browser process: ' + $browser.ExecutablePath)
+    Write-Host ('  has --remote-debugging-port: ' + ($cl -match 'remote-debugging-port') + '; --enable-logging: ' + ($cl -match 'enable-logging') + '; --user-data-dir: ' + ($cl -match 'user-data-dir'))
+    Write-Host ('  command line (first 600 chars): ' + $cl.Substring(0, [Math]::Min(600, $cl.Length)))
+  } else {
+    Write-Host ("no WebView2 browser process found (msedgewebview2 processes: $($procs.Count))")
+  }
+}
+
 $driverArgs = '--allow-pre-commit-input --disable-background-networking --disable-client-side-phishing-detection --disable-default-apps --disable-hang-monitor --disable-popup-blocking --disable-sync --enable-automation --enable-logging --log-level=0 --no-first-run --password-store=basic --remote-debugging-port=0 --test-type=webdriver --use-mock-keychain'
 
 function Invoke-Pass([string]$label, [string]$browserArgs) {
@@ -40,6 +62,7 @@ function Invoke-Pass([string]$label, [string]$browserArgs) {
   }
   $p.Refresh()
   Write-Host "app alive: $(-not $p.HasExited); DevToolsActivePort present: $found"
+  Show-BrowserProcess
   $portFile = @('EBWebView/DevToolsActivePort', 'DevToolsActivePort') | ForEach-Object { Join-Path $udf $_ } | Where-Object { Test-Path $_ } | Select-Object -First 1
   if ($portFile) { Write-Host ('port file ' + $portFile.Substring($udf.Length) + ': ' + ((Get-Content $portFile) -join ' / ')) }
   Get-ChildItem $udf -Filter 'chrome_debug.log' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 | ForEach-Object {
@@ -62,7 +85,7 @@ function Invoke-LimitedPass([string]$browserArgs) {
   $integrity = Join-Path $base 'integrity.txt'
   @(
     '@echo off',
-    "whoami /groups | findstr /i `"Mandatory`" > `"$integrity`"",
+    "whoami /groups | findstr /c:`"Mandatory Label`" > `"$integrity`"",
     "set `"WEBVIEW2_USER_DATA_FOLDER=$udf`"",
     "set `"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$browserArgs`"",
     "start `"`" `"$App`""
@@ -75,6 +98,7 @@ function Invoke-LimitedPass([string]$browserArgs) {
   }
   $alive = [bool](Get-Process grain-to-pixel-desktop -ErrorAction SilentlyContinue)
   Write-Host "app alive: $alive; DevToolsActivePort present: $found"
+  Show-BrowserProcess
   if (Test-Path $integrity) { Write-Host ('integrity level inside the launched process: ' + ((Get-Content $integrity) -join ' | ').Trim()) } else { Write-Host 'integrity file not written (the launch script did not run)' }
   if (-not $found) { Write-Host ('data folder entries: ' + ((Get-ChildItem $udf -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 15 | ForEach-Object { $_.FullName.Substring($udf.Length) }) -join ', ')) }
   Get-Process grain-to-pixel-desktop -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

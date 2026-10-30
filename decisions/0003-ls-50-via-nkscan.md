@@ -1,6 +1,6 @@
 # 0003. Drive the LS-50 with nkscan
 
-- Status: Proposed (confirm with a hardware spike)
+- Status: Accepted for Windows (hardware spike R-01, 2026-10-30); macOS to confirm
 - Date: 2026-10-29
 
 ## Context
@@ -24,3 +24,12 @@ Caveats found in its docs (they change quickly between releases, so re-check the
 - The firmware flasher needs VueScan's USB drivers on Windows (x64). The spike must find out whether nkscan can use the scanner with that driver installed, or needs WinUSB (Zadig).
 - Windows ARM is out of scope for the MVP (no test device).
 - If nkscan falls short, the trait lets us swap in another backend (e.g. SANE `coolscan3`) or accept pre-scanned TIFFs via the file-import adapter.
+
+## Spike outcome (R-01, 2026-10-30)
+
+Details in [docs/research/nkscan.md](../docs/research/nkscan.md). With nkscan 0.17.0 on Windows 10:
+- The modded LS-50 (firmware 2.04) is recognised with a **40-frame roll adapter**; nkscan loads the film, detects 35 mm and 25 frames, and scanned frames 2, 3 and 4 consecutively with IR and a locked exposure.
+- Output is linear 16-bit RGB plus a separate 16-bit IR TIFF per frame, which `gtp-io` reads as is.
+- **Windows needs the WinUSB driver (Zadig).** With VueScan's driver nkscan reports "incompatible driver". Rolling back to VueScan's driver works and is the documented way back.
+- Integration starts with the pinned CLI; the crate's API became async in 0.17 and is reconsidered in H-01.
+- macOS is author-reported working (nkscan via Negpy) and still to be confirmed with the CLI; until then this ADR is accepted for Windows only.

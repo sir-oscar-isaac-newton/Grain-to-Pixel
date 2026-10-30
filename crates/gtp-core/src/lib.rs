@@ -1,5 +1,14 @@
-﻿//! Shared domain types: Frame, Roll, Project, Recipe (edit parameters), errors.
+﻿//! Shared domain types: ids, images, Frame / Roll / Tag, the versioned Recipe (edit parameters) and
+//! errors. No I/O (docs/architecture.md section 3.4, docs/specification.md section 4).
 
 pub mod error;
+pub mod ids;
+pub mod image;
+pub mod model;
+pub mod recipe;
 
 pub use error::{AppError, ErrorCode};
+pub use ids::{FrameId, RollId, TagId};
+pub use image::ImageF32;
+pub use model::{FilmFormat, Frame, FrameKind, Roll, SourceFile, SourceRole, Tag};
+pub use recipe::{migrate, Recipe};

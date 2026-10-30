@@ -129,14 +129,31 @@ IDs are ULIDs (sortable, collision-safe). Originals are **immutable**; every edi
   "geometry": { "crop": {"x":0,"y":0,"w":1,"h":1}, "angle_deg": 0, "rot90": 0, "flip_h": false, "flip_v": false },
   "base":     { "source": "roll" | "manual", "rgb": [r,g,b] },     // film base in linear scan values
   "invert":   { "black": [r,g,b], "white": [r,g,b] },              // per-channel density range; auto-filled
-  "color":    { "temperature": 0, "tint": 0, "saturation": 1.0 },
-  "tone":     { "exposure_ev": 0, "contrast": 0, "curve": { "master": [[0,0],[1,1]], "r": [], "g": [], "b": [] } },
+  "color":    { "red_cyan": 0, "green_magenta": 0, "blue_yellow": 0, "temperature": 0, "tint": 0, "saturation": 1.0 },
+  "tone":     { "exposure_ev": 0, "contrast": 0, "highlights": 0, "shadows": 0, "whites": 0, "blacks": 0, "curve": { "master": [[0,0],[1,1]], "r": [], "g": [], "b": [] } },
   "dust":     { "enabled": true, "threshold": 0.5, "grow_px": 2 },
   "output":   { "space": "srgb" }
 }
 ```
 
 Rules: unknown fields are ignored; a missing field means default; `v` bumps only with a migration function in `gtp-core`. "Auto" is just a function that fills the recipe (never a hidden state).
+
+**Ranges.** `Recipe::clamp()` pulls every value into its range (non-finite values fall back to the default) and is idempotent; `migrate` clamps on load and rejects unknown versions with `UnsupportedFormat`.
+
+| Field | Range (default) |
+|---|---|
+| `geometry.crop` x, y, w, h | fractions of the frame, 0 to 1; w and h at least 0.01; the box stays inside the frame (0, 0, 1, 1) |
+| `geometry.angle_deg` | -45 to 45 (0) |
+| `geometry.rot90` | quarter turns, wrapped to 0 to 3 (0) |
+| `base.rgb` | 1e-6 to 65535, linear scan values (1, 1, 1) |
+| `invert.black` / `white` | densities, 0 to 10; white at least 0.001 above black (0 / 1) |
+| `color.red_cyan`, `green_magenta`, `blue_yellow`, `temperature`, `tint` | -100 to 100 (0). Positive `red_cyan` adds red, negative adds cyan; likewise green/magenta and blue/yellow, as in darkroom filtration |
+| `color.saturation` | 0 to 2 (1) |
+| `tone.exposure_ev` | -5 to 5 (0) |
+| `tone.contrast`, `highlights`, `shadows`, `whites`, `blacks` | -100 to 100 (0). Highlights and shadows act on the bright and dark parts of the tonal range; whites and blacks move the white and black points |
+| `tone.curve.*` | points in the unit square, sorted and unique by input, at most 16 per curve; empty means no change |
+| `dust.threshold` | 0 to 1 (0.5) |
+| `dust.grow_px` | 0 to 10 (2) |
 
 ### 4.2 Processing pipeline (order is fixed, see `rules/colour-pipeline.md`)
 
@@ -145,8 +162,8 @@ Rules: unknown fields are ignored; a missing field means default; `v` bumps only
 3. **Crop** to the frame area (auto-detected, user adjustable).
 4. **Film-base normalize:** `T = I / base` per channel.
 5. **Invert:** density `D = -log10(T)`; per-channel black/white points (auto from histogram percentiles) map `D` to positive linear values.
-6. **Colour:** temperature/tint as per-channel gains; saturation.
-7. **Tone:** exposure, contrast, curves.
+6. **Colour:** the red/cyan, green/magenta and blue/yellow sliders and temperature/tint as per-channel gains (in that order); then saturation.
+7. **Tone:** exposure, contrast, highlights and shadows, whites and blacks, then curves.
 8. **Geometry:** rotate/flip/straighten (resample once, at the end).
 9. **Output transform** to the export space with ICC embedded.
 
@@ -383,6 +400,7 @@ The scan itself is hardware-bound and not budgeted, but the UI must stay respons
 
 **Accessibility (target: WCAG 2.1 AA for application chrome):**
 - Everything operable by keyboard (grid navigation with arrows, `[`/`]` previous/next frame, slider keys, curve points movable with arrow keys); visible focus rings; logical tab order.
+- **Colour keys** in the Develop view: `Q` adds red, `A` cyan, `W` green, `S` magenta, `E` blue, `D` yellow. A press moves the matching slider by 10 steps, Shift+press by 1. Tone sliders have no keys yet. All shortcuts are customizable: the key map is a user setting (action name to key), these keys are only the defaults, and a key assigned to two actions is rejected with a message.
 - Radix primitives for dialogs, menus and sliders (labelled, ARIA-correct); every control has an accessible name; status/progress uses `aria-live`.
 - Contrast >= 4.5:1 for text; colour is never the only signal; respects `prefers-reduced-motion`; UI scales with the OS text-size setting.
 - `eslint-plugin-jsx-a11y` in lint, `vitest-axe` on key components, manual screen-reader pass (NVDA, VoiceOver) before v0.1.0.

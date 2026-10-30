@@ -61,8 +61,17 @@
       "number": 7,
       "title": "Logging, panic hook and client error reporting",
       "branch": "feat/issue-7-logging-panic-hook-and-client-error-reporting",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 87,
+      "commit": "aabd380"
+    },
+    {
+      "id": "P-01",
+      "number": 13,
+      "title": "Core domain types and Recipe v1",
+      "branch": "feat/issue-13-core-domain-types-and-recipe-v1",
+      "status": "in_progress",
+      "pr": null,
       "commit": null
     }
   ]

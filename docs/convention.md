@@ -145,7 +145,7 @@ with `protection.json`:
 {
   "required_status_checks": { "strict": true, "contexts": ["ci (windows-latest)", "ci (macos-14)", "pr-title"] },
   "enforce_admins": false,
-  "required_pull_request_reviews": null,
+  "required_pull_request_reviews": { "required_approving_review_count": 0 },
   "restrictions": null,
   "required_conversation_resolution": true,
   "allow_force_pushes": false,
@@ -153,7 +153,9 @@ with `protection.json`:
 }
 ```
 
-`required_pull_request_reviews` is `null` because the project has one maintainer; a PR is still required through the status checks. Setting `enforce_admins` to `true` also binds the owner, which is stricter than needed for a solo project.
+`required_approving_review_count` is `0` because the project has one maintainer who cannot approve their own PR; a pull request is still required. Setting `enforce_admins` to `true` also binds the owner, which is stricter than needed for a solo project.
+
+**Status (2026-10-29):** applied to `develop` with exactly the JSON above (read back with `gh api repos/<owner>/<repo>/branches/develop/protection`). The repository also allows squash merging only and deletes head branches after merge. `main` is not protected yet; do that when the first release is prepared (Q-07).
 
 ## 9. Commits and pull requests
 

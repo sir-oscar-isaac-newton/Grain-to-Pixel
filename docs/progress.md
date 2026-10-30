@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-29",
+  "updated": "2026-10-30",
   "rules": "status is in_progress while the issue's branch exists or its PR is open; completed only after the PR is merged and closed (see docs/workflow.md section 10)",
   "issues": [
     {
@@ -52,9 +52,9 @@
       "number": 6,
       "title": "Smoke and end-to-end tests in CI",
       "branch": "feat/issue-6-smoke-and-end-to-end-tests-in-ci",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 81,
-      "commit": null
+      "commit": "4ffdb55"
     }
   ]
 }

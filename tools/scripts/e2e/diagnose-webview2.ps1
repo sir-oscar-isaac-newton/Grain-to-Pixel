@@ -52,10 +52,41 @@ function Invoke-Pass([string]$label, [string]$browserArgs) {
   Start-Sleep -Seconds 2
 }
 
+# Same launch, but from a non-elevated (Basic User) token via runas /trustlevel.
+function Invoke-LimitedPass([string]$browserArgs) {
+  $label = 'limited-token-driver-flags'
+  Write-Host "`n===== PASS: $label (runas /trustlevel:0x20000)"
+  $udf = Join-Path $base $label
+  New-Item -ItemType Directory -Force $udf | Out-Null
+  $cmd = Join-Path $base 'limited.cmd'
+  $integrity = Join-Path $base 'integrity.txt'
+  @(
+    '@echo off',
+    "whoami /groups | findstr /i `"Mandatory`" > `"$integrity`"",
+    "set `"WEBVIEW2_USER_DATA_FOLDER=$udf`"",
+    "set `"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$browserArgs`"",
+    "start `"`" `"$App`""
+  ) | Set-Content -Path $cmd -Encoding ascii
+  & runas /trustlevel:0x20000 "cmd /c `"$cmd`"" 2>&1 | ForEach-Object { Write-Host "runas: $_" }
+  $found = $false
+  for ($i = 0; $i -lt $WaitSeconds; $i++) {
+    Start-Sleep -Seconds 1
+    if (Test-Path (Join-Path $udf 'EBWebView/DevToolsActivePort')) { $found = $true; break }
+  }
+  $alive = [bool](Get-Process grain-to-pixel-desktop -ErrorAction SilentlyContinue)
+  Write-Host "app alive: $alive; DevToolsActivePort present: $found"
+  if (Test-Path $integrity) { Write-Host ('integrity level inside the launched process: ' + ((Get-Content $integrity) -join ' | ').Trim()) } else { Write-Host 'integrity file not written (the launch script did not run)' }
+  if (-not $found) { Write-Host ('data folder entries: ' + ((Get-ChildItem $udf -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 15 | ForEach-Object { $_.FullName.Substring($udf.Length) }) -join ', ')) }
+  Get-Process grain-to-pixel-desktop -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 2
+}
+
 Invoke-Pass 'plain-no-flags' ''
 Invoke-Pass 'driver-flags' $driverArgs
 Invoke-Pass 'driver-flags-plus-no-sandbox' ($driverArgs + ' --no-sandbox')
 Invoke-Pass 'driver-flags-plus-disable-gpu' ($driverArgs + ' --disable-gpu')
+Invoke-LimitedPass $driverArgs
 
 Remove-Item -Recurse -Force $base -ErrorAction SilentlyContinue
 Remove-Item Env:WEBVIEW2_USER_DATA_FOLDER, Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue

@@ -193,8 +193,11 @@ jobs:
           Set-Content -Path $wrapper -Value $lines -Encoding ascii
           "GTP_E2E_EDGEDRIVER=$wrapper" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
-      - name: End-to-end test
-        run: pnpm test:e2e
+      # GitHub-hosted Windows runners run jobs elevated; WebView2 then ignores the environment overrides
+      # msedgedriver uses (no DevToolsActivePort), so the test runs with a non-elevated token.
+      - name: End-to-end test (non-elevated token)
+        shell: pwsh
+        run: ./tools/scripts/e2e/run-e2e-limited.ps1
 
       - name: Show the msedgedriver log
         if: failure()

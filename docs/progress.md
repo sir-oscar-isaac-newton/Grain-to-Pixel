@@ -35,7 +35,7 @@
       "title": "Typed IPC and AppError",
       "branch": "feat/issue-4-typed-ipc-and-apperror",
       "status": "in_progress",
-      "pr": null,
+      "pr": 72,
       "commit": null
     }
   ]

@@ -95,7 +95,7 @@ Set the issue to `Proposed` and post this in chat, at most one page:
 Ask for approval explicitly ("Approve to implement?"). Wait. If the human changes the plan, update the proposal and confirm again. Do not write production code before approval (reading and throwaway experiments in the scratchpad are fine).
 
 ### Step 3: Implement
-On approval set `In progress`, sync with `main`, create `type/short-kebab` branch (e.g. `feat/film-base-sampler`).
+On approval set `In progress`, sync with `develop`, and create the branch `feat/issue-<github-number>-<title-kebab>` (for example `feat/issue-12-film-base-measurement-and-normalize`). Branches always start from `develop`; `main` only receives release merges from `develop`.
 - Test first when practical (convention §7). Commit in small, logical steps with Conventional Commits.
 - Stay inside the approved scope. If you discover extra work, note it in the issue and propose a follow-up issue; do not do it silently.
 - If the work is growing past the proposed size, or you find the approach is wrong, **stop and report** (§7) before continuing.
@@ -108,7 +108,7 @@ Run every gate in §8 that can run locally and capture the results. Fix failures
 Update the docs listed in the issue plus anything the change made stale: spec tables/sections, `structure.md`, crate READMEs, research checklists, user docs. Add an ADR if the issue says so or a decision was made. Tick the acceptance criteria you verified.
 
 ### Step 6: Open the PR
-Push, open the PR against `main` with the template below, link the issue, set the issue to `In review`, add the PR link. Do not enable auto-merge.
+Push, open the PR against `develop` with the template below, link the issue (`Closes #N`; `develop` is the repository's default branch, so the keyword closes the issue on merge), set the issue to `In review`, and record the PR in `docs/progress.md` (§10). Do not enable auto-merge.
 
 ```markdown
 ## What and why
@@ -147,7 +147,7 @@ When CI is green, post:
 Wait for the human. Merging is their call (or an explicit "merge it").
 
 ### Step 9: Close and continue
-After the PR is merged and CI is green on `main`: confirm the issue closed (and remove its `status:*` label), capture follow-ups as proposed issues, delete the local branch, sync `main`. Then start again at Step 1 with the next issue; its proposal is again a stopping point.
+After the PR is merged and CI is green on `develop`: confirm with `gh pr view` that the PR is merged and the issue closed (and remove its `status:*` label), mark the issue `completed` in `docs/progress.md` (in the next issue's branch, or a small `chore` branch if none is next), capture follow-ups as proposed issues, delete the local branch, sync `develop`. Then start again at Step 1 with the next issue; its proposal is again a stopping point.
 
 ## 6. Definition of Ready (DoR)
 
@@ -181,7 +181,7 @@ Authoritative list: [convention.md §8](convention.md). A PR is mergeable only w
 5. `cargo deny check` and `pnpm audit --prod`
 6. `ipc-types` regenerated with no diff
 7. macOS build and launch smoke test; Windows `tauri-driver` end-to-end test
-8. PR title is a Conventional Commit; branch is up to date with `main`; no unresolved review comments
+8. PR title is a Conventional Commit; branch is up to date with `develop`; no unresolved review comments
 
 Until the CI workflow exists (an M0 issue), run the local equivalents and state in the PR which gates were not run. Never merge by lowering a gate.
 
@@ -195,13 +195,14 @@ Until the CI workflow exists (an M0 issue), run the local equivalents and state 
 
 - **Discovered work, bugs, or ideas:** add them to the Notes of the active issue and propose a new issue (area tag, estimate, dependencies, AC) in your next report; do not start them.
 - **Splitting or re-scoping:** propose the new issue text; changes apply only after approval.
-- **A bug in `main`:** propose an issue (`fix`) and treat it as the next candidate; do not fix it inside an unrelated PR.
+- **A bug in `develop`:** propose an issue (`fix`) and treat it as the next candidate; do not fix it inside an unrelated PR.
 - **Docs-only decisions** (spec, ADR, convention, this file): separate `docs` PRs, proposed and approved like any issue.
-- **Revert:** if a merged change breaks `main`, report it immediately and propose a revert PR as the next step.
+- **Revert:** if a merged change breaks `develop`, report it immediately and propose a revert PR as the next step.
 
 ## 10. Progress tracking
 
-GitHub is the live tracker; `docs/issues.md` is the backlog definition.
+GitHub is the live tracker; `docs/issues.md` is the backlog definition; `docs/progress.md` is the in-repo record of which issues are done.
+- **`docs/progress.md`** is JSON: `{ "updated": "<date>", "issues": [ { "id": "T-01", "number": 1, "title": "...", "branch": "feat/issue-1-...", "status": "in_progress" | "completed", "pr": <number or null>, "commit": "<sha or null>" } ] }`. An issue is `in_progress` from the moment its branch exists until its PR is merged and closed; only then does it become `completed`. If the file is missing, start from the first issue in `docs/issues.md`; otherwise the next issue is the first one in issues.md order that is not `completed` (an `in_progress` issue with an open PR blocks starting the next one).
 - **Status:** the `status:*` labels and open/closed state (§3), updated by the assistant at each step of the loop.
 - **Acceptance criteria checkboxes:** ticked in the GitHub issue as verified (`gh issue edit`), with evidence in the PR.
 - **Comments:** dated one-liners for the proposal, approval, decisions, discoveries, `[hw]` results and blockers; these replace the old progress log.
@@ -237,7 +238,7 @@ An issue may be marked `Done` only when every item is true. The report in Step 8
 - [ ] Every `[hw]` criterion has results reported by the human and recorded, or the issue was split so the software part is done and the hardware part is its own issue.
 
 **Closure**
-- [ ] PR merged by the human; CI green on `main`.
+- [ ] PR merged into `develop` by the human; CI green on `develop`; `docs/progress.md` shows the issue `completed`.
 - [ ] GitHub issue closed by the merged PR with all criteria ticked and a closing comment (evidence, `[hw]` results); `status:*` label removed.
 - [ ] Follow-ups captured as proposed issues; branch deleted.
 

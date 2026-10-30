@@ -198,7 +198,7 @@ node tools/scripts/issues/build-issues.mjs --check   # validates the backlog sou
 
 | Command | Works after |
 |---|---|
-| `git init -b main && git lfs install` | [T-01](issues.md) |
+| `git init -b main && git lfs install` (done: repo has `main` for releases and `develop` as the default branch; feature branches `feat/issue-<n>-<title>` open PRs into `develop`) | [T-01](issues.md) |
 | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo deny check`, `pnpm lint`, `pnpm typecheck` | T-02 |
 | `pnpm install` then `pnpm dev` (opens the Tauri window) | D-01 |
 | `pnpm gen:ipc` (regenerate `packages/ipc-types`) | D-02 |

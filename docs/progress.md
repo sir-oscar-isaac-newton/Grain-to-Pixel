@@ -138,6 +138,16 @@
       "commit": "1b35133"
     },
     {
+      "id": "R-01",
+      "number": 8,
+      "title": "Spike - nkscan with the modded LS-50",
+      "branch": "feat/issue-8-spike-nkscan-with-the-modded-ls-50",
+      "status": "in_progress",
+      "pr": 111,
+      "commit": null,
+      "note": "Windows done; macOS confirmation pending"
+    },
+    {
       "id": "P-10",
       "number": 22,
       "title": "Application layer gtp-app - pipeline, proxy and analyze",

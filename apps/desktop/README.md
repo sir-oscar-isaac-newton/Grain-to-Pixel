@@ -35,11 +35,17 @@ pnpm test:e2e     # Windows only: drives the real window through tauri-driver (W
 
   Tauri has no WebDriver for macOS WebKit, so macOS is covered by the smoke test only.
 
+## Logging and crash notes (D-03)
+
+- **Log file:** JSON lines in the OS log directory (`app_log_dir()`: `%LOCALAPPDATA%\io.github.sir-oscar-isaac-newton.graintopixel\logs` on Windows, `~/Library/Logs/io.github.sir-oscar-isaac-newton.graintopixel` on macOS), file `gtp.<date>.log`. Rotated daily, 7 files kept, total size capped at 50 MB: the oldest files are deleted at startup and then hourly (the newest file is never deleted). Default level `info`; set `RUST_LOG` to change it. Debug builds also print to stderr.
+- **Panics:** a panic writes `crash-<unix ms>-<pid>.txt` next to the log. On the next start the notes are logged at `warn`, renamed to `.reported`, and the UI shows a dismissible notice ("The app closed unexpectedly last time"). The command is `crash_notes_take`; "export diagnostics" arrives with `diagnostics_export`.
+- **UI errors:** the React `ErrorBoundary` and the `window` `error` / `unhandledrejection` handlers (`src/shared/errors/`) call `log_client_event(level, message)` through `ipc.ts`. The user sees a recoverable screen with no technical text; the details are in the log.
+- Code: `src-tauri/src/{logging.rs, crash.rs}` and `commands/system.rs`. Use `tracing` macros only (`println!` and `console.log` fail lint).
 ## Layout
 
 ```
 src/                 React UI: main.tsx, App.tsx, app/store.ts, features/{library,develop,import}, shared/{ipc.ts,i18n,styles}
-src-tauri/           Rust shell: lib.rs (run), state.rs, commands/system.rs, tauri.conf.json, capabilities/default.json, icons/
+src-tauri/           Rust shell: lib.rs (run), logging.rs, crash.rs, state.rs, commands/system.rs, tauri.conf.json, capabilities/default.json, icons/
 ```
 
 - The UI calls the backend only through `src/shared/ipc.ts`, which wraps the commands generated from Rust (`@gtp/ipc-types`, regenerate with `pnpm gen:ipc`; see [packages/README.md](../../packages/README.md)).

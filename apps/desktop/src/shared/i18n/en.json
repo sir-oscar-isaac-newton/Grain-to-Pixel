@@ -18,6 +18,15 @@
     "title": "Import",
     "placeholder": "Scan a roll, capture RGB exposures, or import files here."
   },
+  "error": {
+    "title": "Something went wrong",
+    "body": "This part of the app stopped working. Your library is not affected. You can try again.",
+    "retry": "Try again"
+  },
+  "crash": {
+    "notice": "The app closed unexpectedly last time. Details were saved to the log.",
+    "dismiss": "Dismiss"
+  },
   "footer": {
     "version": "Version {{version}}",
     "unknown": "unknown"

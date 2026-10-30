@@ -55,6 +55,15 @@
       "status": "completed",
       "pr": 81,
       "commit": "4ffdb55"
+    },
+    {
+      "id": "D-03",
+      "number": 7,
+      "title": "Logging, panic hook and client error reporting",
+      "branch": "feat/issue-7-logging-panic-hook-and-client-error-reporting",
+      "status": "in_progress",
+      "pr": 87,
+      "commit": null
     }
   ]
 }

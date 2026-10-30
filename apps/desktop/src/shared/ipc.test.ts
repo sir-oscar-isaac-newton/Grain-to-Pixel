@@ -1,15 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const libraryInfoMock = vi.fn();
+const logClientEventMock = vi.fn();
 vi.mock('@gtp/ipc-types', () => ({
-  commands: { libraryInfo: () => libraryInfoMock() },
+  commands: {
+    libraryInfo: () => libraryInfoMock(),
+    logClientEvent: (level: string, message: string) => logClientEventMock(level, message),
+  },
 }));
 
-import { IpcError, libraryInfo, unwrap } from './ipc';
+import { IpcError, libraryInfo, logClientEvent, unwrap } from './ipc';
 
 describe('shared/ipc', () => {
   beforeEach(() => {
     libraryInfoMock.mockReset();
+    logClientEventMock.mockReset();
+  });
+
+  it('logClientEvent passes level and a bounded message to the backend', async () => {
+    logClientEventMock.mockResolvedValue({ status: 'ok', data: null });
+    await logClientEvent('Warn', 'x'.repeat(5000));
+    expect(logClientEventMock).toHaveBeenCalledWith('Warn', 'x'.repeat(1990));
+  });
+
+  it('logClientEvent never throws, even without a backend', async () => {
+    logClientEventMock.mockRejectedValue(new Error('no backend'));
+    await expect(logClientEvent('Error', 'boom')).resolves.toBeUndefined();
   });
 
   it('returns the data of an ok result', async () => {

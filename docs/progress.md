@@ -133,9 +133,9 @@
       "number": 21,
       "title": "Geometry stage",
       "branch": "feat/issue-21-geometry-stage",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 109,
-      "commit": null
+      "commit": "1b35133"
     }
   ]
 }

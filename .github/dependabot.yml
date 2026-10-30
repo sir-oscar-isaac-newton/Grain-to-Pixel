@@ -45,6 +45,18 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: typescript
         update-types: [version-update:semver-major]
+      # React 18 is the project baseline (docs/specification.md section 2).
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-major]
+      - dependency-name: '@types/react'
+        update-types: [version-update:semver-major]
+      - dependency-name: '@types/react-dom'
+        update-types: [version-update:semver-major]
+      # plugin-react 6 needs a newer Vite; we stay on Vite 6 until the Node baseline moves past 20.12.
+      - dependency-name: '@vitejs/plugin-react'
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /

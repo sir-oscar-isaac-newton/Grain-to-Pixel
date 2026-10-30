@@ -5,6 +5,15 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+gtp-core = { version = "0.0.0", path = "../gtp-core" }
+sha2 = "0.11.1"
+# Scanners write uncompressed, LZW or Deflate TIFFs; JPEG and fax decoders stay off to keep the
+# attack surface of untrusted files small.
+tiff = { version = "0.11.3", default-features = false, features = ["deflate", "lzw"] }
+
+[dev-dependencies]
+gtp-core = { path = "../gtp-core", version = "0.0.0", features = ["testing"] }
+proptest = "1.12.0"
 
 [lints]
 workspace = true

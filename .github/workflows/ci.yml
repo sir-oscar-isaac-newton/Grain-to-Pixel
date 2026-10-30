@@ -155,5 +155,19 @@ jobs:
       - name: Build the app (release binary, no installer)
         run: pnpm build:app
 
+      # Diagnostics for the runner (kept while the WebDriver session start is being investigated).
+      - name: Diagnostics - does the app start on this runner?
+        continue-on-error: true
+        run: pnpm smoke
+
+      - name: Diagnostics - user, elevation and WebView2
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          whoami
+          whoami /groups | Select-String 'Mandatory Level'
+          (Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}').pv
+          Get-Process msedgewebview2, msedgedriver, tauri-driver -ErrorAction SilentlyContinue | Select-Object Name, Id
+
       - name: End-to-end test
         run: pnpm test:e2e

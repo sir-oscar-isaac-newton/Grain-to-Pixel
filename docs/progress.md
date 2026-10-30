@@ -109,6 +109,15 @@
       "status": "completed",
       "pr": 99,
       "commit": "0ad56da"
+    },
+    {
+      "id": "P-07",
+      "number": 19,
+      "title": "Frame-area detection",
+      "branch": "feat/issue-19-frame-area-detection",
+      "status": "in_progress",
+      "pr": 101,
+      "commit": null
     }
   ]
 }

@@ -1,11 +1,13 @@
-//! Negative-to-positive maths: film-base measurement, normalization and inversion; frame
-//! detection follows. Pure functions over `ImageF32` (docs/architecture.md section 3).
+//! Negative-to-positive maths: film-base measurement, normalization, inversion and frame-area
+//! detection. Pure functions over `ImageF32` (docs/architecture.md section 3).
 
 mod film_base;
+mod frame_detect;
 mod invert;
 mod normalize;
 
 pub use film_base::{auto_film_base, roll_base, sample_film_base, BaseEstimate, Rect};
+pub use frame_detect::{detect_frame, FrameDetection, MIN_CONFIDENCE, REBATE_TOLERANCE};
 pub use invert::{
     auto_levels, invert, levels_or_auto, DEFAULT_HIGH_PERCENTILE, DEFAULT_LOW_PERCENTILE,
 };

@@ -860,9 +860,9 @@ legacy: GTP-052
 deps: U-02, L-08
 adr: no
 spec: specification section 4.2 (Film base, Invert)
-desc: Panel for the film base (roll default, click-to-sample on the rebate) and inversion levels, with recipe autosave.
+desc: Panel for the film base (roll default, click or drag-a-box sampling on the rebate) and inversion levels, with recipe autosave.
 ac:
-- Clicking the rebate sets a manual base for the frame; the roll default can be set from a frame
+- Clicking the rebate sets a manual base for the frame (the median of a small area around the click); dragging a box on the rebate sets it from that region; the roll default can be set from a frame
 - Auto levels can be re-run; manual black/white values override
 - Changes autosave through recipe_save (debounced 500 ms)
 tech:

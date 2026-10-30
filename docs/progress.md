@@ -88,8 +88,17 @@
       "number": 15,
       "title": "TIFF read/write with input limits",
       "branch": "feat/issue-15-tiff-read-write-with-input-limits",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 93,
+      "commit": "ec29417"
+    },
+    {
+      "id": "P-05",
+      "number": 17,
+      "title": "Film-base measurement and normalize",
+      "branch": "feat/issue-17-film-base-measurement-and-normalize",
+      "status": "in_progress",
+      "pr": null,
       "commit": null
     }
   ]

@@ -39,6 +39,7 @@ cargo test --workspace
 cargo deny check --hide-inclusion-graph
 pnpm lint && pnpm typecheck && pnpm test:tools
 pnpm check:deps          # crate dependency rules (docs/architecture.md section 3.3)
+pnpm check:ipc           # IPC bindings are up to date (fix with: pnpm gen:ipc)
 ```
 
 See [docs/structure.md](docs/structure.md) for layout and conventions.

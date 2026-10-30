@@ -13,7 +13,9 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "test:rust": "cargo test --workspace",
-    "test:tools": "node --test tools/scripts/check-deps/check-deps.test.mjs",
+    "test:tools": "node --test tools/scripts/check-deps/check-deps.test.mjs tools/scripts/check-ipc/check-ipc.test.mjs",
+    "gen:ipc": "cargo run -q -p grain-to-pixel-desktop --example gen_ipc -- packages/ipc-types/src/bindings.ts",
+    "check:ipc": "node tools/scripts/check-ipc/check-ipc.mjs",
     "check:deps": "node tools/scripts/check-deps/check-deps.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

@@ -9,6 +9,13 @@ all-features = true
 
 [advisories]
 yanked = "deny"
+ignore = [
+  # `paste` (a compile-time proc-macro helper) is unmaintained, with no vulnerability and no safe
+  # upgrade. It is pulled in by `specta`, which powers the typed IPC (tauri-specta, issue D-02).
+  # Approved by the owner on 2026-10-29. Remove this entry when specta moves to `pastey` or
+  # drops the dependency; re-check on every tauri-specta/specta update.
+  { id = "RUSTSEC-2024-0436", reason = "unmaintained proc-macro dependency of specta; no vulnerability" },
+]
 
 [licenses]
 # Permissive licences only. Extend deliberately in a PR that explains the new dependency.

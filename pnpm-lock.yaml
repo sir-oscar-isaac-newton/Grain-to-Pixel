@@ -35,6 +35,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@gtp/ipc-types':
+        specifier: workspace:^
+        version: link:../../packages/ipc-types
       '@tauri-apps/api':
         specifier: ^2
         version: 2.12.4
@@ -85,7 +88,11 @@ importers:
         specifier: ^3
         version: 3.2.7(jsdom@26.1.0)
 
-  packages/ipc-types: {}
+  packages/ipc-types:
+    dependencies:
+      '@tauri-apps/api':
+        specifier: ^2
+        version: 2.12.4
 
   packages/ui: {}
 

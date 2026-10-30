@@ -11,7 +11,11 @@ use crate::commands;
 /// Collects all commands and events (one place, shared by the app and the generator).
 pub fn builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
-        .commands(collect_commands![commands::system::library_info])
+        .commands(collect_commands![
+            commands::system::library_info,
+            commands::system::log_client_event,
+            commands::system::crash_notes_take
+        ])
         .events(collect_events![])
 }
 
@@ -36,6 +40,9 @@ mod tests {
             text.contains("libraryInfo"),
             "command missing from bindings"
         );
+        for command in ["logClientEvent", "crashNotesTake"] {
+            assert!(text.contains(command), "{command} missing from bindings");
+        }
         assert!(text.contains("AppError"), "AppError missing from bindings");
         for code in gtp_core::ErrorCode::ALL {
             assert!(

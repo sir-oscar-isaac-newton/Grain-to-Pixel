@@ -6,6 +6,10 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 export const commands = {
 	/**  Stub for the real `library_info` of issue L-03; today it only reports the app version. */
 	libraryInfo: () => typedError<LibraryInfo, AppError_Serialize>(__TAURI_INVOKE("library_info")),
+	/**  Writes an event from the UI (error boundary, `window.onerror`) to the application log. */
+	logClientEvent: (level: ClientLogLevel, message: string) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("log_client_event", { level, message })),
+	/**  Crashes of earlier runs, reported once so the UI can say something went wrong last time. */
+	crashNotesTake: () => typedError<CrashNote[], AppError_Serialize>(__TAURI_INVOKE("crash_notes_take")),
 };
 
 /* Types */
@@ -24,6 +28,14 @@ export type AppError_Serialize = {
 	code: ErrorCode,
 	message: string,
 	details?: string,
+};
+
+/**  Severity of an event reported by the UI. */
+export type ClientLogLevel = "Error" | "Warn" | "Info" | "Debug";
+
+/**  A crash from an earlier run, as the UI sees it. Details stay in the log and the note file. */
+export type CrashNote = {
+	file: string,
 };
 
 /**  Stable, machine-readable error category. The UI shows `message` and logs the code. */

@@ -2,14 +2,17 @@
 //! application services and maps errors; it holds no business logic (docs/architecture.md section 3).
 
 mod commands;
+mod crash;
 mod error;
 mod events;
 mod ipc;
+mod logging;
 mod state;
 
 use std::path::{Path, PathBuf};
 
 use tauri::webview::PageLoadEvent;
+use tauri::Manager;
 
 pub use ipc::export_bindings;
 
@@ -41,10 +44,48 @@ pub fn run() -> tauri::Result<()> {
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
+            start_observability(app);
             Ok(())
         })
         .run(tauri::generate_context!())
 }
+
+/// Starts file logging and the panic hook, then collects crash notes from earlier runs.
+/// Failures never stop the app: without a log directory it runs with stderr logging only.
+fn start_observability(app: &tauri::App) {
+    let Ok(dir) = app.path().app_log_dir() else {
+        return;
+    };
+    match logging::init(&dir) {
+        Ok(guard) => {
+            // Dropping the guard would stop the log writer, so it lives as long as the app.
+            app.manage(LogGuard(guard));
+        }
+        Err(err) => {
+            // Another subscriber (tests, dev tooling) or an unwritable directory: keep going.
+            let _ = tracing_subscriber::fmt()
+                .with_writer(std::io::stderr)
+                .try_init();
+            tracing::warn!(%err, "file logging is off");
+        }
+    }
+    crash::install_hook(dir.clone());
+    match crash::take_unreported(&dir) {
+        Ok(notes) => {
+            if let Ok(mut slot) = app.state::<state::AppState>().crash_notes.lock() {
+                *slot = notes;
+            }
+        }
+        Err(err) => tracing::warn!(%err, "could not read crash notes"),
+    }
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        "grain to pixel started"
+    );
+}
+
+/// Keeps the non-blocking log writer alive (see [`start_observability`]).
+struct LogGuard(#[allow(dead_code)] tracing_appender::non_blocking::WorkerGuard);
 
 #[cfg(test)]
 mod tests {

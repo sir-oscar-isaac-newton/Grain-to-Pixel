@@ -5,7 +5,7 @@ import { useUiStore, type View } from './app/store';
 import { DevelopView } from './features/develop/DevelopView';
 import { ImportView } from './features/import/ImportView';
 import { LibraryView } from './features/library/LibraryView';
-import { libraryInfo } from './shared/ipc';
+import { crashNotesTake, libraryInfo } from './shared/ipc';
 
 const VIEWS: readonly View[] = ['library', 'develop', 'import'];
 
@@ -14,6 +14,21 @@ export function App() {
   const view = useUiStore((s) => s.view);
   const setView = useUiStore((s) => s.setView);
   const [version, setVersion] = useState<string | null>(null);
+  const [crashed, setCrashed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    crashNotesTake()
+      .then((notes) => {
+        if (alive) setCrashed(notes.length > 0);
+      })
+      .catch(() => {
+        // No backend (tests, plain browser): nothing to report.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -49,6 +64,14 @@ export function App() {
         </nav>
       </header>
       <main className={styles.main}>
+        {crashed && (
+          <div role="status" className={styles.notice}>
+            <span>{t('crash.notice')}</span>
+            <button type="button" onClick={() => setCrashed(false)}>
+              {t('crash.dismiss')}
+            </button>
+          </div>
+        )}
         {view === 'library' && <LibraryView />}
         {view === 'develop' && <DevelopView />}
         {view === 'import' && <ImportView />}

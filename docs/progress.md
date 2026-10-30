@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-29",
+  "updated": "2026-10-30",
   "rules": "status is in_progress while the issue's branch exists or its PR is open; completed only after the PR is merged and closed (see docs/workflow.md section 10)",
   "issues": [
     {
@@ -54,6 +54,15 @@
       "branch": "feat/issue-6-smoke-and-end-to-end-tests-in-ci",
       "status": "in_progress",
       "pr": 81,
+      "commit": null
+    },
+    {
+      "id": "D-03",
+      "number": 7,
+      "title": "Logging, panic hook and client error reporting",
+      "branch": "feat/issue-7-logging-panic-hook-and-client-error-reporting",
+      "status": "in_progress",
+      "pr": null,
       "commit": null
     }
   ]

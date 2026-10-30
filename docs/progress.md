@@ -146,8 +146,15 @@
       "pr": 111,
       "commit": null,
       "note": "Windows done; macOS confirmation pending"
-=======
->>>>>>> origin/develop
+    },
+    {
+      "id": "P-10",
+      "number": 22,
+      "title": "Application layer gtp-app - pipeline, proxy and analyze",
+      "branch": "feat/issue-22-application-layer-gtp-app",
+      "status": "in_progress",
+      "pr": 112,
+      "commit": null
     }
   ]
 }

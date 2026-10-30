@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "gtp-edit"
 version.workspace = true
 edition.workspace = true
@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 gtp-core = { version = "0.0.0", path = "../gtp-core" }
+rayon = "1.12.0"
 
 [dev-dependencies]
 proptest = "1.12.0"

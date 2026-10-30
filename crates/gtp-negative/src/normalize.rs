@@ -1,6 +1,7 @@
 //! Film-base normalization: `T = I / base` per channel (docs/specification.md section 4.2 step 4).
 
 use gtp_core::{AppError, ErrorCode, ImageF32};
+use rayon::prelude::*;
 
 /// Smallest divisor used for a base channel; a smaller or zero base cannot produce infinity.
 pub const EPSILON: f32 = 1e-6;
@@ -27,7 +28,7 @@ pub fn normalize(image: &mut ImageF32, base: [f32; 3]) -> Result<(), AppError> {
     }
     let divisor = base.map(|b| b.max(EPSILON));
     let (pixels, _) = image.data.as_chunks_mut::<3>();
-    for pixel in pixels {
+    pixels.par_iter_mut().for_each(|pixel| {
         for (sample, divisor) in pixel.iter_mut().zip(divisor) {
             *sample = if sample.is_nan() {
                 0.0
@@ -35,7 +36,7 @@ pub fn normalize(image: &mut ImageF32, base: [f32; 3]) -> Result<(), AppError> {
                 (*sample / divisor).clamp(-f32::MAX, f32::MAX)
             };
         }
-    }
+    });
     Ok(())
 }
 

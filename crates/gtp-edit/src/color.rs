@@ -21,6 +21,7 @@
 
 use gtp_core::recipe::{Color, Mono};
 use gtp_core::{AppError, ImageF32};
+use rayon::prelude::*;
 
 use crate::{require_rgb, saturate, MAX_SAMPLE};
 
@@ -58,7 +59,7 @@ pub fn apply_color(image: &mut ImageF32, color: &Color, mono: &Mono) -> Result<(
     let vibrance = color.vibrance / 100.0;
 
     let (pixels, _) = image.data.as_chunks_mut::<3>();
-    for pixel in pixels {
+    pixels.par_iter_mut().for_each(|pixel| {
         for c in pixel.iter_mut() {
             *c = if c.is_finite() {
                 c.clamp(0.0, MAX_SAMPLE)
@@ -74,7 +75,7 @@ pub fn apply_color(image: &mut ImageF32, color: &Color, mono: &Mono) -> Result<(
         if mono.enabled {
             let y = mono.mix[0] * pixel[0] + mono.mix[1] * pixel[1] + mono.mix[2] * pixel[2];
             *pixel = [y.max(0.0); 3];
-            continue;
+            return;
         }
         if saturation != 1.0 {
             saturate(pixel, saturation);
@@ -85,7 +86,7 @@ pub fn apply_color(image: &mut ImageF32, color: &Color, mono: &Mono) -> Result<(
             let own = if max > 0.0 { (max - min) / max } else { 0.0 };
             saturate(pixel, 1.0 + vibrance * (1.0 - own));
         }
-    }
+    });
     Ok(())
 }
 

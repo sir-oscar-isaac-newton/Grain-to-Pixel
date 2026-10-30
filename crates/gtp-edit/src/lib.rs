@@ -1,5 +1,6 @@
 //! Edit stages over linear `ImageF32` buffers: colour balance and tone (in place) and geometry
-//! (a new buffer); IR dust removal follows. Every tuning constant is a named, documented `pub const`
+//! (a new buffer); IR dust removal follows. Per-pixel loops run in parallel with `rayon`; each
+//! pixel or output row is independent, so the result is the same as on one thread. Every tuning constant is a named, documented `pub const`
 //! so it can be calibrated against reference renders (issue Q-03).
 
 mod color;

@@ -8,6 +8,6 @@ Architecture Decision Records (ADRs), numbered, immutable once accepted (superse
 | [0002](0002-tech-stack.md) | Tauri + Rust core + TypeScript UI | Accepted |
 | [0003](0003-ls-50-via-nkscan.md) | Drive the LS-50 with nkscan | Accepted for Windows; macOS to confirm |
 | [0004](0004-guided-rgb-capture.md) | Guided RGB capture: Scanlight serial control and two camera backends | Proposed |
-| [0005](0005-application-layer.md) | Application layer crate (`gtp-app`) | Proposed |
+| [0005](0005-application-layer.md) | Application layer crate (`gtp-app`) | Accepted |
 
 New ADR: copy [0000-template.md](0000-template.md), take the next number, add a row above.

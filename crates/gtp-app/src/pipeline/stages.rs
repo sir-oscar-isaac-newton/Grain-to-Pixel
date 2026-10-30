@@ -1,0 +1,80 @@
+//! The fixed stage order (docs/specification.md section 4.2, rules/colour-pipeline.md).
+
+use gtp_core::recipe::{BaseSource, Crop, Geometry};
+use gtp_core::{AppError, ImageF32, Recipe};
+
+use super::PipelineInput;
+
+/// One step of the render pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    /// IR dust removal; a no-op until P-12.
+    Dust,
+    /// Crop to the frame (`geometry.crop`), as an exact pixel copy.
+    Crop,
+    /// Divide by the film base.
+    Normalize,
+    /// Density inversion with the recipe's black and white points.
+    Invert,
+    /// Colour axes, temperature, tint, black and white, saturation, vibrance.
+    Color,
+    /// Exposure, contrast, highlights, shadows, whites, blacks, dehaze, curves.
+    Tone,
+    /// Straighten, quarter turns and flips (the crop was applied earlier).
+    Geometry,
+}
+
+/// The order every render runs the stages in.
+pub const STAGE_ORDER: [Stage; 7] = [
+    Stage::Dust,
+    Stage::Crop,
+    Stage::Normalize,
+    Stage::Invert,
+    Stage::Color,
+    Stage::Tone,
+    Stage::Geometry,
+];
+
+/// The film base to normalize with: the recipe's own value when it was sampled for this frame
+/// (`Manual`), otherwise the roll's measured base, or the recipe's value if the roll has none.
+pub(crate) fn resolve_base(input: &PipelineInput, recipe: &Recipe) -> [f32; 3] {
+    match recipe.base.source {
+        BaseSource::Manual => recipe.base.rgb,
+        BaseSource::Roll => input.film_base.unwrap_or(recipe.base.rgb),
+    }
+}
+
+/// Runs one stage. Stages that change nothing for this recipe are skipped.
+pub(crate) fn run_stage(
+    stage: Stage,
+    mut image: ImageF32,
+    input: &PipelineInput,
+    recipe: &Recipe,
+) -> Result<ImageF32, AppError> {
+    match stage {
+        Stage::Dust => {}
+        Stage::Crop => {
+            if recipe.geometry.crop != Crop::default() {
+                let crop_only = Geometry {
+                    crop: recipe.geometry.crop,
+                    ..Geometry::default()
+                };
+                image = gtp_edit::apply_geometry(&image, &crop_only)?;
+            }
+        }
+        Stage::Normalize => gtp_negative::normalize(&mut image, resolve_base(input, recipe))?,
+        Stage::Invert => gtp_negative::invert(&mut image, &recipe.invert)?,
+        Stage::Color => gtp_edit::apply_color(&mut image, &recipe.color, &recipe.mono)?,
+        Stage::Tone => gtp_edit::apply_tone(&mut image, &recipe.tone)?,
+        Stage::Geometry => {
+            let turn_only = Geometry {
+                crop: Crop::default(),
+                ..recipe.geometry
+            };
+            if turn_only != Geometry::default() {
+                image = gtp_edit::apply_geometry(&image, &turn_only)?;
+            }
+        }
+    }
+    Ok(image)
+}

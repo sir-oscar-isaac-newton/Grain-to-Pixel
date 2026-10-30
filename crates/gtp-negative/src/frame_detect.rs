@@ -14,6 +14,7 @@
 
 use gtp_core::recipe::Crop;
 use gtp_core::{AppError, ErrorCode, ImageF32};
+use rayon::prelude::*;
 
 use crate::film_base::median;
 
@@ -60,10 +61,10 @@ fn profile(image: &ImageF32, columns: bool) -> Vec<f32> {
     let (w, h) = (image.width as usize, image.height as usize);
     let (length, across) = if columns { (w, h) } else { (h, w) };
     let step = sample_step(across);
-    let mut values = Vec::with_capacity(across / step + 1);
     (0..length)
+        .into_par_iter()
         .map(|i| {
-            values.clear();
+            let mut values = Vec::with_capacity(across / step + 1);
             values.extend((0..across).step_by(step).map(|j| {
                 if columns {
                     luminance(image, i, j)

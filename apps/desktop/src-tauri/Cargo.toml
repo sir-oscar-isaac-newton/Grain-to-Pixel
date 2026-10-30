@@ -12,8 +12,13 @@ name = "grain_to_pixel_desktop_lib"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+gtp-core = { path = "../../../crates/gtp-core", version = "0.0.0", features = ["specta"] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
+# tauri-specta stack is still pre-release: pin exact versions (see docs/architecture.md).
+specta = { version = "=2.0.0-rc.26", features = ["derive"] }
+specta-typescript = "=0.0.13"
+tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 
 [dev-dependencies]
 serde_json = "1"

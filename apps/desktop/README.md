@@ -23,7 +23,8 @@ src/                 React UI: main.tsx, App.tsx, app/store.ts, features/{librar
 src-tauri/           Rust shell: lib.rs (run), state.rs, commands/system.rs, tauri.conf.json, capabilities/default.json, icons/
 ```
 
-- The UI calls the backend only through `src/shared/ipc.ts` (replaced by generated types in D-02).
+- The UI calls the backend only through `src/shared/ipc.ts`, which wraps the commands generated from Rust (`@gtp/ipc-types`, regenerate with `pnpm gen:ipc`; see [packages/README.md](../../packages/README.md)).
+- `src-tauri/build.rs` embeds a Windows application manifest (Common Controls v6) into every target, so unit tests and the `gen_ipc` example can start; without it they crash with `STATUS_ENTRYPOINT_NOT_FOUND`.
 - Commands are thin: validate, call a `gtp-app` service, map errors. No business logic in `src-tauri`.
 - `capabilities/default.json` grants only `core:default`; add permissions together with the command that needs them. There is no shell plugin.
 - CSP (production): `default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data: blob:`. The `connect-src` entry is what Tauri's IPC needs. `devCsp` is looser (inline styles and the Vite websocket) and applies only to `pnpm dev`.

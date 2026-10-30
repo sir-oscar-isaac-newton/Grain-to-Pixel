@@ -1,0 +1,59 @@
+//! The typed IPC surface: every command and event registered here ends up in the generated
+//! `packages/ipc-types/src/bindings.ts`. Run `pnpm gen:ipc` after changing it.
+
+use std::path::Path;
+
+use specta_typescript::Typescript;
+use tauri_specta::{collect_commands, collect_events, Builder};
+
+use crate::commands;
+
+/// Collects all commands and events (one place, shared by the app and the generator).
+pub fn builder() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new()
+        .commands(collect_commands![commands::system::library_info])
+        .events(collect_events![])
+}
+
+/// Writes the TypeScript bindings to `path` without starting the app.
+pub fn export_bindings(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    builder().export(Typescript::default(), path)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bindings_describe_commands_and_the_error_type() {
+        let path = std::env::temp_dir().join(format!("gtp-bindings-{}.ts", std::process::id()));
+        export_bindings(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        assert!(
+            text.contains("libraryInfo"),
+            "command missing from bindings"
+        );
+        assert!(text.contains("AppError"), "AppError missing from bindings");
+        for code in gtp_core::ErrorCode::ALL {
+            assert!(
+                text.contains(&format!("{code:?}")),
+                "ErrorCode::{code:?} missing"
+            );
+        }
+    }
+
+    #[test]
+    fn export_is_deterministic() {
+        let dir = std::env::temp_dir();
+        let a = dir.join(format!("gtp-bindings-a-{}.ts", std::process::id()));
+        let b = dir.join(format!("gtp-bindings-b-{}.ts", std::process::id()));
+        export_bindings(&a).unwrap();
+        export_bindings(&b).unwrap();
+        assert_eq!(std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
+        std::fs::remove_file(&a).unwrap();
+        std::fs::remove_file(&b).unwrap();
+    }
+}

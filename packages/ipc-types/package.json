@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@gtp/ipc-types",
   "version": "0.0.0",
   "private": true,
@@ -6,5 +6,8 @@
   "main": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2"
   }
 }

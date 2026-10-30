@@ -25,8 +25,17 @@
       "number": 3,
       "title": "Tauri 2 desktop skeleton",
       "branch": "feat/issue-3-tauri-2-desktop-skeleton",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 71,
+      "commit": "8a22d66"
+    },
+    {
+      "id": "D-02",
+      "number": 4,
+      "title": "Typed IPC and AppError",
+      "branch": "feat/issue-4-typed-ipc-and-apperror",
+      "status": "in_progress",
+      "pr": 72,
       "commit": null
     }
   ]

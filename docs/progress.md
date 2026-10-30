@@ -97,9 +97,9 @@
       "number": 17,
       "title": "Film-base measurement and normalize",
       "branch": "feat/issue-17-film-base-measurement-and-normalize",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 97,
-      "commit": null
+      "commit": "b0de074"
     }
   ]
 }

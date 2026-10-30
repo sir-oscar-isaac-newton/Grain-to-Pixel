@@ -124,9 +124,9 @@
       "number": 20,
       "title": "Colour and tone stages",
       "branch": "feat/issue-20-colour-and-tone-stages",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 107,
-      "commit": null
+      "commit": "375d802"
     }
   ]
 }

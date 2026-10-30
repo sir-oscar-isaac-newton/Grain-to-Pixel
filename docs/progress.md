@@ -115,9 +115,9 @@
       "number": 19,
       "title": "Frame-area detection",
       "branch": "feat/issue-19-frame-area-detection",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 101,
-      "commit": null
+      "commit": "4f9e9fe"
     }
   ]
 }

@@ -107,7 +107,7 @@
       "title": "Inversion and auto levels",
       "branch": "feat/issue-18-inversion-and-auto-levels",
       "status": "in_progress",
-      "pr": null,
+      "pr": 99,
       "commit": null
     }
   ]

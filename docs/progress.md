@@ -124,8 +124,17 @@
       "number": 20,
       "title": "Colour and tone stages",
       "branch": "feat/issue-20-colour-and-tone-stages",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 107,
+      "commit": "375d802"
+    },
+    {
+      "id": "P-09",
+      "number": 21,
+      "title": "Geometry stage",
+      "branch": "feat/issue-21-geometry-stage",
+      "status": "in_progress",
+      "pr": null,
       "commit": null
     }
   ]

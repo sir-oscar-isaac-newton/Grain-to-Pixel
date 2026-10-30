@@ -1,13 +1,15 @@
-//! Edit stages over linear `ImageF32` buffers, applied in place: colour balance and tone today;
-//! geometry and IR dust removal follow. Every tuning constant is a named, documented `pub const`
+//! Edit stages over linear `ImageF32` buffers: colour balance and tone (in place) and geometry
+//! (a new buffer); IR dust removal follows. Every tuning constant is a named, documented `pub const`
 //! so it can be calibrated against reference renders (issue Q-03).
 
 mod color;
 mod curve;
+mod geometry;
 mod tone;
 
 pub use color::{apply_color, channel_gains, AXIS_STOPS, TEMPERATURE_STOPS, TINT_STOPS};
 pub use curve::{Curve, LUT_SIZE};
+pub use geometry::{apply_geometry, output_size};
 pub use tone::{
     apply_tone, BLACKS_RANGE, DEHAZE_ADD_VEIL, DEHAZE_SATURATION, DEHAZE_VEIL_PERCENTILE,
     HIGHLIGHT_RANGE_STOPS, MID_GREY, REGION_STOPS, SHADOW_RANGE_STOPS, WHITES_RANGE,

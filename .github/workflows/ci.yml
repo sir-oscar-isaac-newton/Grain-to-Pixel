@@ -154,6 +154,20 @@ jobs:
           path: ~/.cargo/bin/tauri-driver.exe
           key: tauri-driver-2.1.0-${{ runner.os }}
 
+      # Experiment: the runner image ships an older WebView2 runtime than current Edge, and on it
+      # WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS (used by msedgedriver) is ignored. Update to the latest.
+      - name: Update the WebView2 runtime (evergreen bootstrapper)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          "before: " + (Get-ItemProperty $key).pv
+          $exe = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $exe
+          $p = Start-Process -FilePath $exe -ArgumentList '/silent', '/install' -Wait -PassThru
+          "installer exit code: " + $p.ExitCode
+          "after: " + (Get-ItemProperty $key).pv
+
       - name: Install the msedgedriver that matches WebView2
         shell: pwsh
         run: ./tools/scripts/e2e/install-edgedriver.ps1

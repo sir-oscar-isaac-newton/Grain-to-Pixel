@@ -118,6 +118,15 @@
       "status": "completed",
       "pr": 101,
       "commit": "4f9e9fe"
+    },
+    {
+      "id": "P-08",
+      "number": 20,
+      "title": "Colour and tone stages",
+      "branch": "feat/issue-20-colour-and-tone-stages",
+      "status": "in_progress",
+      "pr": 107,
+      "commit": null
     }
   ]
 }

@@ -1339,6 +1339,10 @@ dependencies = [
 [[package]]
 name = "gtp-edit"
 version = "0.0.0"
+dependencies = [
+ "gtp-core",
+ "proptest",
+]
 
 [[package]]
 name = "gtp-ingest"

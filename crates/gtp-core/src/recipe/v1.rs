@@ -1,4 +1,4 @@
-﻿//! Recipe version 1. Unknown fields are ignored and missing fields take their defaults, so older
+//! Recipe version 1. Unknown fields are ignored and missing fields take their defaults, so older
 //! and newer files of the same version both load. Values are brought into range by `Recipe::clamp`.
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,7 @@ pub struct Recipe {
     pub base: Base,
     pub invert: Invert,
     pub color: Color,
+    pub mono: Mono,
     pub tone: Tone,
     pub dust: Dust,
     pub output: Output,
@@ -30,6 +31,7 @@ impl Default for Recipe {
             base: Base::default(),
             invert: Invert::default(),
             color: Color::default(),
+            mono: Mono::default(),
             tone: Tone::default(),
             dust: Dust::default(),
             output: Output::default(),
@@ -145,6 +147,8 @@ pub struct Color {
     pub tint: f32,
     /// 0 is monochrome, 1 unchanged, 2 doubled.
     pub saturation: f32,
+    /// Saturation that spares colours which are already vivid; -100 to 100.
+    pub vibrance: f32,
 }
 
 impl Default for Color {
@@ -156,6 +160,30 @@ impl Default for Color {
             temperature: 0.0,
             tint: 0.0,
             saturation: 1.0,
+            vibrance: 0.0,
+        }
+    }
+}
+
+/// Rec.2020 luma weights: the default black-and-white mix.
+pub const REC2020_LUMA: [f32; 3] = [0.2627, 0.6780, 0.0593];
+
+/// Black-and-white conversion. When enabled, every pixel becomes `mix[0]*R + mix[1]*G + mix[2]*B`
+/// in all three channels, which acts like a coloured filter on black-and-white film. Weights run
+/// from -2 to 2; weights that sum to 1 keep the brightness.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct Mono {
+    pub enabled: bool,
+    pub mix: [f32; 3],
+}
+
+impl Default for Mono {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mix: REC2020_LUMA,
         }
     }
 }
@@ -183,7 +211,7 @@ impl Default for Curves {
 }
 
 /// Tone sliders. Applied in this order: exposure, contrast, highlights and shadows, whites and
-/// blacks, then the curves. The sliders from `contrast` on run from -100 to 100.
+/// blacks, dehaze, then the curves. The sliders from `contrast` on run from -100 to 100.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
@@ -198,6 +226,8 @@ pub struct Tone {
     pub whites: f32,
     /// Moves the point that counts as pure black.
     pub blacks: f32,
+    /// Removes (positive) or adds (negative) a uniform veil such as film fog or scanner flare.
+    pub dehaze: f32,
     pub curve: Curves,
 }
 
@@ -210,6 +240,7 @@ impl Default for Tone {
             shadows: 0.0,
             whites: 0.0,
             blacks: 0.0,
+            dehaze: 0.0,
             curve: Curves::default(),
         }
     }

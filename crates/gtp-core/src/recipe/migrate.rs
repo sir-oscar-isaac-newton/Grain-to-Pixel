@@ -81,6 +81,10 @@ mod tests {
         assert_eq!(value["color"]["saturation"], 1.0);
         assert_eq!(value["dust"]["enabled"], true);
         assert_eq!(value["output"]["space"], "srgb");
+        assert_eq!(value["color"]["vibrance"], 0.0);
+        assert_eq!(value["tone"]["dehaze"], 0.0);
+        assert_eq!(value["mono"]["enabled"], false);
+        assert_eq!(value["mono"]["mix"].as_array().map(Vec::len), Some(3));
     }
 
     #[test]

@@ -129,8 +129,9 @@ IDs are ULIDs (sortable, collision-safe). Originals are **immutable**; every edi
   "geometry": { "crop": {"x":0,"y":0,"w":1,"h":1}, "angle_deg": 0, "rot90": 0, "flip_h": false, "flip_v": false },
   "base":     { "source": "roll" | "manual", "rgb": [r,g,b] },     // film base in linear scan values
   "invert":   { "black": [r,g,b], "white": [r,g,b] },              // per-channel density range; auto-filled
-  "color":    { "red_cyan": 0, "green_magenta": 0, "blue_yellow": 0, "temperature": 0, "tint": 0, "saturation": 1.0 },
-  "tone":     { "exposure_ev": 0, "contrast": 0, "highlights": 0, "shadows": 0, "whites": 0, "blacks": 0, "curve": { "master": [[0,0],[1,1]], "r": [], "g": [], "b": [] } },
+  "color":    { "red_cyan": 0, "green_magenta": 0, "blue_yellow": 0, "temperature": 0, "tint": 0, "saturation": 1.0, "vibrance": 0 },
+  "mono":     { "enabled": false, "mix": [0.2627, 0.6780, 0.0593] },    // black and white; mix defaults to Rec.2020 luma
+  "tone":     { "exposure_ev": 0, "contrast": 0, "highlights": 0, "shadows": 0, "whites": 0, "blacks": 0, "dehaze": 0, "curve": { "master": [[0,0],[1,1]], "r": [], "g": [], "b": [] } },
   "dust":     { "enabled": true, "threshold": 0.5, "grow_px": 2 },
   "output":   { "space": "srgb" }
 }
@@ -149,8 +150,10 @@ Rules: unknown fields are ignored; a missing field means default; `v` bumps only
 | `invert.black` / `white` | densities, 0 to 10; white at least 0.001 above black (0 / 1) |
 | `color.red_cyan`, `green_magenta`, `blue_yellow`, `temperature`, `tint` | -100 to 100 (0). Positive `red_cyan` adds red, negative adds cyan; likewise green/magenta and blue/yellow, as in darkroom filtration |
 | `color.saturation` | 0 to 2 (1) |
+| `color.vibrance` | -100 to 100 (0); saturation that spares colours which are already vivid |
+| `mono.mix` | each weight -2 to 2 (Rec.2020 luma 0.2627, 0.6780, 0.0593); `mono.enabled` false. Weights summing to 1 keep the brightness; a heavy red weight acts like a red filter |
 | `tone.exposure_ev` | -5 to 5 (0) |
-| `tone.contrast`, `highlights`, `shadows`, `whites`, `blacks` | -100 to 100 (0). Highlights and shadows act on the bright and dark parts of the tonal range; whites and blacks move the white and black points |
+| `tone.contrast`, `highlights`, `shadows`, `whites`, `blacks`, `dehaze` | -100 to 100 (0). Highlights and shadows act on the bright and dark parts of the tonal range; whites and blacks move the white and black points; dehaze removes (positive) or adds (negative) a uniform veil |
 | `tone.curve.*` | points in the unit square, sorted and unique by input, at most 16 per curve; empty means no change |
 | `dust.threshold` | 0 to 1 (0.5) |
 | `dust.grow_px` | 0 to 10 (2) |
@@ -162,8 +165,8 @@ Rules: unknown fields are ignored; a missing field means default; `v` bumps only
 3. **Crop** to the frame area (auto-detected, user adjustable).
 4. **Film-base normalize:** `T = I / base` per channel.
 5. **Invert:** density `D = -log10(T)` (`T` floored at 1e-6); per-channel black/white densities map `D` to the positive value `P = max(0, (D - black) / (white - black))`, linear in density, with no upper clamp so highlights keep headroom for the tone stage (the output stage clips). The points are auto-filled from the 0.5th and 99.5th percentiles of `D` over the cropped frame; a value the user sets in the recipe is used as is.
-6. **Colour:** the red/cyan, green/magenta and blue/yellow sliders and temperature/tint as per-channel gains (in that order); then saturation.
-7. **Tone:** exposure, contrast, highlights and shadows, whites and blacks, then curves.
+6. **Colour:** the red/cyan, green/magenta and blue/yellow axes, temperature and tint as per-channel gains in stops (each control raises its channel(s) and lowers the others so the gains multiply to 1: an axis of +-100 is +-1 stop on its channel); then black-and-white (when enabled: `Y = mix . rgb` in all channels, and saturation and vibrance are skipped); then saturation around the Rec.2020 luma; then vibrance (the same, weighted by `1 - ` the pixel's own saturation).
+7. **Tone:** on the Rec.2020 luma, with the pixel scaled by `Y'/Y` so hue is kept: exposure (`2^EV`), contrast (a power curve pivoting on mid-grey 0.18), highlights and shadows (up to 1 stop, weighted by distance from mid-grey; mid-grey is untouched and the mapping stays monotone), whites and blacks (move the white and black points). Then dehaze, global: positive removes a veil estimated as the 0.5th percentile of each pixel's darkest channel and lifts saturation slightly; negative adds a veil. Then curves (monotone cubic, master then R, G, B). Every constant is named in `gtp-edit` and calibrated against reference renders in Q-03.
 8. **Geometry:** rotate/flip/straighten (resample once, at the end).
 9. **Output transform** to the export space with ICC embedded.
 

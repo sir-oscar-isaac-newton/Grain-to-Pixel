@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 gtp-core = { version = "0.0.0", path = "../gtp-core" }
+rayon = "1.12.0"
 
 [lints]
 workspace = true

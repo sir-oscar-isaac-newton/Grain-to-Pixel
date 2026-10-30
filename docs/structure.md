@@ -36,7 +36,7 @@ grain-to-pixel/
 │  ├─ gtp-negative/          frame detect, film-base measure, inversion
 │  ├─ gtp-edit/              colour, tone, geometry, IR dust removal
 │  ├─ gtp-catalog/           SQLite archive, tags, search
-│  └─ gtp-app/               application layer: use-case services, jobs, pipeline composition (planned: GTP-029, ADR 0005)
+│  └─ gtp-app/               application layer: use-case services, jobs, pipeline composition (ADR 0005)
 ├─ packages/                 shared TypeScript
 │  ├─ ipc-types/             @gtp/ipc-types: generated Tauri command/event types
 │  └─ ui/                    @gtp/ui: reusable components

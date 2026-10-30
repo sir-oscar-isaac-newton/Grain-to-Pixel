@@ -25,6 +25,7 @@
 
 use gtp_core::recipe::Tone;
 use gtp_core::{AppError, ImageF32};
+use rayon::prelude::*;
 
 use crate::curve::Curve;
 use crate::{luma, require_rgb, saturate, MAX_SAMPLE};
@@ -122,22 +123,22 @@ fn dehaze(image: &mut ImageF32, amount: f32) {
     if amount > 0.0 {
         // The estimate needs the whole image first; it is a separate, read-only pass.
         let veil = amount * estimate_veil_from(pixels);
-        for pixel in pixels {
+        pixels.par_iter_mut().for_each(|pixel| {
             if veil > 0.0 {
                 for c in pixel.iter_mut() {
                     *c = ((*c - veil) / (1.0 - veil)).max(0.0);
                 }
             }
             saturate(pixel, 1.0 + DEHAZE_SATURATION * amount);
-        }
+        });
     } else {
         let veil = -amount * DEHAZE_ADD_VEIL;
-        for pixel in pixels {
+        pixels.par_iter_mut().for_each(|pixel| {
             for c in pixel.iter_mut() {
                 *c = *c * (1.0 - veil) + veil;
             }
             saturate(pixel, 1.0 + DEHAZE_SATURATION * amount);
-        }
+        });
     }
 }
 
@@ -167,7 +168,7 @@ pub fn apply_tone(image: &mut ImageF32, tone: &Tone) -> Result<(), AppError> {
     let map = ToneMap::new(tone);
 
     let (pixels, _) = image.data.as_chunks_mut::<3>();
-    for pixel in pixels.iter_mut() {
+    pixels.par_iter_mut().for_each(|pixel| {
         for c in pixel.iter_mut() {
             *c = if c.is_finite() {
                 c.clamp(0.0, MAX_SAMPLE)
@@ -176,7 +177,7 @@ pub fn apply_tone(image: &mut ImageF32, tone: &Tone) -> Result<(), AppError> {
             };
         }
         if map.is_identity() {
-            continue;
+            return;
         }
         let y = luma(*pixel);
         let mapped = map.map(y);
@@ -188,7 +189,7 @@ pub fn apply_tone(image: &mut ImageF32, tone: &Tone) -> Result<(), AppError> {
         } else {
             *pixel = [mapped; 3];
         }
-    }
+    });
 
     if tone.dehaze != 0.0 {
         dehaze(image, tone.dehaze / 100.0);
@@ -196,11 +197,11 @@ pub fn apply_tone(image: &mut ImageF32, tone: &Tone) -> Result<(), AppError> {
 
     if !master.is_identity() || channel_curves.iter().any(|c| !c.is_identity()) {
         let (pixels, _) = image.data.as_chunks_mut::<3>();
-        for pixel in pixels {
+        pixels.par_iter_mut().for_each(|pixel| {
             for (c, curve) in pixel.iter_mut().zip(&channel_curves) {
                 *c = curve.eval(master.eval(*c));
             }
-        }
+        });
     }
     Ok(())
 }

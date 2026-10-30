@@ -11,6 +11,6 @@ Rust libraries holding all image-processing and data logic. UI-agnostic and inde
 | `gtp-negative` | Frame-area detection, film-base measurement, inversion. |
 | `gtp-edit` | Colour balance, tone, geometry, IR dust removal. |
 | `gtp-catalog` | SQLite archive, tags, search. |
-| `gtp-app` | Application layer: use-case services, `JobManager`, pipeline composition (`render`, `analyze`). Planned in GTP-029 ([ADR 0005](../decisions/0005-application-layer.md)). |
+| `gtp-app` | Application layer: use-case services, `JobManager`, pipeline composition (`render`, `analyze`). Created in P-10 (GTP-029, [ADR 0005](../decisions/0005-application-layer.md)); holds the render pipeline today. |
 
 Dependency direction: `core` ← `io` ← (`ingest`, `capture`, `negative`, `edit`, `catalog`). Feature crates must not depend on each other; `gtp-app` is the only crate that combines them, and `src-tauri` is a thin adapter over it. Allowed edges: [docs/architecture.md §3.3](../docs/architecture.md).

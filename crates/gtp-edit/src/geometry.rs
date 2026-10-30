@@ -18,6 +18,7 @@
 
 use gtp_core::recipe::Geometry;
 use gtp_core::{AppError, ErrorCode, ImageF32};
+use rayon::prelude::*;
 
 fn invalid(message: &str, details: String) -> AppError {
     AppError::new(ErrorCode::InvalidInput, message).with_details(details)
@@ -152,35 +153,40 @@ pub fn apply_geometry(image: &ImageF32, geometry: &Geometry) -> Result<ImageF32,
     let (src_w, src_h) = (image.width as usize, image.height as usize);
     let mut out = vec![0.0f32; p.out_w * p.out_h * channels];
 
-    for j in 0..p.out_h {
-        for i in 0..p.out_w {
-            let (sx, sy) = p.straight_pixel(i, j);
-            let target = (j * p.out_w + i) * channels;
-            let Some((sin, cos)) = p.rotation else {
-                let from = ((p.y0 + sy) * src_w + p.x0 + sx) * channels;
-                out[target..target + channels].copy_from_slice(&image.data[from..from + channels]);
-                continue;
-            };
+    // Rows are independent, so they are filled in parallel; the result does not depend on it.
+    out.par_chunks_mut(p.out_w * channels)
+        .enumerate()
+        .for_each(|(j, row)| {
+            for i in 0..p.out_w {
+                let (sx, sy) = p.straight_pixel(i, j);
+                let target = i * channels;
+                let Some((sin, cos)) = p.rotation else {
+                    let from = ((p.y0 + sy) * src_w + p.x0 + sx) * channels;
+                    row[target..target + channels]
+                        .copy_from_slice(&image.data[from..from + channels]);
+                    continue;
+                };
 
-            let (px, py) = p.source_position(sin, cos, sx, sy);
-            let (fx, fy) = (px - 0.5, py - 0.5);
-            let (ix, iy) = (fx.floor(), fy.floor());
-            let (wx, wy) = (weights(fx - ix), weights(fy - iy));
-            for (c, slot) in out[target..target + channels].iter_mut().enumerate() {
-                let mut sum = 0.0;
-                for (dy, weight_y) in wy.iter().enumerate() {
-                    let row = (iy as i64 + dy as i64 - 1).clamp(0, src_h as i64 - 1) as usize;
-                    for (dx, weight_x) in wx.iter().enumerate() {
-                        let col = (ix as i64 + dx as i64 - 1).clamp(0, src_w as i64 - 1) as usize;
-                        sum += weight_x
-                            * weight_y
-                            * f64::from(image.data[(row * src_w + col) * channels + c]);
+                let (px, py) = p.source_position(sin, cos, sx, sy);
+                let (fx, fy) = (px - 0.5, py - 0.5);
+                let (ix, iy) = (fx.floor(), fy.floor());
+                let (wx, wy) = (weights(fx - ix), weights(fy - iy));
+                for (c, slot) in row[target..target + channels].iter_mut().enumerate() {
+                    let mut sum = 0.0;
+                    for (dy, weight_y) in wy.iter().enumerate() {
+                        let row = (iy as i64 + dy as i64 - 1).clamp(0, src_h as i64 - 1) as usize;
+                        for (dx, weight_x) in wx.iter().enumerate() {
+                            let col =
+                                (ix as i64 + dx as i64 - 1).clamp(0, src_w as i64 - 1) as usize;
+                            sum += weight_x
+                                * weight_y
+                                * f64::from(image.data[(row * src_w + col) * channels + c]);
+                        }
                     }
+                    *slot = (sum as f32).max(0.0);
                 }
-                *slot = (sum as f32).max(0.0);
             }
-        }
-    }
+        });
     ImageF32::new(p.out_w as u32, p.out_h as u32, image.channels, out)
 }
 

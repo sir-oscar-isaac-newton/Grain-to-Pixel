@@ -19,6 +19,7 @@
 
 use gtp_core::recipe::{Invert, INVERT_GAP, INVERT_MAX};
 use gtp_core::{AppError, ErrorCode, ImageF32};
+use rayon::prelude::*;
 
 /// Default low percentile for the black point.
 pub const DEFAULT_LOW_PERCENTILE: f32 = 0.5;
@@ -69,11 +70,11 @@ pub fn invert(image: &mut ImageF32, levels: &Invert) -> Result<(), AppError> {
         ));
     }
     let (pixels, _) = image.data.as_chunks_mut::<3>();
-    for pixel in pixels {
+    pixels.par_iter_mut().for_each(|pixel| {
         for (c, sample) in pixel.iter_mut().enumerate() {
             *sample = ((density(*sample) - levels.black[c]) / span[c]).max(0.0);
         }
-    }
+    });
     Ok(())
 }
 

@@ -133,8 +133,17 @@
       "number": 21,
       "title": "Geometry stage",
       "branch": "feat/issue-21-geometry-stage",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 109,
+      "commit": "1b35133"
+    },
+    {
+      "id": "P-10",
+      "number": 22,
+      "title": "Application layer gtp-app - pipeline, proxy and analyze",
+      "branch": "feat/issue-22-application-layer-gtp-app",
+      "status": "in_progress",
+      "pr": null,
       "commit": null
     }
   ]

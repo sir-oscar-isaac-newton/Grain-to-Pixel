@@ -1,6 +1,6 @@
 ﻿[workspace]
 resolver = "2"
-members = ["crates/*"]   # add "apps/desktop/src-tauri" once the Tauri app is scaffolded
+members = ["crates/*", "apps/desktop/src-tauri"]
 exclude = ["tools/scripts/check-deps/tests/fixtures"]
 
 [workspace.package]

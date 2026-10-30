@@ -1,5 +1,10 @@
 # cargo-deny policy (spec section 9, convention section 10). Run: cargo deny check
 [graph]
+# Only the platforms we ship (spec section 1.1); skips Linux-only crates in the Tauri tree.
+targets = [
+  "x86_64-pc-windows-msvc",
+  "aarch64-apple-darwin",
+]
 all-features = true
 
 [advisories]

@@ -79,8 +79,17 @@
       "number": 14,
       "title": "Synthetic negative test fixtures",
       "branch": "feat/issue-14-synthetic-negative-test-fixtures",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 92,
+      "commit": "49ea1ab"
+    },
+    {
+      "id": "P-03",
+      "number": 15,
+      "title": "TIFF read/write with input limits",
+      "branch": "feat/issue-15-tiff-read-write-with-input-limits",
+      "status": "in_progress",
+      "pr": null,
       "commit": null
     }
   ]

@@ -161,7 +161,7 @@ Rules: unknown fields are ignored; a missing field means default; `v` bumps only
 2. **IR dust removal** (scans with an IR plane): threshold the normalized IR plane to a mask, dilate by `grow_px`, fill masked pixels from surrounding unmasked pixels (iterative neighbour-weighted fill). Runs before inversion.
 3. **Crop** to the frame area (auto-detected, user adjustable).
 4. **Film-base normalize:** `T = I / base` per channel.
-5. **Invert:** density `D = -log10(T)`; per-channel black/white points (auto from histogram percentiles) map `D` to positive linear values.
+5. **Invert:** density `D = -log10(T)` (`T` floored at 1e-6); per-channel black/white densities map `D` to the positive value `P = max(0, (D - black) / (white - black))`, linear in density, with no upper clamp so highlights keep headroom for the tone stage (the output stage clips). The points are auto-filled from the 0.5th and 99.5th percentiles of `D` over the cropped frame; a value the user sets in the recipe is used as is.
 6. **Colour:** the red/cyan, green/magenta and blue/yellow sliders and temperature/tint as per-channel gains (in that order); then saturation.
 7. **Tone:** exposure, contrast, highlights and shadows, whites and blacks, then curves.
 8. **Geometry:** rotate/flip/straighten (resample once, at the end).

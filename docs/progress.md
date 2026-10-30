@@ -97,8 +97,17 @@
       "number": 17,
       "title": "Film-base measurement and normalize",
       "branch": "feat/issue-17-film-base-measurement-and-normalize",
-      "status": "in_progress",
+      "status": "completed",
       "pr": 97,
+      "commit": "b0de074"
+    },
+    {
+      "id": "P-06",
+      "number": 18,
+      "title": "Inversion and auto levels",
+      "branch": "feat/issue-18-inversion-and-auto-levels",
+      "status": "in_progress",
+      "pr": null,
       "commit": null
     }
   ]

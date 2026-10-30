@@ -1287,6 +1287,7 @@ version = "0.0.0"
 name = "gtp-core"
 version = "0.0.0"
 dependencies = [
+ "gtp-core",
  "proptest",
  "serde",
  "serde_json",

@@ -441,6 +441,93 @@ describe('DevelopView', () => {
       return user;
     }
 
+    describe('the Tone panel', () => {
+      async function openFrame() {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        return user;
+      }
+
+      it('previews and saves a tone slider moved with the keyboard', async () => {
+        const user = await openFrame();
+        ipc.developRender.mockClear();
+        screen.getByRole('slider', { name: 'Contrast' }).focus();
+        await user.keyboard('{PageUp}');
+        await waitFor(() => expect(ipc.developRender).toHaveBeenCalled());
+        expect(ipc.developRender.mock.calls.at(-1)?.[1]).toMatchObject({
+          tone: { contrast: 10, exposure_ev: 0 },
+        });
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(savedRecipe()).toMatchObject({ tone: { contrast: 10 } });
+      });
+
+      it('previews and saves a curve edited with the keyboard, then resets it', async () => {
+        const user = await openFrame();
+        ipc.developRender.mockClear();
+        await user.click(screen.getByRole('button', { name: 'Add point' }));
+        await waitFor(() => expect(ipc.developRender).toHaveBeenCalled());
+        const point = await screen.findByRole('slider', { name: 'Point 2 of 3' });
+        expect(point).toHaveFocus();
+        await user.keyboard('{ArrowUp}{ArrowUp}');
+        await waitFor(() =>
+          expect(ipc.developRender.mock.calls.at(-1)?.[1]).toMatchObject({
+            tone: {
+              curve: {
+                master: [
+                  [0, 0],
+                  [0.5, 0.52],
+                  [1, 1],
+                ],
+              },
+            },
+          }),
+        );
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(savedRecipe()).toMatchObject({
+          tone: {
+            curve: {
+              master: [
+                [0, 0],
+                [0.5, 0.52],
+                [1, 1],
+              ],
+            },
+          },
+        });
+
+        await user.click(screen.getByRole('button', { name: 'Reset curve' }));
+        expect(await screen.findAllByRole('slider', { name: /^Point \d of 2$/ })).toHaveLength(2);
+      });
+
+      it('edits a colour curve on its own, leaving the master curve as it is', async () => {
+        const user = await openFrame();
+        await user.click(screen.getByRole('button', { name: 'Red' }));
+        await user.click(screen.getByRole('button', { name: 'Add point' }));
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        const tone = (savedRecipe() as unknown as { tone: { curve: Record<string, number[][]> } })
+          .tone;
+        expect(tone.curve.r).toHaveLength(3);
+        expect(tone.curve.master).toEqual([
+          [0, 0],
+          [1, 1],
+        ]);
+      });
+
+      it('has no accessibility violations', async () => {
+        await openFrame();
+        await expectNoA11yViolations(document.body);
+      });
+    });
+
     describe('the Colour panel', () => {
       const neutralButton = () => screen.getByRole('button', { name: 'Pick neutral grey' });
       const slider = (name: string) => screen.getByRole('slider', { name });
@@ -953,8 +1040,15 @@ describe('DevelopView', () => {
       expect(pickButton()).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Re-run auto levels' })).toBeDisabled();
       for (const slider of screen.getAllByRole('slider')) {
-        expect(slider).toHaveAttribute('data-disabled');
+        // A slider of the panels, or a point of a curve.
+        const disabled =
+          slider.hasAttribute('data-disabled') || slider.getAttribute('aria-disabled') === 'true';
+        expect(disabled).toBe(true);
       }
+      expect(screen.getByRole('button', { name: 'Pick neutral grey' })).toBeDisabled();
+      expect(screen.getByRole('checkbox', { name: 'Black and white' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Add point' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Reset curve' })).toBeDisabled();
     });
   });
   describe('accessibility', () => {

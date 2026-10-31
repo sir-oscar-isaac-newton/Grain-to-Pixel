@@ -236,6 +236,33 @@
       "saturation": "Saturation",
       "vibrance": "Vibrance"
     },
+    "tone": {
+      "heading": "Tone",
+      "exposure_ev": "Exposure",
+      "contrast": "Contrast",
+      "highlights": "Highlights",
+      "shadows": "Shadows",
+      "whites": "Whites",
+      "blacks": "Blacks",
+      "dehaze": "Dehaze",
+      "stops": "{{value}} EV",
+      "reset": "Reset tone"
+    },
+    "curve": {
+      "heading": "Curves",
+      "channels": "Curve to edit",
+      "master": "Master",
+      "red": "Red",
+      "green": "Green",
+      "blue": "Blue",
+      "plot": "Tone curve, {{channel}}",
+      "unchanged": "This curve changes nothing. Add a point to start.",
+      "add": "Add point",
+      "remove": "Remove point",
+      "reset": "Reset curve",
+      "point": "Point {{n}} of {{total}}",
+      "value": "Input {{input}}, output {{output}}"
+    },
     "mono": {
       "heading": "Black and white",
       "enabled": "Black and white",

@@ -23,6 +23,7 @@ import { Filmstrip } from './Filmstrip';
 import { clipping, computeHistogram } from './histogram';
 import { BaseInvertPanel } from './panels/BaseInvertPanel';
 import { ColourPanel } from './panels/ColourPanel';
+import { TonePanel } from './panels/TonePanel';
 import type { Fractions } from './picker';
 import {
   baseOf,
@@ -434,6 +435,12 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 picking={pick === 'neutral'}
                 pickReady={develop.showingFrame}
                 onPickingChange={(on) => setPick(on ? 'neutral' : null)}
+                onChange={(next, options) => setRecipe(next, options)}
+              />
+              <TonePanel
+                recipe={recipe}
+                readOnly={readOnly}
+                working={working}
                 onChange={(next, options) => setRecipe(next, options)}
               />
             </>

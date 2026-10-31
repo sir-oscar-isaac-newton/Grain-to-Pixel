@@ -1,6 +1,7 @@
 // The parts of a recipe the Base and Invert panel works with, read and changed without touching
 // the rest. The generated recipe type allows missing fields and null numbers (a NaN travels as
 // null), so reading goes through these and always gives plain numbers.
+import { identityCurve, type CurveChannel, type CurvePoint, type CurveSet } from '@gtp/ui';
 import type { Recipe } from '../../shared/ipc';
 
 export type Triple = [number, number, number];
@@ -92,6 +93,59 @@ export function withColour(recipe: Recipe, values: Partial<Colour>): Recipe {
 /** The recipe with its black-and-white setting replaced. */
 export function withMono(recipe: Recipe, mono: MonoSetting): Recipe {
   return { ...recipe, mono: { enabled: mono.enabled, mix: [...mono.mix] } } as Recipe;
+}
+
+export type ToneKey =
+  'exposure_ev' | 'contrast' | 'highlights' | 'shadows' | 'whites' | 'blacks' | 'dehaze';
+
+export type Tone = Record<ToneKey, number>;
+
+/** The tone sliders of a recipe, as plain numbers (0 when missing). */
+export function toneOf(recipe: Recipe): Tone {
+  const t = recipe.tone;
+  return {
+    exposure_ev: plain(t?.exposure_ev, 0),
+    contrast: plain(t?.contrast, 0),
+    highlights: plain(t?.highlights, 0),
+    shadows: plain(t?.shadows, 0),
+    whites: plain(t?.whites, 0),
+    blacks: plain(t?.blacks, 0),
+    dehaze: plain(t?.dehaze, 0),
+  };
+}
+
+const plainPoints = (
+  points: ReadonlyArray<ReadonlyArray<number | null>> | null | undefined,
+): CurvePoint[] =>
+  (points ?? []).flatMap((p) => {
+    const [x, y] = [p[0], p[1]];
+    return typeof x === 'number' && typeof y === 'number' && Number.isFinite(x + y)
+      ? [[x, y] as CurvePoint]
+      : [];
+  });
+
+/** The four tone curves of a recipe; an empty list is a curve that changes nothing. */
+export function curvesOf(recipe: Recipe): CurveSet {
+  const c = recipe.tone?.curve;
+  const master = plainPoints(c?.master);
+  return {
+    // A missing master is the identity line, as the recipe's default is.
+    master: c?.master ? master : identityCurve(),
+    r: plainPoints(c?.r),
+    g: plainPoints(c?.g),
+    b: plainPoints(c?.b),
+  };
+}
+
+/** The recipe with some of its tone sliders replaced, the rest of the tone block kept. */
+export function withTone(recipe: Recipe, values: Partial<Tone>): Recipe {
+  return { ...recipe, tone: { ...recipe.tone, ...toneOf(recipe), ...values } } as Recipe;
+}
+
+/** The recipe with one tone curve replaced. */
+export function withCurve(recipe: Recipe, channel: CurveChannel, points: CurvePoint[]): Recipe {
+  const curve = { ...curvesOf(recipe), [channel]: points.map((p) => [...p]) };
+  return { ...recipe, tone: { ...recipe.tone, ...toneOf(recipe), curve } } as Recipe;
 }
 
 /** The recipe with its film base replaced. */

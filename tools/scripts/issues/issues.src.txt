@@ -1004,15 +1004,16 @@ legacy: GTP-057
 deps: L-03
 adr: no
 spec: specification sections 5.4 and 10
-desc: Settings screen for library location, free space, feature flags and the update-check toggle.
+desc: Settings screen for library location, free space and feature flags. The update-check toggle comes with the updater (T-06), which adds the setting, and there is no theme control because the app has one dark theme by design (spec section 7).
 ac:
 - Flags listed with their defaults from spec section 10 and persisted
 - Library path and free space shown
 - axe clean; strings via t()
 tech:
 FILES: apps/desktop/src/features/settings/{SettingsView.tsx, FlagsList.tsx}.
-ROUTES used: settings_get, settings_set, library_info.
+ROUTES used: settings_get, settings_set, library_info, and a new settings_defaults() that returns Settings::default(), so the UI shows each flag's default without a copy of it.
 TESTS: flags toggle persistence with mocked ipc, axe.
+DELIVERY (decided when U-07 was approved): no update-check toggle (T-06 adds the setting and its toggle) and no theme control (the app has one dark theme, spec section 7); verifying the library from the UI is a separate issue, since the verify job (L-07) has no UI. A flag is saved the moment it is switched and goes back if saving fails; Reset flags to their defaults restores only those that differ. The flags are saved and listed, and each feature reads its flag as it arrives; nothing consumes them yet. FlagsList.tsx was not needed: the list is part of SettingsView.tsx.
 
 ## H-01
 title: ScannerSource port and FixtureSource

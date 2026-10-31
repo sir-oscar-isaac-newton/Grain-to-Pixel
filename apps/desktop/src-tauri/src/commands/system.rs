@@ -17,6 +17,14 @@ pub fn settings_get(ctx: State<'_, AppContext>) -> CmdResult<Settings> {
     Ok(ctx.settings().get())
 }
 
+/// The settings as they are before anyone changes them, so the UI can say what the default of a
+/// feature flag is without carrying a copy of it.
+#[tauri::command]
+#[specta::specta]
+pub fn settings_defaults() -> Settings {
+    Settings::default()
+}
+
 /// Changes the settings named in `patch`, saves them and returns the result.
 #[tauri::command]
 #[specta::specta]
@@ -95,6 +103,17 @@ pub fn job_cancel(jobs: State<'_, JobManager>, id: JobId) -> CmdResult<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_defaults_are_the_flags_of_the_specification_and_nothing_changed() {
+        let defaults = settings_defaults();
+        let flags = defaults.flags;
+        // Spec section 10: these three are on, these two off.
+        assert!(flags.dust_removal && flags.triplet_import && flags.guided_capture);
+        assert!(!flags.dev_overlay && !flags.experimental_auto_levels);
+        assert_eq!(defaults, Settings::default());
+        assert_eq!(defaults.last_library, None);
+    }
 
     #[test]
     fn client_messages_must_be_non_empty_and_bounded() {

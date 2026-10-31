@@ -353,6 +353,15 @@
       "number": 42,
       "title": "Apply settings to frames or roll",
       "branch": "feat/issue-42-apply-settings",
+      "status": "completed",
+      "pr": 145,
+      "commit": "2efc330"
+    },
+    {
+      "id": "U-07",
+      "number": 45,
+      "title": "Settings view and feature flags",
+      "branch": "feat/issue-45-settings-view",
       "status": "in_progress",
       "pr": null,
       "commit": null

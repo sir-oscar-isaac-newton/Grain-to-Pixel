@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type View = 'library' | 'develop' | 'import';
+export type View = 'library' | 'develop' | 'import' | 'settings';
 
 /** The frame open in the Develop view: its id and its position in the Library's current view. */
 export interface DevelopFrame {

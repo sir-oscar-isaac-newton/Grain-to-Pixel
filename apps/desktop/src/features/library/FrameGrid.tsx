@@ -91,6 +91,8 @@ interface FrameGridProps {
   emptyText: string;
   /** Show each frame's roll under it (when frames of several rolls are listed). */
   showRoll: boolean;
+  /** Told how many frames match, once known (null while a new query loads). */
+  onTotal?: (total: number | null) => void;
 }
 
 /**
@@ -98,7 +100,7 @@ interface FrameGridProps {
  * at a time as the grid scrolls. Click, Shift-click and Ctrl/Cmd-click select; the arrow keys,
  * `[` and `]`, Home, End and the page keys move, with Shift extending the selection.
  */
-export function FrameGrid({ fetchPage, queryKey, emptyText, showRoll }: FrameGridProps) {
+export function FrameGrid({ fetchPage, queryKey, emptyText, showRoll, onTotal }: FrameGridProps) {
   const { t } = useTranslation();
   const revision = useLibraryStore((s) => s.revision);
   const selected = useLibraryStore((s) => s.selected);
@@ -106,6 +108,8 @@ export function FrameGrid({ fetchPage, queryKey, emptyText, showRoll }: FrameGri
   const rolls = useLibraryStore((s) => s.rolls);
   const frames = useFrames(fetchPage, queryKey, revision);
   const { total, ensure, load, frameAt } = frames;
+  const reportTotal = frames.loading || frames.error ? null : total;
+  useEffect(() => onTotal?.(reportTotal), [onTotal, reportTotal]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const width = useElementWidth(scrollRef);

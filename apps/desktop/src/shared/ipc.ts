@@ -147,6 +147,16 @@ export async function tagList(): Promise<Data<'tagList'>> {
   return unwrap(await commands.tagList());
 }
 
+/** The tags of a roll, in name order. */
+export async function rollTags(...args: Args<'rollTags'>): Promise<Tag[]> {
+  return unwrap(await commands.rollTags(...args));
+}
+
+/** The tags on any of the frames themselves (not from their rolls), each once, in name order. */
+export async function framesOwnTags(...args: Args<'framesOwnTags'>): Promise<Tag[]> {
+  return unwrap(await commands.framesOwnTags(...args));
+}
+
 /**
  * Adds the tags named in `add` (created when missing) to the frames and removes those named in
  * `remove`, all or nothing.

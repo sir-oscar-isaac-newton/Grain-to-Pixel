@@ -15,6 +15,20 @@ pub fn tag_list(ctx: State<'_, AppContext>) -> CmdResult<Vec<Tag>> {
     tags_search::tag_list(&*ctx.library()?)
 }
 
+/// The tags of a roll, in name order.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn roll_tags(ctx: State<'_, AppContext>, roll_id: RollId) -> CmdResult<Vec<Tag>> {
+    tags_search::roll_tags(&*ctx.library()?, roll_id)
+}
+
+/// The tags on any of the frames themselves (not from their rolls), each once, in name order.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn frames_own_tags(ctx: State<'_, AppContext>, frame_ids: Vec<FrameId>) -> CmdResult<Vec<Tag>> {
+    tags_search::frames_own_tags(&*ctx.library()?, &frame_ids)
+}
+
 /// Adds the tags named in `add` (created when missing) to the frames and removes those named in
 /// `remove`, all or nothing.
 #[tauri::command(async)]

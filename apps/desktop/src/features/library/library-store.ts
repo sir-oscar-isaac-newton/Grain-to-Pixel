@@ -6,10 +6,13 @@ import {
   libraryOpen,
   rollList,
   settingsGet,
+  tagList,
   type LibraryDetails,
   type Roll,
   type SkippedFile,
+  type Tag,
 } from '../../shared/ipc';
+import { NO_FILTERS, type Filters } from './search-query';
 import { resetThumbnails } from './thumbnails';
 
 export type Phase = 'loading' | 'needs-library' | 'ready';
@@ -40,6 +43,9 @@ interface LibraryState {
   /** Why the last library could not be reopened at start, if it could not. */
   startError: string | null;
   rolls: Roll[];
+  /** Every tag of the library, in name order. */
+  tags: Tag[];
+  filters: Filters;
   /** The roll shown, or null for every frame. */
   rollId: string | null;
   /** Bumped when frames were added, changed or removed, so the grid reloads. */
@@ -54,6 +60,8 @@ interface LibraryState {
   createLibrary: (path: string, name: string) => Promise<void>;
   openLibrary: (path: string) => Promise<void>;
   reloadRolls: () => Promise<void>;
+  reloadTags: () => Promise<void>;
+  setFilters: (filters: Filters) => void;
   selectRoll: (id: string | null) => void;
   setSelected: (ids: Iterable<string>) => void;
   bump: () => void;
@@ -68,6 +76,8 @@ const initial = {
   library: null,
   startError: null,
   rolls: [],
+  tags: [],
+  filters: NO_FILTERS,
   rollId: null,
   revision: 0,
   selected: new Set<string>() as ReadonlySet<string>,
@@ -89,13 +99,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
       library,
       startError: null,
       rollId: null,
+      filters: NO_FILTERS,
+      tags: [],
       selected: new Set(),
       jobs: [],
       unclaimed: {},
       notice: null,
       revision: get().revision + 1,
     });
-    await get().reloadRolls();
+    await Promise.all([get().reloadRolls(), get().reloadTags()]);
   }
 
   return {
@@ -141,6 +153,22 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
         rolls,
         rollId: rollId && rolls.some((r) => r.id === rollId) ? rollId : null,
       });
+    },
+
+    /** Reloads the tags; a tag that no longer exists is dropped from the filters. */
+    async reloadTags() {
+      const tags = await tagList();
+      const known = new Set(tags.map((t) => t.id));
+      const { filters } = get();
+      const tagIds = filters.tagIds.filter((id) => known.has(id));
+      set({
+        tags,
+        filters: tagIds.length === filters.tagIds.length ? filters : { ...filters, tagIds },
+      });
+    },
+
+    setFilters(filters) {
+      set({ filters, selected: new Set() });
     },
 
     selectRoll(id) {

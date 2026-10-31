@@ -33,11 +33,10 @@ export function useLibraryEvents(enabled: boolean) {
           forgetMissingThumbnails();
           store().bump();
           // The rolls change too (an import can set a roll's film base).
-          store()
-            .reloadRolls()
-            .catch(() => {
-              // The next change or a restart reloads them; the grid is already up to date.
-            });
+          // Tags change too (tagging from another window, or a roll's tags).
+          Promise.all([store().reloadRolls(), store().reloadTags()]).catch(() => {
+            // The next change or a restart reloads them; the grid is already up to date.
+          });
         }, RELOAD_DELAY_MS);
       }),
     );

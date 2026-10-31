@@ -1,7 +1,15 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useId, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { rollCreate, rollUpdate, type Roll, type RollInput } from '../../shared/ipc';
+import { TagChips } from '@gtp/ui';
+import {
+  rollCreate,
+  rollTags,
+  rollUpdate,
+  tagApplyRoll,
+  type Roll,
+  type RollInput,
+} from '../../shared/ipc';
 import styles from './library.module.css';
 import { messageOf, useLibraryStore } from './library-store';
 
@@ -86,8 +94,31 @@ function RollForm({ roll, onDone }: { roll: Roll | null; onDone: () => void }) {
   const { t } = useTranslation();
   const rolls = useLibraryStore((s) => s.rolls);
   const reloadRolls = useLibraryStore((s) => s.reloadRolls);
+  const reloadTags = useLibraryStore((s) => s.reloadTags);
+  const libraryTags = useLibraryStore((s) => s.tags);
+  const bump = useLibraryStore((s) => s.bump);
   const selectRoll = useLibraryStore((s) => s.selectRoll);
   const ids = { film: useId(), camera: useId(), dates: useId() };
+
+  // The roll's tags as they were (null while loading) and as edited; saved with the roll.
+  const [savedTags, setSavedTags] = useState<string[] | null>(roll ? null : []);
+  const [tagNames, setTagNames] = useState<string[]>([]);
+  useEffect(() => {
+    if (!roll) return;
+    let current = true;
+    rollTags(roll.id).then(
+      (found) => {
+        if (!current) return;
+        const names = found.map((tag) => tag.name);
+        setSavedTags(names);
+        setTagNames(names);
+      },
+      (e) => current && setFailure(messageOf(e)),
+    );
+    return () => {
+      current = false;
+    };
+  }, [roll]);
 
   const [name, setName] = useState(roll?.name ?? '');
   const [film, setFilm] = useState(roll?.film_stock ?? '');
@@ -132,6 +163,15 @@ function RollForm({ roll, onDone }: { roll: Roll | null; onDone: () => void }) {
     setFailure(null);
     try {
       const saved = roll ? await rollUpdate(roll.id, input) : await rollCreate(input);
+      const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+      const before = savedTags ?? [];
+      const add = tagNames.filter((n) => !before.some((b) => same(b, n)));
+      const remove = before.filter((b) => !tagNames.some((n) => same(b, n)));
+      if (add.length > 0 || remove.length > 0) {
+        await tagApplyRoll(saved.id, add, remove);
+        await reloadTags();
+        bump();
+      }
       await reloadRolls();
       selectRoll(saved.id);
       onDone();
@@ -254,6 +294,30 @@ function RollForm({ roll, onDone }: { roll: Roll | null; onDone: () => void }) {
             />
           )}
         </Field>
+        <div className={styles.field}>
+          <span>{t('rollEditor.tags')}</span>
+          {savedTags === null ? (
+            <span className={styles.hint}>{t('rollEditor.tagsLoading')}</span>
+          ) : (
+            <TagChips
+              label={t('rollEditor.tags')}
+              tags={tagNames.map((n) => ({ id: n, name: n }))}
+              emptyText={t('rollEditor.tagsNone')}
+              removeLabel={(n) => t('rollEditor.tagRemove', { name: n })}
+              onRemove={(tag) => setTagNames(tagNames.filter((n) => n !== tag.name))}
+              onAdd={(n) =>
+                setTagNames(
+                  tagNames.some((x) => x.toLowerCase() === n.toLowerCase())
+                    ? tagNames
+                    : [...tagNames, n],
+                )
+              }
+              addLabel={t('rollEditor.tagAdd')}
+              addButtonLabel={t('rollEditor.tagAddButton')}
+              suggestions={libraryTags.map((tag) => tag.name)}
+            />
+          )}
+        </div>
         {failure && <p role="alert">{failure}</p>}
         <div className={styles.buttons}>
           <Dialog.Close asChild>

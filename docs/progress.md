@@ -197,6 +197,15 @@
       "number": 28,
       "title": "Library create/open, folder layout and settings",
       "branch": "feat/issue-28-library-folder-and-settings",
+      "status": "completed",
+      "pr": 119,
+      "commit": "4fceddb"
+    },
+    {
+      "id": "L-04",
+      "number": 29,
+      "title": "Roll and frame commands",
+      "branch": "feat/issue-29-roll-and-frame-commands",
       "status": "in_progress",
       "pr": null,
       "commit": null

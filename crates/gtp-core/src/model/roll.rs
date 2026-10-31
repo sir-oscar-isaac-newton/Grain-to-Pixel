@@ -5,6 +5,7 @@ use crate::ids::RollId;
 
 /// Film format of a roll. Only 35 mm is supported in the MVP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum FilmFormat {
     #[default]
     #[serde(rename = "35mm")]
@@ -17,6 +18,7 @@ pub const MAX_ISO: u32 = 102_400;
 /// A roll of film: the unit that shares one measured film base. Its tags (in the catalog) count for
 /// every frame on it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct Roll {
     pub id: RollId,
     pub name: String,

@@ -17,6 +17,15 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::library::library_info,
             commands::library::library_create,
             commands::library::library_open,
+            commands::roll::roll_create,
+            commands::roll::roll_update,
+            commands::roll::roll_list,
+            commands::roll::roll_set_film_base,
+            commands::roll::roll_delete,
+            commands::frame::frame_list,
+            commands::frame::frame_get,
+            commands::frame::frame_set_note,
+            commands::frame::frame_delete,
             commands::system::settings_get,
             commands::system::settings_set,
             commands::system::log_client_event,
@@ -55,13 +64,31 @@ mod tests {
             "libraryOpen",
             "settingsGet",
             "settingsSet",
+            "rollCreate",
+            "rollUpdate",
+            "rollList",
+            "rollSetFilmBase",
+            "rollDelete",
+            "frameList",
+            "frameGet",
+            "frameSetNote",
+            "frameDelete",
         ] {
             assert!(text.contains(command), "{command} missing from bindings");
         }
         for event in ["job://progress", "job://done", "job://error"] {
             assert!(text.contains(event), "event {event} missing from bindings");
         }
-        for ty in ["JobProgress", "JobDone", "JobError", "JobResult"] {
+        for ty in [
+            "JobProgress",
+            "JobDone",
+            "JobError",
+            "JobResult",
+            "RollInput",
+            "FramePage",
+            "FrameSummary",
+            "DeleteReport",
+        ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }
         assert!(text.contains("AppError"), "AppError missing from bindings");

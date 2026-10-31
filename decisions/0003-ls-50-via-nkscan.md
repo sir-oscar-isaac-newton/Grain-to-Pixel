@@ -1,6 +1,6 @@
 # 0003. Drive the LS-50 with nkscan
 
-- Status: Accepted for Windows (hardware spike R-01, 2026-10-30); macOS to confirm
+- Status: Accepted (hardware spike R-01: Windows 2026-10-30, macOS 2026-10-31)
 - Date: 2026-10-29
 
 ## Context
@@ -32,4 +32,4 @@ Details in [docs/research/nkscan.md](../docs/research/nkscan.md). With nkscan 0.
 - Output is linear 16-bit RGB plus a separate 16-bit IR TIFF per frame, which `gtp-io` reads as is.
 - **Windows needs the WinUSB driver (Zadig).** With VueScan's driver nkscan reports "incompatible driver". Rolling back to VueScan's driver works and is the documented way back.
 - Integration starts with the pinned CLI; the crate's API became async in 0.17 and is reconsidered in H-01.
-- macOS is author-reported working (nkscan via Negpy) and still to be confirmed with the CLI; until then this ADR is accepted for Windows only.
+- **macOS confirmed (2026-10-31)** with the same CLI on macOS 27.0.1, Apple M1 Pro: the scanner is listed and identified identically (firmware 2.04, 40-frame roll adapter, 25 frames detected) **with no driver setup at all**, and frame 1 scanned at 2000 dpi with IR to the same RGB plus `_IR` TIFF pair. The ADR is accepted for both platforms.

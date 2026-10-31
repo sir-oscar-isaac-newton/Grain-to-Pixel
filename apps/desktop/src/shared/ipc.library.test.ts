@@ -6,6 +6,8 @@ const folderCheckMock = vi.fn();
 const jobCancelMock = vi.fn();
 const developOpenMock = vi.fn();
 const developAnalyzeMock = vi.fn();
+const recipeSaveMock = vi.fn();
+const recipeApplyToMock = vi.fn();
 const handlers: Record<string, (event: { payload: unknown }) => void> = {};
 const stop = vi.fn();
 
@@ -28,6 +30,8 @@ vi.mock('@gtp/ipc-types', () => {
       jobCancel: (id: string) => jobCancelMock(id),
       developOpen: (id: string) => developOpenMock(id),
       developAnalyze: (id: string) => developAnalyzeMock(id),
+      recipeSave: (...args: unknown[]) => recipeSaveMock(...args),
+      recipeApplyTo: (...args: unknown[]) => recipeApplyToMock(...args),
     },
     events: {
       libraryChanged: listener('libraryChanged'),
@@ -53,6 +57,8 @@ import {
   parsePreview,
   pickFolder,
   pickTiffFiles,
+  recipeApplyTo,
+  recipeSave,
 } from './ipc';
 
 describe('shared/ipc: library helpers', () => {
@@ -102,6 +108,8 @@ describe('shared/ipc: library helpers', () => {
     beforeEach(() => {
       developOpenMock.mockReset();
       developAnalyzeMock.mockReset();
+      recipeSaveMock.mockReset();
+      recipeApplyToMock.mockReset();
     });
 
     it('reads the header and the pixels of a preview', () => {
@@ -138,6 +146,32 @@ describe('shared/ipc: library helpers', () => {
       const failure = developRender('f1', {} as never, 1600, 1);
       await expect(failure).rejects.toBeInstanceOf(IpcError);
       await expect(failure).rejects.toMatchObject({ error });
+    });
+
+    it('saves a recipe and returns what was stored, or throws what the backend refuses', async () => {
+      const recipe = { v: 1 } as unknown as Parameters<typeof recipeSave>[1];
+      const stored = { v: 1, tone: { exposure_ev: 5 } };
+      recipeSaveMock.mockResolvedValueOnce({ status: 'ok', data: stored });
+      await expect(recipeSave('f1', recipe)).resolves.toBe(stored);
+      expect(recipeSaveMock).toHaveBeenCalledWith('f1', recipe);
+
+      recipeSaveMock.mockResolvedValueOnce({
+        status: 'error',
+        error: { code: 'InvalidInput', message: 'A curve needs at least two points.' },
+      });
+      await expect(recipeSave('f1', recipe)).rejects.toBeInstanceOf(IpcError);
+    });
+
+    it('applies chosen groups of settings to frames', async () => {
+      recipeApplyToMock.mockResolvedValueOnce({ status: 'ok', data: null });
+      await expect(recipeApplyTo(['f2', 'f3'], 'f1', ['Tone', 'Color'])).resolves.toBeUndefined();
+      expect(recipeApplyToMock).toHaveBeenCalledWith(['f2', 'f3'], 'f1', ['Tone', 'Color']);
+
+      recipeApplyToMock.mockResolvedValueOnce({
+        status: 'error',
+        error: { code: 'NotFound', message: 'No such frame.' },
+      });
+      await expect(recipeApplyTo(['x'], 'f1', ['Tone'])).rejects.toBeInstanceOf(IpcError);
     });
 
     it('opens and analyses through the typed commands', async () => {

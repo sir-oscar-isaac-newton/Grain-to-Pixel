@@ -17,4 +17,4 @@ pub use job::{
     ImportResult, JobResult, SkipReason, SkippedFile, VerifyProblem, VerifyReason, VerifyResult,
 };
 pub use model::{FilmFormat, Frame, FrameKind, Roll, SearchQuery, SourceFile, SourceRole, Tag};
-pub use recipe::{migrate, Recipe};
+pub use recipe::{migrate, Recipe, RecipeField};

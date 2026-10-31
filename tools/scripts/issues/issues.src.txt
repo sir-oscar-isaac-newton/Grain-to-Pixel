@@ -813,6 +813,7 @@ FILES: crates/gtp-app/src/services/develop.rs (`save_recipe`, `apply_to`); src-t
 ROUTES: `recipe_save(FrameId, Recipe)`, `recipe_apply_to(FrameId[], source: FrameId, fields: RecipeField[])`; `enum RecipeField { Geometry, Base, Invert, Color, Tone, Dust, Output }`.
 MIGRATIONS: none (recipe table exists).
 TESTS: round trip, selected-field copy, clamping.
+DELIVERY (decided when L-08 was approved): a target frame that was never edited starts from the default recipe, and the chosen fields are copied over it (its own auto recipe is not computed). The `Base` field copies the base source together with its value. Also: `Color` copies the colour balance and the black-and-white conversion (`mono`), which share a panel; the pure copy (`RecipeField`, `Recipe::copy_fields_from`) lives in gtp-core so it is unit-tested without a library; the catalog gets `save_recipes`, which stores several recipes in one transaction so applying to a roll is all or nothing; a recipe whose tone curve has a single point is refused, since the pipeline could not render it; `recipe_save` returns the recipe as stored.
 
 ## L-09
 title: Regenerate thumbnail when a recipe changes

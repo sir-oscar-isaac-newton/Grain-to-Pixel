@@ -265,6 +265,25 @@ export async function developAnalyze(...args: Args<'developAnalyze'>): Promise<D
   return unwrap(await commands.developAnalyze(...args));
 }
 
+/** A group of settings that can be copied between frames (one panel of the Develop view). */
+export type RecipeField = Args<'recipeApplyTo'>[2][number];
+
+/**
+ * Saves a frame's recipe and marks the frame edited. The backend clamps it into range and returns
+ * the recipe as stored; a recipe it could not render (a tone curve with one point) is refused.
+ */
+export async function recipeSave(...args: Args<'recipeSave'>): Promise<Data<'recipeSave'>> {
+  return unwrap(await commands.recipeSave(...args));
+}
+
+/**
+ * Copies the chosen groups of settings from the `source` frame's recipe onto the frames, all or
+ * nothing; whatever else a target has is kept. `Color` includes the black-and-white conversion.
+ */
+export async function recipeApplyTo(...args: Args<'recipeApplyTo'>): Promise<void> {
+  unwrap(await commands.recipeApplyTo(...args));
+}
+
 /** A rendered preview: RGBA8 sRGB pixels, ready for `new ImageData(rgba, width, height)`. */
 export interface Preview {
   /** The sequence number of the request this answers. */

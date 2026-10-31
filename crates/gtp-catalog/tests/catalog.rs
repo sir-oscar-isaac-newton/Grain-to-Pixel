@@ -845,6 +845,36 @@ fn recipes_round_trip_and_stamp_the_frame() {
 }
 
 #[test]
+fn several_recipes_are_saved_together_or_not_at_all() {
+    let dir = TempDir::new("recipes");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("Summer")).unwrap();
+    let (f1, f2) = (
+        cat.insert_frame(&frame(r.id, 1)).unwrap(),
+        cat.insert_frame(&frame(r.id, 2)).unwrap(),
+    );
+    let mut recipe = Recipe::default();
+    recipe.tone.exposure_ev = 0.4;
+    cat.save_recipes(&[(f1.id, recipe.clone()), (f2.id, recipe.clone())])
+        .unwrap();
+    for f in [f1.id, f2.id] {
+        assert_eq!(cat.load_recipe(f).unwrap(), Some(recipe.clone()));
+        assert!(cat.get_frame(f).unwrap().edited_at.is_some());
+    }
+
+    // An unknown frame in the list rolls the whole batch back.
+    let mut other = Recipe::default();
+    other.tone.exposure_ev = -0.4;
+    let err = cat
+        .save_recipes(&[(f1.id, other.clone()), (FrameId::new(), other)])
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+    assert_eq!(cat.load_recipe(f1.id).unwrap(), Some(recipe));
+
+    cat.save_recipes(&[]).unwrap();
+}
+
+#[test]
 fn an_imported_frame_is_numbered_and_stored_with_its_sources_and_recipe() {
     let dir = TempDir::new("import");
     let mut cat = Catalog::open(&dir.db()).unwrap();

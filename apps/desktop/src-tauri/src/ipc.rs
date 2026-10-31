@@ -31,6 +31,8 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::ingest::import_files,
             commands::develop::develop_open,
             commands::develop::develop_analyze,
+            commands::develop::recipe_save,
+            commands::develop::recipe_apply_to,
             commands::tags::tag_list,
             commands::tags::roll_tags,
             commands::tags::frames_own_tags,
@@ -112,6 +114,8 @@ mod tests {
             "folderCheck",
             "developOpen",
             "developAnalyze",
+            "recipeSave",
+            "recipeApplyTo",
             "settingsGet",
             "settingsSet",
             "rollCreate",
@@ -163,6 +167,7 @@ mod tests {
             "FolderCheck",
             "DevelopInfo",
             "DevelopAnalysis",
+            "RecipeField",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }

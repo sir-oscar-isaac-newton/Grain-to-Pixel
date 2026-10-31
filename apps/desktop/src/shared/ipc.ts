@@ -121,6 +121,44 @@ export async function importFiles(...args: Args<'importFiles'>): Promise<Data<'i
   return unwrap(await commands.importFiles(...args));
 }
 
+// Tags and search.
+export type SearchQuery = Args<'search'>[0];
+export type Tag = Data<'tagRename'>;
+
+/** All tags, in name order. */
+export async function tagList(): Promise<Data<'tagList'>> {
+  return unwrap(await commands.tagList());
+}
+
+/**
+ * Adds the tags named in `add` (created when missing) to the frames and removes those named in
+ * `remove`, all or nothing.
+ */
+export async function tagApply(...args: Args<'tagApply'>): Promise<void> {
+  unwrap(await commands.tagApply(...args));
+}
+
+/** The same for a roll: its tags count for every frame on it, also frames added later. */
+export async function tagApplyRoll(...args: Args<'tagApplyRoll'>): Promise<void> {
+  unwrap(await commands.tagApplyRoll(...args));
+}
+
+export async function tagRename(...args: Args<'tagRename'>): Promise<Data<'tagRename'>> {
+  return unwrap(await commands.tagRename(...args));
+}
+
+export async function tagDelete(...args: Args<'tagDelete'>): Promise<void> {
+  unwrap(await commands.tagDelete(...args));
+}
+
+/**
+ * One page of the frames matching `query` (every part optional, all must match): best text match
+ * first when there is text, otherwise newest roll first. `page` counts from 0.
+ */
+export async function search(...args: Args<'search'>): Promise<FramePage> {
+  return unwrap(await commands.search(...args));
+}
+
 /** Crashes of earlier runs; the backend hands them out once. */
 export async function crashNotesTake(): Promise<CrashNote[]> {
   return unwrap(await commands.crashNotesTake());

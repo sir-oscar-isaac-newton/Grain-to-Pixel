@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 
 use gtp_catalog::{backup_path, Catalog, SCHEMA_VERSION};
 use gtp_core::{
-    ErrorCode, FilmFormat, Frame, FrameId, FrameKind, Recipe, Roll, RollId, SourceFile, SourceRole,
+    ErrorCode, FilmFormat, Frame, FrameId, FrameKind, Recipe, Roll, RollId, SearchQuery,
+    SourceFile, SourceRole,
 };
 use rusqlite::Connection;
 
@@ -408,6 +409,405 @@ fn search_covers_roll_fields_notes_and_own_and_roll_tags() {
 
     cat.delete_frames(&[f1.id]).unwrap();
     assert_eq!(cat.search_frames("olympus").unwrap(), vec![f2.id]);
+}
+
+/// Four rolls for the filter tests, each with frames, and a few tags.
+struct Library {
+    cat: Catalog,
+    a: Vec<FrameId>,
+    b: Vec<FrameId>,
+    c: Vec<FrameId>,
+    d: Vec<FrameId>,
+    rolls: [RollId; 4],
+}
+
+fn filter_library(dir: &TempDir) -> Library {
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    // A: summer 2026, Nikon, pushed to 800.
+    let a = cat.insert_roll(&roll("Summer")).unwrap();
+    // B: winter, spans the new year, Leica, HP5 pushed to 1600.
+    let mut winter = roll("Winter");
+    winter.film_stock = Some("Ilford HP5".into());
+    winter.camera = Some("Leica M6".into());
+    winter.iso_box = Some(400);
+    winter.iso_shot = Some(1600);
+    winter.shot_from = Some("2025-12-20".into());
+    winter.shot_to = Some("2026-01-05".into());
+    let b = cat.insert_roll(&winter).unwrap();
+    // C: no dates at all.
+    let mut undated = roll("Undated");
+    undated.film_stock = Some("Kodak Portra 160".into());
+    undated.iso_box = Some(160);
+    undated.iso_shot = None;
+    undated.shot_from = None;
+    undated.shot_to = None;
+    let c = cat.insert_roll(&undated).unwrap();
+    // D: only an end date, March 2026.
+    let mut march = roll("March");
+    march.film_stock = Some("Fuji Velvia 50".into());
+    march.camera = Some("Pentax 67".into());
+    march.iso_box = Some(50);
+    march.iso_shot = Some(50);
+    march.shot_from = None;
+    march.shot_to = Some("2026-03".into());
+    let d = cat.insert_roll(&march).unwrap();
+    let mut frames = |roll: RollId, n: u32| -> Vec<FrameId> {
+        (1..=n)
+            .map(|i| cat.insert_frame(&frame(roll, i)).unwrap().id)
+            .collect()
+    };
+    let (fa, fb, fc, fd) = (
+        frames(a.id, 2),
+        frames(b.id, 1),
+        frames(c.id, 1),
+        frames(d.id, 1),
+    );
+    Library {
+        cat,
+        a: fa,
+        b: fb,
+        c: fc,
+        d: fd,
+        rolls: [a.id, b.id, c.id, d.id],
+    }
+}
+
+fn found(cat: &Catalog, query: &SearchQuery) -> Vec<FrameId> {
+    let mut ids: Vec<FrameId> = cat
+        .search_page(query, 0, 1000)
+        .unwrap()
+        .iter()
+        .map(|f| f.id)
+        .collect();
+    assert_eq!(
+        cat.search_count(query).unwrap() as usize,
+        ids.len(),
+        "the count agrees with the page"
+    );
+    ids.sort();
+    ids
+}
+
+fn sorted(groups: &[&Vec<FrameId>]) -> Vec<FrameId> {
+    let mut ids: Vec<FrameId> = groups.iter().flat_map(|g| g.iter().copied()).collect();
+    ids.sort();
+    ids
+}
+
+#[test]
+fn search_filters_by_text_film_camera_iso_and_roll() {
+    let dir = TempDir::new("filters");
+    let l = filter_library(&dir);
+    let q = |f: fn(&mut SearchQuery)| {
+        let mut query = SearchQuery::default();
+        f(&mut query);
+        found(&l.cat, &query)
+    };
+    assert_eq!(q(|_| {}).len(), 5, "no filter lists every frame");
+    assert_eq!(q(|s| s.text = Some("portra".into())), sorted(&[&l.a, &l.c]));
+    assert_eq!(
+        q(|s| s.text = Some("  ".into())).len(),
+        5,
+        "blank text is no filter"
+    );
+    assert_eq!(
+        q(|s| s.film_stock = Some("kodak PORTRA 400".into())),
+        sorted(&[&l.a]),
+        "film matches whole and ignores case"
+    );
+    assert_eq!(
+        q(|s| s.camera = Some("nikon f3".into())),
+        sorted(&[&l.a, &l.c])
+    );
+    assert_eq!(q(|s| s.iso = Some(800)), sorted(&[&l.a]), "shot ISO");
+    assert_eq!(q(|s| s.iso = Some(400)), sorted(&[&l.a, &l.b]), "box ISO");
+    assert_eq!(q(|s| s.iso = Some(1600)), sorted(&[&l.b]));
+    assert!(q(|s| s.iso = Some(3200)).is_empty());
+    assert_eq!(
+        found(
+            &l.cat,
+            &SearchQuery {
+                roll_id: Some(l.rolls[3]),
+                ..SearchQuery::default()
+            }
+        ),
+        sorted(&[&l.d])
+    );
+    // Everything given must match.
+    assert_eq!(
+        q(|s| {
+            s.text = Some("kodak".into());
+            s.camera = Some("Nikon F3".into());
+            s.iso = Some(160);
+        }),
+        sorted(&[&l.c])
+    );
+    // Special characters are searched literally, never as FTS syntax.
+    for text in ["\"", "portra OR", "NEAR(", "*", "a\"b"] {
+        let query = SearchQuery {
+            text: Some(text.into()),
+            ..SearchQuery::default()
+        };
+        assert!(l.cat.search_page(&query, 0, 10).is_ok(), "{text:?}");
+    }
+}
+
+#[test]
+fn a_date_range_matches_rolls_whose_shooting_dates_overlap_it() {
+    let dir = TempDir::new("dates");
+    let l = filter_library(&dir);
+    let between = |from: Option<&str>, to: Option<&str>| {
+        found(
+            &l.cat,
+            &SearchQuery {
+                date_from: from.map(str::to_owned),
+                date_to: to.map(str::to_owned),
+                ..SearchQuery::default()
+            },
+        )
+    };
+    // A shot 2026-07 to 2026-08-02: a month the roll only partly covers still matches.
+    assert_eq!(between(Some("2026-08"), Some("2026-08")), sorted(&[&l.a]));
+    assert_eq!(between(Some("2026-07"), Some("2026-07")), sorted(&[&l.a]));
+    assert_eq!(
+        between(Some("2026-07-15"), Some("2026-07-20")),
+        sorted(&[&l.a])
+    );
+    assert_eq!(
+        between(Some("2026-08-02"), None),
+        sorted(&[&l.a]),
+        "last day counts"
+    );
+    assert!(
+        between(Some("2026-08-03"), None).is_empty(),
+        "the day after does not"
+    );
+    assert_eq!(
+        between(Some("2026-02"), Some("2026-06")),
+        sorted(&[&l.d]),
+        "only March's roll falls in February to June"
+    );
+    // B spans the new year.
+    assert_eq!(between(Some("2025"), Some("2025")), sorted(&[&l.b]));
+    assert_eq!(between(Some("2026-01"), Some("2026-01")), sorted(&[&l.b]));
+    assert_eq!(between(None, Some("2025-12-19")), sorted(&[]));
+    assert_eq!(between(None, Some("2025-12-20")), sorted(&[&l.b]));
+    // D has only an end date: it counts as that month.
+    assert_eq!(
+        between(Some("2026-03-31"), None).len(),
+        3,
+        "D, A and not B or C"
+    );
+    assert_eq!(between(Some("2026-03"), Some("2026-03")), sorted(&[&l.d]));
+    assert_eq!(between(Some("2026-04"), Some("2026-06")), sorted(&[]));
+    // C has no dates and never matches a date filter.
+    for range in [
+        (Some("2000"), None),
+        (None, Some("2100")),
+        (Some("2000"), Some("2100")),
+    ] {
+        let ids = between(range.0, range.1);
+        assert!(!ids.iter().any(|id| l.c.contains(id)), "{range:?}");
+        assert_eq!(ids.len(), 4);
+    }
+    // Invalid or backwards ranges are errors, not empty results.
+    for (from, to) in [
+        (Some("2026-13"), None),
+        (Some("2026-08"), Some("2026-07")),
+        (None, Some("July")),
+    ] {
+        let query = SearchQuery {
+            date_from: from.map(str::to_owned),
+            date_to: to.map(str::to_owned),
+            ..SearchQuery::default()
+        };
+        assert_eq!(
+            l.cat.search_count(&query).unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
+    }
+}
+
+#[test]
+fn tags_all_needs_every_tag_own_or_from_the_roll_and_combines_with_other_filters() {
+    let dir = TempDir::new("tags-all");
+    let mut l = filter_library(&dir);
+    let japan = l.cat.tag_ensure("Japan").unwrap().id;
+    let sunset = l.cat.tag_ensure("sunset").unwrap().id;
+    let family = l.cat.tag_ensure("family").unwrap().id;
+    l.cat.tag_roll(l.rolls[0], &[japan], &[]).unwrap();
+    l.cat.tag_frames(&[l.a[0]], &[sunset], &[]).unwrap();
+    l.cat.tag_frames(&l.b, &[family], &[]).unwrap();
+    let with = |tags: &[gtp_core::TagId]| {
+        found(
+            &l.cat,
+            &SearchQuery {
+                tags_all: tags.to_vec(),
+                ..SearchQuery::default()
+            },
+        )
+    };
+    assert_eq!(with(&[japan]), sorted(&[&l.a]), "from the roll");
+    assert_eq!(
+        with(&[japan, sunset]),
+        vec![l.a[0]],
+        "from the roll and its own"
+    );
+    assert_eq!(
+        with(&[sunset, sunset]),
+        vec![l.a[0]],
+        "duplicates count once"
+    );
+    assert!(with(&[family, japan]).is_empty());
+    assert_eq!(with(&[]).len(), 5);
+    assert!(
+        with(&[gtp_core::TagId::new()]).is_empty(),
+        "an unknown tag matches nothing"
+    );
+    // With text and a date range.
+    let query = SearchQuery {
+        text: Some("nikon".into()),
+        tags_all: vec![japan],
+        date_from: Some("2026-08".into()),
+        ..SearchQuery::default()
+    };
+    assert_eq!(found(&l.cat, &query), sorted(&[&l.a]));
+    // Text covers tag names, also inherited ones.
+    assert_eq!(l.cat.search_frames("japan").unwrap().len(), 2);
+}
+
+#[test]
+fn results_are_paged_best_match_first_and_otherwise_newest_roll_first() {
+    let dir = TempDir::new("paging");
+    let l = filter_library(&dir);
+    let all = SearchQuery::default();
+    let page = |q: &SearchQuery, offset, limit| -> Vec<FrameId> {
+        l.cat
+            .search_page(q, offset, limit)
+            .unwrap()
+            .iter()
+            .map(|f| f.id)
+            .collect()
+    };
+    // Newest roll first (D, C, B, A), roll order inside a roll.
+    let order = [l.d[0], l.c[0], l.b[0], l.a[0], l.a[1]];
+    assert_eq!(page(&all, 0, 10), order);
+    assert_eq!(page(&all, 1, 2), order[1..3]);
+    assert_eq!(page(&all, 4, 10), order[4..]);
+    assert!(page(&all, 5, 10).is_empty());
+    assert_eq!(l.cat.search_count(&all).unwrap(), 5);
+
+    // With text the best match comes first: only one frame mentions "lighthouse" twice.
+    let mut cat = l.cat;
+    cat.set_frame_note(l.a[1], "lighthouse lighthouse lighthouse")
+        .unwrap();
+    cat.set_frame_note(l.d[0], "lighthouse").unwrap();
+    let q = SearchQuery {
+        text: Some("lighthouse".into()),
+        ..SearchQuery::default()
+    };
+    let hits: Vec<FrameId> = cat
+        .search_page(&q, 0, 10)
+        .unwrap()
+        .iter()
+        .map(|f| f.id)
+        .collect();
+    assert_eq!(hits, vec![l.a[1], l.d[0]]);
+}
+
+#[test]
+fn tagging_by_name_creates_tags_and_is_all_or_nothing() {
+    let dir = TempDir::new("apply");
+    let mut l = filter_library(&dir);
+    let names = |cat: &Catalog| -> Vec<String> {
+        cat.tag_list()
+            .unwrap()
+            .into_iter()
+            .map(|t| t.name)
+            .collect()
+    };
+    let strings = |v: &[&str]| -> Vec<String> { v.iter().map(|s| (*s).to_owned()).collect() };
+
+    l.cat
+        .tag_apply_frames(&l.a, &strings(&["Sunset", "  Golden  Hour "]), &[])
+        .unwrap();
+    assert_eq!(names(&l.cat), ["Golden Hour", "Sunset"]);
+    assert_eq!(l.cat.search_frames("golden").unwrap().len(), 2);
+    // The same names in another spelling are the same tags.
+    l.cat
+        .tag_apply_frames(&l.a, &strings(&["SUNSET"]), &[])
+        .unwrap();
+    assert_eq!(names(&l.cat).len(), 2);
+    // Removing: known names are removed, unknown ones are skipped, nothing is created.
+    l.cat
+        .tag_apply_frames(&l.a, &[], &strings(&["golden hour", "never-existed"]))
+        .unwrap();
+    assert_eq!(names(&l.cat).len(), 2);
+    assert!(l.cat.search_frames("golden").unwrap().is_empty());
+    assert_eq!(l.cat.search_frames("sunset").unwrap().len(), 2);
+
+    // An unknown frame fails the whole change, and no tag is created on the way.
+    let err = l
+        .cat
+        .tag_apply_frames(&[l.a[0], FrameId::new()], &strings(&["brand-new"]), &[])
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+    // So does a bad name, even after a good one.
+    let err = l
+        .cat
+        .tag_apply_frames(&l.a, &strings(&["fine-name", "bell\u{7}"]), &[])
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidInput);
+    let too_many: Vec<String> = (0..=gtp_catalog::MAX_TAG_NAMES)
+        .map(|i| format!("t{i}"))
+        .collect();
+    assert_eq!(
+        l.cat
+            .tag_apply_frames(&l.a, &too_many, &[])
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidInput
+    );
+    assert_eq!(names(&l.cat), ["Golden Hour", "Sunset"], "nothing leaked");
+
+    // Rolls: the tag counts for every frame, also ones added later.
+    l.cat
+        .tag_apply_roll(l.rolls[1], &strings(&["Winter Trip"]), &[])
+        .unwrap();
+    let later = l.cat.insert_frame(&frame(l.rolls[1], 2)).unwrap();
+    assert_eq!(l.cat.search_frames("trip").unwrap().len(), 2);
+    assert_eq!(l.cat.frame_tags(later.id).unwrap().from_roll.len(), 1);
+    l.cat
+        .tag_apply_roll(l.rolls[1], &[], &strings(&["winter TRIP"]))
+        .unwrap();
+    assert!(l.cat.search_frames("trip").unwrap().is_empty());
+    let err = l
+        .cat
+        .tag_apply_roll(RollId::new(), &strings(&["ghost"]), &[])
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+    assert!(!names(&l.cat).contains(&"ghost".to_owned()));
+}
+
+#[test]
+fn the_search_can_be_rebuilt_from_the_data() {
+    let dir = TempDir::new("rebuild");
+    let mut l = filter_library(&dir);
+    let tag = l.cat.tag_ensure("keeper").unwrap().id;
+    l.cat.tag_roll(l.rolls[0], &[tag], &[]).unwrap();
+    let before = l.cat.search_frames("keeper").unwrap();
+    assert_eq!(before.len(), 2);
+    l.cat.close().unwrap();
+    // Something else wipes the search rows.
+    Connection::open(dir.db())
+        .unwrap()
+        .execute("DELETE FROM search", [])
+        .unwrap();
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    assert!(cat.search_frames("keeper").unwrap().is_empty());
+    cat.rebuild_search().unwrap();
+    assert_eq!(cat.search_frames("keeper").unwrap().len(), 2);
+    assert_eq!(cat.search_frames("nikon").unwrap().len(), 3);
 }
 
 #[test]

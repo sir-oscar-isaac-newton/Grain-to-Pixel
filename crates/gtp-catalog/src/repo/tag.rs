@@ -52,27 +52,74 @@ fn duplicate(name: &str) -> AppError {
     .with_details(name.to_owned())
 }
 
+/// The tag with this name (matched by key), if there is one.
+fn find_tag(conn: &Connection, name: &str) -> Result<Option<Tag>, AppError> {
+    conn.query_row(
+        "SELECT id, name FROM tag WHERE name_key = ?1",
+        [Tag::key(name)?],
+        read,
+    )
+    .optional()
+    .map_err(db_error)
+}
+
+/// The tag with this name, created if there is none yet. An existing tag keeps its spelling.
+fn ensure_tag(conn: &Connection, name: &str) -> Result<Tag, AppError> {
+    if let Some(tag) = find_tag(conn, name)? {
+        return Ok(tag);
+    }
+    let tag = Tag::new(name)?;
+    conn.execute(
+        "INSERT INTO tag(id, name, name_key) VALUES (?1, ?2, ?3)",
+        params![tag.id.to_string(), tag.name, Tag::key(name)?],
+    )
+    .map_err(db_error)?;
+    Ok(tag)
+}
+
+/// Most names one tag change may add or remove, and most frames it may touch.
+pub const MAX_TAG_NAMES: usize = 50;
+pub const MAX_TAGGED_FRAMES: usize = 10_000;
+
+fn check_counts(names: usize, frames: usize) -> Result<(), AppError> {
+    if names > MAX_TAG_NAMES || frames > MAX_TAGGED_FRAMES {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "That is too many tags or frames for one change.",
+        )
+        .with_details(format!(
+            "{names} names (at most {MAX_TAG_NAMES}), {frames} frames (at most {MAX_TAGGED_FRAMES})"
+        )));
+    }
+    Ok(())
+}
+
+/// The ids of `add` (created when missing) and of those of `remove` that exist (the others are
+/// not on anything, so there is nothing to remove). All names are checked before any is created.
+fn resolve_names(
+    conn: &Connection,
+    add: &[String],
+    remove: &[String],
+) -> Result<(Vec<TagId>, Vec<TagId>), AppError> {
+    for name in add.iter().chain(remove) {
+        Tag::normalize(name)?;
+    }
+    let added = add
+        .iter()
+        .map(|n| ensure_tag(conn, n).map(|t| t.id))
+        .collect::<Result<_, _>>()?;
+    let mut removed = Vec::new();
+    for name in remove {
+        removed.extend(find_tag(conn, name)?.map(|t| t.id));
+    }
+    Ok((added, removed))
+}
+
 impl Catalog {
     /// The tag with this name (matched by key), created if there is none yet. An existing tag
     /// keeps its spelling.
     pub fn tag_ensure(&mut self, name: &str) -> Result<Tag, AppError> {
-        let key = Tag::key(name)?;
-        let existing = self
-            .conn
-            .query_row("SELECT id, name FROM tag WHERE name_key = ?1", [&key], read)
-            .optional()
-            .map_err(db_error)?;
-        if let Some(tag) = existing {
-            return Ok(tag);
-        }
-        let tag = Tag::new(name)?;
-        self.conn
-            .execute(
-                "INSERT INTO tag(id, name, name_key) VALUES (?1, ?2, ?3)",
-                params![tag.id.to_string(), tag.name, key],
-            )
-            .map_err(db_error)?;
-        Ok(tag)
+        ensure_tag(&self.conn, name)
     }
 
     /// All tags, in name order (case-insensitive).
@@ -163,6 +210,91 @@ impl Catalog {
             }
             fts::refresh_frame(&tx, *frame)?;
         }
+        tx.commit().map_err(db_error)
+    }
+
+    /// Adds the tags named in `add` (created when they do not exist yet) to every frame, and
+    /// removes those named in `remove` (unknown names are skipped), in one transaction: a bad name
+    /// or an unknown frame changes nothing, not even by creating a tag. A name in both lists ends up
+    /// removed.
+    pub fn tag_apply_frames(
+        &mut self,
+        frames: &[FrameId],
+        add: &[String],
+        remove: &[String],
+    ) -> Result<(), AppError> {
+        check_counts(add.len().max(remove.len()), frames.len())?;
+        let tx = self.conn.transaction().map_err(db_error)?;
+        for frame in frames {
+            let exists: Option<i64> = tx
+                .query_row(
+                    "SELECT 1 FROM frame WHERE id = ?1",
+                    [frame.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(db_error)?;
+            if exists.is_none() {
+                return Err(not_found("frame", frame));
+            }
+        }
+        let (added, removed) = resolve_names(&tx, add, remove)?;
+        for frame in frames {
+            for tag in &added {
+                tx.execute(
+                    "INSERT OR IGNORE INTO frame_tag(frame_id, tag_id) VALUES (?1, ?2)",
+                    params![frame.to_string(), tag.to_string()],
+                )
+                .map_err(db_error)?;
+            }
+            for tag in &removed {
+                tx.execute(
+                    "DELETE FROM frame_tag WHERE frame_id = ?1 AND tag_id = ?2",
+                    params![frame.to_string(), tag.to_string()],
+                )
+                .map_err(db_error)?;
+            }
+            fts::refresh_frame(&tx, *frame)?;
+        }
+        tx.commit().map_err(db_error)
+    }
+
+    /// [`Catalog::tag_apply_frames`] for a roll: its tags count for every frame on it.
+    pub fn tag_apply_roll(
+        &mut self,
+        roll: RollId,
+        add: &[String],
+        remove: &[String],
+    ) -> Result<(), AppError> {
+        check_counts(add.len().max(remove.len()), 0)?;
+        let tx = self.conn.transaction().map_err(db_error)?;
+        let exists: Option<i64> = tx
+            .query_row(
+                "SELECT 1 FROM roll WHERE id = ?1",
+                [roll.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        if exists.is_none() {
+            return Err(not_found("roll", roll));
+        }
+        let (added, removed) = resolve_names(&tx, add, remove)?;
+        for tag in &added {
+            tx.execute(
+                "INSERT OR IGNORE INTO roll_tag(roll_id, tag_id) VALUES (?1, ?2)",
+                params![roll.to_string(), tag.to_string()],
+            )
+            .map_err(db_error)?;
+        }
+        for tag in &removed {
+            tx.execute(
+                "DELETE FROM roll_tag WHERE roll_id = ?1 AND tag_id = ?2",
+                params![roll.to_string(), tag.to_string()],
+            )
+            .map_err(db_error)?;
+        }
+        fts::refresh_roll(&tx, roll)?;
         tx.commit().map_err(db_error)
     }
 

@@ -2,10 +2,15 @@
 
 mod frame;
 mod roll;
+mod search;
 mod source;
 mod tag;
 
 pub use frame::{Frame, FrameKind};
-pub use roll::{check_iso, check_shot_range, FilmFormat, Roll, FILM_BASE_MIN_CONFIDENCE, MAX_ISO};
+pub use roll::{
+    check_iso, check_shot_range, partial_date_span, FilmFormat, Roll, FILM_BASE_MIN_CONFIDENCE,
+    MAX_ISO,
+};
+pub use search::SearchQuery;
 pub use source::{SourceFile, SourceRole};
 pub use tag::Tag;

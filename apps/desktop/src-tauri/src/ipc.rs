@@ -27,6 +27,12 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::frame::frame_set_note,
             commands::frame::frame_delete,
             commands::ingest::import_files,
+            commands::tags::tag_list,
+            commands::tags::tag_apply,
+            commands::tags::tag_apply_roll,
+            commands::tags::tag_rename,
+            commands::tags::tag_delete,
+            commands::search::search,
             commands::system::settings_get,
             commands::system::settings_set,
             commands::system::log_client_event,
@@ -80,6 +86,12 @@ mod tests {
             "frameSetNote",
             "frameDelete",
             "importFiles",
+            "tagList",
+            "tagApply",
+            "tagApplyRoll",
+            "tagRename",
+            "tagDelete",
+            "search",
         ] {
             assert!(text.contains(command), "{command} missing from bindings");
         }
@@ -103,6 +115,8 @@ mod tests {
             "ImportResult",
             "SkipReason",
             "ImportKind",
+            "SearchQuery",
+            "Tag",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }

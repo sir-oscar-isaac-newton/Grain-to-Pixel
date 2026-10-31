@@ -224,6 +224,15 @@
       "number": 31,
       "title": "Roll film base estimated on first ingested frame",
       "branch": "feat/issue-31-roll-film-base-from-first-frame",
+      "status": "completed",
+      "pr": 123,
+      "commit": "f90815e"
+    },
+    {
+      "id": "L-06",
+      "number": 32,
+      "title": "Tags and full-text search",
+      "branch": "feat/issue-32-tags-and-full-text-search",
       "status": "in_progress",
       "pr": null,
       "commit": null

@@ -11,6 +11,15 @@ use crate::{fts, Catalog};
 const COLUMNS: &str =
     "id, roll_id, index_in_roll, kind, width, height, has_ir, note, created_at, edited_at";
 
+/// The frame columns of COLUMNS, each prefixed with the alias ..
+pub(super) fn prefixed_columns() -> String {
+    COLUMNS
+        .split(", ")
+        .map(|c| format!("f.{c}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn kind_text(kind: FrameKind) -> &'static str {
     match kind {
         FrameKind::ScanRgbIr => "ScanRgbIr",
@@ -18,7 +27,7 @@ fn kind_text(kind: FrameKind) -> &'static str {
     }
 }
 
-fn read(row: &Row<'_>) -> rusqlite::Result<Frame> {
+pub(super) fn read(row: &Row<'_>) -> rusqlite::Result<Frame> {
     let kind: String = row.get(3)?;
     let kind = match kind.as_str() {
         "ScanRgbIr" => FrameKind::ScanRgbIr,
@@ -114,11 +123,7 @@ impl Catalog {
         offset: u32,
         limit: u32,
     ) -> Result<Vec<Frame>, AppError> {
-        let columns = COLUMNS
-            .split(", ")
-            .map(|c| format!("f.{c}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let columns = prefixed_columns();
         let mut stmt = self
             .conn
             .prepare(&format!(

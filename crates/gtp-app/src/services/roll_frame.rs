@@ -216,17 +216,20 @@ pub fn roll_delete(library: &Library, id: RollId) -> Result<DeleteReport, AppErr
     Ok(report)
 }
 
-pub fn frame_list(library: &Library, query: FrameQuery) -> Result<FramePage, AppError> {
-    if !(1..=MAX_PAGE_SIZE).contains(&query.page_size) {
+/// The row offset of page number page (counting from 0), after checking the page size.
+pub(crate) fn page_offset(page: u32, page_size: u32) -> Result<u32, AppError> {
+    if !(1..=MAX_PAGE_SIZE).contains(&page_size) {
         return Err(
             AppError::new(ErrorCode::InvalidInput, "The page size is out of range.")
-                .with_details(format!("{} (1 to {MAX_PAGE_SIZE})", query.page_size)),
+                .with_details(format!("{page_size} (1 to {MAX_PAGE_SIZE})")),
         );
     }
-    let offset = query
-        .page
-        .checked_mul(query.page_size)
-        .ok_or_else(|| AppError::new(ErrorCode::InvalidInput, "That page is out of range."))?;
+    page.checked_mul(page_size)
+        .ok_or_else(|| AppError::new(ErrorCode::InvalidInput, "That page is out of range."))
+}
+
+pub fn frame_list(library: &Library, query: FrameQuery) -> Result<FramePage, AppError> {
+    let offset = page_offset(query.page, query.page_size)?;
     let (frames, total) = library.read(|c| {
         Ok((
             c.list_frames_page(query.roll_id, offset, query.page_size)?,
@@ -272,7 +275,7 @@ pub fn frame_delete(library: &Library, ids: &[FrameId]) -> Result<DeleteReport, 
     Ok(report)
 }
 
-fn summary(library: &Library, f: Frame) -> FrameSummary {
+pub(crate) fn summary(library: &Library, f: Frame) -> FrameSummary {
     let has_thumb = library.resolve(&thumb_rel(f.id)).is_ok_and(|p| p.is_file());
     FrameSummary {
         id: f.id,

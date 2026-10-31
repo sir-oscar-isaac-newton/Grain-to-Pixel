@@ -4,4 +4,6 @@ pub mod frame;
 pub mod ingest;
 pub mod library;
 pub mod roll;
+pub mod search;
 pub mod system;
+pub mod tags;

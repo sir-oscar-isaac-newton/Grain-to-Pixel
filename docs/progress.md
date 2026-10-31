@@ -306,10 +306,20 @@
       "number": 39,
       "title": "Base and Invert panel with film-base picker",
       "branch": "feat/issue-39-levels-pickers",
+      "status": "completed",
+      "pr": 137,
+      "commit": "3d29248",
+      "note": "Delivered in two PRs: part 1 #135 (3cd8ecd, branch feat/issue-39-base-invert-panel), part 2 #137 (3d29248)"
+    },
+    {
+      "id": "U-04",
+      "number": 40,
+      "title": "Colour and Tone panels with curve editor",
+      "branch": "feat/issue-40-colour-panel",
       "status": "in_progress",
       "pr": null,
       "commit": null,
-      "note": "Part 1 of 2 merged in #135 (3cd8ecd) on branch feat/issue-39-base-invert-panel: film-base picker, roll default, level sliders, auto levels, autosave. Part 2: white and black point pickers"
+      "note": "Part 1 of 2: Colour panel and neutral picker; part 2: Tone panel and curve editor"
     },
     {
       "id": "P-14",

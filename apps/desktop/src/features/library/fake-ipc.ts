@@ -142,6 +142,14 @@ export const state = {
   }>,
   /** Sampling a white or black point is refused with this message when set. */
   levelsRefused: null as string | null,
+  /** The areas sampled for a neutral grey, in order. */
+  neutralSamples: [] as Array<{
+    id: string;
+    recipe: Recipe;
+    region: { x: number; y: number; w: number; h: number };
+  }>,
+  /** Sampling a neutral grey is refused with this message when set. */
+  neutralRefused: null as string | null,
   /** The recipes saved, in order. */
   saved: [] as Array<{ id: string; recipe: Recipe }>,
   /** Saving fails with this message when set. */
@@ -346,6 +354,16 @@ export const ipc = {
         : { black: [0.02, 0.03, 0.04], white: current.white };
     },
   ),
+  developSampleNeutral: vi.fn(
+    async (id: string, recipe: Recipe, region: { x: number; y: number; w: number; h: number }) => {
+      state.neutralSamples.push({ id, recipe, region });
+      if (state.neutralRefused) {
+        throw new IpcError({ code: 'InvalidInput', message: state.neutralRefused });
+      }
+      const current = (recipe as unknown as { color?: Record<string, number> }).color ?? {};
+      return { ...current, red_cyan: -20, green_magenta: 10, blue_yellow: 30 };
+    },
+  ),
   frameGet: vi.fn(async (id: string) => {
     const found = state.frames.find((f) => f.id === id);
     if (!found) throw new IpcError({ code: 'NotFound', message: 'No such frame.' });
@@ -398,6 +416,8 @@ export function resetFake() {
   state.samples = [];
   state.levelSamples = [];
   state.levelsRefused = null;
+  state.neutralSamples = [];
+  state.neutralRefused = null;
   state.saveFails = null;
   state.rollBases = [];
   state.tags = [];

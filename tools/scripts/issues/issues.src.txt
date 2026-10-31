@@ -895,7 +895,7 @@ spec: specification sections 4.1 and 13
 desc: Colour (red/cyan, green/magenta, blue/yellow, temperature, tint, saturation, vibrance, a neutral picker and a black-and-white mode with a channel mix) and Tone (exposure, contrast, highlights, shadows, whites, blacks, dehaze) panels and an accessible curve editor.
 ac:
 - Sliders and curve points update the preview live and autosave
-- The colour sliders can be driven by the shortcuts of U-13 (a press moves 10 steps, Shift 1 step)
+- The colour sliders are keyboard-operable (an arrow key moves one step, Page Up and Page Down ten), so that the shortcuts of U-13 can drive them
 - The neutral picker sets the colour axes so a clicked grey becomes neutral (maths in P-14)
 - Black-and-white mode shows a channel mix and hides the colour sliders it makes redundant
 - The curve editor is fully keyboard operable (arrow keys move points)
@@ -905,6 +905,7 @@ FILES: apps/desktop/src/features/develop/panels/{ColorPanel.tsx, TonePanel.tsx};
 ROUTES used: develop_render, recipe_save.
 MIGRATIONS: none.
 TESTS: panels with mocked ipc, CurveEditor keyboard test, axe.
+DELIVERY (decided when U-04 was approved): two parts. Part 1: the Colour panel (axes, temperature, tint, saturation, vibrance, black and white with its channel mix) and the neutral picker, which needed a new command (`develop_sample_neutral`: the area is measured after Invert and before Color, using `neutral_balance` from P-14) and, like the levels pickers, shows the frame without turns while picking. Part 2: the Tone panel and the curve editor. The shortcuts criterion was reworded: U-13 depends on U-04, so U-04 makes the sliders keyboard-operable and U-13 binds the global keys.
 
 ## U-05
 title: Crop and geometry UI

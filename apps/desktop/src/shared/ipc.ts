@@ -297,6 +297,16 @@ export async function developSampleLevels(
   return unwrap(await commands.developSampleLevels(...args));
 }
 
+/**
+ * The recipe's colour settings with the three colour axes set so that an area of the frame becomes
+ * neutral. The area is in fractions of the cropped frame, as for {@link developSampleLevels}.
+ */
+export async function developSampleNeutral(
+  ...args: Args<'developSampleNeutral'>
+): Promise<Data<'developSampleNeutral'>> {
+  return unwrap(await commands.developSampleNeutral(...args));
+}
+
 /** A group of settings that can be copied between frames (one panel of the Develop view). */
 export type RecipeField = Args<'recipeApplyTo'>[2][number];
 

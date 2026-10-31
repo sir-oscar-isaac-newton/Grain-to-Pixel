@@ -17,16 +17,17 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
 
-use gtp_core::recipe::{Crop, Invert, BASE_MAX, BASE_MIN};
+use gtp_core::recipe::{Color, Crop, Invert, BASE_MAX, BASE_MIN};
 use gtp_core::{
     AppError, ErrorCode, Frame, FrameId, ImageF32, Recipe, RecipeField, SourceFile, SourceRole,
 };
+use gtp_edit::{neutral_balance, Area};
 use gtp_io::{read_tiff16, to_f32_linear, Limits};
 use gtp_negative::{levels_from_sample, sample_film_base, LevelPoint, Rect};
 
 use crate::pipeline::{
-    analyze, build_proxy, normalized_frame, to_rgba8_srgb, Histogram, PipelineInput, RenderTarget,
-    PROXY_EDGE,
+    analyze, build_proxy, inverted_frame, normalized_frame, to_rgba8_srgb, Histogram,
+    PipelineInput, RenderTarget, PROXY_EDGE,
 };
 use crate::services::library::Library;
 
@@ -433,6 +434,24 @@ impl DevelopService {
         let frame = normalized_frame(&entry.input(), recipe)?;
         let area = pixel_area(region, &frame)?;
         levels_from_sample(&frame, area, point.into(), &recipe.clone().clamped().invert)
+    }
+
+    /// The recipe's colour settings with the three colour axes set so that the area becomes
+    /// neutral: the area is taken after the Invert stage and before the colour stage, so the
+    /// recipe's film base, crop and levels count, and its temperature, tint and the rest are kept.
+    /// `region` is in fractions of the cropped frame, as for [`Self::sample_levels`]. An area that
+    /// is black, or too far from neutral for the axes to correct, is refused.
+    pub fn sample_neutral(
+        &self,
+        library: &Library,
+        id: FrameId,
+        recipe: &Recipe,
+        region: Crop,
+    ) -> Result<Color, AppError> {
+        let entry = self.ensure(library, id)?;
+        let frame = inverted_frame(&entry.input(), recipe)?;
+        let Rect { x, y, w, h } = pixel_area(region, &frame)?;
+        neutral_balance(&frame, Area { x, y, w, h }, &recipe.clone().clamped().color)
     }
 
     /// Renders a preview whose long edge is at most `max_edge` (never above the proxy's) and
@@ -914,6 +933,88 @@ mod tests {
                 "{before:?} {after:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_picked_neutral_makes_the_area_grey_and_keeps_the_other_colour_settings() {
+        let t = Fixture::new("neutral");
+        let id = t.frame(1, 1000, 700);
+        let mut recipe = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        recipe.color.temperature = 12.0;
+        recipe.color.saturation = 1.2;
+        // Off the diagonal of the synthetic gradient, so the area is clearly tinted.
+        let region = Crop {
+            x: 0.7,
+            y: 0.2,
+            w: 0.05,
+            h: 0.05,
+        };
+        let color = t
+            .service
+            .sample_neutral(&t.library, id, &recipe, region)
+            .unwrap();
+        assert_eq!((color.temperature, color.saturation), (12.0, 1.2));
+        assert!(color.red_cyan != 0.0 || color.green_magenta != 0.0 || color.blue_yellow != 0.0);
+
+        // What the Color stage receives, balanced by those colours: channels equal within 2%.
+        let entry = t.service.ensure(&t.library, id).unwrap();
+        let frame = inverted_frame(&entry.input(), &recipe).unwrap();
+        let area = pixel_area(region, &frame).unwrap();
+        let gains = gtp_edit::channel_gains(&color);
+        let mut sums = [0.0f64; 3];
+        for y in area.y..area.y + area.h {
+            for x in area.x..area.x + area.w {
+                let at = (y as usize * frame.width as usize + x as usize) * 3;
+                for c in 0..3 {
+                    sums[c] += f64::from(frame.data[at + c] * gains[c]);
+                }
+            }
+        }
+        let top = sums.iter().cloned().fold(f64::MIN, f64::max);
+        let bottom = sums.iter().cloned().fold(f64::MAX, f64::min);
+        assert!(top / bottom < 1.02, "{sums:?}");
+    }
+
+    #[test]
+    fn picking_a_neutral_refuses_a_black_area_bad_areas_and_unknown_frames() {
+        let t = Fixture::new("neutral-bad");
+        let id = t.frame(1, 400, 300);
+        let mut recipe = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        let area = Crop {
+            x: 0.4,
+            y: 0.4,
+            w: 0.1,
+            h: 0.1,
+        };
+        // Levels above every density turn the whole frame black.
+        recipe.invert.black = [5.0; 3];
+        recipe.invert.white = [6.0; 3];
+        let err = t
+            .service
+            .sample_neutral(&t.library, id, &recipe, area)
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+
+        let ok = Recipe::default();
+        for region in [
+            Crop { w: 0.0, ..area },
+            Crop { x: 0.95, ..area },
+            Crop {
+                x: f32::NAN,
+                ..area
+            },
+        ] {
+            let err = t
+                .service
+                .sample_neutral(&t.library, id, &ok, region)
+                .unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{region:?}");
+        }
+        let err = t
+            .service
+            .sample_neutral(&t.library, FrameId::new(), &ok, area)
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
     }
 
     #[test]

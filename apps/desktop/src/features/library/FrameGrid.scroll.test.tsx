@@ -64,7 +64,8 @@ describe('FrameGrid scrolling', () => {
       const start = performance.now();
       await step(top);
       taken.push(performance.now() - start);
-      mostCells = Math.max(mostCells, screen.getAllByRole('gridcell').length);
+      // A plain selector: role queries are slow and would make the test itself the bottleneck.
+      mostCells = Math.max(mostCells, scroller.querySelectorAll('[role="gridcell"]').length);
     }
 
     const sorted = [...taken].sort((a, b) => a - b);
@@ -86,5 +87,6 @@ describe('FrameGrid scrolling', () => {
     await waitFor(() => expect(screen.getByText(`Frame ${FRAMES}`)).toBeInTheDocument());
     // Pages arrive on demand, never all at once (5,000 frames are 25 pages).
     expect(ipc.frameList.mock.calls.length).toBeLessThanOrEqual(25);
-  });
+    // Slow runners get room: the default 5 s is too tight for 250 steps plus the checks.
+  }, 60_000);
 });

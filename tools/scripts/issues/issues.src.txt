@@ -1644,3 +1644,26 @@ ROUTES used: none (recipe_save through the existing autosave).
 MIGRATIONS: none.
 TESTS: ratio maths (fit the largest crop, resize with a lock at every edge and corner, clamping at the picture's edges, the ratio after a quarter turn), panel with mocked ipc, axe.
 NOTES: asked for while U-05 was approved, so it is GitHub issue #142, not 75 (issue and pull request numbers share one sequence). Use 142 as its `number` in docs/progress.md. The crop of U-05 is free-form, as its criteria say.
+
+## U-15
+title: Verify library from the UI
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+deps: U-07, L-07
+adr: no
+spec: specification section 6 (library_verify)
+desc: Check the library's originals from the Settings view: a Verify library button that starts the verify job of L-07, shows its progress, lets you cancel it, and reports what it found. Settings also shows when the library was last verified and with how many problems. The job only reports; nothing is changed or deleted.
+ac:
+- The Library section of Settings shows when the library was last verified and how many problems it found, or that it never was
+- A Verify library button starts the job; progress and Cancel show while it runs, and the button is off until it ends
+- The result says how many files were checked, lists each problem (the file and the reason in words: missing, changed, wrong size, unreadable), the thumbnails that are missing and any stray folders, and says so when nothing was found
+- The text says that verifying only reports and changes nothing; it works in a read-only library
+- axe clean; strings via t()
+tech:
+FILES: apps/desktop/src/features/settings/{SettingsView.tsx, VerifySection.tsx}; the job events are followed as the import and export jobs are (useLibraryEvents, JobsPanel).
+ROUTES used: library_verify, job_cancel, library_info (last_verify_at, last_verify_problems).
+MIGRATIONS: none.
+TESTS: the section with mocked ipc (never verified, last result, running, cancel, clean result, problems of each kind, a failed job), axe.
+NOTES: asked for while U-07 was approved, since the verify job of L-07 has no UI, so it is GitHub issue #147, not 76 (issue and pull request numbers share one sequence). Use 147 as its `number` in docs/progress.md.

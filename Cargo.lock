@@ -1564,6 +1564,7 @@ dependencies = [
  "gtp-core",
  "proptest",
  "rayon",
+ "serde_json",
 ]
 
 [[package]]

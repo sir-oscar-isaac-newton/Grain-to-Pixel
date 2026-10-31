@@ -315,11 +315,11 @@
       "id": "U-04",
       "number": 40,
       "title": "Colour and Tone panels with curve editor",
-      "branch": "feat/issue-40-colour-panel",
+      "branch": "feat/issue-40-tone-panel",
       "status": "in_progress",
       "pr": null,
       "commit": null,
-      "note": "Part 1 of 2: Colour panel and neutral picker; part 2: Tone panel and curve editor"
+      "note": "Part 1 of 2 merged in #138 (2e8c9b3) on branch feat/issue-40-colour-panel: Colour panel and neutral picker. Part 2: Tone panel and curve editor"
     },
     {
       "id": "P-14",

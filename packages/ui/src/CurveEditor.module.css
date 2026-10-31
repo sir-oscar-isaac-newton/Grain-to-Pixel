@@ -1,0 +1,82 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.channels,
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.channels button[aria-pressed='true'] {
+  background: #4a4a50;
+  border-color: var(--text);
+}
+
+.plot {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  aspect-ratio: 1;
+  touch-action: none;
+  user-select: none;
+}
+
+.field {
+  fill: var(--surface);
+  stroke: var(--border);
+}
+
+.grid line {
+  stroke: var(--border);
+  stroke-width: 0.5;
+}
+
+.diagonal {
+  stroke: var(--border);
+  stroke-dasharray: 4 4;
+}
+
+.curve {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+
+.curve_r {
+  stroke: #e0675a;
+}
+
+.curve_g {
+  stroke: #4cc27f;
+}
+
+.curve_b {
+  stroke: #6b9bf0;
+}
+
+.point {
+  fill: var(--surface);
+  stroke: var(--text);
+  stroke-width: 1.5;
+  cursor: grab;
+  outline: none;
+}
+
+.point:focus-visible,
+.selected {
+  fill: var(--text);
+}
+
+.point:focus-visible {
+  stroke-width: 3;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}

@@ -149,6 +149,30 @@ mod tests {
 
     use super::*;
 
+    /// The curve editor in the UI draws the same curve in TypeScript; both are checked against
+    /// these cases, so that the line on screen is the one that is rendered.
+    #[test]
+    fn the_curve_matches_the_cases_the_ui_editor_is_checked_against() {
+        let cases: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../tests/fixtures/curve-cases.json")).unwrap();
+        assert!(cases.len() >= 4);
+        for case in cases {
+            let pair = |v: &serde_json::Value| {
+                [v[0].as_f64().unwrap() as f32, v[1].as_f64().unwrap() as f32]
+            };
+            let points: Vec<CurvePoint> = case["points"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(pair)
+                .collect();
+            let curve = Curve::new(&points).unwrap();
+            for sample in case["samples"].as_array().unwrap() {
+                let [x, want] = pair(sample);
+                assert!((curve.eval(x) - want).abs() < 1e-3, "{points:?} at {x}");
+            }
+        }
+    }
     #[test]
     fn the_default_and_empty_curves_are_the_identity() {
         for curve in [

@@ -22,6 +22,18 @@ if (typeof ResizeObserver === 'undefined') {
   };
 }
 
+// jsdom has no PointerEvent, and without one the coordinates and button of a pointer event the
+// tests send are lost. A mouse event with the pointer's id is all the code under test reads.
+if (typeof PointerEvent === 'undefined') {
+  globalThis.PointerEvent = class extends MouseEvent {
+    readonly pointerId: number;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 0;
+    }
+  } as unknown as typeof PointerEvent;
+}
+
 afterEach(() => {
   cleanup();
 });

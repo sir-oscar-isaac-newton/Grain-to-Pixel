@@ -113,6 +113,15 @@ export function makePreview(recipe: Recipe, maxEdge: number, seq: number): Previ
   return { seq, width, height, rgba };
 }
 
+/** The feature flags before anyone changes them (spec section 10). */
+export const DEFAULT_FLAGS = {
+  dust_removal: true,
+  triplet_import: true,
+  guided_capture: true,
+  dev_overlay: false,
+  experimental_auto_levels: false,
+};
+
 export const state = {
   details: null as LibraryDetails | null,
   lastLibrary: null as string | null,
@@ -154,6 +163,13 @@ export const state = {
   applies: [] as Array<{ frameIds: string[]; source: string; fields: string[] }>,
   /** Applying settings is refused with this message when set. */
   applyRefused: null as string | null,
+  /** The feature flags now, and the settings changes asked for, in order. */
+  flags: { ...DEFAULT_FLAGS },
+  settingsPatches: [] as Array<{ flags?: Partial<typeof DEFAULT_FLAGS> }>,
+  /** Reading the settings fails with this message when set. */
+  settingsUnreadable: null as string | null,
+  /** Saving settings is refused with this message when set. */
+  settingsRefused: null as string | null,
   /** The exports started, in order. */
   exports: [] as Array<{ frameIds: string[]; options: unknown }>,
   /** Starting an export is refused with this message when set. */
@@ -259,7 +275,21 @@ export const ipc = {
       return { app_version: '1.0.0', library: state.details };
     },
   ),
-  settingsGet: vi.fn(async () => ({ last_library: state.lastLibrary })),
+  settingsGet: vi.fn(async () => {
+    if (state.settingsUnreadable) {
+      throw new IpcError({ code: 'Io', message: state.settingsUnreadable });
+    }
+    return { last_library: state.lastLibrary, flags: { ...state.flags } };
+  }),
+  settingsDefaults: vi.fn(async () => ({ last_library: null, flags: { ...DEFAULT_FLAGS } })),
+  settingsSet: vi.fn(async (patch: { flags?: Partial<typeof DEFAULT_FLAGS> }) => {
+    state.settingsPatches.push(patch);
+    if (state.settingsRefused) {
+      throw new IpcError({ code: 'Io', message: state.settingsRefused });
+    }
+    state.flags = { ...state.flags, ...patch.flags };
+    return { last_library: state.lastLibrary, flags: { ...state.flags } };
+  }),
   folderCheck: vi.fn(async (path: string): Promise<FolderCheck> => ({
     path,
     free_bytes: 54_900_000_000,
@@ -446,6 +476,10 @@ export function resetFake() {
   state.frameConfidence = 0.9;
   state.exportRefused = null;
   state.exports = [];
+  state.flags = { ...DEFAULT_FLAGS };
+  state.settingsPatches = [];
+  state.settingsUnreadable = null;
+  state.settingsRefused = null;
   state.applies = [];
   state.applyRefused = null;
   state.neutralSamples = [];

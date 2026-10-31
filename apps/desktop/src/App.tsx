@@ -5,9 +5,10 @@ import { useUiStore, type View } from './app/store';
 import { DevelopView } from './features/develop/DevelopView';
 import { ImportView } from './features/import/ImportView';
 import { LibraryView } from './features/library/LibraryView';
+import { SettingsView } from './features/settings/SettingsView';
 import { crashNotesTake, libraryInfo } from './shared/ipc';
 
-const VIEWS: readonly View[] = ['library', 'develop', 'import'];
+const VIEWS: readonly View[] = ['library', 'develop', 'import', 'settings'];
 
 export function App() {
   const { t } = useTranslation();
@@ -75,6 +76,7 @@ export function App() {
         {view === 'library' && <LibraryView />}
         {view === 'develop' && <DevelopView />}
         {view === 'import' && <ImportView />}
+        {view === 'settings' && <SettingsView />}
       </main>
       <footer className={styles.footer}>
         {t('footer.version', { version: version ?? t('footer.unknown') })}

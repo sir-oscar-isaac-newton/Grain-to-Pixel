@@ -78,6 +78,11 @@ export async function settingsGet(): Promise<Settings> {
   return unwrap(await commands.settingsGet());
 }
 
+/** The settings as they are before anyone changes them (the defaults of the feature flags). */
+export async function settingsDefaults(): Promise<Settings> {
+  return commands.settingsDefaults();
+}
+
 /** Changes the named settings and returns all of them. */
 export async function settingsSet(patch: SettingsPatch): Promise<Settings> {
   return unwrap(await commands.settingsSet(patch));

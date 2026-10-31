@@ -10,6 +10,11 @@ vi.mock('./features/library/LibraryView', async () => {
   return { LibraryView: () => createElement('h2', null, 'Library') };
 });
 
+vi.mock('./features/settings/SettingsView', async () => {
+  const { createElement } = await import('react');
+  return { SettingsView: () => createElement('h2', null, 'Settings') };
+});
+
 vi.mock('./shared/ipc', () => ({
   libraryInfo: () => Promise.resolve({ app_version: '1.2.3', library: null }),
   crashNotesTake: () => crashNotesTake(),
@@ -43,7 +48,7 @@ describe('App shell', () => {
     expect(await screen.findByText('Version 1.2.3')).toBeInTheDocument();
   });
 
-  it('switches between Library, Develop and Import', async () => {
+  it('switches between Library, Develop, Import and Settings', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -55,6 +60,13 @@ describe('App shell', () => {
 
     await user.click(screen.getByRole('button', { name: 'Import' }));
     expect(screen.getByRole('heading', { level: 2, name: 'Import' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(screen.getByRole('heading', { level: 2, name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
 
     await user.click(screen.getByRole('button', { name: 'Library' }));
     expect(screen.getByRole('heading', { level: 2, name: 'Library' })).toBeInTheDocument();

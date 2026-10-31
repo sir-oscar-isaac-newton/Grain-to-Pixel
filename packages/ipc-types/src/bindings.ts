@@ -115,6 +115,11 @@ export const commands = {
 	search: (query: SearchQuery_Deserialize, page: number, pageSize: number) => typedError<FramePage_Serialize, AppError_Serialize>(__TAURI_INVOKE("search", { query, page, pageSize })),
 	/**  The app settings (spec section 5.4), feature flags included. */
 	settingsGet: () => typedError<Settings_Serialize, AppError_Serialize>(__TAURI_INVOKE("settings_get")),
+	/**
+	 *  The settings as they are before anyone changes them, so the UI can say what the default of a
+	 *  feature flag is without carrying a copy of it.
+	 */
+	settingsDefaults: () => __TAURI_INVOKE<Settings_Serialize>("settings_defaults"),
 	/**  Changes the settings named in `patch`, saves them and returns the result. */
 	settingsSet: (patch: SettingsPatch_Deserialize) => typedError<Settings_Serialize, AppError_Serialize>(__TAURI_INVOKE("settings_set", { patch })),
 	/**  Writes an event from the UI (error boundary, `window.onerror`) to the application log. */

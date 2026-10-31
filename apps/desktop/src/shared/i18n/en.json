@@ -6,7 +6,8 @@
     "label": "Main views",
     "library": "Library",
     "develop": "Develop",
-    "import": "Import"
+    "import": "Import",
+    "settings": "Settings"
   },
   "library": {
     "title": "Library",
@@ -168,6 +169,51 @@
       "VerifyFailed": "did not read back identical"
     },
     "skippedFile": "{{path}}: {{reason}}"
+  },
+  "settings": {
+    "title": "Settings",
+    "loading": "Loading the settings…",
+    "loadFailed": "The settings could not be read: {{message}}",
+    "saveFailed": "The setting could not be saved: {{message}}",
+    "library": {
+      "heading": "Library",
+      "name": "Name",
+      "folder": "Folder",
+      "free": "Free space",
+      "freeUnknown": "Not known",
+      "readOnly": "This library was made by a newer version of the app, so it can be looked at but not changed.",
+      "none": "No library is open.",
+      "toLibrary": "Open the Library view"
+    },
+    "flags": {
+      "heading": "Feature flags",
+      "intro": "Switches for features that can be turned off if they misbehave. A change is saved at once. A flag takes effect where its feature is used, as that feature arrives.",
+      "legend": "Feature flags",
+      "changed": "(not the default)",
+      "defaultOn": "On by default.",
+      "defaultOff": "Off by default.",
+      "reset": "Reset flags to their defaults",
+      "dust_removal": {
+        "name": "Infrared dust removal",
+        "purpose": "Turn it off if the infrared cleaning misbehaves on real scans."
+      },
+      "triplet_import": {
+        "name": "RGB triplet import",
+        "purpose": "Allows importing separate red, green and blue exposures. Turn it off until it is verified."
+      },
+      "guided_capture": {
+        "name": "Guided capture",
+        "purpose": "Scanlight control and camera capture. Turn it off if the hardware misbehaves."
+      },
+      "dev_overlay": {
+        "name": "Developer overlay",
+        "purpose": "Shows per-stage timings and memory in the Develop view."
+      },
+      "experimental_auto_levels": {
+        "name": "Experimental auto levels",
+        "purpose": "An alternative way to find the black and white points."
+      }
+    }
   },
   "apply": {
     "open": "Apply settings…",

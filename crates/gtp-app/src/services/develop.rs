@@ -18,7 +18,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use serde::Serialize;
 
 use gtp_core::recipe::Crop;
-use gtp_core::{AppError, ErrorCode, Frame, FrameId, ImageF32, Recipe, SourceFile, SourceRole};
+use gtp_core::{
+    AppError, ErrorCode, Frame, FrameId, ImageF32, Recipe, RecipeField, SourceFile, SourceRole,
+};
 use gtp_io::{read_tiff16, to_f32_linear, Limits};
 
 use crate::pipeline::{
@@ -86,6 +88,62 @@ pub struct DevelopAnalysis {
     pub histogram: HistogramData,
     /// A recipe with the automatic crop, base and levels, everything else at its default.
     pub auto_recipe: Recipe,
+}
+
+/// Saves a frame's recipe, clamped into range, and stamps the frame as edited. Returns the recipe
+/// as stored. A recipe the pipeline could not render is refused instead: a tone curve with a single
+/// point (no curve at all means "no change").
+pub fn save_recipe(library: &Library, frame: FrameId, recipe: Recipe) -> Result<Recipe, AppError> {
+    let recipe = recipe.clamped();
+    for curve in [
+        &recipe.tone.curve.master,
+        &recipe.tone.curve.r,
+        &recipe.tone.curve.g,
+        &recipe.tone.curve.b,
+    ] {
+        gtp_edit::Curve::new(curve)?;
+    }
+    library.write(|c| c.save_recipe(frame, &recipe))?;
+    Ok(recipe)
+}
+
+/// Copies the chosen groups of settings from `source`'s recipe onto each of `frames`, all or
+/// nothing; whatever else a target frame has is kept. A frame that was never edited counts as
+/// having the default recipe, both as a source and as a target. The source itself, if listed, is
+/// skipped.
+pub fn apply_recipe_to(
+    library: &Library,
+    frames: &[FrameId],
+    source: FrameId,
+    fields: &[RecipeField],
+) -> Result<(), AppError> {
+    if frames.is_empty() {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "Select at least one frame to apply the settings to.",
+        ));
+    }
+    if fields.is_empty() {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "Choose at least one group of settings to copy.",
+        ));
+    }
+    library.write(|c| {
+        c.get_frame(source)?;
+        let from = c.load_recipe(source)?.unwrap_or_default();
+        let mut seen = std::collections::HashSet::new();
+        let mut updated = Vec::new();
+        for frame in frames {
+            if *frame == source || !seen.insert(*frame) {
+                continue;
+            }
+            let mut recipe = c.load_recipe(*frame)?.unwrap_or_default();
+            recipe.copy_fields_from(&from, fields);
+            updated.push((*frame, recipe));
+        }
+        c.save_recipes(&updated)
+    })
 }
 
 /// One frame's proxy and the state of its renders.
@@ -393,6 +451,42 @@ mod tests {
         }
     }
 
+    impl Fixture {
+        /// A frame with no original file, enough for saving and copying recipes.
+        fn bare(&self, index: u32) -> FrameId {
+            let id = FrameId::new();
+            self.library
+                .write(|c| {
+                    c.insert_frame(&Frame {
+                        id,
+                        roll_id: self.roll,
+                        index_in_roll: index,
+                        kind: FrameKind::ScanRgbIr,
+                        width: 10,
+                        height: 10,
+                        has_ir: false,
+                        note: String::new(),
+                        created_at: String::new(),
+                        edited_at: None,
+                    })
+                })
+                .unwrap();
+            id
+        }
+
+        fn stored(&self, frame: FrameId) -> Option<Recipe> {
+            self.library.read(|c| c.load_recipe(frame)).unwrap()
+        }
+
+        fn edited(&self, frame: FrameId) -> bool {
+            self.library
+                .read(|c| c.get_frame(frame))
+                .unwrap()
+                .edited_at
+                .is_some()
+        }
+    }
+
     fn header(bytes: &[u8]) -> (u64, u32, u32) {
         (
             u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
@@ -631,6 +725,182 @@ mod tests {
         roll_set_film_base(&t.library, t.roll, Some(found.base_rgb)).unwrap();
         t.service.open(&t.library, id).unwrap();
         assert!(t.service.analyze(&t.library, id).unwrap().base_from_roll);
+    }
+
+    #[test]
+    fn a_saved_recipe_reloads_the_same_and_marks_the_frame_edited() {
+        let t = Fixture::new("save");
+        let id = t.bare(1);
+        assert!(!t.edited(id));
+        let mut recipe = Recipe::default();
+        recipe.tone.exposure_ev = 0.7;
+        recipe.geometry.rot90 = 1;
+
+        let stored = save_recipe(&t.library, id, recipe.clone()).unwrap();
+        assert_eq!(stored, recipe, "in range already, so unchanged");
+        assert_eq!(t.stored(id), Some(recipe.clone()));
+        assert!(t.edited(id));
+        // The Develop view gets it back when it opens the frame again.
+        let scan = t.frame(2, 400, 300);
+        save_recipe(&t.library, scan, recipe.clone()).unwrap();
+        assert_eq!(t.service.open(&t.library, scan).unwrap().recipe, recipe);
+    }
+
+    #[test]
+    fn a_recipe_is_clamped_before_it_is_stored() {
+        let t = Fixture::new("save-clamp");
+        let id = t.bare(1);
+        let mut wild = Recipe::default();
+        wild.tone.exposure_ev = 1000.0;
+        wild.color.saturation = -4.0;
+        wild.geometry.crop.w = 7.0;
+
+        let stored = save_recipe(&t.library, id, wild.clone()).unwrap();
+        assert_eq!(stored, wild.clamped());
+        assert_ne!(stored.tone.exposure_ev, 1000.0);
+        assert_eq!(t.stored(id), Some(stored));
+    }
+
+    #[test]
+    fn a_recipe_that_could_not_be_rendered_is_refused_and_nothing_is_stored() {
+        let t = Fixture::new("save-bad");
+        let id = t.bare(1);
+        let mut one_point = Recipe::default();
+        one_point.tone.curve.r = vec![[0.5, 0.5]];
+        let err = save_recipe(&t.library, id, one_point).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert_eq!(t.stored(id), None);
+        assert!(!t.edited(id));
+
+        // No curve at all means "no change", and is fine.
+        let mut none = Recipe::default();
+        none.tone.curve.master = Vec::new();
+        save_recipe(&t.library, id, none).unwrap();
+
+        let err = save_recipe(&t.library, FrameId::new(), Recipe::default()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    /// The source for the copy tests: tone and geometry edited, colour left alone.
+    fn source_recipe() -> Recipe {
+        let mut r = Recipe::default();
+        r.tone.exposure_ev = 0.8;
+        r.geometry.angle_deg = 2.0;
+        r.output.space = gtp_core::recipe::OutputSpace::Prophoto;
+        r
+    }
+
+    #[test]
+    fn applying_copies_only_the_chosen_groups_and_keeps_the_rest_of_each_target() {
+        let t = Fixture::new("apply");
+        let (source, edited, fresh) = (t.bare(1), t.bare(2), t.bare(3));
+        save_recipe(&t.library, source, source_recipe()).unwrap();
+        let mut own = Recipe::default();
+        own.color.temperature = 15.0;
+        own.geometry.angle_deg = -1.0;
+        save_recipe(&t.library, edited, own.clone()).unwrap();
+        assert!(!t.edited(fresh));
+
+        apply_recipe_to(
+            &t.library,
+            &[edited, fresh],
+            source,
+            &[RecipeField::Tone, RecipeField::Output],
+        )
+        .unwrap();
+
+        let want = |base: &Recipe| {
+            let mut r = base.clone();
+            r.tone = source_recipe().tone;
+            r.output = source_recipe().output;
+            r
+        };
+        // The target's own colour and geometry stay; a never-edited target starts from the default.
+        assert_eq!(t.stored(edited), Some(want(&own)));
+        assert_eq!(t.stored(fresh), Some(want(&Recipe::default())));
+        assert_eq!(t.stored(edited).unwrap().geometry.angle_deg, -1.0);
+        assert!(t.edited(edited) && t.edited(fresh), "targets are stamped");
+        assert_eq!(
+            t.stored(source),
+            Some(source_recipe()),
+            "the source is untouched"
+        );
+    }
+
+    #[test]
+    fn a_never_edited_source_counts_as_the_default_recipe() {
+        let t = Fixture::new("apply-default");
+        let (source, target) = (t.bare(1), t.bare(2));
+        save_recipe(&t.library, target, source_recipe()).unwrap();
+
+        apply_recipe_to(&t.library, &[target], source, &[RecipeField::Tone]).unwrap();
+        let after = t.stored(target).unwrap();
+        assert_eq!(after.tone, Recipe::default().tone, "reset to the default");
+        assert_eq!(after.geometry.angle_deg, 2.0);
+        assert_eq!(t.stored(source), None, "a source never edited stays so");
+        assert!(!t.edited(source));
+    }
+
+    #[test]
+    fn the_source_and_repeated_frames_in_the_list_are_harmless() {
+        let t = Fixture::new("apply-dupes");
+        let (source, target) = (t.bare(1), t.bare(2));
+        save_recipe(&t.library, source, source_recipe()).unwrap();
+        apply_recipe_to(
+            &t.library,
+            &[source, target, target],
+            source,
+            &[RecipeField::Geometry],
+        )
+        .unwrap();
+        assert_eq!(t.stored(target).unwrap().geometry.angle_deg, 2.0);
+
+        // Only the source: nothing to do, and no error.
+        apply_recipe_to(&t.library, &[source], source, &[RecipeField::Tone]).unwrap();
+    }
+
+    #[test]
+    fn applying_needs_frames_and_fields_and_known_ones() {
+        let t = Fixture::new("apply-bad");
+        let (source, a, b) = (t.bare(1), t.bare(2), t.bare(3));
+        save_recipe(&t.library, source, source_recipe()).unwrap();
+        let code = |r: Result<(), AppError>| r.unwrap_err().code;
+
+        assert_eq!(
+            code(apply_recipe_to(
+                &t.library,
+                &[],
+                source,
+                &[RecipeField::Tone]
+            )),
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(
+            code(apply_recipe_to(&t.library, &[a], source, &[])),
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(
+            code(apply_recipe_to(
+                &t.library,
+                &[a],
+                FrameId::new(),
+                &[RecipeField::Tone]
+            )),
+            ErrorCode::NotFound
+        );
+
+        // An unknown target changes none of the others.
+        assert_eq!(
+            code(apply_recipe_to(
+                &t.library,
+                &[a, FrameId::new(), b],
+                source,
+                &[RecipeField::Tone]
+            )),
+            ErrorCode::NotFound
+        );
+        assert_eq!((t.stored(a), t.stored(b)), (None, None));
+        assert!(!t.edited(a) && !t.edited(b));
     }
 
     /// A 1600 px preview of a 2048 px proxy, as the Develop view asks for while a slider moves, for

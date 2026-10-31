@@ -261,6 +261,15 @@
       "number": 35,
       "title": "Develop service - open, analyze and render",
       "branch": "feat/issue-35-develop-service",
+      "status": "completed",
+      "pr": 128,
+      "commit": "efdd52a"
+    },
+    {
+      "id": "L-08",
+      "number": 36,
+      "title": "Recipe save and apply to frames",
+      "branch": "feat/issue-36-recipe-save-apply",
       "status": "in_progress",
       "pr": null,
       "commit": null

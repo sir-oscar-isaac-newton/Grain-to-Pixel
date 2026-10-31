@@ -49,6 +49,16 @@ export const commands = {
 	developOpen: (frameId: FrameId) => typedError<DevelopInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_open", { frameId })),
 	/**  Finds the frame, film base and levels of a frame, and the recipe they make. */
 	developAnalyze: (frameId: FrameId) => typedError<DevelopAnalysis_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_analyze", { frameId })),
+	/**
+	 *  Saves a frame's recipe, clamped into range, and marks the frame edited. Returns the recipe as
+	 *  stored. A recipe that could not be rendered (a tone curve with a single point) is refused.
+	 */
+	recipeSave: (frameId: FrameId, recipe: Recipe_Deserialize) => typedError<Recipe_Serialize, AppError_Serialize>(__TAURI_INVOKE("recipe_save", { frameId, recipe })),
+	/**
+	 *  Copies the chosen groups of settings from the source frame's recipe onto the frames, all or
+	 *  nothing. Whatever else a target has is kept.
+	 */
+	recipeApplyTo: (frameIds: FrameId[], source: FrameId, fields: RecipeField[]) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("recipe_apply_to", { frameIds, source, fields })),
 	/**  All tags, in name order. */
 	tagList: () => typedError<Tag[], AppError_Serialize>(__TAURI_INVOKE("tag_list")),
 	/**  The tags of a roll, in name order. */
@@ -776,6 +786,14 @@ export type Output_Serialize = {
 };
 
 export type Recipe = Recipe_Serialize | Recipe_Deserialize;
+
+/**
+ *  A group of settings that can be copied between frames: one panel of the Develop view.
+ * 
+ *  `Color` carries the colour balance and the black-and-white conversion (`mono`), which live in
+ *  the same panel; `Base` carries the base source together with its value.
+ */
+export type RecipeField = "Geometry" | "Base" | "Invert" | "Color" | "Tone" | "Dust" | "Output";
 
 export type Recipe_Deserialize = {
 	v?: number,

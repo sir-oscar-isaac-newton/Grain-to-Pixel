@@ -288,6 +288,15 @@
       "number": 38,
       "title": "Develop canvas, histogram and before/after",
       "branch": "feat/issue-38-develop-canvas",
+      "status": "completed",
+      "pr": 133,
+      "commit": "4c80a18"
+    },
+    {
+      "id": "P-17",
+      "number": 130,
+      "title": "Develop preview speed for large proxies",
+      "branch": "feat/issue-130-develop-preview-speed",
       "status": "in_progress",
       "pr": null,
       "commit": null

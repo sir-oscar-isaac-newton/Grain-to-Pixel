@@ -8,6 +8,7 @@ use fast_image_resize::images::TypedImage;
 use fast_image_resize::pixels::F32x3;
 use fast_image_resize::{FilterType, ResizeAlg, ResizeOptions, Resizer};
 use gtp_core::{AppError, ErrorCode, ImageF32};
+use rayon::prelude::*;
 
 /// Long edge of the proxy kept for an open frame.
 pub const PROXY_EDGE: u32 = 2048;
@@ -42,8 +43,11 @@ pub fn build_proxy(image: &ImageF32, max_edge: u32) -> Result<ImageF32, AppError
         (shrink(w), max_edge)
     };
 
+    // The resize works on its own pixel type, so the pixels are copied in and out; those copies
+    // and the resize itself (the library's `rayon` feature) use all cores. Every pixel is
+    // computed from the same inputs as before, so the result is bit for bit the same.
     let (pixels, _) = image.data.as_chunks::<3>();
-    let source_pixels: Vec<F32x3> = pixels.iter().map(|p| F32x3::new(*p)).collect();
+    let source_pixels: Vec<F32x3> = pixels.par_iter().map(|p| F32x3::new(*p)).collect();
     let resize_error =
         |err: &dyn std::fmt::Display| AppError::internal(format!("proxy resize: {err}"));
     let source = TypedImage::from_pixels(w, h, source_pixels).map_err(|e| resize_error(&e))?;
@@ -52,7 +56,10 @@ pub fn build_proxy(image: &ImageF32, max_edge: u32) -> Result<ImageF32, AppError
     Resizer::new()
         .resize_typed(&source, &mut target, &options)
         .map_err(|e| resize_error(&e))?;
-    let data = target.pixels().iter().flat_map(|p| p.0).collect();
+    let mut data = vec![0.0f32; new_w as usize * new_h as usize * 3];
+    data.par_chunks_mut(3)
+        .zip(target.pixels().par_iter())
+        .for_each(|(out, pixel)| out.copy_from_slice(&pixel.0));
     ImageF32::new(new_w, new_h, 3, data)
 }
 
@@ -62,6 +69,69 @@ mod tests {
 
     fn flat(w: u32, h: u32, value: f32) -> ImageF32 {
         ImageF32::new(w, h, 3, vec![value; (w * h * 3) as usize]).unwrap()
+    }
+
+    /// `build_proxy` as it was before it was sped up (P-17): the same resize, with the pixels
+    /// copied in and out one at a time on one thread. The fast version must give the same bits.
+    fn reference_proxy(image: &ImageF32, max_edge: u32) -> ImageF32 {
+        let (w, h) = (image.width, image.height);
+        let long = w.max(h);
+        if long <= max_edge {
+            return image.clone();
+        }
+        let scale = f64::from(max_edge) / f64::from(long);
+        let shrink = |side: u32| ((f64::from(side) * scale).round() as u32).clamp(1, max_edge);
+        let (new_w, new_h) = if w >= h {
+            (max_edge, shrink(h))
+        } else {
+            (shrink(w), max_edge)
+        };
+        let (pixels, _) = image.data.as_chunks::<3>();
+        let source_pixels: Vec<F32x3> = pixels.iter().map(|p| F32x3::new(*p)).collect();
+        let source = TypedImage::from_pixels(w, h, source_pixels).unwrap();
+        let mut target = TypedImage::<F32x3>::new(new_w, new_h);
+        let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Box));
+        Resizer::new()
+            .resize_typed(&source, &mut target, &options)
+            .unwrap();
+        let data = target.pixels().iter().flat_map(|p| p.0).collect();
+        ImageF32::new(new_w, new_h, 3, data).unwrap()
+    }
+
+    /// Deterministic noise in 0 to 1.5 (some above 1, as a negative can be), so every pixel and
+    /// channel differs and a mix-up of channels or rows would show.
+    fn noisy(w: u32, h: u32, seed: u32) -> ImageF32 {
+        let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
+        let data = (0..w * h * 3)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state % 15_000) as f32 / 10_000.0
+            })
+            .collect();
+        ImageF32::new(w, h, 3, data).unwrap()
+    }
+
+    #[test]
+    fn the_fast_proxy_has_exactly_the_bits_of_the_original_one() {
+        for (w, h, edge) in [
+            (2048, 1365, PREVIEW_EDGE),
+            (2048, 2048, PREVIEW_EDGE),
+            (1365, 2048, PREVIEW_EDGE),
+            (3001, 2003, PROXY_EDGE),
+            (2047, 1301, 1000),
+            (4097, 301, 256),
+            (301, 4097, 600),
+            (5, 3, 2),
+        ] {
+            let image = noisy(w, h, w ^ h);
+            assert_eq!(
+                build_proxy(&image, edge).unwrap(),
+                reference_proxy(&image, edge),
+                "{w}x{h} to {edge}"
+            );
+        }
     }
 
     #[test]

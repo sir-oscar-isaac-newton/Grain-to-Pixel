@@ -491,6 +491,11 @@ export type Roll_Deserialize = {
 	notes?: string,
 	/**  Measured film base in linear scan values, shared by all frames of the roll. */
 	film_base_rgb?: [(number | null), (number | null), (number | null)] | null,
+	/**
+	 *  How sure the automatic measurement of `film_base_rgb` was (0 to 1). `None` when the base was
+	 *  set by hand, or there is no base yet.
+	 */
+	film_base_confidence?: number | null,
 	/**  RFC 3339 timestamp. */
 	created_at: string,
 };
@@ -519,6 +524,11 @@ export type Roll_Serialize = {
 	notes: string,
 	/**  Measured film base in linear scan values, shared by all frames of the roll. */
 	film_base_rgb: [(number | null), (number | null), (number | null)] | null,
+	/**
+	 *  How sure the automatic measurement of `film_base_rgb` was (0 to 1). `None` when the base was
+	 *  set by hand, or there is no base yet.
+	 */
+	film_base_confidence: number | null,
 	/**  RFC 3339 timestamp. */
 	created_at: string,
 };

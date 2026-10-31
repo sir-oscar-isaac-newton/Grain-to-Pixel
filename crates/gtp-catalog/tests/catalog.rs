@@ -63,6 +63,7 @@ fn roll(name: &str) -> Roll {
         shot_to: Some("2026-08-02".into()),
         notes: "  pushed one stop ".into(),
         film_base_rgb: None,
+        film_base_confidence: None,
         created_at: String::new(),
     }
 }
@@ -127,6 +128,90 @@ fn an_older_library_is_backed_up_before_it_is_migrated() {
     assert_eq!(user_version(&backup), 1, "the backup is the old schema");
     assert_eq!(count(&backup, "roll"), 1);
     assert_eq!(user_version(&dir.db()), SCHEMA_VERSION);
+}
+
+#[test]
+fn a_v3_library_upgrades_to_v4_with_a_backup_and_keeps_its_rolls() {
+    let dir = TempDir::new("upgrade-v3");
+    let id = RollId::new();
+    {
+        let conn = Connection::open(dir.db()).unwrap();
+        for sql in [
+            include_str!("../migrations/0001_init.sql"),
+            include_str!("../migrations/0002_search.sql"),
+            include_str!("../migrations/0003_export_log.sql"),
+        ] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO roll(id, name, film_base_r, film_base_g, film_base_b, created_at)
+             VALUES (?1, 'Old', 0.8, 0.5, 0.3, '2026-01-01T00:00:00Z')",
+            [id.to_string()],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 3).unwrap();
+    }
+    let cat = Catalog::open(&dir.db()).unwrap();
+    let old = cat.get_roll(id).unwrap();
+    assert_eq!(old.film_base_rgb, Some([0.8, 0.5, 0.3]));
+    assert_eq!(
+        old.film_base_confidence, None,
+        "an existing base has no confidence"
+    );
+    assert!(!old.film_base_uncertain());
+    drop(cat);
+
+    assert_eq!(SCHEMA_VERSION, 4);
+    assert_eq!(user_version(&dir.db()), 4);
+    let backup = backup_path(&dir.db(), 3);
+    assert!(backup.exists());
+    assert_eq!(user_version(&backup), 3, "the backup is the old schema");
+    let backed_up = Connection::open(&backup).unwrap();
+    let has_column = |conn: &Connection| {
+        conn.prepare("SELECT film_base_confidence FROM roll")
+            .is_ok()
+    };
+    assert!(!has_column(&backed_up));
+    assert!(has_column(&Connection::open(dir.db()).unwrap()));
+}
+
+#[test]
+fn the_roll_base_is_stored_only_when_unset_and_checked() {
+    let dir = TempDir::new("base-if-unset");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    let (stored, set) = cat
+        .set_roll_film_base_if_unset(r.id, [0.8, 0.5, 0.3], Some(0.7))
+        .unwrap();
+    assert!(set);
+    assert_eq!(stored.film_base_confidence, Some(0.7));
+    let (again, set) = cat
+        .set_roll_film_base_if_unset(r.id, [0.1, 0.1, 0.1], Some(0.99))
+        .unwrap();
+    assert!(!set);
+    assert_eq!(again.film_base_rgb, Some([0.8, 0.5, 0.3]));
+    for bad in [
+        ([0.0, 0.5, 0.3], Some(0.5)),
+        ([0.8, 0.5, 0.3], Some(1.2)),
+        ([0.8, 0.5, 0.3], Some(f32::NAN)),
+    ] {
+        let err = cat
+            .set_roll_film_base_if_unset(r.id, bad.0, bad.1)
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
+    }
+    let err = cat
+        .set_roll_film_base_if_unset(RollId::new(), [0.8, 0.5, 0.3], None)
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+    // A confidence without a base is refused when a roll is saved.
+    let mut orphan = cat.get_roll(r.id).unwrap();
+    orphan.film_base_rgb = None;
+    orphan.film_base_confidence = Some(0.5);
+    assert_eq!(
+        cat.update_roll(&orphan).unwrap_err().code,
+        ErrorCode::InvalidInput
+    );
 }
 
 #[test]

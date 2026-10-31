@@ -6,7 +6,9 @@
 //! 3. read them back and require identical samples, then record their SHA-256 and mark them
 //!    read-only;
 //! 4. analyze a proxy (the roll's film base when it has one) for the starting recipe: detected
-//!    crop, film base and levels;
+//!    crop, film base and levels. The first frame analyzed on a roll with no base also stores its
+//!    measured base, with the confidence, as the roll's base (`ensure_roll_base`), so every later
+//!    frame uses the same one;
 //! 5. render a 512 px sRGB thumbnail from that recipe;
 //! 6. record frame, sources, recipe and search text in one catalog transaction, then announce the
 //!    change.
@@ -34,7 +36,7 @@ use crate::library_fs::{originals_rel, thumb_rel};
 use crate::paths::display_path;
 use crate::pipeline::{analyze, render, PipelineInput, RenderTarget};
 use crate::services::library::Library;
-use crate::services::roll_frame::remove_tree;
+use crate::services::roll_frame::{ensure_roll_base, remove_tree};
 use gtp_core::recipe::OutputSpace;
 
 /// What kind of files an import brings in.
@@ -172,11 +174,9 @@ fn store_original(
 }
 
 /// Imports one candidate; on any failure the frame's files are removed by the caller.
-#[allow(clippy::too_many_arguments)]
 fn import_one(
     library: &Library,
     roll: RollId,
-    film_base: Option<[f32; 3]>,
     candidate: &TiffCandidate,
     frame_id: FrameId,
     ctx: &JobCtx,
@@ -212,12 +212,23 @@ fn import_one(
     progress(3.0);
     ctx.check_cancelled()?;
 
-    let input = PipelineInput {
+    // The roll's film base as of now: an earlier frame of this import may have set it.
+    let mut input = PipelineInput {
         rgb: Arc::new(to_f32_linear(&rgb)?),
         ir: None,
-        film_base,
+        film_base: library.read(|c| c.get_roll(roll))?.film_base_rgb,
     };
-    let recipe: Recipe = analyze(&input)?.auto_recipe;
+    let mut analysis = analyze(&input)?;
+    if input.film_base.is_none() {
+        // The first frame of a roll with no base measures it for the whole roll (L-10).
+        let ensured = ensure_roll_base(library, roll, analysis.base)?;
+        input.film_base = Some(ensured.rgb);
+        if !ensured.stored_now {
+            // Another import stored a base in the meantime: this frame uses that one.
+            analysis = analyze(&input)?;
+        }
+    }
+    let recipe: Recipe = analysis.auto_recipe;
     progress(4.0);
     ctx.check_cancelled()?;
 
@@ -271,7 +282,7 @@ pub fn import_tiffs(
     ctx: &JobCtx,
     events: &dyn LibraryEvents,
 ) -> Result<ImportResult, AppError> {
-    let film_base = library.read(|c| c.get_roll(roll))?.film_base_rgb;
+    library.read(|c| c.get_roll(roll))?;
     let grouped = scan_tiff_candidates(paths);
     let mut result = ImportResult {
         skipped: grouped
@@ -291,9 +302,7 @@ pub fn import_tiffs(
         let frame_id = FrameId::new();
         let progress = |step: f32| ctx.progress(STAGE, (i as f32 + step / STEPS) / total);
         progress(0.0);
-        match import_one(
-            library, roll, film_base, candidate, frame_id, ctx, &progress,
-        ) {
+        match import_one(library, roll, candidate, frame_id, ctx, &progress) {
             Ok(frame) => {
                 result.frames.push(frame.id);
                 result
@@ -515,6 +524,103 @@ mod tests {
         .unwrap();
         let frame = s.lib().read(|c| c.get_frame(more.frames[0])).unwrap();
         assert_eq!(frame.index_in_roll, 6);
+    }
+
+    #[test]
+    fn the_first_frame_sets_the_roll_base_and_every_later_frame_shares_it() {
+        let s = Setup::new("roll-base");
+        let (ctx, _) = JobCtx::standalone();
+        let events = Events::default();
+        let first = import_tiffs(
+            s.lib(),
+            s.roll,
+            &[s.scan("a.tif", 1, false), s.scan("b.tif", 2, false)],
+            &ctx,
+            &events,
+        )
+        .unwrap();
+        assert_eq!(first.frames.len(), 2);
+        let roll = s.lib().read(|c| c.get_roll(s.roll)).unwrap();
+        let base = roll.film_base_rgb.unwrap();
+        assert!(roll.film_base_confidence.is_some_and(|c| c > 0.5));
+        assert!(!roll.film_base_uncertain());
+        for (c, truth) in [0.80f32, 0.55, 0.35].into_iter().enumerate() {
+            assert!(
+                (base[c] - truth).abs() / truth < 0.02,
+                "channel {c}: {base:?}"
+            );
+        }
+        // Both frames' recipes carry the roll's base, not a base of their own.
+        for id in &first.frames {
+            let recipe = s.lib().read(|c| c.load_recipe(*id)).unwrap().unwrap();
+            assert_eq!(recipe.base.rgb, base);
+        }
+        // A later import into the roll uses it and never overwrites it.
+        let later =
+            import_tiffs(s.lib(), s.roll, &[s.scan("c.tif", 3, false)], &ctx, &events).unwrap();
+        let recipe = s
+            .lib()
+            .read(|c| c.load_recipe(later.frames[0]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(recipe.base.rgb, base);
+        assert_eq!(
+            s.lib().read(|c| c.get_roll(s.roll)).unwrap().film_base_rgb,
+            Some(base)
+        );
+    }
+
+    #[test]
+    fn a_base_set_by_hand_is_used_and_left_alone() {
+        let s = Setup::new("manual-base");
+        let manual = [0.7, 0.5, 0.3];
+        crate::services::roll_frame::roll_set_film_base(s.lib(), s.roll, Some(manual)).unwrap();
+        let (ctx, _) = JobCtx::standalone();
+        let result = import_tiffs(
+            s.lib(),
+            s.roll,
+            &[s.scan("a.tif", 1, false)],
+            &ctx,
+            &Events::default(),
+        )
+        .unwrap();
+        let roll = s.lib().read(|c| c.get_roll(s.roll)).unwrap();
+        assert_eq!(roll.film_base_rgb, Some(manual));
+        assert_eq!(roll.film_base_confidence, None);
+        let recipe = s
+            .lib()
+            .read(|c| c.load_recipe(result.frames[0]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(recipe.base.rgb, manual);
+    }
+
+    #[test]
+    fn a_frame_without_rebate_gives_a_flagged_roll_base() {
+        let s = Setup::new("no-rebate");
+        let img = synthetic::negative(
+            4,
+            &Params {
+                width: 200,
+                height: 140,
+                rebate: [0; 4],
+                pattern: Pattern::Gradient,
+                ..Params::default()
+            },
+        )
+        .unwrap();
+        let path = s.incoming.join("tight.tif");
+        write_tiff16(&path, &from_f32_linear(&img.image), Compression::None).unwrap();
+        let (ctx, _) = JobCtx::standalone();
+        let result = import_tiffs(s.lib(), s.roll, &[path], &ctx, &Events::default()).unwrap();
+        assert_eq!(result.frames.len(), 1, "the frame is still imported");
+        let roll = s.lib().read(|c| c.get_roll(s.roll)).unwrap();
+        assert!(roll.film_base_rgb.is_some());
+        assert!(
+            roll.film_base_uncertain(),
+            "confidence {:?}",
+            roll.film_base_confidence
+        );
     }
 
     #[test]

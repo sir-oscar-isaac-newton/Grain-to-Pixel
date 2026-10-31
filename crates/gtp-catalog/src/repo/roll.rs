@@ -10,7 +10,7 @@ use crate::db::db_error;
 use crate::{fts, Catalog};
 
 const COLUMNS: &str = "id, name, film_stock, format, camera, iso_box, iso_shot, shot_from, shot_to,
-    notes, film_base_r, film_base_g, film_base_b, created_at";
+    notes, film_base_r, film_base_g, film_base_b, created_at, film_base_confidence";
 
 fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
     let base: [Option<f32>; 3] = [row.get(10)?, row.get(11)?, row.get(12)?];
@@ -30,12 +30,41 @@ fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
             [Some(r), Some(g), Some(b)] => Some([r, g, b]),
             _ => None,
         },
+        film_base_confidence: row.get(14)?,
         created_at: row.get(13)?,
     })
 }
 
+/// A film base must be three finite values above 0, a confidence a number from 0 to 1, and a
+/// confidence only makes sense with a base.
+fn check_base(rgb: Option<[f32; 3]>, confidence: Option<f32>) -> Result<(), AppError> {
+    let bad = |message: &str, details: String| {
+        AppError::new(gtp_core::ErrorCode::InvalidInput, message.to_owned()).with_details(details)
+    };
+    if let Some(rgb) = rgb {
+        if !rgb.iter().all(|v| v.is_finite() && *v > 0.0) {
+            return Err(bad(
+                "A film base needs three values above 0.",
+                format!("{rgb:?}"),
+            ));
+        }
+    }
+    match confidence {
+        Some(c) if !(0.0..=1.0).contains(&c) => Err(bad(
+            "The film base confidence must be between 0 and 1.",
+            format!("{c}"),
+        )),
+        Some(_) if rgb.is_none() => Err(bad(
+            "A film base confidence needs a film base.",
+            String::new(),
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// The roll with its texts trimmed and every field checked.
 fn validated(roll: &Roll) -> Result<Roll, AppError> {
+    check_base(roll.film_base_rgb, roll.film_base_confidence)?;
     check_iso(roll.iso_box)?;
     check_iso(roll.iso_shot)?;
     let shot_from = clean_optional(roll.shot_from.as_deref(), "start date")?;
@@ -63,7 +92,7 @@ impl Catalog {
             .execute(
                 &format!(
                     "INSERT INTO roll({COLUMNS}) VALUES
-                     (?1, ?2, ?3, '35mm', ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, {NOW})"
+                     (?1, ?2, ?3, '35mm', ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, {NOW}, ?13)"
                 ),
                 params![
                     r.id.to_string(),
@@ -77,11 +106,34 @@ impl Catalog {
                     r.notes,
                     base[0],
                     base[1],
-                    base[2]
+                    base[2],
+                    r.film_base_confidence
                 ],
             )
             .map_err(db_error)?;
         self.get_roll(r.id)
+    }
+
+    /// Stores `rgb` as the roll's film base only if the roll has none yet, so a base set by hand or
+    /// by an earlier frame is never overwritten. Returns the roll as stored and whether this call
+    /// set the base. Safe against two imports racing: the check and the write are one statement.
+    pub fn set_roll_film_base_if_unset(
+        &mut self,
+        id: RollId,
+        rgb: [f32; 3],
+        confidence: Option<f32>,
+    ) -> Result<(Roll, bool), AppError> {
+        check_base(Some(rgb), confidence)?;
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE roll SET film_base_r = ?2, film_base_g = ?3, film_base_b = ?4,
+                 film_base_confidence = ?5
+                 WHERE id = ?1 AND (film_base_r IS NULL OR film_base_g IS NULL OR film_base_b IS NULL)",
+                params![id.to_string(), rgb[0], rgb[1], rgb[2], confidence],
+            )
+            .map_err(db_error)?;
+        Ok((self.get_roll(id)?, changed > 0))
     }
 
     /// Replaces the editable fields of a roll (everything but `id` and `created_at`).
@@ -93,7 +145,8 @@ impl Catalog {
             .execute(
                 "UPDATE roll SET name = ?2, film_stock = ?3, camera = ?4, iso_box = ?5,
                  iso_shot = ?6, shot_from = ?7, shot_to = ?8, notes = ?9,
-                 film_base_r = ?10, film_base_g = ?11, film_base_b = ?12 WHERE id = ?1",
+                 film_base_r = ?10, film_base_g = ?11, film_base_b = ?12,
+                 film_base_confidence = ?13 WHERE id = ?1",
                 params![
                     r.id.to_string(),
                     r.name,
@@ -106,7 +159,8 @@ impl Catalog {
                     r.notes,
                     base[0],
                     base[1],
-                    base[2]
+                    base[2],
+                    r.film_base_confidence
                 ],
             )
             .map_err(db_error)?;

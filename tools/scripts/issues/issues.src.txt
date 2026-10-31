@@ -697,8 +697,8 @@ ac:
 - The service exposes one function used by the import, scan and capture services
 - A roll with manual base is left untouched
 tech:
-FILES: crates/gtp-app/src/services/roll_frame.rs (`ensure_roll_base(roll_id, &ImageF32) -> Result<Option<[f32;3]>>`); calls `gtp_negative::auto_film_base` and `roll_set_film_base`.
-ROUTES: none new. MIGRATIONS: none.
+FILES: crates/gtp-app/src/services/roll_frame.rs (`ensure_roll_base(library, roll_id, BaseEstimate) -> Result<EnsuredBase>` for callers that already analyzed the frame, and `ensure_roll_base_from_image(library, roll_id, &ImageF32)` for those that have not); calls `gtp_negative::auto_film_base`. The write is one catalog statement (`set_roll_film_base_if_unset`), so two imports cannot overwrite each other.
+ROUTES: none new. MIGRATIONS: 0004_roll_base_confidence adds `roll.film_base_confidence` (the first real schema upgrade, so the backup before migrating is exercised).
 TESTS: first-frame set, second-frame no overwrite, manual base preserved, low-confidence estimate stored with a warning flag.
 
 ## L-06

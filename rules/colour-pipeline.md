@@ -4,7 +4,7 @@
 - Order: ingest → frame crop → film-base measure/normalize → invert → colour balance → tone → geometry. Dust removal (IR) runs on the scan data before inversion.
 - The IR plane is never treated as a colour channel; it is carried alongside RGB.
 - Edits are non-destructive: store parameters as a `Recipe` in a sidecar/catalog, never overwrite the source scan.
-- Film-base measurement is stored per roll and overridable per frame.
+- Film-base measurement is stored per roll and overridable per frame. The first frame analyzed on a roll with no base stores its measurement, with the confidence, as the roll's base (`ensure_roll_base`); a stored base, by hand or automatic, is never overwritten by a later frame. An automatic base below confidence 0.5 is kept but flagged for a manual pick.
 - The film base is measured with medians, never means (dust and hot pixels must not move it): from a user-chosen rebate area (a click or a dragged box), or automatically from the brightest of four thin border strips, with a confidence that is low when no clear rebate exists. The roll base is the per-channel median over its frames. Normalization is `T = I / base` with the base floored at 1e-6, so the result is always finite.
 - Inversion is linear in density: `P = max(0, (D - black) / (white - black))` with `D = -log10(T)`. It does not apply the film's contrast curve; that belongs to the tone stage and is calibrated against reference renders. Auto black/white come from density percentiles (0.5 and 99.5) of the cropped frame only, never the rebate.
 - Frame detection runs on the base-normalized scan and classifies rebate as luminance within 0.06 of 1.0; it never trusts a brightness step. Below 0.5 confidence it returns the full frame, so a wrong guess is never silent.

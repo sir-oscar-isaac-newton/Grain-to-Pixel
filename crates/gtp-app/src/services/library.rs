@@ -217,6 +217,7 @@ mod tests {
             shot_to: None,
             notes: String::new(),
             film_base_rgb: None,
+            film_base_confidence: None,
             created_at: String::new(),
         }
     }

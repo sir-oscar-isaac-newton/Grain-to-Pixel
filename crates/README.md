@@ -5,7 +5,7 @@ Rust libraries holding all image-processing and data logic. UI-agnostic and inde
 | Crate | Responsibility |
 |---|---|
 | `gtp-core` | Domain types (Frame, Roll, Recipe), errors. Depended on by all others. |
-| `gtp-io` | 16-bit TIFF / RAW / ICC read-write, sidecar files. |
+| `gtp-io` | 16-bit TIFF / RAW read-write, export (16-bit TIFF and JPEG in sRGB, Adobe RGB or ProPhoto with ICC, via Little CMS), sidecar files. |
 | `gtp-ingest` | Adapters: file import (TIFF scans, NEF triplets), Coolscan LS-50 (RGB + IR) via `nkscan`. |
 | `gtp-capture` | Guided RGB capture: Scanlight V4 serial driver, camera backends (libgphoto2, watched folder), per-frame R/G/B sequence. |
 | `gtp-negative` | Frame-area detection, film-base measurement, inversion. |

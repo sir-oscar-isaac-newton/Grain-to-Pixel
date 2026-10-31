@@ -161,6 +161,15 @@
       "number": 23,
       "title": "Golden-image harness and ΔE2000",
       "branch": "feat/issue-23-golden-image-harness-and-delta-e2000",
+      "status": "completed",
+      "pr": 115,
+      "commit": "4d8023f"
+    },
+    {
+      "id": "P-04",
+      "number": 16,
+      "title": "Output colour transform and export encoders",
+      "branch": "feat/issue-16-output-colour-transform-and-export",
       "status": "in_progress",
       "pr": null,
       "commit": null

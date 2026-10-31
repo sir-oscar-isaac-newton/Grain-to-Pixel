@@ -35,6 +35,13 @@ confidence-threshold = 0.9
 # The workspace has no third-party dependencies yet; do not warn about unused allowances.
 unused-allowed-license = "allow"
 
+# jpeg-encoder (P-04) is MIT OR Apache-2.0, plus the IJG licence for code derived from libjpeg.
+# IJG is permissive; its one condition (credit the Independent JPEG Group in the documentation of
+# shipped binaries) is met in docs/third-party-notices.md. Allowed for this crate only.
+[[licenses.exceptions]]
+crate = "jpeg-encoder"
+allow = ["IJG"]
+
 [licenses.private]
 # Workspace crates are `publish = false` and carry no public licence.
 ignore = true

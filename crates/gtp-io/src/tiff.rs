@@ -201,11 +201,22 @@ pub fn write_tiff16(path: &Path, image: &Tiff16, compression: Compression) -> Re
         )));
     }
 
+    write_through_temp(path, |writer| {
+        encode(writer, image, compression).map_err(map_tiff)
+    })
+}
+
+/// Writes a file through a temporary file next to `path` and a rename, so a failure never leaves a
+/// half-written file at `path`. `write` fills the buffered temporary file.
+pub(crate) fn write_through_temp(
+    path: &Path,
+    write: impl FnOnce(&mut BufWriter<File>) -> Result<(), AppError>,
+) -> Result<(), AppError> {
     let temp = temp_path_for(path)?;
     let result = (|| -> Result<(), AppError> {
         let file = File::create(&temp).map_err(|err| AppError::from_io(&err))?;
         let mut writer = BufWriter::new(file);
-        encode(&mut writer, image, compression).map_err(map_tiff)?;
+        write(&mut writer)?;
         writer.flush().map_err(|err| AppError::from_io(&err))?;
         writer
             .get_ref()

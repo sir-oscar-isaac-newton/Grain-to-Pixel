@@ -21,6 +21,8 @@ use gtp_core::recipe::{Invert, INVERT_GAP, INVERT_MAX};
 use gtp_core::{AppError, ErrorCode, ImageF32};
 use rayon::prelude::*;
 
+use crate::film_base::{channel_samples, check_rect, median, Rect};
+
 /// Default low percentile for the black point.
 pub const DEFAULT_LOW_PERCENTILE: f32 = 0.5;
 /// Default high percentile for the white point.
@@ -134,6 +136,58 @@ pub fn auto_levels(
         let white = percentile(samples, high_percent).clamp(0.0, INVERT_MAX);
         levels.black[c] = black;
         levels.white[c] = white.max(black + INVERT_GAP);
+    }
+    Ok(levels)
+}
+
+/// Which end of the levels a picked area sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LevelPoint {
+    /// The density that maps to 1.
+    White,
+    /// The density that maps to 0.
+    Black,
+}
+
+/// Sets the white or the black point of `current` from an area of a normalized scan: per channel,
+/// the density of the area's median. The other end is kept, and white stays above black by at
+/// least `INVERT_GAP` (the end being set gives way). An area with no finite pixels, or whose
+/// median in a channel is not above zero (black), is rejected.
+pub fn levels_from_sample(
+    image: &ImageF32,
+    area: Rect,
+    point: LevelPoint,
+    current: &Invert,
+) -> Result<Invert, AppError> {
+    require_rgb(image)?;
+    check_rect(image, area)?;
+    let pixels = u64::from(area.w) * u64::from(area.h);
+    let step = ((pixels as f64 / MAX_LEVEL_SAMPLES as f64).sqrt().ceil() as u32).max(1);
+    let mut medians = [0.0f32; 3];
+    for (c, mut samples) in channel_samples(image, area, step).into_iter().enumerate() {
+        let m = median(&mut samples)
+            .ok_or_else(|| invalid("That area has no usable pixels.", format!("{area:?}")))?;
+        if m <= 0.0 {
+            return Err(invalid(
+                "That area is black, so it says nothing about the levels.",
+                format!("channel {c}, median {m}"),
+            ));
+        }
+        medians[c] = density(m);
+    }
+
+    let mut levels = *current;
+    for (c, d) in medians.into_iter().enumerate() {
+        match point {
+            LevelPoint::White => {
+                levels.white[c] = d.clamp(0.0, INVERT_MAX).max(levels.black[c] + INVERT_GAP);
+            }
+            LevelPoint::Black => {
+                let top = (levels.white[c] - INVERT_GAP).clamp(0.0, INVERT_MAX - INVERT_GAP);
+                levels.black[c] = d.clamp(0.0, top);
+                levels.white[c] = levels.white[c].max(levels.black[c] + INVERT_GAP);
+            }
+        }
     }
     Ok(levels)
 }
@@ -451,6 +505,122 @@ mod tests {
             let mut image = ImageF32::new(pixels as u32, 1, 3, data).unwrap();
             invert(&mut image, &levels(0.1, 2.5)).unwrap();
             prop_assert!(image.data.iter().all(|v| v.is_finite() && *v >= 0.0));
+        }
+    }
+
+    /// A 4x2 image: the left half is `left`, the right half `right`.
+    fn halves(left: [f32; 3], right: [f32; 3]) -> ImageF32 {
+        let mut data = Vec::new();
+        for _ in 0..2 {
+            for x in 0..4 {
+                data.extend_from_slice(if x < 2 { &left } else { &right });
+            }
+        }
+        ImageF32::new(4, 2, 3, data).unwrap()
+    }
+
+    const LEFT: Rect = Rect {
+        x: 0,
+        y: 0,
+        w: 2,
+        h: 2,
+    };
+
+    #[test]
+    fn a_picked_white_sets_the_density_of_its_median() {
+        let image = halves([0.1, 0.01, 0.001], [1.0; 3]);
+        let set = levels_from_sample(&image, LEFT, LevelPoint::White, &levels(0.2, 1.0)).unwrap();
+        for (got, want) in set.white.iter().zip([1.0, 2.0, 3.0]) {
+            assert!((got - want).abs() < 1e-4, "{:?}", set.white);
+        }
+        assert_eq!(set.black, [0.2; 3]);
+    }
+
+    #[test]
+    fn a_picked_black_sets_the_black_and_keeps_the_white() {
+        let image = halves([0.5, 0.5, 0.5], [1.0; 3]);
+        let set = levels_from_sample(&image, LEFT, LevelPoint::Black, &levels(0.0, 2.0)).unwrap();
+        assert!((set.black[0] - std::f32::consts::LOG10_2).abs() < 1e-4);
+        assert_eq!(set.white, [2.0; 3]);
+    }
+
+    #[test]
+    fn white_stays_above_black_whichever_end_is_set() {
+        let image = halves([0.5; 3], [1.0; 3]);
+        // The area is denser than the white asked for: black gives way.
+        let black = levels_from_sample(&image, LEFT, LevelPoint::Black, &levels(0.0, 0.1)).unwrap();
+        assert!((0..3).all(|c| black.white[c] - black.black[c] >= INVERT_GAP * 0.99));
+        // The area is thinner than the black: white gives way.
+        let white = levels_from_sample(&image, LEFT, LevelPoint::White, &levels(1.0, 2.0)).unwrap();
+        assert!((0..3).all(|c| white.white[c] - white.black[c] >= INVERT_GAP * 0.99));
+    }
+
+    #[test]
+    fn a_median_ignores_a_few_stray_pixels() {
+        let mut image = halves([0.1; 3], [1.0; 3]);
+        image.data[0..3].copy_from_slice(&[1e-5; 3]);
+        let set = levels_from_sample(&image, LEFT, LevelPoint::White, &levels(0.0, 5.0)).unwrap();
+        assert!((set.white[0] - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn empty_black_non_finite_and_outside_samples_are_rejected() {
+        let current = levels(0.0, 1.0);
+        let black = halves([0.0; 3], [1.0; 3]);
+        let nan = halves([f32::NAN; 3], [1.0; 3]);
+        let one_dark_channel = halves([0.5, 0.0, 0.5], [1.0; 3]);
+        let ok = halves([0.5; 3], [1.0; 3]);
+        for (image, area) in [
+            (&black, LEFT),
+            (&nan, LEFT),
+            (&one_dark_channel, LEFT),
+            (
+                &ok,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    w: 0,
+                    h: 2,
+                },
+            ),
+            (
+                &ok,
+                Rect {
+                    x: 3,
+                    y: 0,
+                    w: 2,
+                    h: 2,
+                },
+            ),
+        ] {
+            let error = levels_from_sample(image, area, LevelPoint::White, &current).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidInput, "{area:?}");
+        }
+        let mono = ImageF32::new(2, 1, 1, vec![0.5, 0.5]).unwrap();
+        let area = Rect {
+            x: 0,
+            y: 0,
+            w: 2,
+            h: 1,
+        };
+        assert!(levels_from_sample(&mono, area, LevelPoint::White, &current).is_err());
+    }
+
+    proptest! {
+        #[test]
+        fn picked_levels_are_in_range_and_ordered(
+            t in proptest::array::uniform3(1e-7f32..4.0),
+            black in 0.0f32..9.9, white in 0.0f32..10.0, set_white: bool,
+        ) {
+            let image = halves(t, t);
+            let area = Rect { x: 0, y: 0, w: 4, h: 2 };
+            let point = if set_white { LevelPoint::White } else { LevelPoint::Black };
+            let current = Invert { black: [black; 3], white: [white.max(black + INVERT_GAP); 3] };
+            let set = levels_from_sample(&image, area, point, &current).unwrap();
+            for c in 0..3 {
+                prop_assert!(set.black[c] >= 0.0 && set.white[c] <= INVERT_MAX);
+                prop_assert!(set.white[c] - set.black[c] >= INVERT_GAP * 0.99);
+            }
         }
     }
 }

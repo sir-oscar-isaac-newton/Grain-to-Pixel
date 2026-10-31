@@ -9,6 +9,7 @@ mod normalize;
 pub use film_base::{auto_film_base, roll_base, sample_film_base, BaseEstimate, Rect};
 pub use frame_detect::{detect_frame, FrameDetection, MIN_CONFIDENCE, REBATE_TOLERANCE};
 pub use invert::{
-    auto_levels, invert, levels_or_auto, DEFAULT_HIGH_PERCENTILE, DEFAULT_LOW_PERCENTILE,
+    auto_levels, invert, levels_from_sample, levels_or_auto, LevelPoint, DEFAULT_HIGH_PERCENTILE,
+    DEFAULT_LOW_PERCENTILE,
 };
 pub use normalize::{normalize, EPSILON};

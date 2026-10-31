@@ -51,7 +51,7 @@ fn require_rgb(image: &ImageF32) -> Result<(), AppError> {
     }
 }
 
-fn check_rect(image: &ImageF32, rect: Rect) -> Result<(), AppError> {
+pub(crate) fn check_rect(image: &ImageF32, rect: Rect) -> Result<(), AppError> {
     let inside = u64::from(rect.x) + u64::from(rect.w) <= u64::from(image.width)
         && u64::from(rect.y) + u64::from(rect.h) <= u64::from(image.height);
     if rect.w == 0 || rect.h == 0 || !inside {
@@ -80,7 +80,7 @@ pub(crate) fn median(values: &mut [f32]) -> Option<f32> {
 }
 
 /// Finite samples of each channel from `rect`, taking every `step`-th pixel in both directions.
-fn channel_samples(image: &ImageF32, rect: Rect, step: u32) -> [Vec<f32>; 3] {
+pub(crate) fn channel_samples(image: &ImageF32, rect: Rect, step: u32) -> [Vec<f32>; 3] {
     let mut samples: [Vec<f32>; 3] = Default::default();
     let width = image.width as usize;
     let step = step.max(1) as usize;

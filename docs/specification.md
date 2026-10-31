@@ -232,7 +232,7 @@ CREATE INDEX idx_roll_tag_tag ON roll_tag(tag_id);
 
 - Forward-only migrations in `gtp-catalog` (`rusqlite_migration`). Before migrating, copy `library.db` to `library.db.bak-v<N>`.
 - `PRAGMA foreign_keys=ON; journal_mode=WAL; synchronous=NORMAL`. Run `PRAGMA integrity_check` on open when the previous session ended uncleanly.
-- On import, every original is verified by `sha256` after the copy; a *Verify library* action in settings re-checks all files and lists missing/corrupt ones.
+- On import, every original is verified by `sha256` after the copy; a *Verify library* action in settings (`library_verify() -> JobId`, a cancellable job) re-checks every original and lists the missing, changed (SHA-256), wrong-size and unreadable ones with their frame and reason. It only reports: it also counts frames without a thumbnail (a rebuildable cache) and lists non-empty folders under `originals/` that no frame owns, and never changes or deletes anything. It works on a read-only library; the time and problem count of the last run are kept in the library (`last_verify_at`, `last_verify_problems`).
 - A library from a newer app version opens read-only with a message: `library_info` reports `read_only: true`, reads use a read-only connection, and every write returns `LibraryTooNew`.
 
 ### 5.4 App-level settings

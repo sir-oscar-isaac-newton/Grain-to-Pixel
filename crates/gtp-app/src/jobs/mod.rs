@@ -131,6 +131,13 @@ impl JobCtx {
             fn done(&self, _: JobId, _: JobResult) {}
             fn error(&self, _: JobId, _: AppError) {}
         }
+        Self::standalone_with(Arc::new(Quiet))
+    }
+
+    /// [`JobCtx::standalone`] reporting to `sink`, so a test can watch the progress (or cancel from
+    /// inside it, to stop a job part-way).
+    #[cfg(test)]
+    pub(crate) fn standalone_with(sink: Arc<dyn JobSink>) -> (Self, CancelFlag) {
         let id = JobId::new();
         let cancel = CancelFlag::default();
         let ctx = Self {
@@ -138,7 +145,7 @@ impl JobCtx {
             cancel: cancel.clone(),
             emitter: Arc::new(Mutex::new(Emitter {
                 id,
-                sink: Arc::new(Quiet),
+                sink,
                 ended: false,
                 last: None,
             })),
@@ -146,7 +153,6 @@ impl JobCtx {
         (ctx, cancel)
     }
 }
-
 /// Library change notifications (the `library://changed` event), so the UI refreshes while a job
 /// adds or removes frames.
 pub trait LibraryEvents: Send + Sync {

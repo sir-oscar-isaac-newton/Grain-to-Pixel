@@ -740,8 +740,8 @@ ac:
 - Runs as a cancellable job with progress
 - Result lists affected frames with reasons
 tech:
-FILES: crates/gtp-app/src/services/library.rs (`verify()`); src-tauri/src/commands/library.rs.
-ROUTES: `library_verify() -> JobId`.
+FILES: crates/gtp-app/src/services/verify.rs (`verify_library`, report-only, decided when L-07 was approved); crates/gtp-catalog/src/repo/verify.rs; gtp-io `sha256_file_with` (progress and cancel inside a file); src-tauri/src/commands/library.rs.
+ROUTES: `library_verify() -> JobId`; the job result is `Verified(VerifyResult { files_checked, bytes_checked, problems[{frame_id, roll_id, role, rel_path, reason: Missing|Changed|WrongSize|Unreadable, details}], thumbnails_missing, stray_folders[] })`. `LibraryDetails` gains `last_verify_at` and `last_verify_problems`.
 MIGRATIONS: none.
 TESTS: tamper/delete detection, cancel.
 

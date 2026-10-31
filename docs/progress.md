@@ -233,6 +233,15 @@
       "number": 32,
       "title": "Tags and full-text search",
       "branch": "feat/issue-32-tags-and-full-text-search",
+      "status": "completed",
+      "pr": 124,
+      "commit": "29ed667"
+    },
+    {
+      "id": "L-07",
+      "number": 33,
+      "title": "Library verify job",
+      "branch": "feat/issue-33-library-verify-job",
       "status": "in_progress",
       "pr": null,
       "commit": null

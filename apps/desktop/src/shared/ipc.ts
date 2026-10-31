@@ -52,6 +52,14 @@ export async function libraryOpen(path: string): Promise<LibraryInfo> {
   return unwrap(await commands.libraryOpen(path));
 }
 
+/**
+ * Starts verifying every original of the open library; returns the job id at once. Progress and
+ * the `VerifyResult` arrive as `job://*` events, and `jobCancel` stops it. It only reports.
+ */
+export async function libraryVerify(): Promise<Data<'libraryVerify'>> {
+  return unwrap(await commands.libraryVerify());
+}
+
 export async function settingsGet(): Promise<Settings> {
   return unwrap(await commands.settingsGet());
 }

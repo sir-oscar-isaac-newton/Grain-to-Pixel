@@ -18,22 +18,26 @@ pub(crate) fn role_text(role: SourceRole) -> &'static str {
     }
 }
 
-fn read(row: &Row<'_>) -> rusqlite::Result<SourceFile> {
-    let role: String = row.get(1)?;
-    let role = match role.as_str() {
+pub(crate) fn role_from_text(text: &str) -> Option<SourceRole> {
+    Some(match text {
         "rgb" => SourceRole::Rgb,
         "ir" => SourceRole::Ir,
         "r" => SourceRole::R,
         "g" => SourceRole::G,
         "b" => SourceRole::B,
-        other => {
-            return Err(rusqlite::Error::FromSqlConversionFailure(
-                1,
-                rusqlite::types::Type::Text,
-                format!("unknown source role {other:?}").into(),
-            ))
-        }
-    };
+        _ => return None,
+    })
+}
+
+fn read(row: &Row<'_>) -> rusqlite::Result<SourceFile> {
+    let role: String = row.get(1)?;
+    let role = role_from_text(&role).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            1,
+            rusqlite::types::Type::Text,
+            format!("unknown source role {role:?}").into(),
+        )
+    })?;
     Ok(SourceFile {
         frame_id: parse_col(row, 0)?,
         role,

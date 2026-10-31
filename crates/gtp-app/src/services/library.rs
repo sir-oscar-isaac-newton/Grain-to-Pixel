@@ -30,7 +30,14 @@ pub struct LibraryDetails {
     /// Bytes free on the library's drive; `None` when the system cannot tell.
     #[cfg_attr(feature = "specta", specta(type = Option<f64>))]
     pub free_bytes: Option<u64>,
+    /// When the library was last verified (RFC 3339), and how many problems it found.
+    pub last_verify_at: Option<String>,
+    pub last_verify_problems: Option<u32>,
 }
+
+/// meta keys of the last verify (see services::verify).
+pub(crate) const VERIFY_AT_KEY: &str = "last_verify_at";
+pub(crate) const VERIFY_PROBLEMS_KEY: &str = "last_verify_problems";
 
 pub struct Library {
     root: PathBuf,
@@ -156,13 +163,16 @@ impl Library {
     }
 
     pub fn details(&self) -> Result<LibraryDetails, AppError> {
-        let (name, created_at, schema_version) = self.read(|catalog| {
-            Ok((
-                catalog.meta_get(NAME_KEY)?,
-                catalog.meta_get(CREATED_KEY)?,
-                catalog.schema_version()?,
-            ))
-        })?;
+        let (name, created_at, schema_version, verified_at, verified_problems) =
+            self.read(|catalog| {
+                Ok((
+                    catalog.meta_get(NAME_KEY)?,
+                    catalog.meta_get(CREATED_KEY)?,
+                    catalog.schema_version()?,
+                    catalog.meta_get(VERIFY_AT_KEY)?,
+                    catalog.meta_get(VERIFY_PROBLEMS_KEY)?,
+                ))
+            })?;
         let folder_name = self
             .root
             .file_name()
@@ -175,6 +185,8 @@ impl Library {
             read_only: self.is_read_only(),
             schema_version,
             free_bytes: library_fs::free_space(&self.root).ok(),
+            last_verify_at: verified_at,
+            last_verify_problems: verified_problems.and_then(|n| n.parse().ok()),
         })
     }
 }

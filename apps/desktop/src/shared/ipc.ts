@@ -139,6 +139,18 @@ export async function importFiles(...args: Args<'importFiles'>): Promise<Data<'i
   return unwrap(await commands.importFiles(...args));
 }
 
+/** What to export: format, colour space, JPEG quality, destination folder and naming template. */
+export type ExportOptions = Args<'exportStart'>[1];
+
+/**
+ * Starts exporting frames at full resolution; returns the job id at once. Progress and the
+ * `Exported` result (the files written and the frames that failed) arrive as `job://*` events.
+ * An existing file is never overwritten: the name gets a number.
+ */
+export async function exportStart(...args: Args<'exportStart'>): Promise<Data<'exportStart'>> {
+  return unwrap(await commands.exportStart(...args));
+}
+
 // Tags and search.
 export type SearchQuery = Args<'search'>[0];
 export type Tag = Data<'tagRename'>;

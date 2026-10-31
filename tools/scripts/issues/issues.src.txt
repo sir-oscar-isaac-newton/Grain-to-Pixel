@@ -966,9 +966,10 @@ ac:
 tech:
 FILES: crates/gtp-app/src/services/export.rs; apps/desktop/src-tauri/src/commands/export.rs.
 ROUTES: `export_start(FrameId[], ExportOptions { format: Tiff16 | Jpeg, space: OutputSpace, quality, dest_dir, template }) -> JobId`.
-VALIDATION: dest_dir from the OS dialog and canonicalized; template sanitized (`{roll}_{index:03}.{ext}`, no path separators); overwrite needs confirmation.
+VALIDATION: dest_dir from the OS dialog and canonicalized; template sanitized (`{roll}_{index:03}`, no path separators); an existing file is never overwritten (the name gets a number).
 MIGRATIONS: none (export_log exists in 0003).
 TESTS: synthetic export, ICC parse-back, cancel cleanup, timing.
+DELIVERY (decided when P-12 was approved): an existing file is never overwritten (` (2)`, ` (3)`), replacing the planned confirmation, which the dialog (U-11) can no longer need; a frame that fails is reported in the result and the others carry on; a frame never edited is exported with the automatic recipe, as its thumbnail is; the `export_log` row is skipped, not fatal, in a library that cannot be written to; `JobResult::Exported` carries the files, the failures and the milliseconds per frame. Measured on 23.5 MP scans: a whole export takes 4.2 to 4.4 s as TIFF16 and 1.4 to 1.5 s as JPEG; the TIFF16 encode (Deflate with predictor) is 3.7 to 3.9 s of it.
 
 ## U-11
 title: Export dialog

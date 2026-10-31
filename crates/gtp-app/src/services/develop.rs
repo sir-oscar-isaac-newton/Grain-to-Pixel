@@ -259,16 +259,20 @@ fn superseded() -> AppError {
     )
 }
 
-/// Decodes a frame's original and builds its proxy.
-fn load(library: &Library, sources: &[SourceFile], frame: &Frame) -> Result<Entry, AppError> {
+/// Decodes a frame's RGB original at full size (linear f32).
+pub(crate) fn read_scan(library: &Library, sources: &[SourceFile]) -> Result<ImageF32, AppError> {
     let scan = sources
         .iter()
         .find(|s| s.role == SourceRole::Rgb)
         .ok_or_else(|| AppError::new(ErrorCode::NotFound, "This frame has no scan file."))?;
     let path = library.resolve(Path::new(&scan.rel_path))?;
     let tiff = read_tiff16(&path, &Limits::default())?;
-    let full = to_f32_linear(&tiff)?;
-    drop(tiff);
+    to_f32_linear(&tiff)
+}
+
+/// Decodes a frame's original and builds its proxy.
+fn load(library: &Library, sources: &[SourceFile], frame: &Frame) -> Result<Entry, AppError> {
+    let full = read_scan(library, sources)?;
     let proxy = build_proxy(&full, PROXY_EDGE)?;
     Ok(Entry {
         rgb: Arc::new(proxy),

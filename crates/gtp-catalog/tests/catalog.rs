@@ -1011,3 +1011,30 @@ fn rolls_and_frames_list_in_order_and_meta_round_trips() {
         Some([0.8, 0.55, 0.35])
     );
 }
+
+#[test]
+fn exports_are_logged_per_frame_in_order_and_outlive_the_frame() {
+    let dir = TempDir::new("export-log");
+    let mut catalog = Catalog::open(&dir.db()).unwrap();
+    let r = catalog.insert_roll(&roll("Exports")).unwrap();
+    let a = catalog.insert_frame(&frame(r.id, 1)).unwrap().id;
+    let b = FrameId::new();
+    catalog.log_export(a, "tiff16", "/out/a.tif").unwrap();
+    catalog.log_export(b, "jpeg", "/out/b.jpg").unwrap();
+    catalog.log_export(a, "jpeg", "/out/a.jpg").unwrap();
+
+    let of_a = catalog.exports_of(a).unwrap();
+    assert_eq!(of_a.len(), 2);
+    assert_eq!(
+        (of_a[0].format.as_str(), of_a[0].path.as_str()),
+        ("tiff16", "/out/a.tif")
+    );
+    assert_eq!(of_a[1].path, "/out/a.jpg");
+    assert_eq!(of_a[0].frame_id, a.to_string());
+    assert!(of_a[0].created_at.ends_with('Z') && of_a[0].created_at.len() == 20);
+    assert!(catalog.exports_of(FrameId::new()).unwrap().is_empty());
+
+    // The log is kept when the frame is deleted.
+    catalog.delete_frames(&[a]).unwrap();
+    assert_eq!(catalog.exports_of(a).unwrap().len(), 2);
+}

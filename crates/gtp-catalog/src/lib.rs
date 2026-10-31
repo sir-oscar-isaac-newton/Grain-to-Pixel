@@ -9,6 +9,6 @@ mod repo;
 
 pub use db::{backup_path, Catalog, SCHEMA_VERSION};
 pub use repo::{
-    FrameTags, RecordedOriginal, MAX_NAME_CHARS, MAX_NOTE_CHARS, MAX_SEARCH_CHARS, MAX_SEARCH_TAGS,
-    MAX_TAGGED_FRAMES, MAX_TAG_NAMES,
+    ExportRecord, FrameTags, RecordedOriginal, MAX_NAME_CHARS, MAX_NOTE_CHARS, MAX_SEARCH_CHARS,
+    MAX_SEARCH_TAGS, MAX_TAGGED_FRAMES, MAX_TAG_NAMES,
 };

@@ -1,6 +1,7 @@
 //! Repositories: one file per entity, each adding methods to [`Catalog`](crate::Catalog). Reads take
 //! `&self`; writes take `&mut self` and run in one transaction together with their search update.
 
+mod export_log;
 mod frame;
 mod import;
 mod meta;
@@ -17,6 +18,7 @@ use gtp_core::{AppError, ErrorCode};
 use rusqlite::types::Type;
 use rusqlite::Row;
 
+pub use export_log::ExportRecord;
 pub use search::{MAX_SEARCH_CHARS, MAX_SEARCH_TAGS};
 pub use tag::{FrameTags, MAX_TAGGED_FRAMES, MAX_TAG_NAMES};
 pub use verify::RecordedOriginal;

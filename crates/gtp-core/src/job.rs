@@ -17,6 +17,8 @@ pub enum JobResult {
     Imported(ImportResult),
     /// A library verify (L-07).
     Verified(VerifyResult),
+    /// An export (P-12).
+    Exported(ExportResult),
 }
 
 /// What a file import did.
@@ -106,4 +108,36 @@ pub enum VerifyReason {
     /// It exists but cannot be read (permissions, a disk error, in use), or its recorded path
     /// points outside the library.
     Unreadable,
+}
+
+/// What an export did.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ExportResult {
+    /// The files written, in export order.
+    pub files: Vec<ExportedFile>,
+    /// Frames that were not exported, with the reason. The others were.
+    pub failed: Vec<FailedExport>,
+    /// Milliseconds each exported frame took (budget: 10,000 per 21 MP frame, spec section 11).
+    pub frame_ms: Vec<u32>,
+}
+
+/// A file an export wrote.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ExportedFile {
+    pub frame_id: FrameId,
+    /// The file, as an absolute path.
+    pub path: String,
+}
+
+/// A frame an export could not write.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct FailedExport {
+    pub frame_id: FrameId,
+    /// What went wrong, in words for the person.
+    pub message: String,
+    /// Technical detail for the log or a tooltip.
+    pub details: Option<String>,
 }

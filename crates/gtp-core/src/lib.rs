@@ -14,7 +14,8 @@ pub use error::{AppError, ErrorCode};
 pub use ids::{FrameId, JobId, RollId, TagId};
 pub use image::ImageF32;
 pub use job::{
-    ImportResult, JobResult, SkipReason, SkippedFile, VerifyProblem, VerifyReason, VerifyResult,
+    ExportResult, ExportedFile, FailedExport, ImportResult, JobResult, SkipReason, SkippedFile,
+    VerifyProblem, VerifyReason, VerifyResult,
 };
 pub use model::{FilmFormat, Frame, FrameKind, Roll, SearchQuery, SourceFile, SourceRole, Tag};
 pub use recipe::{migrate, Recipe, RecipeField};

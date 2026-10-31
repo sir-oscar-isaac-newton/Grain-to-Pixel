@@ -9,6 +9,7 @@ const developAnalyzeMock = vi.fn();
 const developSampleBaseMock = vi.fn();
 const developSampleLevelsMock = vi.fn();
 const developSampleNeutralMock = vi.fn();
+const exportStartMock = vi.fn();
 const recipeSaveMock = vi.fn();
 const recipeApplyToMock = vi.fn();
 const handlers: Record<string, (event: { payload: unknown }) => void> = {};
@@ -36,6 +37,7 @@ vi.mock('@gtp/ipc-types', () => {
       developSampleBase: (id: string, region: unknown) => developSampleBaseMock(id, region),
       developSampleLevels: (...args: unknown[]) => developSampleLevelsMock(...args),
       developSampleNeutral: (...args: unknown[]) => developSampleNeutralMock(...args),
+      exportStart: (...args: unknown[]) => exportStartMock(...args),
       recipeSave: (...args: unknown[]) => recipeSaveMock(...args),
       recipeApplyTo: (...args: unknown[]) => recipeApplyToMock(...args),
     },
@@ -55,6 +57,7 @@ import {
   developSampleBase,
   developSampleLevels,
   developSampleNeutral,
+  exportStart,
   developRender,
   folderCheck,
   frameThumbnail,
@@ -120,6 +123,7 @@ describe('shared/ipc: library helpers', () => {
       developSampleBaseMock.mockReset();
       developSampleLevelsMock.mockReset();
       developSampleNeutralMock.mockReset();
+      exportStartMock.mockReset();
       recipeSaveMock.mockReset();
       recipeApplyToMock.mockReset();
     });
@@ -229,6 +233,25 @@ describe('shared/ipc: library helpers', () => {
         error: { code: 'InvalidInput', message: 'Too far from neutral.' },
       });
       await expect(developSampleNeutral('f1', recipe, region)).rejects.toBeInstanceOf(IpcError);
+    });
+
+    it('starts an export and returns its job id, or throws what the backend refuses', async () => {
+      const options: Parameters<typeof exportStart>[1] = {
+        format: 'tiff16',
+        space: 'adobe_rgb',
+        jpeg_quality: 90,
+        dest_dir: '/out',
+        template: '{roll}_{index:03}',
+      };
+      exportStartMock.mockResolvedValueOnce({ status: 'ok', data: 'job-1' });
+      await expect(exportStart(['f1', 'f2'], options)).resolves.toBe('job-1');
+      expect(exportStartMock).toHaveBeenCalledWith(['f1', 'f2'], options);
+
+      exportStartMock.mockResolvedValueOnce({
+        status: 'error',
+        error: { code: 'InvalidInput', message: 'A file name cannot contain folders.' },
+      });
+      await expect(exportStart(['f1'], options)).rejects.toBeInstanceOf(IpcError);
     });
 
     it('opens and analyses through the typed commands', async () => {

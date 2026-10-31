@@ -47,6 +47,13 @@ export const commands = {
 	 */
 	importFiles: (paths: string[], rollId: RollId, kind: ImportKind) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("import_files", { paths, rollId, kind })),
 	/**
+	 *  Starts exporting the frames at full resolution, each with its saved recipe (the automatic one
+	 *  when it was never edited), as a job; progress and the result (the files written and the frames
+	 *  that failed) arrive as `job://*` events. An existing file is never overwritten: the name gets a
+	 *  number. Returns the job id at once.
+	 */
+	exportStart: (frameIds: FrameId[], options: ExportOptions) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("export_start", { frameIds, options })),
+	/**
 	 *  Opens a frame for editing: decodes its original into the proxy cache and returns its size, saved
 	 *  recipe and the roll's film base.
 	 */
@@ -350,6 +357,79 @@ export type Dust_Serialize = {
 
 /**  Stable, machine-readable error category. The UI shows `message` and logs the code. */
 export type ErrorCode = "NotFound" | "InvalidInput" | "Io" | "Db" | "UnsupportedFormat" | "ScannerUnavailable" | "ScanFailed" | "Cancelled" | "LibraryTooNew" | "Internal";
+
+/**  The file format of an export. */
+export type ExportFormat = 
+/**  16-bit RGB, Deflate-compressed. */
+"tiff16" | 
+/**  8-bit baseline JPEG without chroma subsampling. */
+"jpeg";
+
+/**  What to export and where. */
+export type ExportOptions = {
+	format: ExportFormat,
+	space: OutputSpace,
+	/**  1 to 100; used for JPEG only. */
+	jpeg_quality: number,
+	/**  The folder to write into; created when it does not exist. */
+	dest_dir: string,
+	/**
+	 *  The file name, without folders: `{roll}`, `{index}`, `{index:03}` (zero-padded to 3 digits,
+	 *  1 to 9 allowed), `{frame}` and `{ext}`. The extension is added when the name lacks it.
+	 */
+	template: string,
+};
+
+/**  What an export did. */
+export type ExportResult = ExportResult_Serialize | ExportResult_Deserialize;
+
+/**  What an export did. */
+export type ExportResult_Deserialize = {
+	/**  The files written, in export order. */
+	files: ExportedFile[],
+	/**  Frames that were not exported, with the reason. The others were. */
+	failed: FailedExport_Deserialize[],
+	/**  Milliseconds each exported frame took (budget: 10,000 per 21 MP frame, spec section 11). */
+	frame_ms: number[],
+};
+
+/**  What an export did. */
+export type ExportResult_Serialize = {
+	/**  The files written, in export order. */
+	files: ExportedFile[],
+	/**  Frames that were not exported, with the reason. The others were. */
+	failed: FailedExport_Serialize[],
+	/**  Milliseconds each exported frame took (budget: 10,000 per 21 MP frame, spec section 11). */
+	frame_ms: number[],
+};
+
+/**  A file an export wrote. */
+export type ExportedFile = {
+	frame_id: FrameId,
+	/**  The file, as an absolute path. */
+	path: string,
+};
+
+/**  A frame an export could not write. */
+export type FailedExport = FailedExport_Serialize | FailedExport_Deserialize;
+
+/**  A frame an export could not write. */
+export type FailedExport_Deserialize = {
+	frame_id: FrameId,
+	/**  What went wrong, in words for the person. */
+	message: string,
+	/**  Technical detail for the log or a tooltip. */
+	details?: string | null,
+};
+
+/**  A frame an export could not write. */
+export type FailedExport_Serialize = {
+	frame_id: FrameId,
+	/**  What went wrong, in words for the person. */
+	message: string,
+	/**  Technical detail for the log or a tooltip. */
+	details: string | null,
+};
 
 /**  Film format of a roll. Only 35 mm is supported in the MVP. */
 export type FilmFormat = "35mm";
@@ -689,7 +769,11 @@ export type JobResult_Deserialize =
 /**  A library verify (L-07). */
 {
 	kind: "Verified",
-} & VerifyResult_Deserialize;
+} & VerifyResult_Deserialize | 
+/**  An export (P-12). */
+{
+	kind: "Exported",
+} & ExportResult_Deserialize;
 
 /**  The result of a job that finished without error. */
 export type JobResult_Serialize = 
@@ -702,7 +786,11 @@ export type JobResult_Serialize =
 /**  A library verify (L-07). */
 {
 	kind: "Verified",
-} & VerifyResult_Serialize;
+} & VerifyResult_Serialize | 
+/**  An export (P-12). */
+{
+	kind: "Exported",
+} & ExportResult_Serialize;
 
 /**  Which end of the levels a picked area sets. */
 export type LevelsPoint = "white" | "black";

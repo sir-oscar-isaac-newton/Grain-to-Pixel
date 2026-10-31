@@ -169,6 +169,58 @@
     },
     "skippedFile": "{{path}}: {{reason}}"
   },
+  "apply": {
+    "open": "Apply settings…",
+    "title": "Apply settings",
+    "description": "Copy groups of settings from one frame to others. This replaces those settings on the other frames.",
+    "from": "Copy from",
+    "fromOne": "Copy from {{frame}}.",
+    "frameOf": "Frame {{n}} of {{roll}}",
+    "unknownFrame": "A frame",
+    "groups": "Settings to copy",
+    "group": {
+      "Color": "Colour",
+      "Tone": "Tone and curves",
+      "Geometry": "Crop and geometry",
+      "Base": "Film base",
+      "Invert": "Levels",
+      "Dust": "Dust removal"
+    },
+    "hint": {
+      "Color": "Balance, temperature, tint, saturation and black and white.",
+      "Tone": "Exposure, contrast, highlights, shadows, whites, blacks, dehaze and the curves.",
+      "Geometry": "The crop, turns, flips and straightening. Frames are not always cropped the same.",
+      "Base": "Where the film base comes from, and its values.",
+      "Invert": "The black and white points of the inversion.",
+      "Dust": "The infrared dust removal settings."
+    },
+    "short": {
+      "Color": "colour",
+      "Tone": "tone",
+      "Geometry": "geometry",
+      "Base": "film base",
+      "Invert": "levels",
+      "Dust": "dust removal"
+    },
+    "to": "Apply to",
+    "selection_one": "The other selected frame ({{count}})",
+    "selection_other": "The other selected frames ({{count}})",
+    "roll_one": "The other frame of {{roll}} ({{count}})",
+    "roll_other": "All other frames of {{roll}} ({{count}})",
+    "rollLoading": "The frames of the roll…",
+    "confirm_one": "This replaces the {{groups}} settings on {{count}} frame, whatever they were. It cannot be undone.",
+    "confirm_other": "This replaces the {{groups}} settings on {{count}} frames, whatever they were. It cannot be undone.",
+    "noGroups": "Choose at least one group of settings.",
+    "apply_one": "Apply {{groups}} to {{count}} frame",
+    "apply_other": "Apply {{groups}} to {{count}} frames",
+    "applyNone": "Apply",
+    "applying": "Applying…",
+    "cancel": "Cancel",
+    "close": "Close",
+    "done_one": "Applied to {{count}} frame.",
+    "done_other": "Applied to {{count}} frames.",
+    "failed": "The settings could not be applied: {{message}}"
+  },
   "export": {
     "open": "Export…",
     "title": "Export",

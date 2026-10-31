@@ -344,6 +344,15 @@
       "number": 41,
       "title": "Crop and geometry UI",
       "branch": "feat/issue-41-crop-geometry-ui",
+      "status": "completed",
+      "pr": 144,
+      "commit": "74ff8be"
+    },
+    {
+      "id": "U-06",
+      "number": 42,
+      "title": "Apply settings to frames or roll",
+      "branch": "feat/issue-42-apply-settings",
       "status": "in_progress",
       "pr": null,
       "commit": null

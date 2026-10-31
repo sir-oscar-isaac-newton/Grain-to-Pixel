@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUiStore } from '../../app/store';
 import { formatBytes } from '../../shared/format';
+import { ApplySettingsDialog } from './ApplySettingsDialog';
 import { ExportDialog } from './ExportDialog';
 import { FirstRunDialog } from './FirstRunDialog';
 import { FrameGrid } from './FrameGrid';
@@ -39,6 +40,7 @@ export function LibraryView() {
   const openInDevelop = useUiStore((s) => s.openInDevelop);
   const [found, setFound] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   // Nothing typed: the roll's frames in order. Otherwise the search, best match first.
   const { fetchPage, queryKey, filtered } = useLibraryQuery();
@@ -79,7 +81,22 @@ export function LibraryView() {
               >
                 {t('export.open')}
               </button>
+              <button
+                type="button"
+                disabled={selectedCount < 2 || library.read_only}
+                onClick={() => setApplying(true)}
+              >
+                {t('apply.open')}
+              </button>
             </div>
+            {applying && (
+              <ApplySettingsDialog
+                open
+                onClose={() => setApplying(false)}
+                sources={[...selected]}
+                selected={[...selected]}
+              />
+            )}
             {exporting && (
               <ExportDialog frameIds={[...selected]} open onClose={() => setExporting(false)} />
             )}

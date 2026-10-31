@@ -401,6 +401,55 @@ describe('DevelopView', () => {
     });
   });
 
+  describe('applying settings to other frames', () => {
+    const applyButton = () => screen.getByRole('button', { name: 'Apply settings…' });
+
+    async function openApply() {
+      const user = userEvent.setup();
+      openLibrary();
+      open(1);
+      render(<DevelopView />);
+      await canvas();
+      await user.click(applyButton());
+      const dialog = within(await screen.findByRole('dialog', { name: 'Apply settings' }));
+      await dialog.findByRole('radio', { name: /All other frames of Summer/ });
+      return { user, dialog };
+    }
+
+    it('copies from the open frame to the rest of its roll when nothing is selected', async () => {
+      const { user, dialog } = await openApply();
+      expect(dialog.getByText('Copy from Frame 1 of Summer.')).toBeInTheDocument();
+      expect(dialog.getByRole('radio', { name: 'The other selected frames (0)' })).toBeDisabled();
+      expect(dialog.getByRole('radio', { name: 'All other frames of Summer (4)' })).toBeChecked();
+
+      await user.click(dialog.getByRole('button', { name: 'Apply colour and tone to 4 frames' }));
+      await waitFor(() => expect(state.applies).toHaveLength(1));
+      expect(state.applies[0]).toEqual({
+        source: 'summer-f00001',
+        frameIds: ['summer-f00002', 'summer-f00003', 'summer-f00004', 'summer-f00005'],
+        fields: ['Color', 'Tone'],
+      });
+      expect(await dialog.findByText('Applied to 4 frames.')).toBeInTheDocument();
+    });
+
+    it('offers the frames selected in the Library, leaving out the open one', async () => {
+      useLibraryStore.getState().setSelected(['summer-f00001', 'summer-f00003']);
+      const { user, dialog } = await openApply();
+      expect(dialog.getByRole('radio', { name: 'The other selected frame (1)' })).toBeChecked();
+      await user.click(dialog.getByRole('button', { name: 'Apply colour and tone to 1 frame' }));
+      await waitFor(() => expect(state.applies).toHaveLength(1));
+      expect(state.applies[0]?.frameIds).toEqual(['summer-f00003']);
+    });
+
+    it('is out of reach in a library that cannot be changed', async () => {
+      openLibrary({ read_only: true });
+      open(1);
+      render(<DevelopView />);
+      await canvas();
+      expect(applyButton()).toBeDisabled();
+    });
+  });
+
   describe('exporting', () => {
     it('exports the open frame from the toolbar, and follows the job in the dialog', async () => {
       const user = userEvent.setup();

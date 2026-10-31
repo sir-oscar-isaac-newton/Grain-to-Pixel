@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use gtp_app::{JobSink, LibraryEvents};
-use gtp_core::{AppError, ErrorCode, JobId, JobResult, RollId};
+use gtp_core::{AppError, ErrorCode, FrameId, JobId, JobResult, RollId};
 use tauri::{AppHandle, Runtime};
 use tauri_specta::Event;
 
@@ -56,7 +56,22 @@ impl<R: Runtime> LibraryEvents for TauriJobSink<R> {
     fn library_changed(&self, roll_id: Option<RollId>) {
         delivered(
             "library://changed",
-            LibraryChanged { roll_id }.emit(&self.app),
+            LibraryChanged {
+                roll_id,
+                frame_ids: Vec::new(),
+            }
+            .emit(&self.app),
+        );
+    }
+
+    fn frames_changed(&self, frames: &[FrameId]) {
+        delivered(
+            "library://changed",
+            LibraryChanged {
+                roll_id: None,
+                frame_ids: frames.to_vec(),
+            }
+            .emit(&self.app),
         );
     }
 }

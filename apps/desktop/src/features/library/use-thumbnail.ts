@@ -1,5 +1,11 @@
-import { useEffect, useState } from 'react';
-import { cachedThumbnail, isMissingThumbnail, loadThumbnail } from './thumbnails';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import {
+  cachedThumbnail,
+  isMissingThumbnail,
+  loadThumbnail,
+  subscribeThumbnails,
+  thumbnailVersion,
+} from './thumbnails';
 
 export type ThumbnailState =
   | { status: 'loading' }
@@ -7,8 +13,12 @@ export type ThumbnailState =
   | { status: 'none' }
   | { status: 'error' };
 
-/** The thumbnail of a frame. `expected` is false for a frame known to have none (no request). */
+/**
+ * The thumbnail of a frame. `expected` is false for a frame known to have none (no request). It
+ * loads again when the frame's thumbnail was regenerated (its version changed).
+ */
 export function useThumbnail(id: string, expected: boolean): ThumbnailState {
+  const version = useSyncExternalStore(subscribeThumbnails, () => thumbnailVersion(id));
   const [state, setState] = useState<ThumbnailState>(() => initial(id, expected));
 
   useEffect(() => {
@@ -27,7 +37,7 @@ export function useThumbnail(id: string, expected: boolean): ThumbnailState {
     return () => {
       alive = false;
     };
-  }, [id, expected]);
+  }, [id, expected, version]);
 
   return state;
 }

@@ -229,12 +229,16 @@ describe('shared/ipc: library helpers', () => {
 
   describe('events', () => {
     it('reports which roll changed, or null for several', async () => {
-      const seen: Array<string | null> = [];
-      const unlisten = await onLibraryChanged((roll) => seen.push(roll));
-      handlers.libraryChanged?.({ payload: { roll_id: 'r1' } });
-      handlers.libraryChanged?.({ payload: { roll_id: null } });
+      const seen: Array<[string | null, string[]]> = [];
+      const unlisten = await onLibraryChanged((roll, frames) => seen.push([roll, frames]));
+      handlers.libraryChanged?.({ payload: { roll_id: 'r1', frame_ids: [] } });
+      handlers.libraryChanged?.({ payload: { roll_id: null, frame_ids: ['f1', 'f2'] } });
       handlers.libraryChanged?.({ payload: {} });
-      expect(seen).toEqual(['r1', null, null]);
+      expect(seen).toEqual([
+        ['r1', []],
+        [null, ['f1', 'f2']],
+        [null, []],
+      ]);
       unlisten();
       expect(stop).toHaveBeenCalledTimes(1);
     });

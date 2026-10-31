@@ -348,9 +348,17 @@ export async function pickTiffFiles(): Promise<string[]> {
   return Array.isArray(chosen) ? chosen : [chosen];
 }
 
-/** Calls `cb` when frames were added, changed or removed. Returns a function that stops listening. */
-export async function onLibraryChanged(cb: (rollId: string | null) => void): Promise<() => void> {
-  return events.libraryChanged.listen((event) => cb(event.payload.roll_id ?? null));
+/**
+ * Calls `cb` when frames were added, changed or removed. `frameIds` lists the frames whose
+ * thumbnails were regenerated (their recipe changed), empty for any other change. Returns a
+ * function that stops listening.
+ */
+export async function onLibraryChanged(
+  cb: (rollId: string | null, frameIds: string[]) => void,
+): Promise<() => void> {
+  return events.libraryChanged.listen((event) =>
+    cb(event.payload.roll_id ?? null, event.payload.frame_ids ?? []),
+  );
 }
 
 export interface JobProgressEvent {

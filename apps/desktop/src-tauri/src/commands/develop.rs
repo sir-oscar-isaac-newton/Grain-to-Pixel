@@ -1,5 +1,7 @@
 //! Develop commands over the open library (thin: parse, call the service).
 
+use std::sync::Arc;
+
 use gtp_app::services::develop::{self, DevelopAnalysis, DevelopInfo};
 use gtp_app::AppContext;
 use gtp_core::{FrameId, Recipe, RecipeField};
@@ -55,6 +57,8 @@ pub fn recipe_save(
 ) -> CmdResult<Recipe> {
     let stored = develop::save_recipe(&*ctx.library()?, frame_id, recipe)?;
     events.0.library_changed(None);
+    // The thumbnail follows in the background; this does not wait for it.
+    ctx.regenerate_thumbnails(Arc::clone(&events.0), vec![frame_id])?;
     Ok(stored)
 }
 
@@ -71,6 +75,8 @@ pub fn recipe_apply_to(
 ) -> CmdResult<()> {
     develop::apply_recipe_to(&*ctx.library()?, &frame_ids, source, &fields)?;
     events.0.library_changed(None);
+    let targets = frame_ids.into_iter().filter(|id| *id != source).collect();
+    ctx.regenerate_thumbnails(Arc::clone(&events.0), targets)?;
     Ok(())
 }
 

@@ -15,11 +15,12 @@ pub fn frame_list(ctx: State<'_, AppContext>, query: FrameQuery) -> CmdResult<Fr
     roll_frame::frame_list(&*ctx.library()?, query)
 }
 
-/// The frame's thumbnail (a JPEG) as raw bytes, not JSON: the UI turns it into an image. A frame
-/// without a thumbnail yet is `NotFound`. Not in the typed bindings (see `ipc::RAW_COMMANDS`).
+/// The frame's thumbnail (a JPEG) as raw bytes, not JSON: the UI turns it into an image. A missing
+/// thumbnail file is rebuilt from the frame's saved recipe first; `NotFound` remains when the frame
+/// or its original is gone. Not in the typed bindings (see `ipc::RAW_COMMANDS`).
 #[tauri::command(async)]
 pub fn frame_thumbnail(ctx: State<'_, AppContext>, id: FrameId) -> CmdResult<tauri::ipc::Response> {
-    let bytes = roll_frame::frame_thumbnail(&*ctx.library()?, id)?;
+    let bytes = ctx.thumbnail(id)?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 

@@ -834,6 +834,7 @@ tech:
 FILES: crates/gtp-app/src/services/develop.rs (thumbnail task using `pipeline::render` Preview at 512 px and `gtp-io` JPEG encode).
 ROUTES / MIGRATIONS: none.
 TESTS: thumbnail changes after recipe change (pixel difference), debounce, rebuild-if-missing.
+DELIVERY (decided when L-09 was approved): the grid learns which pictures changed from an optional list of frame ids on the `library://changed` payload (`frame_ids`, empty for other changes), so only those cached images are dropped and loaded again, with the change event sent when a batch is done (the shared `LibraryEvents` trait gets `frames_changed`). A missing thumbnail is rebuilt inside `frame_thumbnail` while the grid waits, one rebuild at a time. The service is `services/thumbnails.rs` (not `develop.rs`), with one worker thread and a 500 ms quiet period; a thumbnail is rendered from the cached proxy when the frame is open, otherwise from the original decoded without caching it, so a batch cannot evict the frame being edited. A failure keeps the old thumbnail and is logged (gtp-app gains the `tracing` dependency); a read-only library is never written to.
 
 ## U-02
 title: Develop canvas, histogram and before/after

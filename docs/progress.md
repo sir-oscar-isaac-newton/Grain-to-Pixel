@@ -273,6 +273,15 @@
       "status": "completed",
       "pr": 129,
       "commit": "921268b"
+    },
+    {
+      "id": "L-09",
+      "number": 37,
+      "title": "Regenerate thumbnail when a recipe changes",
+      "branch": "feat/issue-37-thumbnail-regeneration",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

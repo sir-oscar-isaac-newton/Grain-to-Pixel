@@ -93,7 +93,7 @@ export const state = {
 };
 
 export const listeners = {
-  changed: [] as Array<(roll: string | null) => void>,
+  changed: [] as Array<(roll: string | null, frameIds: string[]) => void>,
   progress: [] as Array<(e: { id: string; stage: string; fraction: number }) => void>,
   done: [] as Array<
     (e: {
@@ -231,7 +231,9 @@ export const ipc = {
   }),
   importFiles: vi.fn(async () => 'job-1'),
   jobCancel: vi.fn(async () => true),
-  onLibraryChanged: vi.fn((cb: (roll: string | null) => void) => subscribe(listeners.changed, cb)),
+  onLibraryChanged: vi.fn((cb: (roll: string | null, frameIds: string[]) => void) =>
+    subscribe(listeners.changed, cb),
+  ),
   onJobProgress: vi.fn((cb: (typeof listeners.progress)[number]) =>
     subscribe(listeners.progress, cb),
   ),

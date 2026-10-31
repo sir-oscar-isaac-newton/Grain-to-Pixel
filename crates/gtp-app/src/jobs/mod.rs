@@ -158,4 +158,12 @@ impl JobCtx {
 pub trait LibraryEvents: Send + Sync {
     /// Frames of `roll` (or of several rolls when `None`) were added, changed or removed.
     fn library_changed(&self, roll: Option<gtp_core::RollId>);
+
+    /// The thumbnails of these frames were regenerated (after their recipe changed). Defaults to
+    /// a general change; the desktop shell sends the frame ids so the grid reloads only those
+    /// pictures.
+    fn frames_changed(&self, frames: &[gtp_core::FrameId]) {
+        let _ = frames;
+        self.library_changed(None);
+    }
 }

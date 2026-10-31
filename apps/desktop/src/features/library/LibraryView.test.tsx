@@ -474,7 +474,7 @@ describe('LibraryView', () => {
         id: f.id + (i > 4 ? '-new' : ''),
       }));
       act(() => {
-        for (let i = 0; i < 5; i += 1) listeners.changed.forEach((cb) => cb('winter'));
+        for (let i = 0; i < 5; i += 1) listeners.changed.forEach((cb) => cb('winter', []));
       });
       expect(ipc.frameList).not.toHaveBeenCalled();
       await act(async () => {
@@ -483,6 +483,32 @@ describe('LibraryView', () => {
       await waitFor(() => expect(ipc.frameList).toHaveBeenCalledTimes(1));
       expect(ipc.rollList).toHaveBeenCalledTimes(1);
       await waitFor(() => expect(screen.getAllByRole('gridcell')).toHaveLength(8));
+    });
+
+    it('loads the pictures again for frames whose thumbnails were regenerated, and only those', async () => {
+      openLibrary();
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      const picture = (n: number) => {
+        const cell = [...document.querySelectorAll('[role="gridcell"]')][n];
+        return cell?.querySelector('img')?.getAttribute('src');
+      };
+      await waitFor(() => expect(picture(0)).toMatch(/^blob:/));
+      await waitFor(() => expect(picture(1)).toMatch(/^blob:/));
+      const first = picture(0);
+      const second = picture(1);
+      ipc.frameThumbnail.mockClear();
+
+      act(() => {
+        listeners.changed.forEach((cb) => cb(null, ['summer-f00001']));
+      });
+      await waitFor(() => expect(ipc.frameThumbnail).toHaveBeenCalledWith('summer-f00001'));
+      await waitFor(() => expect(picture(0)).not.toBe(first));
+      expect(picture(0)).toMatch(/^blob:/);
+      expect(picture(1)).toBe(second);
+      // The quiet-period reload of the grid follows, and asks for no other picture.
+      await new Promise((resolve) => setTimeout(resolve, RELOAD_DELAY_MS + 100));
+      expect(ipc.frameThumbnail).toHaveBeenCalledTimes(1);
     });
 
     it('stops listening when it is closed', async () => {

@@ -44,8 +44,26 @@ pub struct Roll {
     pub notes: String,
     /// Measured film base in linear scan values, shared by all frames of the roll.
     pub film_base_rgb: Option<[f32; 3]>,
+    /// How sure the automatic measurement of `film_base_rgb` was (0 to 1). `None` when the base was
+    /// set by hand, or there is no base yet.
+    #[serde(default)]
+    pub film_base_confidence: Option<f32>,
     /// RFC 3339 timestamp.
     pub created_at: String,
+}
+
+/// An automatic film base below this confidence is flagged, so the UI can ask for a manual pick
+/// (the same threshold frame detection uses).
+pub const FILM_BASE_MIN_CONFIDENCE: f32 = 0.5;
+
+impl Roll {
+    /// True when the roll's film base was measured automatically with low confidence.
+    pub fn film_base_uncertain(&self) -> bool {
+        self.film_base_rgb.is_some()
+            && self
+                .film_base_confidence
+                .is_some_and(|c| c < FILM_BASE_MIN_CONFIDENCE)
+    }
 }
 
 fn invalid_date(text: &str) -> AppError {
@@ -140,7 +158,8 @@ mod tests {
         let roll: Roll = serde_json::from_str(&json).unwrap();
         assert_eq!(roll.format, FilmFormat::Mm35);
         assert_eq!(roll.notes, "");
-        assert!(roll.film_base_rgb.is_none());
+        assert!(roll.film_base_rgb.is_none() && roll.film_base_confidence.is_none());
+        assert!(!roll.film_base_uncertain());
         assert!(roll.camera.is_none() && roll.iso_box.is_none() && roll.shot_from.is_none());
 
         let again: Roll = serde_json::from_str(&serde_json::to_string(&roll).unwrap()).unwrap();
@@ -179,6 +198,25 @@ mod tests {
             let err = check_shot_range(bad.0, bad.1).unwrap_err();
             assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn only_a_low_confidence_automatic_base_is_uncertain() {
+        let id = RollId::new();
+        let json =
+            format!(r#"{{"id":"{id}","name":"R","film_base_rgb":[0.8,0.5,0.3],"created_at":"x"}}"#);
+        let mut roll: Roll = serde_json::from_str(&json).unwrap();
+        assert!(
+            !roll.film_base_uncertain(),
+            "a base set by hand has no confidence"
+        );
+        roll.film_base_confidence = Some(0.3);
+        assert!(roll.film_base_uncertain());
+        roll.film_base_confidence = Some(FILM_BASE_MIN_CONFIDENCE);
+        assert!(!roll.film_base_uncertain());
+        roll.film_base_rgb = None;
+        roll.film_base_confidence = Some(0.1);
+        assert!(!roll.film_base_uncertain(), "no base, nothing to doubt");
     }
 
     #[test]

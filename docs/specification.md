@@ -113,7 +113,7 @@ Library 1─* Roll 1─* Frame 1─* SourceFile
 | Entity | Fields (summary) |
 |---|---|
 | **Library** | `schema_version`, `created_at`, `name` |
-| **Roll** | `id`, `name`, `film_stock?`, `format` (`35mm`), `camera?`, `iso_box?` (rated), `iso_shot?` (exposed at; differs when pushed or pulled), `shot_from?` / `shot_to?` (partial ISO dates `2026`, `2026-07` or `2026-07-14`; the range may not end before it starts), `notes`, `film_base_rgb?` (measured, linear), `created_at` |
+| **Roll** | `id`, `name`, `film_stock?`, `format` (`35mm`), `camera?`, `iso_box?` (rated), `iso_shot?` (exposed at; differs when pushed or pulled), `shot_from?` / `shot_to?` (partial ISO dates `2026`, `2026-07` or `2026-07-14`; the range may not end before it starts), `notes`, `film_base_rgb?` (measured, linear), `film_base_confidence?` (0 to 1 for an automatic measurement, none for a base set by hand; below 0.5 the UI asks for a manual pick), `created_at` |
 | **Frame** | `id`, `roll_id`, `index_in_roll`, `kind` (`ScanRgbIr` \| `RgbTriplet`), `width`, `height`, `has_ir`, `note`, `created_at`, `edited_at` |
 | **SourceFile** | `frame_id`, `role` (`rgb`, `ir`, `r`, `g`, `b`), `rel_path`, `sha256`, `bytes` |
 | **Recipe** | `frame_id`, `schema_v`, `json` (see below), `updated_at` |
@@ -203,7 +203,8 @@ Rules: unknown fields are ignored; a missing field means default; `v` bumps only
 CREATE TABLE roll   (id TEXT PRIMARY KEY, name TEXT NOT NULL, film_stock TEXT, format TEXT NOT NULL DEFAULT '35mm',
                      camera TEXT, iso_box INTEGER, iso_shot INTEGER, shot_from TEXT, shot_to TEXT,
                      notes TEXT NOT NULL DEFAULT '', film_base_r REAL, film_base_g REAL, film_base_b REAL,
-                     created_at TEXT NOT NULL);
+                     created_at TEXT NOT NULL,
+                     film_base_confidence REAL);  -- added by migration 0004 (L-10)
 CREATE TABLE frame  (id TEXT PRIMARY KEY, roll_id TEXT NOT NULL REFERENCES roll(id) ON DELETE CASCADE,
                      index_in_roll INTEGER NOT NULL, kind TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL,
                      has_ir INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, edited_at TEXT);

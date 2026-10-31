@@ -142,10 +142,10 @@
       "number": 8,
       "title": "Spike - nkscan with the modded LS-50",
       "branch": "feat/issue-8-spike-nkscan-with-the-modded-ls-50",
-      "status": "in_progress",
-      "pr": 111,
-      "commit": null,
-      "note": "Windows done (#111); macOS confirmed 2026-10-31, recorded in the PR that closes #8"
+      "status": "completed",
+      "pr": 122,
+      "commit": "6069e23",
+      "note": "Windows in #111, macOS confirmed 2026-10-31 in #122"
     },
     {
       "id": "P-10",
@@ -218,6 +218,15 @@
       "status": "completed",
       "pr": 121,
       "commit": "9bcb04c"
+    },
+    {
+      "id": "L-10",
+      "number": 31,
+      "title": "Roll film base estimated on first ingested frame",
+      "branch": "feat/issue-31-roll-film-base-from-first-frame",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

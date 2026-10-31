@@ -8,11 +8,15 @@
 
 use std::path::{Path, PathBuf};
 
-use gtp_core::{AppError, ErrorCode, FilmFormat, Frame, FrameId, FrameKind, Roll, RollId};
+use gtp_core::{
+    AppError, ErrorCode, FilmFormat, Frame, FrameId, FrameKind, ImageF32, Roll, RollId,
+};
+use gtp_negative::{auto_film_base, BaseEstimate};
 use serde::{Deserialize, Serialize};
 
 use crate::library_fs::{originals_rel, thumb_rel, ORIGINALS_DIR};
 use crate::paths::display_path;
+use crate::pipeline::{build_proxy, PREVIEW_EDGE};
 use crate::services::library::Library;
 
 /// Most frames one page may hold.
@@ -35,7 +39,12 @@ pub struct RollInput {
 }
 
 impl RollInput {
-    fn into_roll(self, id: RollId, film_base_rgb: Option<[f32; 3]>, created_at: String) -> Roll {
+    fn into_roll(
+        self,
+        id: RollId,
+        film_base: (Option<[f32; 3]>, Option<f32>),
+        created_at: String,
+    ) -> Roll {
         Roll {
             id,
             name: self.name,
@@ -47,7 +56,8 @@ impl RollInput {
             shot_from: self.shot_from,
             shot_to: self.shot_to,
             notes: self.notes,
-            film_base_rgb,
+            film_base_rgb: film_base.0,
+            film_base_confidence: film_base.1,
             created_at,
         }
     }
@@ -98,15 +108,16 @@ pub struct DeleteReport {
 }
 
 pub fn roll_create(library: &Library, input: RollInput) -> Result<Roll, AppError> {
-    let roll = input.into_roll(RollId::new(), None, String::new());
+    let roll = input.into_roll(RollId::new(), (None, None), String::new());
     library.write(|c| c.insert_roll(&roll))
 }
 
-/// Replaces a roll's editable fields; its film base and creation time are kept.
+/// Replaces a roll's editable fields; its film base (with its confidence) and creation time are kept.
 pub fn roll_update(library: &Library, id: RollId, input: RollInput) -> Result<Roll, AppError> {
     library.write(|c| {
         let current = c.get_roll(id)?;
-        c.update_roll(&input.into_roll(id, current.film_base_rgb, current.created_at))
+        let base = (current.film_base_rgb, current.film_base_confidence);
+        c.update_roll(&input.into_roll(id, base, current.created_at))
     })
 }
 
@@ -114,7 +125,8 @@ pub fn roll_list(library: &Library) -> Result<Vec<Roll>, AppError> {
     library.read(|c| c.list_rolls())
 }
 
-/// Sets (or with `None` clears) the roll's film base; every channel must be finite and above 0.
+/// Sets (or with `None` clears) the roll's film base by hand; every channel must be finite and above
+/// 0. A base set by hand has no confidence, so it is never flagged as uncertain.
 pub fn roll_set_film_base(
     library: &Library,
     id: RollId,
@@ -132,8 +144,54 @@ pub fn roll_set_film_base(
     library.write(|c| {
         let mut roll = c.get_roll(id)?;
         roll.film_base_rgb = base;
+        roll.film_base_confidence = None;
         c.update_roll(&roll)
     })
+}
+
+/// The roll's film base after [`ensure_roll_base`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EnsuredBase {
+    /// The base to use for every frame of the roll.
+    pub rgb: [f32; 3],
+    /// Confidence of the automatic measurement; `None` for a base set by hand.
+    pub confidence: Option<f32>,
+    /// True when this call stored the base (the roll had none).
+    pub stored_now: bool,
+}
+
+/// Makes sure the roll has a film base. When it has none, `estimate` (measured on a frame of this
+/// roll) is stored with its confidence, so later frames share it; when it already has one, set by
+/// hand or by an earlier frame, that one is returned and never overwritten. A low-confidence
+/// estimate is stored too, and flagged by [`Roll::film_base_uncertain`] for the UI.
+///
+/// This is the one function import, scan and capture call after analyzing a roll's frame.
+pub fn ensure_roll_base(
+    library: &Library,
+    roll: RollId,
+    estimate: BaseEstimate,
+) -> Result<EnsuredBase, AppError> {
+    let (stored, stored_now) = library
+        .write(|c| c.set_roll_film_base_if_unset(roll, estimate.rgb, Some(estimate.confidence)))?;
+    let rgb = stored
+        .film_base_rgb
+        .ok_or_else(|| AppError::internal("the roll has no film base right after it was stored"))?;
+    Ok(EnsuredBase {
+        rgb,
+        confidence: stored.film_base_confidence,
+        stored_now,
+    })
+}
+
+/// [`ensure_roll_base`] for a frame that has not been analyzed: measures the film base on a
+/// preview-size copy of `image` (a full-frame scan, rebate included).
+pub fn ensure_roll_base_from_image(
+    library: &Library,
+    roll: RollId,
+    image: &ImageF32,
+) -> Result<EnsuredBase, AppError> {
+    let proxy = build_proxy(image, PREVIEW_EDGE)?;
+    ensure_roll_base(library, roll, auto_film_base(&proxy)?)
 }
 
 /// Deletes a roll with all its frames, then their files.
@@ -357,6 +415,122 @@ mod tests {
         std::fs::set_permissions(&original, perms).unwrap();
         std::fs::write(lib.resolve(&thumb_rel(frame.id)).unwrap(), b"jpg").unwrap();
         stored
+    }
+
+    fn estimate(rgb: [f32; 3], confidence: f32) -> BaseEstimate {
+        BaseEstimate { rgb, confidence }
+    }
+
+    #[test]
+    fn the_first_estimate_sets_the_roll_base_and_a_later_one_never_overwrites_it() {
+        let t = TempLib::new("ensure");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        assert!(roll.film_base_rgb.is_none() && roll.film_base_confidence.is_none());
+
+        let first = ensure_roll_base(t.lib(), roll.id, estimate([0.8, 0.5, 0.3], 0.9)).unwrap();
+        assert_eq!(
+            first,
+            EnsuredBase {
+                rgb: [0.8, 0.5, 0.3],
+                confidence: Some(0.9),
+                stored_now: true
+            }
+        );
+        let second = ensure_roll_base(t.lib(), roll.id, estimate([0.1, 0.1, 0.1], 0.99)).unwrap();
+        assert_eq!(second.rgb, [0.8, 0.5, 0.3], "the first frame's base stays");
+        assert!(!second.stored_now);
+        let stored = t.lib().read(|c| c.get_roll(roll.id)).unwrap();
+        assert_eq!(stored.film_base_rgb, Some([0.8, 0.5, 0.3]));
+        assert_eq!(stored.film_base_confidence, Some(0.9));
+        assert!(!stored.film_base_uncertain());
+        // Editing the roll keeps the base and its confidence.
+        let edited = roll_update(t.lib(), roll.id, input("Renamed")).unwrap();
+        assert_eq!(edited.film_base_confidence, Some(0.9));
+    }
+
+    #[test]
+    fn a_base_set_by_hand_is_left_untouched_and_has_no_confidence() {
+        let t = TempLib::new("ensure-manual");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        roll_set_film_base(t.lib(), roll.id, Some([0.7, 0.4, 0.2])).unwrap();
+        let ensured = ensure_roll_base(t.lib(), roll.id, estimate([0.9, 0.9, 0.9], 0.95)).unwrap();
+        assert_eq!(ensured.rgb, [0.7, 0.4, 0.2]);
+        assert_eq!(ensured.confidence, None);
+        assert!(!ensured.stored_now);
+
+        // Picking by hand replaces an automatic base and drops its confidence.
+        let auto = roll_create(t.lib(), input("Auto")).unwrap();
+        ensure_roll_base(t.lib(), auto.id, estimate([0.8, 0.5, 0.3], 0.2)).unwrap();
+        assert!(t
+            .lib()
+            .read(|c| c.get_roll(auto.id))
+            .unwrap()
+            .film_base_uncertain());
+        let by_hand = roll_set_film_base(t.lib(), auto.id, Some([0.75, 0.5, 0.3])).unwrap();
+        assert_eq!(by_hand.film_base_confidence, None);
+        assert!(!by_hand.film_base_uncertain());
+        // Clearing the base lets the next frame measure it again.
+        roll_set_film_base(t.lib(), auto.id, None).unwrap();
+        let again = ensure_roll_base(t.lib(), auto.id, estimate([0.6, 0.6, 0.6], 0.8)).unwrap();
+        assert!(again.stored_now);
+    }
+
+    #[test]
+    fn a_low_confidence_estimate_is_stored_and_flagged() {
+        let t = TempLib::new("ensure-low");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        let ensured = ensure_roll_base(t.lib(), roll.id, estimate([0.8, 0.5, 0.3], 0.2)).unwrap();
+        assert!(ensured.stored_now);
+        let stored = t.lib().read(|c| c.get_roll(roll.id)).unwrap();
+        assert_eq!(stored.film_base_confidence, Some(0.2));
+        assert!(stored.film_base_uncertain());
+    }
+
+    #[test]
+    fn bad_estimates_and_unknown_rolls_are_rejected() {
+        let t = TempLib::new("ensure-bad");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        for bad in [
+            estimate([0.0, 0.5, 0.3], 0.9),
+            estimate([f32::NAN, 0.5, 0.3], 0.9),
+            estimate([0.8, 0.5, 0.3], 1.5),
+            estimate([0.8, 0.5, 0.3], f32::NAN),
+        ] {
+            let err = ensure_roll_base(t.lib(), roll.id, bad).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
+        }
+        assert!(t
+            .lib()
+            .read(|c| c.get_roll(roll.id))
+            .unwrap()
+            .film_base_rgb
+            .is_none());
+        let err = ensure_roll_base(t.lib(), RollId::new(), estimate([0.8, 0.5, 0.3], 0.9));
+        assert_eq!(err.unwrap_err().code, ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn the_base_can_be_measured_from_an_image() {
+        use gtp_core::testing::synthetic::{self, Params};
+        let t = TempLib::new("ensure-image");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        let s = synthetic::negative(
+            3,
+            &Params {
+                width: 300,
+                height: 200,
+                rebate: [20; 4],
+                ..Params::default()
+            },
+        )
+        .unwrap();
+        let ensured = ensure_roll_base_from_image(t.lib(), roll.id, &s.image).unwrap();
+        assert!(ensured.stored_now);
+        for c in 0..3 {
+            let truth = s.truth.base[c];
+            assert!((ensured.rgb[c] - truth).abs() / truth < 0.02, "channel {c}");
+        }
+        assert!(ensured.confidence.is_some_and(|c| c > 0.5));
     }
 
     #[test]

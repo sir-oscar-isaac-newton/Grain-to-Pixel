@@ -11,7 +11,7 @@ pub mod pipeline;
 pub mod services;
 
 pub use context::AppContext;
-pub use jobs::{JobCtx, JobKind, JobManager, JobSink, PROGRESS_STEP};
+pub use jobs::{JobCtx, JobKind, JobManager, JobSink, LibraryEvents, PROGRESS_STEP};
 pub use pipeline::{
     analyze, build_proxy, histogram, render, to_rgba8_srgb, Analysis, Histogram, PipelineInput,
     RenderTarget, Stage, PREVIEW_EDGE, PROXY_EDGE, STAGE_ORDER,

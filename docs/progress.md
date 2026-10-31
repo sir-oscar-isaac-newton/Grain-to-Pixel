@@ -206,6 +206,15 @@
       "number": 29,
       "title": "Roll and frame commands",
       "branch": "feat/issue-29-roll-and-frame-commands",
+      "status": "completed",
+      "pr": 120,
+      "commit": "4ff77fd"
+    },
+    {
+      "id": "L-05",
+      "number": 30,
+      "title": "TIFF import job with hashing and thumbnails",
+      "branch": "feat/issue-30-tiff-import-job",
       "status": "in_progress",
       "pr": null,
       "commit": null

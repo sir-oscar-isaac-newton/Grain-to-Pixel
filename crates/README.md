@@ -10,7 +10,7 @@ Rust libraries holding all image-processing and data logic. UI-agnostic and inde
 | `gtp-capture` | Guided RGB capture: Scanlight V4 serial driver, camera backends (libgphoto2, watched folder), per-frame R/G/B sequence. |
 | `gtp-negative` | Frame-area detection, film-base measurement, inversion. |
 | `gtp-edit` | Colour balance, tone, geometry, IR dust removal. |
-| `gtp-catalog` | SQLite archive, tags, search. |
+| `gtp-catalog` | The library database: SQLite schema and forward-only migrations (backup before migrating, integrity check after a crash), repositories for rolls, frames, sources, recipes, tags (on frames and rolls) and meta, and full-text search kept in step in the same transaction. |
 | `gtp-app` | Application layer: use-case services, `JobManager`, pipeline composition (`render`, `analyze`). Created in P-10 (GTP-029, [ADR 0005](../decisions/0005-application-layer.md)); holds the render pipeline today. |
 
 Dependency direction: `core` ← `io` ← (`ingest`, `capture`, `negative`, `edit`, `catalog`). Feature crates must not depend on each other; `gtp-app` is the only crate that combines them, and `src-tauri` is a thin adapter over it. Allowed edges: [docs/architecture.md §3.3](../docs/architecture.md).

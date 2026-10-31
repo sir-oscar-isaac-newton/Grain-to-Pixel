@@ -6,6 +6,6 @@ mod source;
 mod tag;
 
 pub use frame::{Frame, FrameKind};
-pub use roll::{FilmFormat, Roll};
+pub use roll::{check_iso, check_shot_range, FilmFormat, Roll, MAX_ISO};
 pub use source::{SourceFile, SourceRole};
 pub use tag::Tag;

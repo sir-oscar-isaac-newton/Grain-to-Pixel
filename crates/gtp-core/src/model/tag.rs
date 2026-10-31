@@ -5,7 +5,8 @@ use crate::ids::TagId;
 
 const MAX_TAG_CHARS: usize = 64;
 
-/// A free-form label on frames. Names are unique case-insensitively, so they are stored normalized.
+/// A free-form label on frames and rolls. The name keeps the spelling it was first typed with;
+/// two names are the same tag when their [`Tag::key`]s are equal (case-insensitive across Unicode).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tag {
     pub id: TagId,
@@ -21,13 +22,15 @@ impl Tag {
         })
     }
 
-    /// Trims, collapses inner whitespace and lower-cases; rejects empty or very long names.
+    /// The comparison key of a name: normalized, then lower-cased across Unicode
+    /// (`" ÉTÉ  à Paris"` and `"été À PARIS"` share `"été à paris"`). Accents still count.
+    pub fn key(name: &str) -> Result<String, AppError> {
+        Ok(Self::normalize(name)?.to_lowercase())
+    }
+
+    /// Trims and collapses inner whitespace, keeping the case; rejects empty or very long names.
     pub fn normalize(name: &str) -> Result<String, AppError> {
-        let normalized = name
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-            .to_lowercase();
+        let normalized = name.split_whitespace().collect::<Vec<_>>().join(" ");
         if normalized.is_empty() {
             return Err(AppError::new(
                 ErrorCode::InvalidInput,
@@ -49,12 +52,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn names_are_trimmed_collapsed_and_lower_cased() {
+    fn names_are_trimmed_and_collapsed_but_keep_their_case() {
         assert_eq!(
             Tag::normalize("  Kodak   PORTRA \t400 ").unwrap(),
-            "kodak portra 400"
+            "Kodak PORTRA 400"
         );
-        assert_eq!(Tag::new("Family").unwrap().name, "family");
+        assert_eq!(Tag::new("Family").unwrap().name, "Family");
+    }
+
+    #[test]
+    fn keys_ignore_case_across_unicode_but_not_accents() {
+        assert_eq!(Tag::key(" ÉTÉ  à Paris").unwrap(), "été à paris");
+        assert_eq!(Tag::key("Ålesund").unwrap(), Tag::key("ÅLESUND").unwrap());
+        assert_eq!(Tag::key("München").unwrap(), Tag::key("MÜNCHEN").unwrap());
+        assert_ne!(Tag::key("Ete").unwrap(), Tag::key("Été").unwrap());
     }
 
     #[test]

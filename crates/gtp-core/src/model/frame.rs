@@ -23,9 +23,10 @@ pub struct Frame {
     pub has_ir: bool,
     #[serde(default)]
     pub note: String,
-    /// RFC 3339 timestamps.
+    /// RFC 3339 timestamps; `edited_at` is `None` until the recipe is first saved.
     pub created_at: String,
-    pub edited_at: String,
+    #[serde(default)]
+    pub edited_at: Option<String>,
 }
 
 #[cfg(test)]
@@ -53,7 +54,7 @@ mod tests {
             has_ir: false,
             note: String::new(),
             created_at: "2026-10-30T10:00:00Z".into(),
-            edited_at: "2026-10-30T10:00:00Z".into(),
+            edited_at: Some("2026-10-30T10:00:00Z".into()),
         };
         let again: Frame = serde_json::from_str(&serde_json::to_string(&frame).unwrap()).unwrap();
         assert_eq!(again, frame);

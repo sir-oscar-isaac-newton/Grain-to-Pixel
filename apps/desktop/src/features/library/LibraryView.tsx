@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useUiStore } from '../../app/store';
 import { formatBytes } from '../../shared/format';
-import { frameList, search } from '../../shared/ipc';
 import { FirstRunDialog } from './FirstRunDialog';
 import { FrameGrid } from './FrameGrid';
 import { JobsPanel } from './JobsPanel';
@@ -9,9 +9,9 @@ import styles from './library.module.css';
 import { useLibraryStore } from './library-store';
 import { RollSidebar } from './RollSidebar';
 import { SearchBar } from './SearchBar';
-import { isFiltered, toQuery } from './search-query';
 import { SelectionTags } from './SelectionTags';
 import { useLibraryEvents } from './use-library-events';
+import { useLibraryQuery } from './use-library-query';
 
 /**
  * The library: a first-run dialog until a library is open, then the rolls on the left and the
@@ -28,24 +28,17 @@ export function LibraryView() {
   const setNotice = useLibraryStore((s) => s.setNotice);
 
   useEffect(() => {
-    void useLibraryStore.getState().start();
+    // Coming back from the Develop view, the library is open already and the roll and filters
+    // you left are kept.
+    if (useLibraryStore.getState().phase !== 'ready') void useLibraryStore.getState().start();
   }, []);
   useLibraryEvents(phase === 'ready');
 
-  const filters = useLibraryStore((s) => s.filters);
-  const filtered = isFiltered(filters);
-  const query = useMemo(() => toQuery(filters, rollId), [filters, rollId]);
+  const openInDevelop = useUiStore((s) => s.openInDevelop);
   const [found, setFound] = useState<number | null>(null);
 
   // Nothing typed: the roll's frames in order. Otherwise the search, best match first.
-  const fetchPage = useCallback(
-    (page: number, pageSize: number) =>
-      filtered
-        ? search(query, page, pageSize)
-        : frameList({ roll_id: rollId, page, page_size: pageSize }),
-    [filtered, query, rollId],
-  );
-  const queryKey = filtered ? JSON.stringify(query) : (rollId ?? 'all');
+  const { fetchPage, queryKey, filtered } = useLibraryQuery();
   const rollHasName = rolls.some((r) => r.id === rollId);
   const emptyText = filtered
     ? t('library.search.noMatches')
@@ -99,6 +92,7 @@ export function LibraryView() {
               showRoll={rollId === null}
               emptyText={emptyText}
               onTotal={setFound}
+              onOpen={(frame, index) => openInDevelop(frame.id, index)}
             />
           </div>
         </div>

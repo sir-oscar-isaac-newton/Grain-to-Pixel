@@ -38,6 +38,40 @@ describe('FrameGrid', () => {
     restoreLayout();
   });
 
+  it('opens a frame on a double-click and on Enter, with its position', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    render(
+      <FrameGrid
+        fetchPage={fetchPage}
+        queryKey="all"
+        showRoll={false}
+        emptyText="Nothing here"
+        onOpen={onOpen}
+      />,
+    );
+    await screen.findAllByRole('gridcell');
+
+    await user.dblClick(cells()[2] as HTMLElement);
+    expect(onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ id: frameId(3) }), 2);
+
+    // The double-click also focused that cell, so the arrow moves on to the next one.
+    screen.getByRole('grid').focus();
+    await user.keyboard('{ArrowRight}{Enter}');
+    expect(onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ id: frameId(4) }), 3);
+    expect(onOpen).toHaveBeenCalledTimes(2);
+  });
+
+  it('does nothing on Enter or a double-click when it was not told what to open', async () => {
+    const user = userEvent.setup();
+    renderGrid();
+    await screen.findAllByRole('gridcell');
+    await user.dblClick(cells()[1] as HTMLElement);
+    screen.getByRole('grid').focus();
+    await user.keyboard('{Enter}');
+    expect(selectedIds()).toEqual([frameId(2)]);
+  });
+
   it('draws only the rows on screen out of 5,000 frames, and says how big the grid is', async () => {
     renderGrid();
     await screen.findAllByRole('gridcell');

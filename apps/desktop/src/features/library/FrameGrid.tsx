@@ -93,6 +93,8 @@ interface FrameGridProps {
   showRoll: boolean;
   /** Told how many frames match, once known (null while a new query loads). */
   onTotal?: (total: number | null) => void;
+  /** Called when a frame is opened (double-click, or Enter on the focused frame). */
+  onOpen?: (frame: FrameSummary, index: number) => void;
 }
 
 /**
@@ -100,7 +102,14 @@ interface FrameGridProps {
  * at a time as the grid scrolls. Click, Shift-click and Ctrl/Cmd-click select; the arrow keys,
  * `[` and `]`, Home, End and the page keys move, with Shift extending the selection.
  */
-export function FrameGrid({ fetchPage, queryKey, emptyText, showRoll, onTotal }: FrameGridProps) {
+export function FrameGrid({
+  fetchPage,
+  queryKey,
+  emptyText,
+  showRoll,
+  onTotal,
+  onOpen,
+}: FrameGridProps) {
   const { t } = useTranslation();
   const revision = useLibraryStore((s) => s.revision);
   const selected = useLibraryStore((s) => s.selected);
@@ -179,8 +188,23 @@ export function FrameGrid({ fetchPage, queryKey, emptyText, showRoll, onTotal }:
     }
   };
 
+  const onDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
+    const cell = (event.target as HTMLElement).closest<HTMLElement>('[data-index]');
+    const index = Number(cell?.dataset.index);
+    const frame = cell ? frameAt(index) : undefined;
+    if (frame) onOpen?.(frame, index);
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const ctrl = event.ctrlKey || event.metaKey;
+    if (event.key === 'Enter' && onOpen) {
+      const frame = frameAt(focus);
+      if (frame) {
+        event.preventDefault();
+        onOpen(frame, focus);
+      }
+      return;
+    }
     if (ctrl && event.key.toLowerCase() === 'a') {
       event.preventDefault();
       if (total > 0) void selectBetween(0, total - 1);
@@ -239,6 +263,7 @@ export function FrameGrid({ fetchPage, queryKey, emptyText, showRoll, onTotal }:
           className={styles.grid}
           style={{ height: virtualizer.getTotalSize() }}
           onClick={onClick}
+          onDoubleClick={onDoubleClick}
           onKeyDown={onKeyDown}
         >
           {visible.map((row) => {

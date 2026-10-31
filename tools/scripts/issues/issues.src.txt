@@ -857,6 +857,7 @@ FILES: apps/desktop/src/features/develop/{DevelopView.tsx, Canvas.tsx, Filmstrip
 ROUTES used: develop_open, develop_analyze, develop_render.
 MIGRATIONS: none.
 TESTS: use-develop (debounce, seq drop, drag vs release sizes with mocked ipc), canvas and histogram component tests, axe.
+DELIVERY (decided when U-02 was approved): "before" is the automatic conversion (the recipe from `develop_analyze`), which stays the same however often the frame is saved. Zoom runs from fit to 400% of the 2048 px proxy (past 100% pixels are enlarged, not smoothed); true 1:1 inspection at full resolution would need a full-resolution tile render, which is not in the plan. A frame opens with a double-click or Enter in the Library grid, and the filmstrip lists the frames of the Library's current view (the same query as the grid, shared through `use-library-query`). The histogram is computed in the browser from the preview's pixels, so no backend change was needed. `Histogram` is drawn as SVG in `packages/ui`. Keys beyond the two in the criteria: Escape (back to the Library) and 0, 1, + and - (zoom), all in one map (`develop-keys.ts`) for the customizable shortcuts of U-13. Returning to the Library no longer restarts it, so the roll and search you left are kept. There are no recipe controls yet (U-03 to U-05); `useDevelop.setRecipe(recipe, {dragging})` is the way they will ask for new pictures.
 
 ## U-03
 title: Base and Invert panel with film-base picker

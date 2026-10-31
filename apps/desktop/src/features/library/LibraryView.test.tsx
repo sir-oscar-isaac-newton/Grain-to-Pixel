@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useUiStore } from '../../app/store';
 import { expectNoA11yViolations, mockLayout } from '../../test-support';
 import { ipc, libraryDetails, listeners, makeFrames, makeRoll, resetFake, state } from './fake-ipc';
 import { resetLibraryStore, useLibraryStore } from './library-store';
@@ -456,6 +457,51 @@ describe('LibraryView', () => {
       );
       expect(await screen.findByText('Failed')).toBeInTheDocument();
       expect(screen.getByText('The disk is full.')).toBeInTheDocument();
+    });
+  });
+
+  describe('opening a frame in Develop', () => {
+    beforeEach(() => useUiStore.setState({ view: 'library', developFrame: null }));
+
+    it('opens the frame that is double-clicked, with its place in the list', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      render(<LibraryView />);
+      const cells = await screen.findAllByRole('gridcell');
+      await user.dblClick(cells[2] as HTMLElement);
+      expect(useUiStore.getState().view).toBe('develop');
+      expect(useUiStore.getState().developFrame).toEqual({ id: 'summer-f00003', index: 2 });
+    });
+
+    it('opens the focused frame with Enter', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      screen.getByRole('grid').focus();
+      await user.keyboard('{ArrowRight}{Enter}');
+      expect(useUiStore.getState().developFrame).toEqual({ id: 'summer-f00002', index: 1 });
+      expect(useUiStore.getState().view).toBe('develop');
+    });
+
+    it('keeps the library, the roll and the search when you come back from Develop', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      const { unmount } = render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      await waitFor(() => expect(screen.getAllByRole('gridcell')).toHaveLength(2));
+      unmount();
+      ipc.libraryInfo.mockClear();
+
+      // Coming back: the same library, still open, with the roll that was chosen.
+      render(<LibraryView />);
+      expect(await screen.findAllByRole('gridcell')).toHaveLength(2);
+      expect(ipc.libraryInfo).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: /Winter/ })).toHaveAttribute(
+        'aria-current',
+        'true',
+      );
     });
   });
 

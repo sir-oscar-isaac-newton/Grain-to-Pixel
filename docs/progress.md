@@ -279,6 +279,15 @@
       "number": 37,
       "title": "Regenerate thumbnail when a recipe changes",
       "branch": "feat/issue-37-thumbnail-regeneration",
+      "status": "completed",
+      "pr": 132,
+      "commit": "1986126"
+    },
+    {
+      "id": "U-02",
+      "number": 38,
+      "title": "Develop canvas, histogram and before/after",
+      "branch": "feat/issue-38-develop-canvas",
       "status": "in_progress",
       "pr": null,
       "commit": null

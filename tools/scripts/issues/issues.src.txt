@@ -1619,3 +1619,26 @@ APPROACH: measure first. Colour, tone and geometry already use rayon; the candid
 TESTS: existing render and golden tests unchanged; timing run recorded in the PR (3:2 and square, per stage).
 NOTES: added after P-11 and L-08 were delivered, so it is GitHub issue #130, not 74 (issue and pull request numbers share one sequence). Use 130 as its `number` in docs/progress.md.
 DELIVERY (decided when P-17 was approved): measured first, per stage (see the timing test in `pipeline/mod.rs`). The two costs that mattered were the per-render downscale of the proxy and the conversion to 8-bit sRGB; normalize and invert are small. Done: the conversion looks each level up from 255 switch-over points found by bisection on the real formula (checked for every float from 0 to 1 in an ignored test, and around each threshold in the normal ones), and the downscale copies its pixels in and out on all cores. The library's own `rayon` feature was tried and dropped: it pulls in the `image` crate with its codecs (about 50 packages) and made no difference to the total. The fallback of keeping a 1600 px proxy for the open frame was not needed, so memory is unchanged. Both changes are checked bit for bit against the code they replace.
+
+## U-14
+title: Crop aspect ratio presets and lock
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+deps: U-05
+adr: no
+spec: specification section 4.2 (Geometry)
+desc: Constrain the crop rectangle to a chosen aspect ratio while it is edited: the scan's own ratio, 3:2, 4:3, 5:4, 1:1, 16:9 or a custom width:height, with a lock, a landscape/portrait swap and a button that fits the largest crop of the ratio. Builds on the crop overlay of U-05.
+ac:
+- Presets (the scan's own ratio, 3:2, 4:3, 5:4, 1:1, 16:9) and a custom width:height can be chosen; while one is on, resizing the crop keeps its ratio and moving it changes nothing
+- The ratio is that of the finished picture, so 3:2 stays 3:2 after a quarter turn
+- Choosing a ratio fits the largest crop of that ratio around the centre of the current crop; a swap button switches between landscape and portrait
+- The four edge sliders and the keyboard nudging of U-05 keep the ratio; axe clean
+- No recipe or schema change: the ratio is an editing aid and is not stored
+tech:
+FILES: apps/desktop/src/features/develop/crop.ts (ratio maths), CropOverlay.tsx and panels/GeometryPanel.tsx (the control and the locked resizing); packages/ui only if a shared control is needed.
+ROUTES used: none (recipe_save through the existing autosave).
+MIGRATIONS: none.
+TESTS: ratio maths (fit the largest crop, resize with a lock at every edge and corner, clamping at the picture's edges, the ratio after a quarter turn), panel with mocked ipc, axe.
+NOTES: asked for while U-05 was approved, so it is GitHub issue #142, not 75 (issue and pull request numbers share one sequence). Use 142 as its `number` in docs/progress.md. The crop of U-05 is free-form, as its criteria say.

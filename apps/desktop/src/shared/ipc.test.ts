@@ -4,16 +4,26 @@ const libraryInfoMock = vi.fn();
 const logClientEventMock = vi.fn();
 const libraryOpenMock = vi.fn();
 const settingsSetMock = vi.fn();
+const frameDeleteMock = vi.fn();
 vi.mock('@gtp/ipc-types', () => ({
   commands: {
     libraryInfo: () => libraryInfoMock(),
     logClientEvent: (level: string, message: string) => logClientEventMock(level, message),
     libraryOpen: (path: string) => libraryOpenMock(path),
     settingsSet: (patch: unknown) => settingsSetMock(patch),
+    frameDelete: (ids: string[]) => frameDeleteMock(ids),
   },
 }));
 
-import { IpcError, libraryInfo, libraryOpen, logClientEvent, settingsSet, unwrap } from './ipc';
+import {
+  IpcError,
+  frameDelete,
+  libraryInfo,
+  libraryOpen,
+  logClientEvent,
+  settingsSet,
+  unwrap,
+} from './ipc';
 
 describe('shared/ipc', () => {
   beforeEach(() => {
@@ -21,6 +31,14 @@ describe('shared/ipc', () => {
     logClientEventMock.mockReset();
     libraryOpenMock.mockReset();
     settingsSetMock.mockReset();
+    frameDeleteMock.mockReset();
+  });
+
+  it('frameDelete passes the ids and returns the report with files left', async () => {
+    const report = { frames_deleted: 2, files_left: ['D:\\Lib\\originals\\r\\f\\scan.tif'] };
+    frameDeleteMock.mockResolvedValue({ status: 'ok', data: report });
+    await expect(frameDelete(['a', 'b'])).resolves.toEqual(report);
+    expect(frameDeleteMock).toHaveBeenCalledWith(['a', 'b']);
   });
 
   it('libraryOpen passes the path and surfaces a read-only library', async () => {

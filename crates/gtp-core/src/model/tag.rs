@@ -8,6 +8,7 @@ const MAX_TAG_CHARS: usize = 64;
 /// A free-form label on frames and rolls. The name keeps the spelling it was first typed with;
 /// two names are the same tag when their [`Tag::key`]s are equal (case-insensitive across Unicode).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct Tag {
     pub id: TagId,
     pub name: String,

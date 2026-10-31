@@ -411,6 +411,26 @@ fn rolls_and_frames_list_in_order_and_meta_round_trips() {
         .collect();
     assert_eq!(order, vec![f1.id, f3.id]);
 
+    let fb = cat.insert_frame(&frame(b.id, 1)).unwrap();
+    let page = |roll, offset, limit| -> Vec<FrameId> {
+        cat.list_frames_page(roll, offset, limit)
+            .unwrap()
+            .iter()
+            .map(|f| f.id)
+            .collect()
+    };
+    assert_eq!(
+        page(None, 0, 10),
+        vec![fb.id, f1.id, f3.id],
+        "newest roll first"
+    );
+    assert_eq!(page(None, 1, 1), vec![f1.id]);
+    assert_eq!(page(Some(a.id), 0, 10), vec![f1.id, f3.id]);
+    assert!(page(Some(a.id), 5, 10).is_empty());
+    assert_eq!(cat.count_frames(None).unwrap(), 3);
+    assert_eq!(cat.count_frames(Some(a.id)).unwrap(), 2);
+    assert_eq!(cat.count_frames(Some(RollId::new())).unwrap(), 0);
+
     assert_eq!(cat.meta_get("library_name").unwrap(), None);
     cat.meta_set("library_name", "Negatives").unwrap();
     cat.meta_set("library_name", "Film").unwrap();

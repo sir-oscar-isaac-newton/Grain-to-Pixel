@@ -107,6 +107,46 @@ impl Catalog {
         frames
     }
 
+    /// One page of frames: those of `roll`, or of every roll (newest roll first), in roll order.
+    pub fn list_frames_page(
+        &self,
+        roll: Option<RollId>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<Frame>, AppError> {
+        let columns = COLUMNS
+            .split(", ")
+            .map(|c| format!("f.{c}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut stmt = self
+            .conn
+            .prepare(&format!(
+                "SELECT {columns} FROM frame f JOIN roll r ON r.id = f.roll_id
+                 WHERE ?1 IS NULL OR f.roll_id = ?1
+                 ORDER BY r.created_at DESC, r.rowid DESC, f.index_in_roll, f.rowid
+                 LIMIT ?2 OFFSET ?3"
+            ))
+            .map_err(db_error)?;
+        let frames = stmt
+            .query_map(params![roll.map(|r| r.to_string()), limit, offset], read)
+            .map_err(db_error)?
+            .collect::<Result<_, _>>()
+            .map_err(db_error);
+        frames
+    }
+
+    /// How many frames `roll` has, or the library when `None`.
+    pub fn count_frames(&self, roll: Option<RollId>) -> Result<u32, AppError> {
+        self.conn
+            .query_row(
+                "SELECT count(*) FROM frame WHERE ?1 IS NULL OR roll_id = ?1",
+                [roll.map(|r| r.to_string())],
+                |row| row.get(0),
+            )
+            .map_err(db_error)
+    }
+
     pub fn set_frame_note(&mut self, id: FrameId, note: &str) -> Result<Frame, AppError> {
         let note = note.trim();
         check_len(note, MAX_NOTE_CHARS, "note")?;

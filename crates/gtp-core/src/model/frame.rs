@@ -1,9 +1,10 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::ids::{FrameId, RollId};
 
 /// How a frame's pixels were captured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum FrameKind {
     /// One RGB scan plus an infrared plane (film scanner).
     ScanRgbIr,
@@ -13,6 +14,7 @@ pub enum FrameKind {
 
 /// One image position on a roll. The pixels live in source files; edits live in the Recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct Frame {
     pub id: FrameId,
     pub roll_id: RollId,

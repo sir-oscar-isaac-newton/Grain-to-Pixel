@@ -61,6 +61,58 @@ export async function settingsSet(patch: SettingsPatch): Promise<Settings> {
   return unwrap(await commands.settingsSet(patch));
 }
 
+// Rolls and frames. Argument and result types come straight from the generated commands.
+type Args<K extends keyof typeof commands> = Parameters<(typeof commands)[K]>;
+type Data<K extends keyof typeof commands> =
+  Awaited<ReturnType<(typeof commands)[K]>> extends Result<infer T> ? T : never;
+
+export type RollInput = Args<'rollCreate'>[0];
+export type FrameQuery = Args<'frameList'>[0];
+export type Roll = Data<'rollCreate'>;
+export type Frame = Data<'frameGet'>;
+export type FramePage = Data<'frameList'>;
+export type DeleteReport = Data<'rollDelete'>;
+
+export async function rollCreate(input: RollInput): Promise<Roll> {
+  return unwrap(await commands.rollCreate(input));
+}
+
+/** Replaces every editable field of the roll; an empty field is cleared. */
+export async function rollUpdate(...args: Args<'rollUpdate'>): Promise<Roll> {
+  return unwrap(await commands.rollUpdate(...args));
+}
+
+export async function rollList(): Promise<Roll[]> {
+  return unwrap(await commands.rollList());
+}
+
+/** Sets the roll's film base, or clears it with `null`. */
+export async function rollSetFilmBase(...args: Args<'rollSetFilmBase'>): Promise<Roll> {
+  return unwrap(await commands.rollSetFilmBase(...args));
+}
+
+/** Deletes a roll and its frames; `files_left` lists files that could not be removed. */
+export async function rollDelete(...args: Args<'rollDelete'>): Promise<DeleteReport> {
+  return unwrap(await commands.rollDelete(...args));
+}
+
+export async function frameList(query: FrameQuery): Promise<FramePage> {
+  return unwrap(await commands.frameList(query));
+}
+
+export async function frameGet(...args: Args<'frameGet'>): Promise<Frame> {
+  return unwrap(await commands.frameGet(...args));
+}
+
+export async function frameSetNote(...args: Args<'frameSetNote'>): Promise<Frame> {
+  return unwrap(await commands.frameSetNote(...args));
+}
+
+/** Deletes frames; `files_left` lists files that could not be removed. */
+export async function frameDelete(...args: Args<'frameDelete'>): Promise<DeleteReport> {
+  return unwrap(await commands.frameDelete(...args));
+}
+
 /** Crashes of earlier runs; the backend hands them out once. */
 export async function crashNotesTake(): Promise<CrashNote[]> {
   return unwrap(await commands.crashNotesTake());

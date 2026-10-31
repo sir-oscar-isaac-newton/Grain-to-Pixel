@@ -11,6 +11,21 @@ export const commands = {
 	libraryCreate: (path: string, name: string) => typedError<LibraryInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("library_create", { path, name })),
 	/**  Opens the library in `path`. A library from a newer app version opens read-only. */
 	libraryOpen: (path: string) => typedError<LibraryInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("library_open", { path })),
+	rollCreate: (input: RollInput_Deserialize) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_create", { input })),
+	/**  Replaces every editable field of the roll with `input` (an empty field is cleared). */
+	rollUpdate: (id: RollId, input: RollInput_Deserialize) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_update", { id, input })),
+	/**  All rolls, newest first. */
+	rollList: () => typedError<Roll_Serialize[], AppError_Serialize>(__TAURI_INVOKE("roll_list")),
+	/**  Sets the roll's film base (three linear values above 0), or clears it with `null`. */
+	rollSetFilmBase: (id: RollId, base: [(number | null), (number | null), (number | null)] | null) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_set_film_base", { id, base })),
+	/**  Deletes a roll with its frames, then their files. */
+	rollDelete: (id: RollId) => typedError<DeleteReport, AppError_Serialize>(__TAURI_INVOKE("roll_delete", { id })),
+	/**  One page of frames of a roll, or of the whole library. */
+	frameList: (query: FrameQuery_Deserialize) => typedError<FramePage_Serialize, AppError_Serialize>(__TAURI_INVOKE("frame_list", { query })),
+	frameGet: (id: FrameId) => typedError<Frame_Serialize, AppError_Serialize>(__TAURI_INVOKE("frame_get", { id })),
+	frameSetNote: (id: FrameId, note: string) => typedError<Frame_Serialize, AppError_Serialize>(__TAURI_INVOKE("frame_set_note", { id, note })),
+	/**  Deletes frames (unknown ids are skipped), then their originals and thumbnails. */
+	frameDelete: (ids: FrameId[]) => typedError<DeleteReport, AppError_Serialize>(__TAURI_INVOKE("frame_delete", { ids })),
 	/**  The app settings (spec section 5.4), feature flags included. */
 	settingsGet: () => typedError<Settings_Serialize, AppError_Serialize>(__TAURI_INVOKE("settings_get")),
 	/**  Changes the settings named in `patch`, saves them and returns the result. */
@@ -59,8 +74,17 @@ export type CrashNote = {
 	file: string,
 };
 
+/**  The outcome of a delete: rows removed, and files that could not be removed afterwards. */
+export type DeleteReport = {
+	frames_deleted: number,
+	files_left: string[],
+};
+
 /**  Stable, machine-readable error category. The UI shows `message` and logs the code. */
 export type ErrorCode = "NotFound" | "InvalidInput" | "Io" | "Db" | "UnsupportedFormat" | "ScannerUnavailable" | "ScanFailed" | "Cancelled" | "LibraryTooNew" | "Internal";
+
+/**  Film format of a roll. Only 35 mm is supported in the MVP. */
+export type FilmFormat = "35mm";
 
 /**
  *  Runtime feature flags with their defaults (spec section 10). Each flag is deleted after one
@@ -111,6 +135,117 @@ export type Flags_Serialize = {
 	guided_capture: boolean,
 	dev_overlay: boolean,
 	experimental_auto_levels: boolean,
+};
+
+/**  One image position on a roll. The pixels live in source files; edits live in the Recipe. */
+export type Frame = Frame_Serialize | Frame_Deserialize;
+
+/**  Identifies one frame of a roll. */
+export type FrameId = string;
+
+/**  How a frame's pixels were captured. */
+export type FrameKind = 
+/**  One RGB scan plus an infrared plane (film scanner). */
+"ScanRgbIr" | 
+/**  Three exposures lit red, green and blue (camera copy stand). */
+"RgbTriplet";
+
+export type FramePage = FramePage_Serialize | FramePage_Deserialize;
+
+export type FramePage_Deserialize = {
+	items: FrameSummary_Deserialize[],
+	/**  Frames matching the query, over all pages. */
+	total: number,
+	page: number,
+	page_size: number,
+};
+
+export type FramePage_Serialize = {
+	items: FrameSummary_Serialize[],
+	/**  Frames matching the query, over all pages. */
+	total: number,
+	page: number,
+	page_size: number,
+};
+
+/**  Which frames to list: one roll's or all, a page at a time (pages count from 0). */
+export type FrameQuery = FrameQuery_Serialize | FrameQuery_Deserialize;
+
+/**  Which frames to list: one roll's or all, a page at a time (pages count from 0). */
+export type FrameQuery_Deserialize = {
+	roll_id?: RollId | null,
+	page: number,
+	page_size: number,
+};
+
+/**  Which frames to list: one roll's or all, a page at a time (pages count from 0). */
+export type FrameQuery_Serialize = {
+	roll_id: RollId | null,
+	page: number,
+	page_size: number,
+};
+
+/**  What the grid needs of a frame. */
+export type FrameSummary = FrameSummary_Serialize | FrameSummary_Deserialize;
+
+/**  What the grid needs of a frame. */
+export type FrameSummary_Deserialize = {
+	id: FrameId,
+	roll_id: RollId,
+	index_in_roll: number,
+	kind: FrameKind,
+	width: number,
+	height: number,
+	has_ir: boolean,
+	note: string,
+	edited_at?: string | null,
+	/**  True when the frame's thumbnail file exists. */
+	has_thumb: boolean,
+};
+
+/**  What the grid needs of a frame. */
+export type FrameSummary_Serialize = {
+	id: FrameId,
+	roll_id: RollId,
+	index_in_roll: number,
+	kind: FrameKind,
+	width: number,
+	height: number,
+	has_ir: boolean,
+	note: string,
+	edited_at: string | null,
+	/**  True when the frame's thumbnail file exists. */
+	has_thumb: boolean,
+};
+
+/**  One image position on a roll. The pixels live in source files; edits live in the Recipe. */
+export type Frame_Deserialize = {
+	id: FrameId,
+	roll_id: RollId,
+	index_in_roll: number,
+	kind: FrameKind,
+	width: number,
+	height: number,
+	has_ir: boolean,
+	note?: string,
+	/**  RFC 3339 timestamps; `edited_at` is `None` until the recipe is first saved. */
+	created_at: string,
+	edited_at?: string | null,
+};
+
+/**  One image position on a roll. The pixels live in source files; edits live in the Recipe. */
+export type Frame_Serialize = {
+	id: FrameId,
+	roll_id: RollId,
+	index_in_roll: number,
+	kind: FrameKind,
+	width: number,
+	height: number,
+	has_ir: boolean,
+	note: string,
+	/**  RFC 3339 timestamps; `edited_at` is `None` until the recipe is first saved. */
+	created_at: string,
+	edited_at: string | null,
 };
 
 /**  A job finished. Sent once per job, after its last progress event. */
@@ -202,6 +337,107 @@ export type LibraryInfo_Serialize = {
 	app_version: string,
 	/**  `null` until a library is created or opened. */
 	library: LibraryDetails_Serialize | null,
+};
+
+/**
+ *  A roll of film: the unit that shares one measured film base. Its tags (in the catalog) count for
+ *  every frame on it.
+ */
+export type Roll = Roll_Serialize | Roll_Deserialize;
+
+/**  Identifies a roll of film. */
+export type RollId = string;
+
+/**
+ *  The editable fields of a roll, used both to create and to update one (an update replaces them
+ *  all; an empty text clears its field).
+ */
+export type RollInput = RollInput_Serialize | RollInput_Deserialize;
+
+/**
+ *  The editable fields of a roll, used both to create and to update one (an update replaces them
+ *  all; an empty text clears its field).
+ */
+export type RollInput_Deserialize = {
+	name?: string,
+	film_stock?: string | null,
+	camera?: string | null,
+	iso_box?: number | null,
+	iso_shot?: number | null,
+	shot_from?: string | null,
+	shot_to?: string | null,
+	notes?: string,
+};
+
+/**
+ *  The editable fields of a roll, used both to create and to update one (an update replaces them
+ *  all; an empty text clears its field).
+ */
+export type RollInput_Serialize = {
+	name: string,
+	film_stock: string | null,
+	camera: string | null,
+	iso_box: number | null,
+	iso_shot: number | null,
+	shot_from: string | null,
+	shot_to: string | null,
+	notes: string,
+};
+
+/**
+ *  A roll of film: the unit that shares one measured film base. Its tags (in the catalog) count for
+ *  every frame on it.
+ */
+export type Roll_Deserialize = {
+	id: RollId,
+	name: string,
+	film_stock?: string | null,
+	format?: FilmFormat,
+	/**  The camera the roll was shot in. */
+	camera?: string | null,
+	/**  The film's rated speed (box ISO). */
+	iso_box?: number | null,
+	/**  The speed it was exposed at; differs from `iso_box` when pushed or pulled. */
+	iso_shot?: number | null,
+	/**
+	 *  When shooting started and ended: partial ISO dates (`2026`, `2026-07` or `2026-07-14`),
+	 *  checked by [`check_shot_range`].
+	 */
+	shot_from?: string | null,
+	shot_to?: string | null,
+	notes?: string,
+	/**  Measured film base in linear scan values, shared by all frames of the roll. */
+	film_base_rgb?: [(number | null), (number | null), (number | null)] | null,
+	/**  RFC 3339 timestamp. */
+	created_at: string,
+};
+
+/**
+ *  A roll of film: the unit that shares one measured film base. Its tags (in the catalog) count for
+ *  every frame on it.
+ */
+export type Roll_Serialize = {
+	id: RollId,
+	name: string,
+	film_stock: string | null,
+	format: FilmFormat,
+	/**  The camera the roll was shot in. */
+	camera: string | null,
+	/**  The film's rated speed (box ISO). */
+	iso_box: number | null,
+	/**  The speed it was exposed at; differs from `iso_box` when pushed or pulled. */
+	iso_shot: number | null,
+	/**
+	 *  When shooting started and ended: partial ISO dates (`2026`, `2026-07` or `2026-07-14`),
+	 *  checked by [`check_shot_range`].
+	 */
+	shot_from: string | null,
+	shot_to: string | null,
+	notes: string,
+	/**  Measured film base in linear scan values, shared by all frames of the roll. */
+	film_base_rgb: [(number | null), (number | null), (number | null)] | null,
+	/**  RFC 3339 timestamp. */
+	created_at: string,
 };
 
 export type Settings = Settings_Serialize | Settings_Deserialize;

@@ -19,8 +19,8 @@
 //! Samples are first limited to `[0, MAX_SAMPLE]` (not finite becomes 0), so no setting can produce
 //! infinity; results below 0 (out of gamut after a strong saturation) are set to 0.
 
-use gtp_core::recipe::{Color, Mono};
-use gtp_core::{AppError, ImageF32};
+use gtp_core::recipe::{Color, Mono, SLIDER_MAX};
+use gtp_core::{AppError, ErrorCode, ImageF32};
 use rayon::prelude::*;
 
 use crate::{require_rgb, saturate, MAX_SAMPLE};
@@ -50,6 +50,110 @@ pub fn channel_gains(color: &Color) -> [f32; 3] {
     stops.map(f32::exp2)
 }
 
+/// An area of pixels in an image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Area {
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
+/// `neutral_balance` looks at about this many pixels at most, on a regular grid.
+const MAX_NEUTRAL_SAMPLES: u64 = 1_000_000;
+
+fn invalid(message: &str, details: String) -> AppError {
+    AppError::new(ErrorCode::InvalidInput, message).with_details(details)
+}
+
+/// Median of the values (the mean of the two middle ones for an even count); `None` if empty.
+/// The values must not be NaN.
+fn median(values: &mut [f32]) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    let len = values.len();
+    let (lower, upper, _) = values.select_nth_unstable_by(len / 2, f32::total_cmp);
+    let upper = *upper;
+    if len % 2 == 1 {
+        return Some(upper);
+    }
+    let below = lower.iter().copied().fold(f32::MIN, f32::max);
+    Some((below + upper) / 2.0)
+}
+
+/// The colour axes that make a grey picked from the image neutral, given that the sample is taken
+/// before the colour stage. `current` supplies everything else (temperature, tint, saturation, ...)
+/// and comes back with only `red_cyan`, `green_magenta` and `blue_yellow` replaced.
+///
+/// The gains that equalize the area's median (keeping its brightness, the geometric mean) are
+/// `log2(mean / channel)` stops per channel. The temperature and tint already in `current` supply
+/// part of them; the axes supply the rest. The three axes have a free direction (all equal does
+/// nothing), so the smallest solution is used: `axis = 2/3 * stops`. If an axis would have to go
+/// beyond the slider range the sample is too far from neutral to correct and an error is returned.
+pub fn neutral_balance(image: &ImageF32, area: Area, current: &Color) -> Result<Color, AppError> {
+    require_rgb(image, "neutral balance")?;
+    let inside = u64::from(area.x) + u64::from(area.w) <= u64::from(image.width)
+        && u64::from(area.y) + u64::from(area.h) <= u64::from(image.height);
+    if area.w == 0 || area.h == 0 || !inside {
+        return Err(invalid(
+            "That area is outside the image.",
+            format!("{area:?} in {}x{}", image.width, image.height),
+        ));
+    }
+    let pixels = u64::from(area.w) * u64::from(area.h);
+    let step = ((pixels as f64 / MAX_NEUTRAL_SAMPLES as f64).sqrt().ceil() as usize).max(1);
+    let width = image.width as usize;
+    let mut samples: [Vec<f32>; 3] = Default::default();
+    for y in (area.y..area.y + area.h).step_by(step) {
+        for x in (area.x..area.x + area.w).step_by(step) {
+            let at = (y as usize * width + x as usize) * 3;
+            if let Some(pixel) = image.data.get(at..at + 3) {
+                for (channel, value) in samples.iter_mut().zip(pixel) {
+                    if value.is_finite() {
+                        channel.push(*value);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut logs = [0.0f32; 3];
+    for (c, channel) in samples.iter_mut().enumerate() {
+        let m = median(channel)
+            .ok_or_else(|| invalid("That area has no usable pixels.", format!("{area:?}")))?
+            .min(MAX_SAMPLE);
+        if m <= 0.0 {
+            return Err(invalid(
+                "That area is black, so it cannot be balanced.",
+                format!("channel {c}, median {m}"),
+            ));
+        }
+        logs[c] = m.log2();
+    }
+
+    let mean = (logs[0] + logs[1] + logs[2]) / 3.0;
+    let temperature = current.temperature / 100.0 * TEMPERATURE_STOPS / 2.0;
+    let tint = current.tint / 100.0 * TINT_STOPS / 3.0;
+    let supplied = [temperature + tint, -2.0 * tint, -temperature + tint];
+    let mut axes = [0.0f32; 3];
+    for c in 0..3 {
+        let needed = mean - logs[c] - supplied[c];
+        axes[c] = needed * 2.0 / 3.0 / AXIS_STOPS * 100.0;
+        if axes[c].is_nan() || axes[c].abs() > SLIDER_MAX {
+            return Err(invalid(
+                "That area is too far from neutral to correct with the colour axes.",
+                format!("axes {axes:?}"),
+            ));
+        }
+    }
+    Ok(Color {
+        red_cyan: axes[0],
+        green_magenta: axes[1],
+        blue_yellow: axes[2],
+        ..*current
+    })
+}
 /// Applies the colour stage to a 3-channel image in place (see the module docs for the order).
 pub fn apply_color(image: &mut ImageF32, color: &Color, mono: &Mono) -> Result<(), AppError> {
     require_rgb(image, "colour")?;
@@ -298,6 +402,115 @@ mod tests {
             let color = Color { saturation, vibrance, red_cyan: rc, ..Color::default() };
             apply_color(&mut img, &color, &Mono { enabled, ..Mono::default() }).unwrap();
             prop_assert!(img.data.iter().all(|v| v.is_finite() && *v >= 0.0), "{:?}", img.data);
+        }
+    }
+
+    fn grey_patch(rgb: [f32; 3]) -> (ImageF32, Area) {
+        (
+            image(&[rgb, rgb, rgb, rgb]),
+            Area {
+                x: 0,
+                y: 0,
+                w: 4,
+                h: 1,
+            },
+        )
+    }
+
+    fn balanced(rgb: [f32; 3], color: &Color) -> [f32; 3] {
+        let gains = channel_gains(color);
+        [rgb[0] * gains[0], rgb[1] * gains[1], rgb[2] * gains[2]]
+    }
+
+    fn spread(rgb: [f32; 3]) -> f32 {
+        rgb[0].max(rgb[1]).max(rgb[2]) / rgb[0].min(rgb[1]).min(rgb[2]) - 1.0
+    }
+
+    #[test]
+    fn a_tinted_grey_is_made_neutral_and_keeps_its_brightness() {
+        let sample = [0.30, 0.20, 0.12];
+        let (img, area) = grey_patch(sample);
+        let color = neutral_balance(&img, area, &Color::default()).unwrap();
+        let out = balanced(sample, &color);
+        assert!(spread(out) < 0.01, "{out:?}");
+        let before = (sample[0] * sample[1] * sample[2]).cbrt();
+        let after = (out[0] * out[1] * out[2]).cbrt();
+        assert!((before - after).abs() / before < 1e-3);
+        assert!(color.red_cyan.abs() <= SLIDER_MAX && color.blue_yellow.abs() <= SLIDER_MAX);
+    }
+
+    #[test]
+    fn a_neutral_sample_changes_nothing() {
+        let (img, area) = grey_patch([0.4; 3]);
+        let color = neutral_balance(&img, area, &Color::default()).unwrap();
+        assert!(color.red_cyan.abs() < 1e-4 && color.green_magenta.abs() < 1e-4);
+        assert!(color.blue_yellow.abs() < 1e-4);
+    }
+
+    #[test]
+    fn temperature_and_tint_already_set_are_taken_into_account_and_kept() {
+        let current = Color {
+            temperature: 30.0,
+            tint: -20.0,
+            saturation: 1.3,
+            ..Color::default()
+        };
+        let sample = [0.25, 0.30, 0.22];
+        let (img, area) = grey_patch(sample);
+        let color = neutral_balance(&img, area, &current).unwrap();
+        assert_eq!(
+            (color.temperature, color.tint, color.saturation),
+            (30.0, -20.0, 1.3)
+        );
+        assert!(spread(balanced(sample, &color)) < 0.01);
+    }
+
+    #[test]
+    fn a_sample_too_far_from_neutral_is_refused() {
+        let (img, area) = grey_patch([0.9, 0.05, 0.9]);
+        let error = neutral_balance(&img, area, &Color::default()).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn empty_black_non_finite_and_outside_samples_are_refused() {
+        let ok = image(&[[0.3, 0.2, 0.1], [0.3, 0.2, 0.1]]);
+        let black = image(&[[0.0, 0.2, 0.1], [0.0, 0.2, 0.1]]);
+        let nan = image(&[[f32::NAN; 3], [f32::INFINITY; 3]]);
+        let whole = Area {
+            x: 0,
+            y: 0,
+            w: 2,
+            h: 1,
+        };
+        for (img, area) in [
+            (&black, whole),
+            (&nan, whole),
+            (&ok, Area { w: 0, ..whole }),
+            (&ok, Area { x: 1, ..whole }),
+            (&ok, Area { h: 2, ..whole }),
+        ] {
+            let error = neutral_balance(img, area, &Color::default()).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidInput, "{area:?}");
+        }
+        let mono = ImageF32::new(2, 1, 1, vec![0.5, 0.5]).unwrap();
+        assert!(neutral_balance(&mono, whole, &Color::default()).is_err());
+    }
+
+    proptest! {
+        #[test]
+        fn a_result_is_in_range_and_neutralizes_the_sample(
+            rgb in proptest::array::uniform3(0.01f32..4.0),
+            temperature in -100f32..=100.0, tint in -100f32..=100.0,
+        ) {
+            let (img, area) = grey_patch(rgb);
+            let current = Color { temperature, tint, ..Color::default() };
+            if let Ok(color) = neutral_balance(&img, area, &current) {
+                for axis in [color.red_cyan, color.green_magenta, color.blue_yellow] {
+                    prop_assert!(axis.abs() <= SLIDER_MAX);
+                }
+                prop_assert!(spread(balanced(rgb, &color)) < 0.01);
+            }
         }
     }
 }

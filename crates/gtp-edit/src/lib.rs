@@ -8,7 +8,9 @@ mod curve;
 mod geometry;
 mod tone;
 
-pub use color::{apply_color, channel_gains, AXIS_STOPS, TEMPERATURE_STOPS, TINT_STOPS};
+pub use color::{
+    apply_color, channel_gains, neutral_balance, Area, AXIS_STOPS, TEMPERATURE_STOPS, TINT_STOPS,
+};
 pub use curve::{Curve, LUT_SIZE};
 pub use geometry::{apply_geometry, output_size};
 pub use tone::{

@@ -307,9 +307,18 @@
       "title": "Base and Invert panel with film-base picker",
       "branch": "feat/issue-39-base-invert-panel",
       "status": "in_progress",
+      "pr": 135,
+      "commit": "3cd8ecd",
+      "note": "Part 1 of 2 merged in #135 (3cd8ecd): film-base picker, roll default, level sliders, auto levels, autosave; part 2 after P-14: white and black point pickers"
+    },
+    {
+      "id": "P-14",
+      "number": 103,
+      "title": "Picker maths - white, black and neutral points",
+      "branch": "feat/issue-103-picker-maths",
+      "status": "in_progress",
       "pr": null,
-      "commit": null,
-      "note": "Part 1 of 2: film-base picker, roll default, level sliders, auto levels, autosave; part 2 after P-14: white and black point pickers"
+      "commit": null
     }
   ]
 }

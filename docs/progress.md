@@ -326,6 +326,15 @@
       "number": 43,
       "title": "Export job - TIFF16 and JPEG with ICC",
       "branch": "feat/issue-43-export-job",
+      "status": "completed",
+      "pr": 140,
+      "commit": "9481365"
+    },
+    {
+      "id": "U-11",
+      "number": 44,
+      "title": "Export dialog",
+      "branch": "feat/issue-44-export-dialog",
       "status": "in_progress",
       "pr": null,
       "commit": null

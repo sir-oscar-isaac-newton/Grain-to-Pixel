@@ -14,6 +14,7 @@ import {
 } from '../../shared/ipc';
 import { useLibraryStore } from '../library/library-store';
 import { useFrames } from '../library/use-frames';
+import { ExportDialog } from '../library/ExportDialog';
 import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
 import { Canvas } from './Canvas';
@@ -93,6 +94,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   useLibraryEvents(true);
 
   const [pick, setPick] = useState<PickTarget | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const viewport = useViewport(
@@ -309,6 +311,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         >
           {t('develop.before')}
         </button>
+        <button type="button" onClick={() => setExporting(true)}>
+          {t('export.open')}
+        </button>
         <span className={styles.spacer} />
         <button type="button" onClick={zoomOut} aria-label={t('develop.zoomOut')}>
           {t('develop.zoomOutText')}
@@ -447,6 +452,8 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
           )}
         </aside>
       </div>
+
+      {exporting && <ExportDialog frameIds={[frame.id]} open onClose={() => setExporting(false)} />}
 
       <Filmstrip
         frames={frames}

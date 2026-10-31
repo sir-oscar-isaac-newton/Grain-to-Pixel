@@ -369,3 +369,15 @@
   border: 1px solid var(--border);
   border-radius: 4px;
 }
+
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}

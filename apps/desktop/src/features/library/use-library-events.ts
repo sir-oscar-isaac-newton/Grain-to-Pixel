@@ -47,17 +47,23 @@ export function useLibraryEvents(enabled: boolean) {
     track(
       onJobDone((e) => {
         const result = e.result;
-        store().patchJob(
-          e.id,
+        const patch =
           result.kind === 'Imported'
             ? {
-                state: 'done',
+                state: 'done' as const,
                 fraction: 1,
                 imported: result.frames.length,
                 skipped: result.skipped,
               }
-            : { state: 'done', fraction: 1 },
-        );
+            : result.kind === 'Exported'
+              ? {
+                  state: 'done' as const,
+                  fraction: 1,
+                  exported: result.files,
+                  failed: result.failed,
+                }
+              : { state: 'done' as const, fraction: 1 };
+        store().patchJob(e.id, patch);
       }),
     );
     track(

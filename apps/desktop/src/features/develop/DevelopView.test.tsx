@@ -401,6 +401,33 @@ describe('DevelopView', () => {
     });
   });
 
+  describe('exporting', () => {
+    it('exports the open frame from the toolbar, and follows the job in the dialog', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      open(2);
+      render(<DevelopView />);
+      await canvas();
+      await user.click(screen.getByRole('button', { name: 'Export…' }));
+      const dialog = within(await screen.findByRole('dialog', { name: 'Export' }));
+      expect(
+        dialog.getByText('Write 1 frame at full size, with the colour profile embedded.'),
+      ).toBeInTheDocument();
+
+      await user.click(dialog.getByRole('button', { name: 'Choose folder…' }));
+      await dialog.findByText('/films/Library');
+      await user.click(dialog.getByRole('button', { name: 'Export' }));
+      await waitFor(() => expect(state.exports).toHaveLength(1));
+      expect(state.exports[0]?.frameIds).toEqual(['summer-f00002']);
+      expect(
+        await dialog.findByRole('progressbar', { name: 'Export 1 frame' }),
+      ).toBeInTheDocument();
+
+      await user.click(dialog.getByRole('button', { name: 'Close' }));
+      expect(screen.queryByRole('dialog', { name: 'Export' })).not.toBeInTheDocument();
+    });
+  });
+
   describe('the Base and Invert panel', () => {
     const rect = (left: number, top: number, width: number, height: number) =>
       ({ left, top, width, height, right: left + width, bottom: top + height }) as DOMRect;

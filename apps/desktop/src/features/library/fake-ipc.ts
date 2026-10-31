@@ -150,6 +150,10 @@ export const state = {
   }>,
   /** Sampling a neutral grey is refused with this message when set. */
   neutralRefused: null as string | null,
+  /** The exports started, in order. */
+  exports: [] as Array<{ frameIds: string[]; options: unknown }>,
+  /** Starting an export is refused with this message when set. */
+  exportRefused: null as string | null,
   /** The recipes saved, in order. */
   saved: [] as Array<{ id: string; recipe: Recipe }>,
   /** Saving fails with this message when set. */
@@ -389,6 +393,13 @@ export const ipc = {
     return new Uint8Array([0xff, 0xd8, 1, 2, 3]).buffer;
   }),
   importFiles: vi.fn(async () => 'job-1'),
+  exportStart: vi.fn(async (frameIds: string[], options: unknown) => {
+    state.exports.push({ frameIds, options });
+    if (state.exportRefused) {
+      throw new IpcError({ code: 'InvalidInput', message: state.exportRefused });
+    }
+    return 'job-export-1';
+  }),
   jobCancel: vi.fn(async () => true),
   onLibraryChanged: vi.fn((cb: (roll: string | null, frameIds: string[]) => void) =>
     subscribe(listeners.changed, cb),
@@ -416,6 +427,8 @@ export function resetFake() {
   state.samples = [];
   state.levelSamples = [];
   state.levelsRefused = null;
+  state.exportRefused = null;
+  state.exports = [];
   state.neutralSamples = [];
   state.neutralRefused = null;
   state.saveFails = null;

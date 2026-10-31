@@ -10,6 +10,8 @@ import {
   type LibraryDetails,
   type Roll,
   type SkippedFile,
+  type ExportedFile,
+  type FailedExport,
   type Tag,
 } from '../../shared/ipc';
 import { NO_FILTERS, type Filters } from './search-query';
@@ -18,15 +20,22 @@ import { resetThumbnails } from './thumbnails';
 export type Phase = 'loading' | 'needs-library' | 'ready';
 export type JobState = 'running' | 'done' | 'error' | 'cancelled';
 
-/** A background job started from this screen (an import), as the progress list shows it. */
+/** A background job started from this screen (an import or an export), as the progress list shows it. */
 export interface JobRow {
   id: string;
-  kind: 'import';
+  kind: 'import' | 'export';
+  /** An import: the roll the files go into. An export: empty. */
   rollName: string;
+  /** An export: how many frames were asked for, and the folder they go to. */
+  frames?: number;
+  destination?: string;
   fraction: number;
   state: JobState;
   imported?: number;
   skipped?: SkippedFile[];
+  /** An export: the files written, and the frames that could not be exported. */
+  exported?: ExportedFile[];
+  failed?: FailedExport[];
   /** The backend's message when the job failed. */
   message?: string;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Histogram } from '@gtp/ui';
 import { useUiStore, type DevelopFrame } from '../../app/store';
@@ -17,13 +17,15 @@ import { useFrames } from '../library/use-frames';
 import { ExportDialog } from '../library/ExportDialog';
 import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
-import { Canvas } from './Canvas';
+import { Canvas, pictureStyle } from './Canvas';
+import { CropOverlay } from './CropOverlay';
 import { actionForKey } from './develop-keys';
 import styles from './develop.module.css';
 import { Filmstrip } from './Filmstrip';
 import { clipping, computeHistogram } from './histogram';
 import { BaseInvertPanel } from './panels/BaseInvertPanel';
 import { ColourPanel } from './panels/ColourPanel';
+import { GeometryPanel } from './panels/GeometryPanel';
 import { TonePanel } from './panels/TonePanel';
 import type { Fractions } from './picker';
 import {
@@ -32,7 +34,9 @@ import {
   levelsOf,
   triple,
   withBase,
+  geometryOf,
   withColour,
+  withGeometry,
   withLevels,
 } from './recipe-parts';
 import { useDevelop } from './use-develop';
@@ -40,7 +44,7 @@ import { usePicker } from './use-picker';
 import { useViewport } from './use-viewport';
 
 /** What is being picked on the picture: the film base, the white or black point, or a neutral grey. */
-type PickTarget = 'base' | 'neutral' | LevelsPoint;
+type PickTarget = 'base' | 'neutral' | 'crop' | LevelsPoint;
 
 interface Notice {
   tone: 'info' | 'error';
@@ -95,13 +99,14 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
 
   const [pick, setPick] = useState<PickTarget | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [guide, setGuide] = useState(false);
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const viewport = useViewport(
     preview ? { width: preview.width, height: preview.height } : null,
     pick === null,
   );
-  const { toggleBefore, setPickView, setRecipe } = develop;
+  const { toggleBefore, setPickView, setRecipe, rerender } = develop;
   const { fit, actual, zoomIn, zoomOut } = viewport;
 
   // A new frame starts fitted to the stage, with nothing being picked.
@@ -114,11 +119,19 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   // Picking the base shows the whole scan (the rebate is outside the crop); picking the white or
   // black point shows the frame without turns, so a click is a position in the cropped frame. The
   // picture goes back afterwards.
-  const view = pick === null ? null : pick === 'base' ? 'scan' : 'frame';
+  const view = pick === null ? null : pick === 'base' || pick === 'crop' ? 'scan' : 'frame';
   useEffect(() => {
     setPickView(view);
     fit();
   }, [view, setPickView, fit]);
+
+  // The crop is edited without drawing the edit (the picture on screen is the whole scan); when
+  // that ends, the edit is drawn once.
+  const wasCropping = useRef(false);
+  useEffect(() => {
+    if (wasCropping.current && pick !== 'crop') rerender();
+    wasCropping.current = pick === 'crop';
+  }, [pick, rerender]);
 
   const summary = frames.frameAt(frame.index);
   const label = t('library.frameLabel', {
@@ -182,11 +195,14 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   };
   const pickBox = usePicker({
     stageRef: viewport.stageRef,
-    active: pick === 'base' ? develop.showingScan : pick !== null && develop.showingFrame,
+    active:
+      pick === 'base'
+        ? develop.showingScan
+        : pick !== null && pick !== 'crop' && develop.showingFrame,
     onPick: (region) => {
       if (pick === 'base') void picked(region);
       else if (pick === 'neutral') void pickedNeutral(region);
-      else if (pick) void pickedLevel(region, pick);
+      else if (pick === 'white' || pick === 'black') void pickedLevel(region, pick);
     },
   });
 
@@ -336,7 +352,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         <div
           ref={viewport.stageRef}
           className={`${styles.stage} ${viewport.fitting || pick !== null ? '' : styles.pannable} ${
-            pick !== null && (develop.showingScan || develop.showingFrame) ? styles.picking : ''
+            pick !== null && pick !== 'crop' && (develop.showingScan || develop.showingFrame)
+              ? styles.picking
+              : ''
           }`}
           aria-busy={develop.busy}
         >
@@ -345,12 +363,32 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               preview={preview}
               label={
                 develop.showingScan
-                  ? t('develop.base.scanLabel')
+                  ? pick === 'crop'
+                    ? t('develop.cropLabel')
+                    : t('develop.base.scanLabel')
                   : develop.showingFrame
                     ? t('develop.pickFrameLabel')
                     : label
               }
               view={viewport.view}
+            />
+          )}
+          {preview && recipe && pick === 'crop' && develop.showingScan && (
+            <CropOverlay
+              crop={geometryOf(recipe).crop}
+              style={pictureStyle(preview, viewport.view)}
+              disabled={readOnly || working}
+              label={t('develop.crop.area')}
+              onChange={(crop, options) =>
+                setRecipe(withGeometry(recipe, { crop }), { ...options, preview: false })
+              }
+            />
+          )}
+          {preview && guide && pick === null && (
+            <div
+              className={styles.guide}
+              style={pictureStyle(preview, viewport.view)}
+              aria-hidden="true"
             />
           )}
           {pickBox && <div className={styles.pickBox} style={pickBox} />}
@@ -421,11 +459,24 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
           </div>
           {recipe && (
             <>
+              <GeometryPanel
+                recipe={recipe}
+                readOnly={readOnly}
+                working={working}
+                cropping={pick === 'crop'}
+                cropReady={develop.showingScan}
+                onCroppingChange={(on) => setPick(on ? 'crop' : null)}
+                detected={develop.detected}
+                onGuideChange={setGuide}
+                onChange={(next, options) =>
+                  setRecipe(next, pick === 'crop' ? { ...options, preview: false } : options)
+                }
+              />
               <BaseInvertPanel
                 recipe={recipe}
                 rollBase={info?.roll_base ? triple(info.roll_base, 1) : null}
                 readOnly={readOnly}
-                pick={pick === 'neutral' ? null : pick}
+                pick={pick === 'neutral' || pick === 'crop' ? null : pick}
                 pickReady={pick === 'base' ? develop.showingScan : develop.showingFrame}
                 working={working}
                 onPickChange={setPick}

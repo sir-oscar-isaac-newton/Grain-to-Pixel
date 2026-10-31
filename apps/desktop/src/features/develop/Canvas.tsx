@@ -1,7 +1,20 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import type { Preview } from '../../shared/ipc';
 import styles from './develop.module.css';
-import { referenceSize, type View } from './viewport';
+import { referenceSize, type Size, type View } from './viewport';
+
+/**
+ * Where the picture is on the stage: its size at this zoom, centred and shifted as the view says.
+ * Things drawn over the picture (the crop, a guide) take the same style, so they line up with it.
+ */
+export function pictureStyle(picture: Size, view: View): CSSProperties {
+  const reference = referenceSize(picture);
+  return {
+    width: reference.width * view.zoom,
+    height: reference.height * view.zoom,
+    transform: `translate(-50%, -50%) translate(${view.offset.x}px, ${view.offset.y}px)`,
+  };
+}
 
 interface CanvasProps {
   preview: Preview;
@@ -30,18 +43,13 @@ export function Canvas({ preview, label, view }: CanvasProps) {
     context.putImageData(new ImageData(pixels, preview.width, preview.height), 0, 0);
   }, [preview]);
 
-  const reference = referenceSize(preview);
   return (
     <canvas
       ref={ref}
       role="img"
       aria-label={label}
       className={`${styles.canvas} ${view.zoom > 1 ? styles.enlarged : ''}`}
-      style={{
-        width: reference.width * view.zoom,
-        height: reference.height * view.zoom,
-        transform: `translate(-50%, -50%) translate(${view.offset.x}px, ${view.offset.y}px)`,
-      }}
+      style={pictureStyle(preview, view)}
     />
   );
 }

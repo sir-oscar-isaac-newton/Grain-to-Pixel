@@ -277,3 +277,121 @@
   border: 1px solid var(--text);
   background: rgb(255 255 255 / 12%);
 }
+
+/* The crop over the whole scan: it takes the picture's size and place; the rest is dimmed. */
+.cropLayer,
+.guide {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: none;
+  pointer-events: none;
+}
+
+.crop {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--text);
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 55%);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.cropMovable {
+  cursor: move;
+}
+
+.crop:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--text);
+  border: 1px solid var(--canvas);
+  border-radius: 2px;
+}
+
+.handle_nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.handle_n {
+  top: -6px;
+  left: calc(50% - 6px);
+  cursor: ns-resize;
+}
+
+.handle_ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.handle_e {
+  top: calc(50% - 6px);
+  right: -6px;
+  cursor: ew-resize;
+}
+
+.handle_se {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+
+.handle_s {
+  bottom: -6px;
+  left: calc(50% - 6px);
+  cursor: ns-resize;
+}
+
+.handle_sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.handle_w {
+  top: calc(50% - 6px);
+  left: -6px;
+  cursor: ew-resize;
+}
+
+/* A thirds grid over the picture while the straighten slider is in use, to judge a horizon. */
+.guide {
+  background-image:
+    linear-gradient(
+      to right,
+      transparent calc(33.333% - 0.5px),
+      rgb(255 255 255 / 55%) 0,
+      rgb(255 255 255 / 55%) calc(33.333% + 0.5px),
+      transparent 0
+    ),
+    linear-gradient(
+      to right,
+      transparent calc(66.666% - 0.5px),
+      rgb(255 255 255 / 55%) 0,
+      rgb(255 255 255 / 55%) calc(66.666% + 0.5px),
+      transparent 0
+    ),
+    linear-gradient(
+      to bottom,
+      transparent calc(33.333% - 0.5px),
+      rgb(255 255 255 / 55%) 0,
+      rgb(255 255 255 / 55%) calc(33.333% + 0.5px),
+      transparent 0
+    ),
+    linear-gradient(
+      to bottom,
+      transparent calc(66.666% - 0.5px),
+      rgb(255 255 255 / 55%) 0,
+      rgb(255 255 255 / 55%) calc(66.666% + 0.5px),
+      transparent 0
+    );
+}

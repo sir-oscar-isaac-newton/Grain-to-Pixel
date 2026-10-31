@@ -927,6 +927,7 @@ FILES: apps/desktop/src/features/develop/panels/GeometryPanel.tsx and a crop ove
 ROUTES used: develop_analyze, develop_render, recipe_save.
 MIGRATIONS: none.
 TESTS: overlay math, hint on low confidence (mocked analysis), keyboard nudging.
+DELIVERY (decided when U-05 was approved): the crop is a free-form rectangle (aspect ratio presets are U-14, GitHub issue #142) and is edited on the whole scan in its scanned orientation, like the pickers, so a position on screen is a fraction of the scan; no backend change. Keyboard: the crop area moves with the arrow keys (Shift for larger steps) and four sliders in the panel resize the sides; the corner and side handles are for the pointer. The overlay is a separate component (`CropOverlay.tsx`) that takes the picture's own size and place from `Canvas.tsx`, and nothing is drawn while the crop is edited. A thirds grid helps to judge a horizon while the straighten slider has focus. The detected frame and its confidence are now kept from the analysis (`frame_rect`, `frame_confidence`).
 
 ## U-06
 title: Apply settings to frames or roll

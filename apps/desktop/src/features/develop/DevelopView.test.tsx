@@ -437,7 +437,9 @@ describe('DevelopView', () => {
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
         this: HTMLElement,
       ) {
-        if (this.tagName === 'CANVAS') return rect(100, 50, 400, 300);
+        if (this.tagName === 'CANVAS' || this.className.includes('cropLayer')) {
+          return rect(100, 50, 400, 300);
+        }
         if (this.hasAttribute('aria-busy')) return rect(0, 0, 900, 600);
         return rect(0, 0, 0, 0);
       });
@@ -467,6 +469,166 @@ describe('DevelopView', () => {
       expect(await screen.findByText(/Click the clear film edge/)).toBeInTheDocument();
       return user;
     }
+
+    describe('the Geometry panel', () => {
+      const cropArea = () => screen.getByRole('application', { name: /Crop area/ });
+      const cropOf = (recipe: unknown) =>
+        (recipe as { geometry: { crop: { x: number; y: number; w: number; h: number } } }).geometry
+          .crop;
+
+      async function openFrame() {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        // The analysis has to be in, for the detected frame.
+        await waitFor(() => expect(ipc.developAnalyze).toHaveBeenCalled());
+        return user;
+      }
+
+      it('turns the picture a quarter, previews it and saves it', async () => {
+        const user = await openFrame();
+        ipc.developRender.mockClear();
+        await user.click(screen.getByRole('button', { name: 'Rotate right' }));
+        await waitFor(() => expect(ipc.developRender).toHaveBeenCalled());
+        expect(ipc.developRender.mock.calls.at(-1)?.[1]).toMatchObject({ geometry: { rot90: 2 } });
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(savedRecipe()).toMatchObject({ geometry: { rot90: 2, angle_deg: 1.5 } });
+      });
+
+      it('flips and straightens, and shows a grid while the straighten slider is in use', async () => {
+        const user = await openFrame();
+        expect(document.querySelector('[class*="guide"]')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Flip vertically' }));
+        const straighten = screen.getByRole('slider', { name: 'Straighten' });
+        straighten.focus();
+        await waitFor(() => expect(document.querySelector('[class*="guide"]')).toBeInTheDocument());
+        await user.keyboard('{ArrowRight}');
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(savedRecipe()).toMatchObject({
+          geometry: { flip_v: true, flip_h: true, angle_deg: expect.closeTo(1.6, 9) },
+        });
+        await user.tab();
+        await waitFor(() =>
+          expect(document.querySelector('[class*="guide"]')).not.toBeInTheDocument(),
+        );
+      });
+
+      describe('editing the crop', () => {
+        it('shows the whole scan with the crop over it, and draws the edit again afterwards', async () => {
+          const user = await openFrame();
+          await user.click(screen.getByRole('button', { name: 'Edit crop' }));
+          expect(await screen.findByText(/Drag the frame or its sides/)).toBeInTheDocument();
+          expect(screen.getByRole('img', { name: 'The whole scan, for cropping' })).toBeVisible();
+          expect(cropArea()).toHaveStyle({ left: '10%', top: '10%', width: '80%', height: '80%' });
+          expect(screen.getByRole('button', { name: 'Edit crop' })).toHaveAttribute(
+            'aria-pressed',
+            'true',
+          );
+
+          // Moving it draws nothing: the picture on screen is the whole scan.
+          ipc.developRender.mockClear();
+          cropArea().focus();
+          await user.keyboard('{ArrowRight}{ArrowRight}');
+          expect(cropArea()).toHaveStyle({ left: '11%' });
+          expect(ipc.developRender).not.toHaveBeenCalled();
+          await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+            timeout: SAVE_DELAY_MS * 4,
+          });
+          expect(cropOf(savedRecipe()).x).toBeCloseTo(0.11, 9);
+
+          // Leaving crop mode draws the edit once, with the new crop.
+          await user.keyboard('{Escape}');
+          await canvasNamed('Frame 1');
+          await waitFor(() => expect(ipc.developRender).toHaveBeenCalledTimes(1));
+          expect(cropOf(ipc.developRender.mock.calls[0]?.[1]).x).toBeCloseTo(0.11, 9);
+          expect(useUiStore.getState().view).toBe('develop');
+          expect(screen.queryByRole('application')).not.toBeInTheDocument();
+        });
+
+        it('moves the crop by dragging it, and saves where it was dropped', async () => {
+          const user = await openFrame();
+          await user.click(screen.getByRole('button', { name: 'Edit crop' }));
+          await screen.findByText(/Drag the frame or its sides/);
+          // The picture is 400 x 300 at (100, 50): its middle is (300, 200).
+          fireEvent.pointerDown(cropArea(), {
+            button: 0,
+            pointerId: 1,
+            clientX: 300,
+            clientY: 200,
+          });
+          fireEvent.pointerMove(cropArea(), { pointerId: 1, clientX: 320, clientY: 215 });
+          fireEvent.pointerUp(cropArea(), { pointerId: 1 });
+          await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+            timeout: SAVE_DELAY_MS * 4,
+          });
+          const crop = cropOf(savedRecipe());
+          expect(crop.x).toBeCloseTo(0.15, 6);
+          expect(crop.y).toBeCloseTo(0.15, 6);
+          expect(crop.w).toBeCloseTo(0.8, 6);
+        });
+
+        it('resizes it with the sliders for its sides', async () => {
+          const user = await openFrame();
+          const bottom = screen.getByRole('slider', { name: 'Bottom side' });
+          bottom.focus();
+          await user.keyboard('{PageDown}');
+          await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+            timeout: SAVE_DELAY_MS * 4,
+          });
+          const crop = cropOf(savedRecipe());
+          expect(crop.y + crop.h).toBeCloseTo(0.89, 9);
+          expect(crop.x).toBeCloseTo(0.1, 9);
+        });
+
+        it('stops when another frame is opened', async () => {
+          const user = await openFrame();
+          await user.click(screen.getByRole('button', { name: 'Edit crop' }));
+          await screen.findByText(/Drag the frame or its sides/);
+          await user.keyboard(']');
+          await canvasNamed('Frame 2');
+          expect(screen.getByRole('button', { name: 'Edit crop' })).toHaveAttribute(
+            'aria-pressed',
+            'false',
+          );
+        });
+
+        it('has no accessibility violations while cropping', async () => {
+          const user = await openFrame();
+          await user.click(screen.getByRole('button', { name: 'Edit crop' }));
+          await screen.findByText(/Drag the frame or its sides/);
+          await expectNoA11yViolations(document.body);
+        });
+      });
+
+      describe('the detected frame', () => {
+        it('goes back to it from a crop that was changed', async () => {
+          const user = await openFrame();
+          await user.click(screen.getByRole('button', { name: 'Use the detected frame' }));
+          await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+            timeout: SAVE_DELAY_MS * 4,
+          });
+          expect(cropOf(savedRecipe())).toEqual({ x: 0.05, y: 0.1, w: 0.9, h: 0.8 });
+          expect(screen.getByRole('button', { name: 'Use the detected frame' })).toBeDisabled();
+          expect(screen.queryByRole('note')).not.toBeInTheDocument();
+        });
+
+        it('says when it could not be found reliably', async () => {
+          state.frameConfidence = 0.3;
+          await openFrame();
+          expect(
+            await screen.findByText(/The edges of the frame could not be found reliably/),
+          ).toBeInTheDocument();
+          expect(screen.getByRole('button', { name: 'Use the detected frame' })).toBeDisabled();
+          expect(screen.getByRole('button', { name: 'Use the whole scan' })).toBeEnabled();
+        });
+      });
+    });
 
     describe('the Tone panel', () => {
       async function openFrame() {
@@ -1075,6 +1237,8 @@ describe('DevelopView', () => {
       expect(screen.getByRole('button', { name: 'Pick neutral grey' })).toBeDisabled();
       expect(screen.getByRole('checkbox', { name: 'Black and white' })).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Add point' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Edit crop' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Rotate right' })).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Reset curve' })).toBeDisabled();
     });
   });

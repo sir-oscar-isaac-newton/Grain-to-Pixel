@@ -245,12 +245,12 @@ All commands return `Result<T, AppError>`. `AppError { code, message, details? }
 
 | Area | Command | Purpose |
 |---|---|---|
-| Library | `library_create(path, name)`, `library_open(path)`, `library_info()`, `library_verify()` | lifecycle |
+| Library | `library_create(path, name)`, `library_open(path)`, `library_info()`, `library_verify()`, `folder_check(path)` | lifecycle; `folder_check` describes a picked folder (exists, empty, holds a library, free space) for the first-run dialog without creating anything |
 | Rolls | `roll_create(input)`, `roll_update(id, patch)`, `roll_list()`, `roll_delete(id)`, `roll_set_film_base(id, rgb)` | |
 | Ingest | `scanner_list()`, `scan_start(params) -> JobId`, `import_files(paths, roll_id, kind) -> JobId`, `triplet_group(paths) -> [TripletCandidate]` | `kind`: `tiff_scan` \| `rgb_triplet` |
 | Capture | `light_list()`, `light_connect(port?)`, `light_set(levels)`, `light_off()`, `camera_list()`, `capture_profile_get()`, `capture_profile_set(patch)`, `capture_test(channel) -> TestShot`, `capture_triplet(roll_id) -> JobId` | guided RGB capture (§6.1); `capture_triplet` captures one frame and returns the new `frame_id` in `job://done` |
 | Jobs | `job_cancel(job_id)` | |
-| Frames | `frame_list(roll_id?, page)`, `frame_get(id)`, `frame_delete(ids)`, `frame_set_note(id, text)` | |
+| Frames | `frame_list(roll_id?, page)`, `frame_get(id)`, `frame_thumbnail(id) -> bytes`, `frame_delete(ids)`, `frame_set_note(id, text)` | `frame_thumbnail` returns the thumbnail JPEG as raw bytes through `tauri::ipc::Response` (no JSON); the UI makes an object URL and keeps recent ones in a small cache. It is not in the generated bindings (specta cannot describe raw bytes) and is called by name from `shared/ipc.ts` |
 | Develop | `develop_open(frame_id) -> DevelopInfo`, `develop_analyze(frame_id) -> Analysis`, `develop_render(frame_id, recipe, max_edge, seq) -> bytes`, `recipe_save(frame_id, recipe)`, `recipe_apply_to(frame_ids, source_frame_id, fields)` | `Analysis` = crop, film base, histogram, auto recipe |
 | Tags | `tag_list()`, `tag_apply(frame_ids, add[], remove[])`, `tag_apply_roll(roll_id, add[], remove[])`, `tag_rename(id, name)`, `tag_delete(id)` | `add` and `remove` are tag names; missing tags in `add` are created, unknown names in `remove` are skipped, all or nothing. A roll's tags count for all its frames. Mutations send `library://changed` |
 | Search | `search(query, page, page_size) -> FramePage` | `query`: `{text?, tags_all[] (tag ids), roll_id?, date_from?, date_to?, film_stock?, camera?, iso?}`, every part optional, all must match. `text`: every word, as a word start, accents ignored. `film_stock`/`camera`: equal ignoring case. `iso`: box or shot. Dates are partial; a roll matches when its shooting dates overlap the range, and a roll without dates never matches. Best text match first, otherwise newest roll first. `page_size` 1 to 500 |

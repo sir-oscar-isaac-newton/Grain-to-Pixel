@@ -17,6 +17,11 @@ export const commands = {
 	 *  `job_cancel`. Works on a read-only library too.
 	 */
 	libraryVerify: () => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("library_verify")),
+	/**
+	 *  Describes a folder the user picked (does it exist, is it empty, does it hold a library, how
+	 *  much space is free) for the first-run dialog. Nothing is created.
+	 */
+	folderCheck: (path: string) => typedError<FolderCheck_Serialize, AppError_Serialize>(__TAURI_INVOKE("folder_check", { path })),
 	rollCreate: (input: RollInput_Deserialize) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_create", { input })),
 	/**  Replaces every editable field of the roll with `input` (an empty field is cleared). */
 	rollUpdate: (id: RollId, input: RollInput_Deserialize) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_update", { id, input })),
@@ -163,6 +168,41 @@ export type Flags_Serialize = {
 	guided_capture: boolean,
 	dev_overlay: boolean,
 	experimental_auto_levels: boolean,
+};
+
+/**  What the first-run dialog shows about a folder before a library is created or opened there. */
+export type FolderCheck = FolderCheck_Serialize | FolderCheck_Deserialize;
+
+/**  What the first-run dialog shows about a folder before a library is created or opened there. */
+export type FolderCheck_Deserialize = {
+	/**  The folder, for display. */
+	path: string,
+	exists: boolean,
+	/**  True when the folder is missing or holds nothing: a library can be created in it. */
+	is_empty: boolean,
+	/**  True when it already holds a library: open it instead. */
+	has_library: boolean,
+	/**
+	 *  Bytes free on the folder's drive (checked on its nearest existing parent); `None` when the
+	 *  system cannot tell.
+	 */
+	free_bytes?: number | null,
+};
+
+/**  What the first-run dialog shows about a folder before a library is created or opened there. */
+export type FolderCheck_Serialize = {
+	/**  The folder, for display. */
+	path: string,
+	exists: boolean,
+	/**  True when the folder is missing or holds nothing: a library can be created in it. */
+	is_empty: boolean,
+	/**  True when it already holds a library: open it instead. */
+	has_library: boolean,
+	/**
+	 *  Bytes free on the folder's drive (checked on its nearest existing parent); `None` when the
+	 *  system cannot tell.
+	 */
+	free_bytes: number | null,
 };
 
 /**  One image position on a roll. The pixels live in source files; edits live in the Recipe. */

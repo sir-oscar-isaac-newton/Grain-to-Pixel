@@ -1,7 +1,7 @@
 .shell {
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  min-height: 100vh;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100vh;
 }
 
 .header {
@@ -42,7 +42,11 @@
 }
 
 .main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   padding: var(--space-4);
+  overflow: auto;
 }
 
 .footer {

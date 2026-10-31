@@ -34,7 +34,9 @@ fn signal_ready(path: &Path) -> std::io::Result<()> {
 /// Builds and runs the desktop application.
 pub fn run() -> tauri::Result<()> {
     let builder = ipc::builder::<tauri::Wry>();
+    let handler = ipc::invoke_handler(&builder);
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::default())
         .on_page_load(|_webview, payload| {
             if matches!(payload.event(), PageLoadEvent::Finished) {
@@ -44,7 +46,7 @@ pub fn run() -> tauri::Result<()> {
                 }
             }
         })
-        .invoke_handler(builder.invoke_handler())
+        .invoke_handler(handler)
         .setup(move |app| {
             builder.mount_events(app);
             start_observability(app);

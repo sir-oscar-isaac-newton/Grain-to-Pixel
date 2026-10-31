@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Grain to Pixel" },
+  "app": {
+    "title": "Grain to Pixel"
+  },
   "nav": {
     "label": "Main views",
     "library": "Library",
@@ -8,7 +10,117 @@
   },
   "library": {
     "title": "Library",
-    "placeholder": "Your rolls and frames will appear here."
+    "loading": "Opening your library…",
+    "allFrames": "All frames",
+    "frameLabel": "Frame {{n}}",
+    "noPreview": "No preview",
+    "emptyAll": "There are no frames yet. Create a roll, then import TIFF scans into it.",
+    "emptyRoll": "This roll has no frames yet. Use “Import TIFF files…” to add scans.",
+    "noRolls": "No rolls yet.",
+    "readOnly": "This library was made by a newer version of Grain to Pixel. You can look at it, but not change it.",
+    "grid": {
+      "label": "Frames",
+      "count_one": "{{count}} frame",
+      "count_other": "{{count}} frames",
+      "selected_one": "{{count}} selected",
+      "selected_other": "{{count}} selected",
+      "edited": "Edited",
+      "loadError": "The frames could not be loaded: {{message}}"
+    },
+    "rolls": {
+      "label": "Rolls",
+      "new": "New roll",
+      "edit": "Edit roll",
+      "delete": "Delete roll",
+      "import": "Import TIFF files…",
+      "actions": "Actions for the selected roll"
+    },
+    "location": {
+      "label": "Library: {{name}}",
+      "free": "{{size}} free"
+    },
+    "notice": {
+      "dismiss": "Dismiss",
+      "rollDeleted": "Roll deleted.",
+      "rollDeletedLeft_one": "Roll deleted, but {{count}} file could not be removed: {{files}}",
+      "rollDeletedLeft_other": "Roll deleted, but {{count}} files could not be removed: {{files}}",
+      "importFailed": "The import could not start: {{message}}",
+      "deleteFailed": "The roll could not be deleted: {{message}}"
+    }
+  },
+  "rollEditor": {
+    "titleNew": "New roll",
+    "titleEdit": "Edit roll",
+    "description": "Describe the roll. Only the name is required.",
+    "name": "Name",
+    "film": "Film",
+    "camera": "Camera",
+    "isoBox": "Box ISO",
+    "isoShot": "Shot at ISO",
+    "shotFrom": "Shot from",
+    "shotTo": "Shot to",
+    "dateHint": "A year, a month or a day: 2026, 2026-07 or 2026-07-14.",
+    "notes": "Notes",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saving": "Saving…",
+    "nameRequired": "Give the roll a name.",
+    "isoInvalid": "ISO must be a whole number above 0."
+  },
+  "deleteRoll": {
+    "title": "Delete this roll?",
+    "body_one": "“{{name}}” and its {{count}} frame will be removed from the library, with their original files. This cannot be undone.",
+    "body_other": "“{{name}}” and its {{count}} frames will be removed from the library, with their original files. This cannot be undone.",
+    "counting": "Counting the frames…",
+    "confirm": "Delete roll",
+    "cancel": "Cancel"
+  },
+  "firstRun": {
+    "title": "Set up your library",
+    "description": "Your library is one folder that holds your scans, thumbnails and catalog. Create a new one or open one you already have.",
+    "mode": "What do you want to do?",
+    "create": "Create a new library",
+    "open": "Open an existing library",
+    "folder": "Folder",
+    "noFolder": "No folder chosen",
+    "choose": "Choose folder…",
+    "location": "Location",
+    "free": "Free space",
+    "freeUnknown": "unknown",
+    "lowSpace": "Each frame needs about 60 to 100 MB, so a 36-frame roll takes 2 to 4 GB. Choose a drive with more room if you can.",
+    "notEmpty": "This folder is not empty. Choose an empty folder for a new library.",
+    "hasLibrary": "This folder already holds a library. Choose “Open an existing library” to use it.",
+    "noLibrary": "There is no library in this folder.",
+    "name": "Library name",
+    "namePlaceholder": "My film library",
+    "submitCreate": "Create library",
+    "submitOpen": "Open library",
+    "working": "Working…",
+    "lastFailed": "Your last library could not be opened: {{message}}"
+  },
+  "jobs": {
+    "label": "Background jobs",
+    "cancel": "Cancel",
+    "dismiss": "Dismiss",
+    "import": "Import into {{roll}}",
+    "running": "Working",
+    "done": "Done",
+    "error": "Failed",
+    "cancelled": "Cancelled",
+    "imported_one": "{{count}} frame imported",
+    "imported_other": "{{count}} frames imported",
+    "skipped_one": "{{count}} file skipped",
+    "skipped_other": "{{count}} files skipped",
+    "skippedFiles": "Skipped files",
+    "skip": {
+      "NotTiff": "not a TIFF file",
+      "OrphanIr": "an infrared file without its scan",
+      "Unreadable": "could not be read",
+      "TooLarge": "larger than the app accepts",
+      "Unsupported": "not a TIFF layout the app imports",
+      "VerifyFailed": "did not read back identical"
+    },
+    "skippedFile": "{{path}}: {{reason}}"
   },
   "develop": {
     "title": "Develop",

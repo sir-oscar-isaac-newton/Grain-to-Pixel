@@ -13,8 +13,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 gtp-app = { path = "../../../crates/gtp-app", version = "0.0.0", features = ["specta"] }
-gtp-core ={ path = "../../../crates/gtp-core", version = "0.0.0", features = ["specta"] }
+gtp-core = { path = "../../../crates/gtp-core", version = "0.0.0", features = ["specta"] }
 tauri = { version = "2", features = [] }
+# Native folder and file pickers (first-run dialog, import button); only the "open" permission is granted.
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 # tauri-specta stack is still pre-release: pin exact versions (see docs/architecture.md).
 specta = { version = "=2.0.0-rc.26", features = ["derive"] }

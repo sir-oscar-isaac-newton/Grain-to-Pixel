@@ -1,24 +1,33 @@
 // The only place that talks to the Tauri backend. It wraps the commands generated from Rust
 // (packages/ipc-types) and turns the `{ status: 'error' }` results into thrown `IpcError`s.
+import { invoke } from '@tauri-apps/api/core';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
+  events,
   commands,
   type AppError,
   type ClientLogLevel,
   type CrashNote,
+  type ImportResult,
   type LibraryDetails,
   type LibraryInfo,
   type Settings,
   type SettingsPatch,
+  type SkipReason,
+  type SkippedFile,
 } from '@gtp/ipc-types';
 
 export type {
   AppError,
   ClientLogLevel,
   CrashNote,
+  ImportResult,
   LibraryDetails,
   LibraryInfo,
   Settings,
   SettingsPatch,
+  SkipReason,
+  SkippedFile,
 };
 
 export class IpcError extends Error {
@@ -183,3 +192,87 @@ export async function logClientEvent(level: ClientLogLevel, message: string): Pr
 
 // Keeps a message under the backend limit (2000 characters) with room for the ellipsis.
 const MAX_CLIENT_MESSAGE = 1990;
+
+// Folder checks, thumbnails, pickers, job control and events for the Library view.
+export type FolderCheck = Data<'folderCheck'>;
+export type FrameSummary = FramePage['items'][number];
+
+/** What the first-run dialog shows about a folder. Nothing is created. */
+export async function folderCheck(path: string): Promise<FolderCheck> {
+  return unwrap(await commands.folderCheck(path));
+}
+
+/** Stops a running job; false when it is not running (already finished), which is harmless. */
+export async function jobCancel(id: string): Promise<boolean> {
+  return unwrap(await commands.jobCancel(id));
+}
+
+function isAppError(value: unknown): value is AppError {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'code' in value &&
+    'message' in value &&
+    typeof (value as { message: unknown }).message === 'string'
+  );
+}
+
+/**
+ * A frame's thumbnail as JPEG bytes. This command returns raw bytes instead of JSON, so it is not
+ * in the generated bindings (see `ipc::RAW_COMMANDS` in the shell); errors still arrive as
+ * `AppError`s.
+ */
+export async function frameThumbnail(id: string): Promise<ArrayBuffer> {
+  try {
+    return await invoke<ArrayBuffer>('frame_thumbnail', { id });
+  } catch (error) {
+    if (isAppError(error)) throw new IpcError(error);
+    throw error;
+  }
+}
+
+/** Opens the system folder picker; null when cancelled. */
+export async function pickFolder(): Promise<string | null> {
+  const chosen = await openDialog({ directory: true, multiple: false });
+  return typeof chosen === 'string' ? chosen : null;
+}
+
+/** Opens the system file picker for TIFF scans; an empty list when cancelled. */
+export async function pickTiffFiles(): Promise<string[]> {
+  const chosen = await openDialog({
+    multiple: true,
+    directory: false,
+    filters: [{ name: 'TIFF', extensions: ['tif', 'tiff'] }],
+  });
+  if (chosen === null) return [];
+  return Array.isArray(chosen) ? chosen : [chosen];
+}
+
+/** Calls `cb` when frames were added, changed or removed. Returns a function that stops listening. */
+export async function onLibraryChanged(cb: (rollId: string | null) => void): Promise<() => void> {
+  return events.libraryChanged.listen((event) => cb(event.payload.roll_id ?? null));
+}
+
+export interface JobProgressEvent {
+  id: string;
+  stage: string;
+  fraction: number;
+}
+
+export async function onJobProgress(cb: (e: JobProgressEvent) => void): Promise<() => void> {
+  return events.jobProgress.listen((event) =>
+    cb({ ...event.payload, fraction: event.payload.fraction ?? 0 }),
+  );
+}
+
+type JobDoneEvent = Parameters<Parameters<typeof events.jobDone.listen>[0]>[0]['payload'];
+type JobErrorEvent = Parameters<Parameters<typeof events.jobError.listen>[0]>[0]['payload'];
+export type JobResult = JobDoneEvent['result'];
+
+export async function onJobDone(cb: (e: JobDoneEvent) => void): Promise<() => void> {
+  return events.jobDone.listen((event) => cb(event.payload));
+}
+
+export async function onJobError(cb: (e: JobErrorEvent) => void): Promise<() => void> {
+  return events.jobError.listen((event) => cb(event.payload));
+}

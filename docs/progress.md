@@ -242,9 +242,19 @@
       "number": 33,
       "title": "Library verify job",
       "branch": "feat/issue-33-library-verify-job",
+      "status": "completed",
+      "pr": 125,
+      "commit": "6051920"
+    },
+    {
+      "id": "U-01",
+      "number": 34,
+      "title": "Library view",
+      "branch": "feat/issue-34-library-view",
       "status": "in_progress",
       "pr": null,
-      "commit": null
+      "commit": null,
+      "note": "Part 1 of 2: first run, rolls, grid, import; part 2: search, tags, batch tagging, 5,000-frame fps"
     }
   ]
 }

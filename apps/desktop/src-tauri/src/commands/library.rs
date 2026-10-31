@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use gtp_app::services::library::{check_folder, FolderCheck};
 use gtp_app::services::verify::verify_library;
 use gtp_app::{AppContext, JobKind, JobManager, LibraryDetails};
 use gtp_core::{JobId, JobResult};
@@ -54,6 +55,14 @@ pub fn library_open(ctx: State<'_, AppContext>, path: String) -> CmdResult<Libra
     let details = ctx.open_library(&PathBuf::from(path))?;
     tracing::info!(path = %details.path, read_only = details.read_only, "library opened");
     Ok(info(Some(details)))
+}
+
+/// Describes a folder the user picked (does it exist, is it empty, does it hold a library, how
+/// much space is free) for the first-run dialog. Nothing is created.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn folder_check(path: String) -> CmdResult<FolderCheck> {
+    check_folder(&PathBuf::from(path))
 }
 
 /// Starts verifying every original of the open library as a job (see `services::verify`). It only

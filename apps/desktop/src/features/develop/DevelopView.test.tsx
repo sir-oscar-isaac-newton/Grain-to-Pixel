@@ -441,6 +441,130 @@ describe('DevelopView', () => {
       return user;
     }
 
+    describe('picking the white and black points', () => {
+      const frameRequests = () =>
+        ipc.developRender.mock.calls.filter((c) => {
+          const g = (c[1] as { geometry?: { rot90?: number } }).geometry;
+          return g?.rot90 === 0 && JSON.stringify(g) !== JSON.stringify(WHOLE_SCAN_GEOMETRY);
+        });
+
+      /** Opens frame 1 and turns picking of the white or black point on. */
+      async function startLevelPicking(name: string, hint: RegExp) {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        await user.click(screen.getByRole('button', { name }));
+        expect(await screen.findByText(hint)).toBeInTheDocument();
+        return user;
+      }
+
+      it('shows the frame without turns, sets the white point from a click, and saves it', async () => {
+        await startLevelPicking('Pick white point', /brightest part/);
+        expect(frameRequests()).toHaveLength(1);
+        expect(
+          screen.getByRole('img', {
+            name: 'The frame without turns or straightening, for picking the white and black points',
+          }),
+        ).toBeInTheDocument();
+
+        press(300, 200);
+        release(300, 200);
+        await waitFor(() => expect(ipc.developSampleLevels).toHaveBeenCalledTimes(1));
+        const [frameId, recipe, region, point] = ipc.developSampleLevels.mock.calls[0] as [
+          string,
+          never,
+          { x: number; y: number; w: number; h: number },
+          string,
+        ];
+        expect([frameId, point]).toEqual(['summer-f00001', 'white']);
+        expect(levelsOf(recipe).white).toEqual([0.9, 0.8, 0.7]);
+        expect(region.x + region.w / 2).toBeCloseTo(0.5, 6);
+        expect(region.y + region.h / 2).toBeCloseTo(0.5, 6);
+
+        // The white point is what was measured, the black point is kept, and picking is over.
+        expect(await screen.findByText('The white point was set from that area.')).toBeVisible();
+        const sliderValue = (name: string) =>
+          screen.getByRole('slider', { name }).getAttribute('aria-valuenow');
+        expect(sliderValue('White point, red')).toBe('0.6');
+        expect(sliderValue('White point, blue')).toBe('0.8');
+        expect(sliderValue('Black point, red')).toBe('0.1');
+        expect(screen.getByRole('button', { name: 'Pick white point' })).toHaveAttribute(
+          'aria-pressed',
+          'false',
+        );
+        await canvasNamed('Frame 1');
+
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(levelsOf(savedRecipe() as never).white).toEqual([0.6, 0.7, 0.8]);
+      });
+
+      it('sets the black point from a box dragged on the frame', async () => {
+        await startLevelPicking('Pick black point', /darkest part/);
+        press(200, 100);
+        fireEvent.mouseMove(window, { clientX: 300, clientY: 200 });
+        release(300, 200);
+        await waitFor(() => expect(ipc.developSampleLevels).toHaveBeenCalledTimes(1));
+        expect(ipc.developSampleLevels.mock.calls[0]?.[2]).toEqual({
+          x: 0.25,
+          y: 50 / 300,
+          w: 0.25,
+          h: 100 / 300,
+        });
+        expect(ipc.developSampleLevels.mock.calls[0]?.[3]).toBe('black');
+        expect(
+          await screen.findByText('The black point was set from that area.'),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole('slider', { name: 'Black point, green' }).getAttribute('aria-valuenow'),
+        ).toBe('0.03');
+      });
+
+      it('says when the area cannot be used, and keeps picking', async () => {
+        state.levelsRefused = 'That area is black, so it says nothing about the levels.';
+        await startLevelPicking('Pick white point', /brightest part/);
+        press(300, 200);
+        release(300, 200);
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+          'That area could not be used: That area is black, so it says nothing about the levels.',
+        );
+        expect(screen.getByRole('button', { name: 'Pick white point' })).toHaveAttribute(
+          'aria-pressed',
+          'true',
+        );
+        expect(ipc.recipeSave).not.toHaveBeenCalled();
+      });
+
+      it('switches from one pick to another, and is cancelled by Escape', async () => {
+        const user = await startLevelPicking('Pick white point', /brightest part/);
+        await user.click(screen.getByRole('button', { name: 'Pick black point' }));
+        expect(await screen.findByText(/darkest part/)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Pick white point' })).toHaveAttribute(
+          'aria-pressed',
+          'false',
+        );
+        // Still the frame view: the picture was not asked for again.
+        expect(frameRequests()).toHaveLength(1);
+
+        await user.keyboard('{Escape}');
+        expect(screen.getByRole('button', { name: 'Pick black point' })).toHaveAttribute(
+          'aria-pressed',
+          'false',
+        );
+        expect(useUiStore.getState().view).toBe('develop');
+        await canvasNamed('Frame 1');
+        expect(ipc.developSampleLevels).not.toHaveBeenCalled();
+      });
+
+      it('has no accessibility violations while picking', async () => {
+        await startLevelPicking('Pick black point', /darkest part/);
+        await expectNoA11yViolations(document.body);
+      });
+    });
+
     describe('picking the film base', () => {
       it('shows the whole scan while picking, sets a base from a click, and saves it', async () => {
         await startPicking();

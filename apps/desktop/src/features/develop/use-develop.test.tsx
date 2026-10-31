@@ -397,7 +397,7 @@ describe('useDevelop', () => {
       const edit = result.current.preview;
       expect(wholeScan()).toHaveLength(0);
 
-      act(() => result.current.setScanView(true));
+      act(() => result.current.setPickView('scan'));
       await waitFor(() => expect(result.current.showingScan).toBe(true));
       expect(wholeScan()).toHaveLength(1);
       const [id, recipe, edge] = wholeScan()[0] ?? [];
@@ -406,7 +406,7 @@ describe('useDevelop', () => {
       expect(recipe).toMatchObject({ tag: 'saved', base: { source: 'roll' } });
       expect(result.current.preview).not.toBe(edit);
 
-      act(() => result.current.setScanView(false));
+      act(() => result.current.setPickView(null));
       expect(result.current.showingScan).toBe(false);
       expect(result.current.preview).toBe(edit);
     });
@@ -418,7 +418,7 @@ describe('useDevelop', () => {
       const slow = deferred<Preview>();
       ipc.developRender.mockImplementationOnce(() => slow.promise);
 
-      act(() => result.current.setScanView(true));
+      act(() => result.current.setPickView('scan'));
       expect(result.current.showingScan).toBe(false);
       expect(result.current.preview).toBe(edit);
       await act(async () => {
@@ -432,12 +432,12 @@ describe('useDevelop', () => {
     it('shows the recipe as it is each time picking starts, not as it was the last time', async () => {
       const { result } = renderHook(() => useDevelop('f1'));
       await waitFor(() => expect(result.current.preview).not.toBeNull());
-      act(() => result.current.setScanView(true));
+      act(() => result.current.setPickView('scan'));
       await waitFor(() => expect(result.current.showingScan).toBe(true));
-      act(() => result.current.setScanView(false));
+      act(() => result.current.setPickView(null));
 
       act(() => result.current.setRecipe(makeRecipe('edited')));
-      act(() => result.current.setScanView(true));
+      act(() => result.current.setPickView('scan'));
       await waitFor(() => expect(wholeScan()).toHaveLength(2));
       expect(wholeScan()[1]?.[1]).toMatchObject({ tag: 'edited' });
     });
@@ -449,11 +449,49 @@ describe('useDevelop', () => {
       act(() => result.current.toggleBefore());
       await waitFor(() => expect(result.current.showingBefore).toBe(true));
 
-      act(() => result.current.setScanView(true));
+      act(() => result.current.setPickView('scan'));
       await waitFor(() => expect(result.current.showingScan).toBe(true));
       expect(result.current.showingBefore).toBe(false);
-      act(() => result.current.setScanView(false));
+      act(() => result.current.setPickView(null));
       expect(result.current.showingBefore).toBe(true);
+    });
+  });
+
+  describe('the frame without turns, for picking the white and black points', () => {
+    it('renders the recipe with its crop but no turn, flip or straightening', async () => {
+      const { result } = renderHook(() => useDevelop('f1'));
+      await waitFor(() => expect(result.current.preview).not.toBeNull());
+      ipc.developRender.mockClear();
+
+      act(() => result.current.setPickView('frame'));
+      await waitFor(() => expect(result.current.showingFrame).toBe(true));
+      expect(result.current.showingScan).toBe(false);
+      expect(ipc.developRender).toHaveBeenCalledTimes(1);
+      const [, recipe] = ipc.developRender.mock.calls[0] ?? [];
+      expect(recipe).toMatchObject({
+        tag: 'saved',
+        geometry: {
+          crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+          angle_deg: 0,
+          rot90: 0,
+          flip_h: false,
+          flip_v: false,
+        },
+      });
+
+      act(() => result.current.setPickView(null));
+      expect(result.current.showingFrame).toBe(false);
+    });
+
+    it('swaps to the other view when the kind of picking changes', async () => {
+      const { result } = renderHook(() => useDevelop('f1'));
+      await waitFor(() => expect(result.current.preview).not.toBeNull());
+      act(() => result.current.setPickView('frame'));
+      await waitFor(() => expect(result.current.showingFrame).toBe(true));
+
+      act(() => result.current.setPickView('scan'));
+      expect(result.current.showingFrame).toBe(false);
+      await waitFor(() => expect(result.current.showingScan).toBe(true));
     });
   });
 

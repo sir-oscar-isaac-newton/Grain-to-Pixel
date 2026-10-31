@@ -10,7 +10,7 @@ type Props = Parameters<typeof BaseInvertPanel>[0];
 
 function setup(over: Partial<Props> = {}) {
   const mocks = {
-    onPickingChange: vi.fn(),
+    onPickChange: vi.fn(),
     onChange: vi.fn(),
     onAutoLevels: vi.fn(),
     onUseAsRollDefault: vi.fn(),
@@ -19,8 +19,8 @@ function setup(over: Partial<Props> = {}) {
     recipe: makeRecipe('x'),
     rollBase: null,
     readOnly: false,
-    picking: false,
-    scanReady: false,
+    pick: null,
+    pickReady: false,
     working: false,
     ...mocks,
     ...over,
@@ -56,21 +56,21 @@ describe('BaseInvertPanel', () => {
       const pick = screen.getByRole('button', { name: 'Pick film base' });
       expect(pick).toHaveAttribute('aria-pressed', 'false');
       await user.click(pick);
-      expect(mocks.onPickingChange).toHaveBeenLastCalledWith(true);
+      expect(mocks.onPickChange).toHaveBeenLastCalledWith('base');
 
-      rerender(<BaseInvertPanel {...props} picking scanReady />);
+      rerender(<BaseInvertPanel {...props} pick="base" pickReady />);
       expect(screen.getByRole('button', { name: 'Pick film base' })).toHaveAttribute(
         'aria-pressed',
         'true',
       );
       await user.click(screen.getByRole('button', { name: 'Pick film base' }));
-      expect(mocks.onPickingChange).toHaveBeenLastCalledWith(false);
+      expect(mocks.onPickChange).toHaveBeenLastCalledWith(null);
     });
 
     it('tells what to do while picking, once the whole scan is shown', () => {
-      const { props, rerender } = setup({ picking: true, scanReady: false });
+      const { props, rerender } = setup({ pick: 'base', pickReady: false });
       expect(screen.getByText('Preparing the whole scan…')).toBeInTheDocument();
-      rerender(<BaseInvertPanel {...props} picking scanReady />);
+      rerender(<BaseInvertPanel {...props} pick="base" pickReady />);
       expect(screen.getByText(/Click the clear film edge/)).toBeInTheDocument();
       expect(screen.queryByText('Preparing the whole scan…')).not.toBeInTheDocument();
     });
@@ -138,6 +138,32 @@ describe('BaseInvertPanel', () => {
       );
     });
 
+    it.each([
+      ['white', 'Pick white point'],
+      ['black', 'Pick black point'],
+    ])('starts and stops picking the %s point with its button', async (point, name) => {
+      const user = userEvent.setup();
+      const { props, mocks, rerender } = setup();
+      expect(screen.getByRole('button', { name })).toHaveAttribute('aria-pressed', 'false');
+      await user.click(screen.getByRole('button', { name }));
+      expect(mocks.onPickChange).toHaveBeenLastCalledWith(point);
+
+      rerender(<BaseInvertPanel {...props} pick={point as 'white' | 'black'} pickReady />);
+      expect(screen.getByRole('button', { name })).toHaveAttribute('aria-pressed', 'true');
+      await user.click(screen.getByRole('button', { name }));
+      expect(mocks.onPickChange).toHaveBeenLastCalledWith(null);
+    });
+
+    it('tells what to pick while picking a level, once the picture is ready', () => {
+      const { props, rerender } = setup({ pick: 'white', pickReady: false });
+      expect(screen.getByText('Preparing the picture…')).toBeInTheDocument();
+      rerender(<BaseInvertPanel {...props} pick="white" pickReady />);
+      expect(screen.getByText(/brightest part of the picture/)).toBeInTheDocument();
+      rerender(<BaseInvertPanel {...props} pick="black" pickReady />);
+      expect(screen.getByText(/darkest part of the picture/)).toBeInTheDocument();
+      expect(screen.queryByText(/clear film edge/)).not.toBeInTheDocument();
+    });
+
     it('re-runs the automatic levels', async () => {
       const user = userEvent.setup();
       const { mocks } = setup();
@@ -162,7 +188,9 @@ describe('BaseInvertPanel', () => {
   it('has no accessibility violations, also while picking', async () => {
     const { container, props, rerender } = setup({ recipe: manual, rollBase: [0.9, 0.6, 0.4] });
     await expectNoA11yViolations(container);
-    rerender(<BaseInvertPanel {...props} picking scanReady />);
+    rerender(<BaseInvertPanel {...props} pick="base" pickReady />);
+    await expectNoA11yViolations(container);
+    rerender(<BaseInvertPanel {...props} pick="white" pickReady />);
     await expectNoA11yViolations(container);
   });
 });

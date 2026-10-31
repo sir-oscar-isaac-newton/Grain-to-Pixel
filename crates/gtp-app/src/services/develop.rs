@@ -15,17 +15,18 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use gtp_core::recipe::{Crop, BASE_MAX, BASE_MIN};
+use gtp_core::recipe::{Crop, Invert, BASE_MAX, BASE_MIN};
 use gtp_core::{
     AppError, ErrorCode, Frame, FrameId, ImageF32, Recipe, RecipeField, SourceFile, SourceRole,
 };
 use gtp_io::{read_tiff16, to_f32_linear, Limits};
-use gtp_negative::{sample_film_base, Rect};
+use gtp_negative::{levels_from_sample, sample_film_base, LevelPoint, Rect};
 
 use crate::pipeline::{
-    analyze, build_proxy, to_rgba8_srgb, Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
+    analyze, build_proxy, normalized_frame, to_rgba8_srgb, Histogram, PipelineInput, RenderTarget,
+    PROXY_EDGE,
 };
 use crate::services::library::Library;
 
@@ -37,6 +38,24 @@ pub const MAX_EDGE: u32 = 4096;
 /// Bytes before the pixels of a rendered preview: `seq` (u64), `width` (u32), `height` (u32), all
 /// little-endian.
 pub const HEADER_BYTES: usize = 16;
+
+/// Which end of the levels a picked area sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "lowercase")]
+pub enum LevelsPoint {
+    White,
+    Black,
+}
+
+impl From<LevelsPoint> for LevelPoint {
+    fn from(point: LevelsPoint) -> Self {
+        match point {
+            LevelsPoint::White => LevelPoint::White,
+            LevelsPoint::Black => LevelPoint::Black,
+        }
+    }
+}
 
 /// What the Develop view needs to open a frame.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -396,6 +415,24 @@ impl DevelopService {
         let entry = self.ensure(library, id)?;
         let area = pixel_area(region, &entry.rgb)?;
         sample_film_base(&entry.rgb, area)
+    }
+
+    /// The levels of `recipe` with their white or black point set from an area of the frame: the
+    /// density of the area's median, per channel. `region` is in fractions of the cropped frame
+    /// (before straighten, turns and flips, which come after the Invert stage), and the base and
+    /// crop are the recipe's. Taken from the cached proxy. A black area is refused.
+    pub fn sample_levels(
+        &self,
+        library: &Library,
+        id: FrameId,
+        recipe: &Recipe,
+        region: Crop,
+        point: LevelsPoint,
+    ) -> Result<Invert, AppError> {
+        let entry = self.ensure(library, id)?;
+        let frame = normalized_frame(&entry.input(), recipe)?;
+        let area = pixel_area(region, &frame)?;
+        levels_from_sample(&frame, area, point.into(), &recipe.clone().clamped().invert)
     }
 
     /// Renders a preview whose long edge is at most `max_edge` (never above the proxy's) and
@@ -801,6 +838,110 @@ mod tests {
         let err = t
             .service
             .sample_base(&t.library, FrameId::new(), area(0.1, 0.1, 0.2, 0.2))
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn a_picked_white_or_black_sets_its_end_from_the_density_under_the_area() {
+        let t = Fixture::new("levels");
+        let id = t.frame(1, 1000, 700);
+        let auto = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        let corner = |x: f32, y: f32| Crop {
+            x,
+            y,
+            w: 0.05,
+            h: 0.05,
+        };
+
+        // The synthetic picture runs from black at its top left to white at its bottom right.
+        let white = t
+            .service
+            .sample_levels(
+                &t.library,
+                id,
+                &auto,
+                corner(0.95, 0.95),
+                LevelsPoint::White,
+            )
+            .unwrap();
+        let black = t
+            .service
+            .sample_levels(&t.library, id, &auto, corner(0.0, 0.0), LevelsPoint::Black)
+            .unwrap();
+        for c in 0..3 {
+            let span = auto.invert.white[c] - auto.invert.black[c];
+            assert!(
+                (white.white[c] - auto.invert.white[c]).abs() < 0.1 * span,
+                "{white:?} vs {:?}",
+                auto.invert
+            );
+            assert!(
+                (black.black[c] - auto.invert.black[c]).abs() < 0.1 * span,
+                "{black:?} vs {:?}",
+                auto.invert
+            );
+        }
+        assert_eq!(white.black, auto.invert.black, "the other end is kept");
+        assert_eq!(black.white, auto.invert.white, "the other end is kept");
+    }
+
+    #[test]
+    fn a_picked_level_follows_the_recipes_film_base() {
+        let t = Fixture::new("levels-base");
+        let id = t.frame(1, 1000, 700);
+        let mut recipe = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        recipe.base.source = gtp_core::recipe::BaseSource::Manual;
+        let area = Crop {
+            x: 0.4,
+            y: 0.4,
+            w: 0.1,
+            h: 0.1,
+        };
+        let before = t
+            .service
+            .sample_levels(&t.library, id, &recipe, area, LevelsPoint::White)
+            .unwrap();
+        // A base twice as bright halves every transmittance: 0.30103 more density.
+        recipe.base.rgb = recipe.base.rgb.map(|v| v * 2.0);
+        let after = t
+            .service
+            .sample_levels(&t.library, id, &recipe, area, LevelsPoint::White)
+            .unwrap();
+        for c in 0..3 {
+            assert!(
+                (after.white[c] - before.white[c] - std::f32::consts::LOG10_2).abs() < 1e-3,
+                "{before:?} {after:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn picking_levels_refuses_bad_areas_and_unknown_frames() {
+        let t = Fixture::new("levels-bad");
+        let id = t.frame(1, 400, 300);
+        let recipe = Recipe::default();
+        let area = |x, y, w, h| Crop { x, y, w, h };
+        for region in [
+            area(0.5, 0.5, 0.6, 0.1),
+            area(0.1, 0.1, 0.0, 0.2),
+            area(f32::NAN, 0.1, 0.2, 0.2),
+        ] {
+            let err = t
+                .service
+                .sample_levels(&t.library, id, &recipe, region, LevelsPoint::Black)
+                .unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{region:?}");
+        }
+        let err = t
+            .service
+            .sample_levels(
+                &t.library,
+                FrameId::new(),
+                &recipe,
+                area(0.1, 0.1, 0.2, 0.2),
+                LevelsPoint::White,
+            )
             .unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
     }

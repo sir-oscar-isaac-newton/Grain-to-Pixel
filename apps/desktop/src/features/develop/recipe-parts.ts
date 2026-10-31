@@ -37,9 +37,14 @@ export function baseOf(recipe: Recipe): BaseSetting {
   };
 }
 
+/** The black and white points of an `invert` block (the recipe's, or one the backend returned). */
+export function levelsIn(invert: Partial<Recipe['invert']> | null | undefined): Levels {
+  return { black: triple(invert?.black, 0), white: triple(invert?.white, 1) };
+}
+
 /** The black and white points of the inversion, per channel. */
 export function levelsOf(recipe: Recipe): Levels {
-  return { black: triple(recipe.invert?.black, 0), white: triple(recipe.invert?.white, 1) };
+  return levelsIn(recipe.invert);
 }
 
 /** The recipe with its film base replaced. */

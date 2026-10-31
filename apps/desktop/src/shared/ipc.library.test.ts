@@ -7,6 +7,7 @@ const jobCancelMock = vi.fn();
 const developOpenMock = vi.fn();
 const developAnalyzeMock = vi.fn();
 const developSampleBaseMock = vi.fn();
+const developSampleLevelsMock = vi.fn();
 const recipeSaveMock = vi.fn();
 const recipeApplyToMock = vi.fn();
 const handlers: Record<string, (event: { payload: unknown }) => void> = {};
@@ -32,6 +33,7 @@ vi.mock('@gtp/ipc-types', () => {
       developOpen: (id: string) => developOpenMock(id),
       developAnalyze: (id: string, base: unknown) => developAnalyzeMock(id, base),
       developSampleBase: (id: string, region: unknown) => developSampleBaseMock(id, region),
+      developSampleLevels: (...args: unknown[]) => developSampleLevelsMock(...args),
       recipeSave: (...args: unknown[]) => recipeSaveMock(...args),
       recipeApplyTo: (...args: unknown[]) => recipeApplyToMock(...args),
     },
@@ -49,6 +51,7 @@ import {
   developAnalyze,
   developOpen,
   developSampleBase,
+  developSampleLevels,
   developRender,
   folderCheck,
   frameThumbnail,
@@ -112,6 +115,7 @@ describe('shared/ipc: library helpers', () => {
       developOpenMock.mockReset();
       developAnalyzeMock.mockReset();
       developSampleBaseMock.mockReset();
+      developSampleLevelsMock.mockReset();
       recipeSaveMock.mockReset();
       recipeApplyToMock.mockReset();
     });
@@ -189,6 +193,23 @@ describe('shared/ipc: library helpers', () => {
         error: { code: 'InvalidInput', message: 'That area is too dark to be film base.' },
       });
       await expect(developSampleBase('f1', region)).rejects.toBeInstanceOf(IpcError);
+    });
+
+    it('samples a white or black point from an area of the frame', async () => {
+      const recipe = { v: 1 } as unknown as Parameters<typeof developSampleLevels>[1];
+      const region = { x: 0.9, y: 0.9, w: 0.05, h: 0.05 };
+      const levels = { black: [0.1, 0.1, 0.1], white: [2, 2.1, 2.2] };
+      developSampleLevelsMock.mockResolvedValueOnce({ status: 'ok', data: levels });
+      await expect(developSampleLevels('f1', recipe, region, 'white')).resolves.toBe(levels);
+      expect(developSampleLevelsMock).toHaveBeenCalledWith('f1', recipe, region, 'white');
+
+      developSampleLevelsMock.mockResolvedValueOnce({
+        status: 'error',
+        error: { code: 'InvalidInput', message: 'That area is black.' },
+      });
+      await expect(developSampleLevels('f1', recipe, region, 'black')).rejects.toBeInstanceOf(
+        IpcError,
+      );
     });
 
     it('opens and analyses through the typed commands', async () => {

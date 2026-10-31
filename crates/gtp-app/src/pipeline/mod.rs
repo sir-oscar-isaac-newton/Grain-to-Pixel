@@ -18,7 +18,6 @@ pub use analyze::{analyze, Analysis};
 pub use display::{histogram, to_rgba8_srgb, Histogram};
 pub use proxy::{build_proxy, PREVIEW_EDGE, PROXY_EDGE};
 pub use stages::{Stage, STAGE_ORDER};
-
 /// What a render starts from.
 #[derive(Debug, Clone)]
 pub struct PipelineInput {
@@ -70,6 +69,21 @@ pub(crate) fn render_traced(
     };
     for stage in STAGE_ORDER {
         trace(stage);
+        image = stages::run_stage(stage, image, input, &recipe)?;
+    }
+    Ok(image)
+}
+
+/// The frame as the Invert stage receives it: `input` after dust removal, the crop and the film
+/// base normalization of `recipe` (clamped first), at the size of `input`. This is what the white
+/// and black pickers measure.
+pub(crate) fn normalized_frame(
+    input: &PipelineInput,
+    recipe: &Recipe,
+) -> Result<ImageF32, AppError> {
+    let recipe = recipe.clone().clamped();
+    let mut image = (*input.rgb).clone();
+    for stage in [Stage::Dust, Stage::Crop, Stage::Normalize] {
         image = stages::run_stage(stage, image, input, &recipe)?;
     }
     Ok(image)

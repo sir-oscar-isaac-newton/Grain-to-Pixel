@@ -245,6 +245,24 @@ pub fn frame_list(library: &Library, query: FrameQuery) -> Result<FramePage, App
     })
 }
 
+/// Largest thumbnail file read (thumbnails are about 512 px; this is a guard against a wrong file).
+const MAX_THUMB_BYTES: u64 = 4 * 1024 * 1024;
+
+/// The frame's thumbnail (the JPEG file) as bytes, for the grid. `NotFound` when it has none yet.
+pub fn frame_thumbnail(library: &Library, id: FrameId) -> Result<Vec<u8>, AppError> {
+    let path = library.resolve(&thumb_rel(id))?;
+    let size = std::fs::metadata(&path)
+        .map_err(|err| AppError::from_io(&err))?
+        .len();
+    if size > MAX_THUMB_BYTES {
+        return Err(
+            AppError::new(ErrorCode::InvalidInput, "That thumbnail file is too large.")
+                .with_details(format!("{size} bytes")),
+        );
+    }
+    std::fs::read(&path).map_err(|err| AppError::from_io(&err))
+}
+
 pub fn frame_get(library: &Library, id: FrameId) -> Result<Frame, AppError> {
     library.read(|c| c.get_frame(id))
 }
@@ -565,6 +583,21 @@ mod tests {
         assert_eq!(err.code, ErrorCode::NotFound);
         let err = roll_create(t.lib(), RollInput::default()).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput, "a roll needs a name");
+    }
+
+    #[test]
+    fn a_thumbnail_comes_back_as_its_bytes_or_not_found() {
+        let t = TempLib::new("thumb-bytes");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        let with = frame_with_files(t.lib(), roll.id, 1);
+        assert_eq!(frame_thumbnail(t.lib(), with.id).unwrap(), b"jpg");
+        let none = frame_thumbnail(t.lib(), FrameId::new()).unwrap_err();
+        assert_eq!(none.code, ErrorCode::NotFound);
+        // A file that is not a plausible thumbnail is refused rather than sent whole.
+        let big = t.lib().resolve(&thumb_rel(with.id)).unwrap();
+        std::fs::write(&big, vec![0u8; (MAX_THUMB_BYTES + 1) as usize]).unwrap();
+        let err = frame_thumbnail(t.lib(), with.id).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
     }
 
     #[test]

@@ -153,6 +153,8 @@ pub struct JobCtx;     // progress(stage, fraction) (throttled to 1 % steps); is
 
 ### 3.5 Data flows
 
+**Raw-byte commands** (`develop_render`, `frame_thumbnail`) return `tauri::ipc::Response`, which specta cannot describe, so they stay out of the typed bindings: `ipc::RAW_COMMANDS` lists them, `ipc::invoke_handler` routes them beside the typed handler, and `shared/ipc.ts` calls them by name. The CSP already allows `blob:` images, so thumbnails need no asset-protocol scope.
+
 **Develop (interactive):** UI slider → `develop_render(frame_id, recipe, 1600, seq)` → `DevelopService` loads the proxy from the 4-entry LRU (built on `develop_open`) → `pipeline::render` (stages in fixed order) → RGBA8 bytes via `tauri::ipc::Response` → canvas. Stale results dropped by `seq`.
 
 **Scan roll:** `scan_start(params, roll_id)` → `ScanService` creates a job → `ScannerSource::scan(..., on_frame)` → per frame: write TIFFs into `originals/`, hash, thumbnail, catalog insert in one transaction, emit `library://changed` → cancel keeps finished frames; resume starts at the next frame number.

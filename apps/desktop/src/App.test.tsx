@@ -5,6 +5,11 @@ import { App } from './App';
 import { useUiStore } from './app/store';
 
 const crashNotesTake = vi.fn();
+vi.mock('./features/library/LibraryView', async () => {
+  const { createElement } = await import('react');
+  return { LibraryView: () => createElement('h2', null, 'Library') };
+});
+
 vi.mock('./shared/ipc', () => ({
   libraryInfo: () => Promise.resolve({ app_version: '1.2.3', library: null }),
   crashNotesTake: () => crashNotesTake(),

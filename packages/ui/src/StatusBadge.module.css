@@ -1,0 +1,22 @@
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.ok {
+  border-color: #5a8a5a;
+}
+
+.warn {
+  border-color: #b08a3c;
+}
+
+.error {
+  border-color: #b05a5a;
+}

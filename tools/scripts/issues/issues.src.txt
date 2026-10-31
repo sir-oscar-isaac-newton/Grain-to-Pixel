@@ -764,7 +764,8 @@ ac:
 - vitest-axe clean; all text via t()
 tech:
 FILES: apps/desktop/src/features/library/{LibraryView.tsx, RollSidebar.tsx, FrameGrid.tsx (@tanstack/react-virtual), SearchBar.tsx, use-library.ts, library.module.css}; packages/ui/src/{TagChips.tsx, StatusBadge.tsx, ProgressList.tsx}; strings in shared/i18n/en.json.
-ROUTES used: library_*, roll_*, frame_list, tag_*, search; listens to `library://changed` and `job://*`.
+ROUTES used: library_*, roll_*, frame_list, frame_thumbnail, folder_check, tag_*, search; listens to `library://changed` and `job://*`.
+DELIVERY (decided when U-01 was approved): two PRs under this issue. Part 1: first-run dialog (native folder picker via the dialog plugin, permission `dialog:allow-open` only), roll sidebar and editor, delete confirmation, the virtualized grid with thumbnails (`frame_thumbnail` returns raw bytes), selection and keyboard navigation, a minimal Import TIFF files button and the job ProgressList. Part 2: search bar and filters, TagChips, roll tags in the roll editor, batch tagging, the 5,000-frame fps measurement and the fixture library command.
 MIGRATIONS: none.
 TESTS: sidebar, grid selection, search bar, tag chips, virtualization row count, keyboard navigation, axe.
 

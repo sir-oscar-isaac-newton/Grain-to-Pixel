@@ -16,6 +16,54 @@ pub const MAX_LIBRARY_NAME_CHARS: usize = 200;
 const NAME_KEY: &str = "library_name";
 const CREATED_KEY: &str = "library_created_at";
 
+/// What the first-run dialog shows about a folder before a library is created or opened there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct FolderCheck {
+    /// The folder, for display.
+    pub path: String,
+    pub exists: bool,
+    /// True when the folder is missing or holds nothing: a library can be created in it.
+    pub is_empty: bool,
+    /// True when it already holds a library: open it instead.
+    pub has_library: bool,
+    /// Bytes free on the folder's drive (checked on its nearest existing parent); `None` when the
+    /// system cannot tell.
+    #[cfg_attr(feature = "specta", specta(type = Option<f64>))]
+    pub free_bytes: Option<u64>,
+}
+
+/// Looks at a folder the user picked. Nothing is created or changed.
+pub fn check_folder(path: &Path) -> Result<FolderCheck, AppError> {
+    if !path.is_absolute() {
+        return Err(
+            AppError::new(ErrorCode::InvalidInput, "Choose a full folder path.")
+                .with_details(path.display().to_string()),
+        );
+    }
+    let exists = path.exists();
+    if exists && !path.is_dir() {
+        return Err(
+            AppError::new(ErrorCode::InvalidInput, "That is not a folder.")
+                .with_details(path.display().to_string()),
+        );
+    }
+    let is_empty = !exists
+        || std::fs::read_dir(path)
+            .map_err(|err| AppError::from_io(&err))?
+            .next()
+            .is_none();
+    // The drive is the nearest folder that exists.
+    let existing = path.ancestors().find(|p| p.is_dir());
+    Ok(FolderCheck {
+        path: display_path(path),
+        exists,
+        is_empty,
+        has_library: exists && library_fs::is_library(path),
+        free_bytes: existing.and_then(|p| library_fs::free_space(p).ok()),
+    })
+}
+
 /// What the UI shows about the open library.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -314,6 +362,47 @@ mod tests {
         let err = lib.write(|c| c.insert_roll(&roll())).unwrap_err();
         assert_eq!(err.code, ErrorCode::LibraryTooNew);
         assert!(err.message.contains("read-only"));
+    }
+
+    #[test]
+    fn a_picked_folder_is_described_without_changing_anything() {
+        let dir = TempDir::new("check");
+        // A folder that does not exist yet is fine: it counts as empty, and the drive is that of
+        // its nearest existing parent.
+        let missing = check_folder(&dir.0.join("new")).unwrap();
+        assert!(!missing.exists && missing.is_empty && !missing.has_library);
+        assert!(missing.free_bytes.is_some());
+        assert!(!dir.0.exists(), "checking creates nothing");
+
+        std::fs::create_dir_all(&dir.0).unwrap();
+        let empty = check_folder(&dir.0).unwrap();
+        assert!(empty.exists && empty.is_empty && !empty.has_library);
+        assert!(!empty.path.starts_with(r"\\?\"));
+
+        std::fs::write(dir.0.join("holiday.jpg"), b"x").unwrap();
+        let full = check_folder(&dir.0).unwrap();
+        assert!(!full.is_empty && !full.has_library);
+
+        let lib_dir = TempDir::new("check-lib");
+        drop(Library::create(&lib_dir.0, "Lib").unwrap());
+        let library = check_folder(&lib_dir.0).unwrap();
+        assert!(library.has_library && !library.is_empty);
+    }
+
+    #[test]
+    fn a_relative_path_or_a_file_is_not_a_folder_to_check() {
+        let dir = TempDir::new("check-bad");
+        assert_eq!(
+            check_folder(Path::new("relative/dir")).unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
+        std::fs::create_dir_all(&dir.0).unwrap();
+        let file = dir.0.join("a.txt");
+        std::fs::write(&file, b"x").unwrap();
+        assert_eq!(
+            check_folder(&file).unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
     }
 
     #[test]

@@ -150,6 +150,14 @@
     "imported_other": "{{count}} frames imported",
     "skipped_one": "{{count}} file skipped",
     "skipped_other": "{{count}} files skipped",
+    "export_one": "Export {{count}} frame",
+    "export_other": "Export {{count}} frames",
+    "exported_one": "{{count}} file written",
+    "exported_other": "{{count}} files written",
+    "exportFailed_one": "{{count}} frame could not be exported",
+    "exportFailed_other": "{{count}} frames could not be exported",
+    "exportCancelled": "files already written stay",
+    "failedFrames": "Frames that could not be exported",
     "skippedFiles": "Skipped files",
     "skip": {
       "NotTiff": "not a TIFF file",
@@ -160,6 +168,46 @@
       "VerifyFailed": "did not read back identical"
     },
     "skippedFile": "{{path}}: {{reason}}"
+  },
+  "export": {
+    "open": "Export…",
+    "title": "Export",
+    "description_one": "Write {{count}} frame at full size, with the colour profile embedded.",
+    "description_other": "Write {{count}} frames at full size, with the colour profile embedded.",
+    "format": "File format",
+    "tiff16": "TIFF, 16-bit",
+    "tiff16Hint": "Large, full quality, for further editing.",
+    "jpeg": "JPEG",
+    "jpegHint": "Smaller, 8-bit, for sharing.",
+    "space": "Colour space",
+    "srgb": "sRGB",
+    "adobe_rgb": "Adobe RGB",
+    "prophoto": "ProPhoto RGB",
+    "spaceHint": {
+      "srgb": "The safe choice for screens and sharing.",
+      "adobe_rgb": "A wider range of colours, for print.",
+      "prophoto": "The widest range, for further editing in other software."
+    },
+    "quality": "JPEG quality",
+    "folder": "Folder",
+    "noFolder": "No folder chosen",
+    "choose": "Choose folder…",
+    "template": "File name",
+    "templateHint": "Fields: {roll}, {index}, {index:03}, {frame}. The extension is added.",
+    "example": "Example: {{name}}",
+    "errors": {
+      "noFolder": "Choose the folder to export into.",
+      "noTemplate": "Type a file name.",
+      "folders": "A file name cannot contain folders: remove the / or \\."
+    },
+    "start": "Export",
+    "starting": "Starting…",
+    "close": "Close",
+    "again": "Export more",
+    "runningHint": "Closing this window does not stop the export.",
+    "summary_one": "{{count}} file written to {{folder}}.",
+    "summary_other": "{{count}} files written to {{folder}}.",
+    "startFailed": "The export could not be started: {{message}}"
   },
   "develop": {
     "title": "Develop",

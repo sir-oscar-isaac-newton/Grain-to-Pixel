@@ -990,6 +990,7 @@ tech:
 FILES: apps/desktop/src/features/library/ExportDialog.tsx; wiring in Library and Develop views.
 ROUTES used: export_start, job_cancel.
 TESTS: dialog flow with mocked ipc, validation messages, axe.
+DELIVERY (decided when U-11 was approved): the export starts from the Library toolbar (selected frames) and the Develop toolbar (the open frame); progress, the summary, the frames that failed and Cancel are in the dialog itself, which stays open until closed and can be reopened on a running export. The last options are remembered in the window's local storage. A cancelled job reports no count of finished files (the job ends with the Cancelled error), so the dialog says that files already written stay.
 
 ## U-07
 title: Settings view and feature flags

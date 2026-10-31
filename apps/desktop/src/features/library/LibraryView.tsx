@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUiStore } from '../../app/store';
 import { formatBytes } from '../../shared/format';
+import { ExportDialog } from './ExportDialog';
 import { FirstRunDialog } from './FirstRunDialog';
 import { FrameGrid } from './FrameGrid';
 import { JobsPanel } from './JobsPanel';
@@ -23,7 +24,8 @@ export function LibraryView() {
   const library = useLibraryStore((s) => s.library);
   const rollId = useLibraryStore((s) => s.rollId);
   const rolls = useLibraryStore((s) => s.rolls);
-  const selectedCount = useLibraryStore((s) => s.selected.size);
+  const selected = useLibraryStore((s) => s.selected);
+  const selectedCount = selected.size;
   const notice = useLibraryStore((s) => s.notice);
   const setNotice = useLibraryStore((s) => s.setNotice);
 
@@ -36,6 +38,7 @@ export function LibraryView() {
 
   const openInDevelop = useUiStore((s) => s.openInDevelop);
   const [found, setFound] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // Nothing typed: the roll's frames in order. Otherwise the search, best match first.
   const { fetchPage, queryKey, filtered } = useLibraryQuery();
@@ -69,7 +72,17 @@ export function LibraryView() {
               <span className={styles.muted} aria-live="polite">
                 {selectedCount > 0 && t('library.grid.selected', { count: selectedCount })}
               </span>
+              <button
+                type="button"
+                disabled={selectedCount === 0}
+                onClick={() => setExporting(true)}
+              >
+                {t('export.open')}
+              </button>
             </div>
+            {exporting && (
+              <ExportDialog frameIds={[...selected]} open onClose={() => setExporting(false)} />
+            )}
             {library.read_only && (
               <p role="status" className={styles.banner}>
                 {t('library.readOnly')}

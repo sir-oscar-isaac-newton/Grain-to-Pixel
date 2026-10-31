@@ -179,6 +179,15 @@
       "number": 26,
       "title": "Job manager with progress, cancel and events",
       "branch": "feat/issue-26-job-manager",
+      "status": "completed",
+      "pr": 117,
+      "commit": "0ae79b4"
+    },
+    {
+      "id": "L-02",
+      "number": 27,
+      "title": "Catalog schema, migrations, backup and integrity",
+      "branch": "feat/issue-27-catalog-schema-and-migrations",
       "status": "in_progress",
       "pr": null,
       "commit": null

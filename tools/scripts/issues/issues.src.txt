@@ -602,8 +602,9 @@ desc: The SQLite catalog crate with repositories, forward-only migrations, pre-m
 ac:
 - Migrations apply on an empty database on both OS and reopening is idempotent
 - A backup `library.db.bak-v<N>` is created before migrating
-- Cascade deletes work; tag names are unique case-insensitively
+- Cascade deletes work; tag names are unique case-insensitively (Unicode, via a `name_key` column)
 - A newer schema returns LibraryTooNew
+- Rolls carry camera, box and shot ISO and a partial-date shooting range; roll tags (`roll_tag`) count for every frame in search
 tech:
 FILES: crates/gtp-catalog/{Cargo.toml, src/{lib.rs, db.rs, backup.rs, fts.rs}, src/repo/{roll,frame,source,recipe,tag,search,meta}.rs, migrations/{0001_init.sql, 0002_search.sql, 0003_export_log.sql}}.
 MIGRATIONS: 0001_init = roll, frame, source_file, recipe, tag (COLLATE NOCASE unique), frame_tag, meta, indexes idx_frame_roll and idx_frame_tag_tag, ON DELETE CASCADE (spec 5.2); 0002_search = `CREATE VIRTUAL TABLE search USING fts5(frame_id UNINDEXED, text)`; 0003_export_log = export_log table. Pragmas: WAL, foreign_keys=ON, synchronous=NORMAL. rusqlite (bundled) + rusqlite_migration.
@@ -650,6 +651,7 @@ ac:
 - All roll and frame commands work with typed errors and regenerated ipc-types
 - Deleting frames or rolls removes files only after the DB transaction commits and leaves files if the transaction fails
 - Names are validated (trimmed, at most 200 chars) and ids parsed
+- Roll create and update set camera, box ISO, shot ISO and the shooting date range (partial dates), validated by `gtp_core::model::{check_iso, check_shot_range}` (fields added in L-02)
 tech:
 FILES: crates/gtp-app/src/services/roll_frame.rs; apps/desktop/src-tauri/src/commands/{roll.rs, frame.rs}.
 ROUTES: `roll_create(RollInput) -> Roll`, `roll_update(RollId, RollPatch) -> Roll`, `roll_list() -> Roll[]`, `roll_delete(RollId)`, `roll_set_film_base(RollId, [f32;3]) -> Roll`, `frame_list(FrameQuery { roll_id?, page, page_size }) -> Page<FrameSummary>`, `frame_get(FrameId) -> Frame`, `frame_delete(FrameId[])`, `frame_set_note(FrameId, String)`.
@@ -714,10 +716,11 @@ ac:
 - apply, remove, rename and delete keep the FTS row correct
 - tags_all uses AND semantics; special characters in text queries are safe
 - Search over 50,000 synthetic frames takes at most 100 ms
+- Roll tags: a roll's tags count for all its frames (inherited, not copied, so later imports have them); `tags_all` and text search match inherited tags; a frame keeps a tag it has itself when the roll loses it (catalog support landed in L-02)
 tech:
 FILES: crates/gtp-catalog/src/repo/{tag.rs, search.rs}, src/fts.rs; crates/gtp-app/src/services/tags_search.rs; src-tauri/src/commands/{tags.rs, search.rs}.
-ROUTES: `tag_list() -> Tag[]`, `tag_apply(frame_ids, add: String[], remove: String[])`, `tag_rename(TagId, String)`, `tag_delete(TagId)`, `search(SearchQuery { text?, tags_all[], roll_id?, date_from?, date_to?, film_stock? }, page) -> Page<FrameSummary>`.
-VALIDATION: tags trimmed, lower-cased, at most 64 chars, no control characters, deduplicated; FTS query escaped.
+ROUTES: `tag_list() -> Tag[]`, `tag_apply(frame_ids, add: String[], remove: String[])`, `tag_apply_roll(RollId, add: String[], remove: String[])`, `tag_rename(TagId, String)`, `tag_delete(TagId)`, `search(SearchQuery { text?, tags_all[], roll_id?, date_from?, date_to?, film_stock?, camera?, iso? }, page) -> Page<FrameSummary>`.
+VALIDATION: tags trimmed, inner spaces collapsed, spelling kept, unique by their Unicode lower-case key (`Tag::key`), at most 64 chars, no control characters, deduplicated; FTS query escaped.
 MIGRATIONS: none new.
 TESTS: FTS consistency, AND semantics, special characters, 50k-frame benchmark, reads during writes (WAL).
 
@@ -757,6 +760,7 @@ ac:
 - Roll create/rename/delete with confirmation; first-run dialog shows free space and location
 - Grid renders only visible rows and scrolls a 5,000-frame fixture smoothly (measured fps reported)
 - Multi-select (click, shift, ctrl/cmd), `[` `]` and arrow navigation, batch tag add/remove
+- Roll editor: film, camera, box and shot ISO, shooting date range (partial dates allowed) and roll tags; camera and film suggest earlier values; roll filters for camera, film, ISO and date range
 - vitest-axe clean; all text via t()
 tech:
 FILES: apps/desktop/src/features/library/{LibraryView.tsx, RollSidebar.tsx, FrameGrid.tsx (@tanstack/react-virtual), SearchBar.tsx, use-library.ts, library.module.css}; packages/ui/src/{TagChips.tsx, StatusBadge.tsx, ProgressList.tsx}; strings in shared/i18n/en.json.

@@ -1,10 +1,17 @@
 [package]
 name = "gtp-catalog"
+description = "The library catalog: SQLite schema, migrations, backup, integrity and repositories"
 version.workspace = true
 edition.workspace = true
 publish = false
 
 [dependencies]
+gtp-core = { version = "0.0.0", path = "../gtp-core" }
+# Bundled SQLite (built from its C source, with FTS5) so both platforms run the same version.
+# 0.40 because rusqlite_migration 2.6 is built against it (one sqlite3 link per build).
+rusqlite = { version = "0.40.0", features = ["bundled"] }
+rusqlite_migration = "2.6.0"
+serde_json = "1"
 
 [lints]
 workspace = true

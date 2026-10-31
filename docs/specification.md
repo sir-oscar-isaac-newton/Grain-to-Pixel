@@ -107,16 +107,17 @@
 Library 1─* Roll 1─* Frame 1─* SourceFile
                       Frame 1─1 Recipe
                       Frame *─* Tag
+              Roll *─* Tag   (a roll's tags count for every frame on it)
 ```
 
 | Entity | Fields (summary) |
 |---|---|
 | **Library** | `schema_version`, `created_at`, `name` |
-| **Roll** | `id`, `name`, `film_stock?`, `format` (`35mm`), `shot_date?`, `notes`, `film_base_rgb?` (measured, linear), `created_at` |
+| **Roll** | `id`, `name`, `film_stock?`, `format` (`35mm`), `camera?`, `iso_box?` (rated), `iso_shot?` (exposed at; differs when pushed or pulled), `shot_from?` / `shot_to?` (partial ISO dates `2026`, `2026-07` or `2026-07-14`; the range may not end before it starts), `notes`, `film_base_rgb?` (measured, linear), `created_at` |
 | **Frame** | `id`, `roll_id`, `index_in_roll`, `kind` (`ScanRgbIr` \| `RgbTriplet`), `width`, `height`, `has_ir`, `note`, `created_at`, `edited_at` |
 | **SourceFile** | `frame_id`, `role` (`rgb`, `ir`, `r`, `g`, `b`), `rel_path`, `sha256`, `bytes` |
 | **Recipe** | `frame_id`, `schema_v`, `json` (see below), `updated_at` |
-| **Tag** | `id`, `name` (unique, case-insensitive, normalized) |
+| **Tag** | `id`, `name` (trimmed, inner spaces collapsed, spelling kept); unique by its key, the name lower-cased across Unicode (`Été` = `ÉTÉ`, but `Ete` ≠ `Été`). On frames and on rolls; a roll's tags are not copied to its frames but count for them, also for frames imported later |
 | **Export (job log)** | `frame_id`, `format`, `path`, `created_at` |
 
 IDs are ULIDs (sortable, collision-safe). Originals are **immutable**; every edit lives in the Recipe.
@@ -200,7 +201,8 @@ Rules: unknown fields are ignored; a missing field means default; `v` bumps only
 
 ```sql
 CREATE TABLE roll   (id TEXT PRIMARY KEY, name TEXT NOT NULL, film_stock TEXT, format TEXT NOT NULL DEFAULT '35mm',
-                     shot_date TEXT, notes TEXT NOT NULL DEFAULT '', film_base_r REAL, film_base_g REAL, film_base_b REAL,
+                     camera TEXT, iso_box INTEGER, iso_shot INTEGER, shot_from TEXT, shot_to TEXT,
+                     notes TEXT NOT NULL DEFAULT '', film_base_r REAL, film_base_g REAL, film_base_b REAL,
                      created_at TEXT NOT NULL);
 CREATE TABLE frame  (id TEXT PRIMARY KEY, roll_id TEXT NOT NULL REFERENCES roll(id) ON DELETE CASCADE,
                      index_in_roll INTEGER NOT NULL, kind TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL,
@@ -209,17 +211,21 @@ CREATE TABLE source_file (frame_id TEXT NOT NULL REFERENCES frame(id) ON DELETE 
                      rel_path TEXT NOT NULL, sha256 TEXT NOT NULL, bytes INTEGER NOT NULL, PRIMARY KEY (frame_id, role));
 CREATE TABLE recipe (frame_id TEXT PRIMARY KEY REFERENCES frame(id) ON DELETE CASCADE,
                      schema_v INTEGER NOT NULL, json TEXT NOT NULL, updated_at TEXT NOT NULL);
-CREATE TABLE tag    (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE);
-CREATE TABLE frame_tag (frame_id TEXT REFERENCES frame(id) ON DELETE CASCADE, tag_id TEXT REFERENCES tag(id) ON DELETE CASCADE,
+CREATE TABLE tag    (id TEXT PRIMARY KEY, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE);  -- key: Unicode lower case
+CREATE TABLE frame_tag (frame_id TEXT NOT NULL REFERENCES frame(id) ON DELETE CASCADE, tag_id TEXT NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
                      PRIMARY KEY (frame_id, tag_id));
+CREATE TABLE roll_tag  (roll_id TEXT NOT NULL REFERENCES roll(id) ON DELETE CASCADE, tag_id TEXT NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
+                     PRIMARY KEY (roll_id, tag_id));
 CREATE TABLE export_log (id INTEGER PRIMARY KEY, frame_id TEXT, format TEXT, path TEXT, created_at TEXT);
 CREATE TABLE meta   (key TEXT PRIMARY KEY, value TEXT);          -- library name, first_export_at, counters
-CREATE VIRTUAL TABLE search USING fts5(frame_id UNINDEXED, text);  -- roll name, stock, notes, frame note, tags
+CREATE VIRTUAL TABLE search USING fts5(frame_id UNINDEXED, text, tokenize = 'unicode61 remove_diacritics 2');
+                     -- roll name, stock, camera, ISOs, dates, notes; frame note; frame and roll tags
 CREATE INDEX idx_frame_roll ON frame(roll_id, index_in_roll);
 CREATE INDEX idx_frame_tag_tag ON frame_tag(tag_id);
+CREATE INDEX idx_roll_tag_tag ON roll_tag(tag_id);
 ```
 
-`search.text` is maintained by the catalog crate in the same transaction as any change to a roll, frame note or tag.
+`search.text` is maintained by the catalog crate in the same transaction as any change to a roll, frame note or tag (frame or roll). Search ignores accents (`ete` finds `Été`); tag identity does not.
 
 ### 5.3 Migrations and integrity
 

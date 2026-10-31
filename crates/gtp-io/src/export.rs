@@ -153,6 +153,14 @@ mod tests {
         ImageF32::new(width, height, 3, data).unwrap()
     }
 
+    /// A profile with its header creation date (bytes 24 to 35) blanked: Little CMS stamps the
+    /// time a profile is built, so two builds a second apart differ only there.
+    fn without_date(icc: &[u8]) -> Vec<u8> {
+        let mut icc = icc.to_vec();
+        icc[24..36].fill(0);
+        icc
+    }
+
     /// The ICC profile in a JPEG's APP2 "ICC_PROFILE" segments, joined in order.
     fn jpeg_icc(bytes: &[u8]) -> Vec<u8> {
         let mut chunks = Vec::new();
@@ -192,7 +200,7 @@ mod tests {
 
             let mut decoder = Decoder::new(File::open(&path).unwrap()).unwrap();
             let icc = decoder.get_tag_u8_vec(Tag::IccProfile).unwrap();
-            assert_eq!(icc, expected.icc, "{space:?}");
+            assert_eq!(without_date(&icc), without_date(&expected.icc), "{space:?}");
             let parsed = Profile::new_icc(&icc).unwrap();
             assert_eq!(parsed.color_space(), ColorSpaceSignature::RgbData);
         }
@@ -206,7 +214,10 @@ mod tests {
         let bytes = std::fs::read(&path).unwrap();
         assert_eq!(&bytes[..2], &[0xFF, 0xD8], "a JPEG file");
         let icc = jpeg_icc(&bytes);
-        assert_eq!(icc, crate::icc_profile(OutputSpace::AdobeRgb).unwrap());
+        assert_eq!(
+            without_date(&icc),
+            without_date(&crate::icc_profile(OutputSpace::AdobeRgb).unwrap())
+        );
     }
 
     #[test]

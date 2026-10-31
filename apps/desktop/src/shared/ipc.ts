@@ -5,10 +5,21 @@ import {
   type AppError,
   type ClientLogLevel,
   type CrashNote,
+  type LibraryDetails,
   type LibraryInfo,
+  type Settings,
+  type SettingsPatch,
 } from '@gtp/ipc-types';
 
-export type { AppError, ClientLogLevel, CrashNote, LibraryInfo };
+export type {
+  AppError,
+  ClientLogLevel,
+  CrashNote,
+  LibraryDetails,
+  LibraryInfo,
+  Settings,
+  SettingsPatch,
+};
 
 export class IpcError extends Error {
   readonly error: AppError;
@@ -29,6 +40,25 @@ export function unwrap<T>(result: Result<T>): T {
 
 export async function libraryInfo(): Promise<LibraryInfo> {
   return unwrap(await commands.libraryInfo());
+}
+
+/** Creates a library in an empty (or new) folder and opens it. */
+export async function libraryCreate(path: string, name: string): Promise<LibraryInfo> {
+  return unwrap(await commands.libraryCreate(path, name));
+}
+
+/** Opens a library; one made by a newer app version comes back with `read_only: true`. */
+export async function libraryOpen(path: string): Promise<LibraryInfo> {
+  return unwrap(await commands.libraryOpen(path));
+}
+
+export async function settingsGet(): Promise<Settings> {
+  return unwrap(await commands.settingsGet());
+}
+
+/** Changes the named settings and returns all of them. */
+export async function settingsSet(patch: SettingsPatch): Promise<Settings> {
+  return unwrap(await commands.settingsSet(patch));
 }
 
 /** Crashes of earlier runs; the backend hands them out once. */

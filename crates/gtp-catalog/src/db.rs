@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use gtp_core::{AppError, ErrorCode};
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use rusqlite_migration::{Migrations, M};
 
 /// Forward-only migrations; the database's `user_version` is the number applied.
@@ -30,12 +30,14 @@ pub(crate) fn db_error(err: impl std::fmt::Display) -> AppError {
         .with_details(err.to_string())
 }
 
-/// The library database, open and migrated. Writes run in transactions; dropping it marks the
-/// session as cleanly closed.
+/// A connection to the library database. [`Catalog::open`] gives the writer: migrated, writes run
+/// in transactions, and dropping it marks the session as cleanly closed. [`Catalog::open_reader`]
+/// gives a read-only connection beside it (WAL lets it read while the writer writes).
 pub struct Catalog {
     pub(crate) conn: Connection,
     path: PathBuf,
     recovered: bool,
+    writer: bool,
 }
 
 /// The backup written before migrating from schema `version`.
@@ -101,6 +103,7 @@ impl Catalog {
             conn,
             path: path.to_path_buf(),
             recovered: false,
+            writer: true,
         };
         if catalog.meta_get(SESSION_OPEN_KEY)?.as_deref() == Some("1") {
             catalog.recovered = true;
@@ -108,6 +111,44 @@ impl Catalog {
         }
         catalog.meta_set(SESSION_OPEN_KEY, "1")?;
         Ok(catalog)
+    }
+
+    /// Opens an existing catalog read-only: no migration, no session flag, every write fails. Used
+    /// for the read connection next to the writer, and alone for a library from a newer app version
+    /// (whose schema this version may only partly understand).
+    pub fn open_reader(path: &Path) -> Result<Self, AppError> {
+        if !path.is_file() {
+            return Err(AppError::new(
+                gtp_core::ErrorCode::NotFound,
+                "The library database is missing.",
+            )
+            .with_details(path.display().to_string()));
+        }
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(db_error)?;
+        conn.pragma_update(None, "query_only", "ON")
+            .map_err(db_error)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(db_error)?;
+        Ok(Self {
+            conn,
+            path: path.to_path_buf(),
+            recovered: false,
+            writer: false,
+        })
+    }
+
+    /// The schema version stored in the database (above [`SCHEMA_VERSION`] for a newer library).
+    pub fn schema_version(&self) -> Result<u32, AppError> {
+        user_version(&self.conn)
+    }
+
+    /// True for the writer, false for a reader.
+    pub fn is_writer(&self) -> bool {
+        self.writer
     }
 
     /// The database file.
@@ -165,6 +206,8 @@ impl Catalog {
 impl Drop for Catalog {
     fn drop(&mut self) {
         // Best effort: if it fails, the next open runs the integrity check, which is harmless.
-        let _ = self.end_session();
+        if self.writer {
+            let _ = self.end_session();
+        }
     }
 }

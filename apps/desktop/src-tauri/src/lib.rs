@@ -13,7 +13,7 @@ mod state;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gtp_app::JobManager;
+use gtp_app::{AppContext, JobManager};
 use tauri::webview::PageLoadEvent;
 use tauri::{Manager, RunEvent};
 
@@ -50,6 +50,7 @@ pub fn run() -> tauri::Result<()> {
             start_observability(app);
             let sink = sink::TauriJobSink::new(app.handle().clone());
             app.manage(JobManager::new(Arc::new(sink)));
+            app.manage(app_context(app));
             Ok(())
         })
         .build(tauri::generate_context!())?
@@ -62,6 +63,20 @@ pub fn run() -> tauri::Result<()> {
             }
         });
     Ok(())
+}
+
+/// The shared context with `settings.json` from the OS app-config folder. Without one (very
+/// unusual) settings live in the temp folder for this run, so the app still starts.
+fn app_context(app: &tauri::App) -> AppContext {
+    let dir = app.path().app_config_dir().unwrap_or_else(|err| {
+        tracing::warn!(%err, "no app config folder; settings are kept in the temp folder");
+        std::env::temp_dir().join("grain-to-pixel")
+    });
+    let (ctx, note) = AppContext::new(&dir.join("settings.json"));
+    if let Some(note) = note {
+        tracing::warn!(%note, "settings reset to defaults");
+    }
+    ctx
 }
 
 /// Starts file logging and the panic hook, then collects crash notes from earlier runs.

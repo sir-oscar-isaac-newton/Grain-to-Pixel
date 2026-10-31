@@ -14,7 +14,11 @@ use crate::events::{JobDone, JobError, JobProgress};
 pub fn builder<R: tauri::Runtime>() -> Builder<R> {
     Builder::<R>::new()
         .commands(collect_commands![
-            commands::system::library_info,
+            commands::library::library_info,
+            commands::library::library_create,
+            commands::library::library_open,
+            commands::system::settings_get,
+            commands::system::settings_set,
             commands::system::log_client_event,
             commands::system::crash_notes_take,
             commands::system::job_cancel
@@ -43,7 +47,15 @@ mod tests {
             text.contains("libraryInfo"),
             "command missing from bindings"
         );
-        for command in ["logClientEvent", "crashNotesTake", "jobCancel"] {
+        for command in [
+            "logClientEvent",
+            "crashNotesTake",
+            "jobCancel",
+            "libraryCreate",
+            "libraryOpen",
+            "settingsGet",
+            "settingsSet",
+        ] {
             assert!(text.contains(command), "{command} missing from bindings");
         }
         for event in ["job://progress", "job://done", "job://error"] {

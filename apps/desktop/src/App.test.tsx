@@ -6,7 +6,7 @@ import { useUiStore } from './app/store';
 
 const crashNotesTake = vi.fn();
 vi.mock('./shared/ipc', () => ({
-  libraryInfo: () => Promise.resolve({ app_version: '1.2.3' }),
+  libraryInfo: () => Promise.resolve({ app_version: '1.2.3', library: null }),
   crashNotesTake: () => crashNotesTake(),
 }));
 

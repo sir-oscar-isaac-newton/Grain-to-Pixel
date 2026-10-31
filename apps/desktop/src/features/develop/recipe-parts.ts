@@ -47,6 +47,53 @@ export function levelsOf(recipe: Recipe): Levels {
   return levelsIn(recipe.invert);
 }
 
+export type ColourKey =
+  'red_cyan' | 'green_magenta' | 'blue_yellow' | 'temperature' | 'tint' | 'saturation' | 'vibrance';
+
+export type Colour = Record<ColourKey, number>;
+
+export interface MonoSetting {
+  enabled: boolean;
+  mix: Triple;
+}
+
+/** The default black-and-white mix: the Rec.2020 luma weights. */
+export const LUMA_MIX: Triple = [0.2627, 0.678, 0.0593];
+
+/** The colour sliders of a recipe, as plain numbers (saturation 1 and the rest 0 when missing). */
+export function colourOf(recipe: Recipe): Colour {
+  const c = recipe.color;
+  return {
+    red_cyan: plain(c?.red_cyan, 0),
+    green_magenta: plain(c?.green_magenta, 0),
+    blue_yellow: plain(c?.blue_yellow, 0),
+    temperature: plain(c?.temperature, 0),
+    tint: plain(c?.tint, 0),
+    saturation: plain(c?.saturation, 1),
+    vibrance: plain(c?.vibrance, 0),
+  };
+}
+
+/** The black-and-white setting of a recipe. */
+export function monoOf(recipe: Recipe): MonoSetting {
+  const mono = recipe.mono;
+  const mix = mono?.mix;
+  return {
+    enabled: mono?.enabled === true,
+    mix: [plain(mix?.[0], LUMA_MIX[0]), plain(mix?.[1], LUMA_MIX[1]), plain(mix?.[2], LUMA_MIX[2])],
+  };
+}
+
+/** The recipe with some of its colour sliders replaced, the rest of the colour block kept. */
+export function withColour(recipe: Recipe, values: Partial<Colour>): Recipe {
+  return { ...recipe, color: { ...recipe.color, ...colourOf(recipe), ...values } } as Recipe;
+}
+
+/** The recipe with its black-and-white setting replaced. */
+export function withMono(recipe: Recipe, mono: MonoSetting): Recipe {
+  return { ...recipe, mono: { enabled: mono.enabled, mix: [...mono.mix] } } as Recipe;
+}
+
 /** The recipe with its film base replaced. */
 export function withBase(recipe: Recipe, base: BaseSetting): Recipe {
   return { ...recipe, base: { source: base.source, rgb: [...base.rgb] } } as Recipe;

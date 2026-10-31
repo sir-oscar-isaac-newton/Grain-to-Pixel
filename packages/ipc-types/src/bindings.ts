@@ -70,6 +70,13 @@ export const commands = {
 	 */
 	developSampleLevels: (frameId: FrameId, recipe: Recipe_Deserialize, region: Crop_Deserialize, point: LevelsPoint) => typedError<Invert_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_sample_levels", { frameId, recipe, region, point })),
 	/**
+	 *  The recipe's colour settings with the three colour axes set so that an area of the frame becomes
+	 *  neutral, for the neutral picker. `region` is in fractions of the cropped frame as shown without
+	 *  straighten, turns or flips; the area is measured after the Invert stage with the recipe's base,
+	 *  crop and levels. The other colour settings are kept.
+	 */
+	developSampleNeutral: (frameId: FrameId, recipe: Recipe_Deserialize, region: Crop_Deserialize) => typedError<Color_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_sample_neutral", { frameId, recipe, region })),
+	/**
 	 *  Saves a frame's recipe, clamped into range, and marks the frame edited. Returns the recipe as
 	 *  stored. A recipe that could not be rendered (a tone curve with a single point) is refused.
 	 */

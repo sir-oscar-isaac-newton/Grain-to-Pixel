@@ -259,6 +259,13 @@
   gap: var(--space-2);
 }
 
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.9rem;
+}
+
 /* Picking: a crosshair on the picture, and the box being dragged. */
 .picking {
   cursor: crosshair;

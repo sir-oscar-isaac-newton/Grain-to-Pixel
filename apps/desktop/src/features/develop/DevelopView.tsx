@@ -6,6 +6,7 @@ import {
   developAnalyze,
   developSampleBase,
   developSampleLevels,
+  developSampleNeutral,
   frameGet,
   rollSetFilmBase,
   type FrameSummary,
@@ -21,14 +22,23 @@ import styles from './develop.module.css';
 import { Filmstrip } from './Filmstrip';
 import { clipping, computeHistogram } from './histogram';
 import { BaseInvertPanel } from './panels/BaseInvertPanel';
+import { ColourPanel } from './panels/ColourPanel';
 import type { Fractions } from './picker';
-import { baseOf, levelsIn, levelsOf, triple, withBase, withLevels } from './recipe-parts';
+import {
+  baseOf,
+  levelsIn,
+  levelsOf,
+  triple,
+  withBase,
+  withColour,
+  withLevels,
+} from './recipe-parts';
 import { useDevelop } from './use-develop';
 import { usePicker } from './use-picker';
 import { useViewport } from './use-viewport';
 
-/** What is being picked on the picture: the film base, or the white or black point. */
-type PickTarget = 'base' | LevelsPoint;
+/** What is being picked on the picture: the film base, the white or black point, or a neutral grey. */
+type PickTarget = 'base' | 'neutral' | LevelsPoint;
 
 interface Notice {
   tone: 'info' | 'error';
@@ -127,6 +137,28 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
       });
     }
   };
+  /** A click or box on the frame: the colour axes are set so that what is under it is grey. */
+  const pickedNeutral = async (region: Fractions) => {
+    if (!recipe) return;
+    try {
+      const color = await developSampleNeutral(frame.id, recipe, region);
+      setRecipe(
+        withColour(recipe, {
+          red_cyan: color.red_cyan ?? 0,
+          green_magenta: color.green_magenta ?? 0,
+          blue_yellow: color.blue_yellow ?? 0,
+        }),
+      );
+      setPick(null);
+      setNotice({ tone: 'info', text: t('develop.colour.picked') });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text: t('develop.colour.pickFailed', { message: messageOf(error) }),
+      });
+    }
+  };
+
   /** A click or box on the frame: the white or black point becomes what is under it. */
   const pickedLevel = async (region: Fractions, point: LevelsPoint) => {
     if (!recipe) return;
@@ -150,6 +182,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     active: pick === 'base' ? develop.showingScan : pick !== null && develop.showingFrame,
     onPick: (region) => {
       if (pick === 'base') void picked(region);
+      else if (pick === 'neutral') void pickedNeutral(region);
       else if (pick) void pickedLevel(region, pick);
     },
   });
@@ -308,7 +341,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 develop.showingScan
                   ? t('develop.base.scanLabel')
                   : develop.showingFrame
-                    ? t('develop.levels.frameLabel')
+                    ? t('develop.pickFrameLabel')
                     : label
               }
               view={viewport.view}
@@ -381,18 +414,29 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
             </p>
           </div>
           {recipe && (
-            <BaseInvertPanel
-              recipe={recipe}
-              rollBase={info?.roll_base ? triple(info.roll_base, 1) : null}
-              readOnly={readOnly}
-              pick={pick}
-              pickReady={pick === 'base' ? develop.showingScan : develop.showingFrame}
-              working={working}
-              onPickChange={setPick}
-              onChange={(next, options) => setRecipe(next, options)}
-              onAutoLevels={() => void autoLevels()}
-              onUseAsRollDefault={() => void makeRollDefault()}
-            />
+            <>
+              <BaseInvertPanel
+                recipe={recipe}
+                rollBase={info?.roll_base ? triple(info.roll_base, 1) : null}
+                readOnly={readOnly}
+                pick={pick === 'neutral' ? null : pick}
+                pickReady={pick === 'base' ? develop.showingScan : develop.showingFrame}
+                working={working}
+                onPickChange={setPick}
+                onChange={(next, options) => setRecipe(next, options)}
+                onAutoLevels={() => void autoLevels()}
+                onUseAsRollDefault={() => void makeRollDefault()}
+              />
+              <ColourPanel
+                recipe={recipe}
+                readOnly={readOnly}
+                working={working}
+                picking={pick === 'neutral'}
+                pickReady={develop.showingFrame}
+                onPickingChange={(on) => setPick(on ? 'neutral' : null)}
+                onChange={(next, options) => setRecipe(next, options)}
+              />
+            </>
           )}
         </aside>
       </div>

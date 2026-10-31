@@ -89,6 +89,14 @@ pub(crate) fn normalized_frame(
     Ok(image)
 }
 
+/// The frame as the Color stage receives it: [`normalized_frame`] followed by the Invert stage of
+/// `recipe`. This is what the neutral picker measures.
+pub(crate) fn inverted_frame(input: &PipelineInput, recipe: &Recipe) -> Result<ImageF32, AppError> {
+    let recipe = recipe.clone().clamped();
+    let image = normalized_frame(input, &recipe)?;
+    stages::run_stage(Stage::Invert, image, input, &recipe)
+}
+
 #[cfg(test)]
 mod tests {
     use gtp_core::recipe::{BaseSource, Crop, Invert};

@@ -8,6 +8,7 @@ const developOpenMock = vi.fn();
 const developAnalyzeMock = vi.fn();
 const developSampleBaseMock = vi.fn();
 const developSampleLevelsMock = vi.fn();
+const developSampleNeutralMock = vi.fn();
 const recipeSaveMock = vi.fn();
 const recipeApplyToMock = vi.fn();
 const handlers: Record<string, (event: { payload: unknown }) => void> = {};
@@ -34,6 +35,7 @@ vi.mock('@gtp/ipc-types', () => {
       developAnalyze: (id: string, base: unknown) => developAnalyzeMock(id, base),
       developSampleBase: (id: string, region: unknown) => developSampleBaseMock(id, region),
       developSampleLevels: (...args: unknown[]) => developSampleLevelsMock(...args),
+      developSampleNeutral: (...args: unknown[]) => developSampleNeutralMock(...args),
       recipeSave: (...args: unknown[]) => recipeSaveMock(...args),
       recipeApplyTo: (...args: unknown[]) => recipeApplyToMock(...args),
     },
@@ -52,6 +54,7 @@ import {
   developOpen,
   developSampleBase,
   developSampleLevels,
+  developSampleNeutral,
   developRender,
   folderCheck,
   frameThumbnail,
@@ -116,6 +119,7 @@ describe('shared/ipc: library helpers', () => {
       developAnalyzeMock.mockReset();
       developSampleBaseMock.mockReset();
       developSampleLevelsMock.mockReset();
+      developSampleNeutralMock.mockReset();
       recipeSaveMock.mockReset();
       recipeApplyToMock.mockReset();
     });
@@ -210,6 +214,21 @@ describe('shared/ipc: library helpers', () => {
       await expect(developSampleLevels('f1', recipe, region, 'black')).rejects.toBeInstanceOf(
         IpcError,
       );
+    });
+
+    it('samples a neutral grey from an area of the frame', async () => {
+      const recipe = { v: 1 } as unknown as Parameters<typeof developSampleNeutral>[1];
+      const region = { x: 0.4, y: 0.4, w: 0.05, h: 0.05 };
+      const color = { red_cyan: -20, green_magenta: 10, blue_yellow: 30 };
+      developSampleNeutralMock.mockResolvedValueOnce({ status: 'ok', data: color });
+      await expect(developSampleNeutral('f1', recipe, region)).resolves.toBe(color);
+      expect(developSampleNeutralMock).toHaveBeenCalledWith('f1', recipe, region);
+
+      developSampleNeutralMock.mockResolvedValueOnce({
+        status: 'error',
+        error: { code: 'InvalidInput', message: 'Too far from neutral.' },
+      });
+      await expect(developSampleNeutral('f1', recipe, region)).rejects.toBeInstanceOf(IpcError);
     });
 
     it('opens and analyses through the typed commands', async () => {

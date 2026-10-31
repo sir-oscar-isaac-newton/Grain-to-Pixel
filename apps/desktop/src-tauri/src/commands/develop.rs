@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use gtp_app::services::develop::{self, DevelopAnalysis, DevelopInfo, LevelsPoint};
 use gtp_app::AppContext;
-use gtp_core::recipe::{Crop, Invert};
+use gtp_core::recipe::{Color, Crop, Invert};
 use gtp_core::{FrameId, Recipe, RecipeField};
 use tauri::State;
 
@@ -60,6 +60,22 @@ pub fn develop_sample_levels(
 ) -> CmdResult<Invert> {
     ctx.develop()
         .sample_levels(&*ctx.library()?, frame_id, &recipe, region, point)
+}
+
+/// The recipe's colour settings with the three colour axes set so that an area of the frame becomes
+/// neutral, for the neutral picker. `region` is in fractions of the cropped frame as shown without
+/// straighten, turns or flips; the area is measured after the Invert stage with the recipe's base,
+/// crop and levels. The other colour settings are kept.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn develop_sample_neutral(
+    ctx: State<'_, AppContext>,
+    frame_id: FrameId,
+    recipe: Recipe,
+    region: Crop,
+) -> CmdResult<Color> {
+    ctx.develop()
+        .sample_neutral(&*ctx.library()?, frame_id, &recipe, region)
 }
 
 /// A preview of the frame with `recipe`, as raw bytes, not JSON: a 16-byte little-endian header
@@ -162,6 +178,9 @@ mod tests {
             LevelsPoint::White,
         )
         .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        let err = develop_sample_neutral(app.state(), FrameId::new(), Recipe::default(), region)
+            .unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);

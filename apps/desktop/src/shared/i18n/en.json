@@ -213,13 +213,34 @@
       "preparingFrame": "Preparing the picture…",
       "picked": "The {{kind}} was set from that area.",
       "pickFailed": "That area could not be used: {{message}}",
-      "frameLabel": "The frame without turns or straightening, for picking the white and black points",
       "black": "Black point",
       "white": "White point",
       "red": "red",
       "green": "green",
       "blue": "blue",
       "slider": "{{kind}}, {{channel}}"
+    },
+    "pickFrameLabel": "The frame without turns or straightening, for picking on it",
+    "colour": {
+      "heading": "Colour",
+      "pickNeutral": "Pick neutral grey",
+      "picking": "Click a part of the picture that should be grey, or drag a box over it. Escape cancels.",
+      "preparingFrame": "Preparing the picture…",
+      "picked": "The colour balance was set from that area.",
+      "pickFailed": "That area could not be used: {{message}}",
+      "red_cyan": "Cyan / red",
+      "green_magenta": "Magenta / green",
+      "blue_yellow": "Yellow / blue",
+      "temperature": "Temperature",
+      "tint": "Tint",
+      "saturation": "Saturation",
+      "vibrance": "Vibrance"
+    },
+    "mono": {
+      "heading": "Black and white",
+      "enabled": "Black and white",
+      "mix": "Channel mix",
+      "weight": "Mix, {{channel}}"
     },
     "save": {
       "saving": "Saving…",

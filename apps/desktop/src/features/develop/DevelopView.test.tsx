@@ -441,6 +441,122 @@ describe('DevelopView', () => {
       return user;
     }
 
+    describe('the Colour panel', () => {
+      const neutralButton = () => screen.getByRole('button', { name: 'Pick neutral grey' });
+      const slider = (name: string) => screen.getByRole('slider', { name });
+
+      async function openFrame() {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        return user;
+      }
+
+      it('previews and saves a colour slider moved with the keyboard', async () => {
+        const user = await openFrame();
+        ipc.developRender.mockClear();
+        slider('Temperature').focus();
+        await user.keyboard('{ArrowRight}');
+        await waitFor(() => expect(ipc.developRender).toHaveBeenCalled());
+        expect(ipc.developRender.mock.calls.at(-1)?.[1]).toMatchObject({
+          color: { temperature: 1 },
+        });
+        expect(slider('Temperature')).toHaveAttribute('aria-valuenow', '1');
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(savedRecipe()).toMatchObject({ color: { temperature: 1, saturation: 1 } });
+      });
+
+      it('shows the frame without turns while picking, and sets the axes from a click', async () => {
+        const user = await openFrame();
+        await user.click(neutralButton());
+        expect(await screen.findByText(/part of the picture that should be grey/)).toBeVisible();
+        expect(neutralButton()).toHaveAttribute('aria-pressed', 'true');
+        expect(
+          screen.getByRole('img', {
+            name: 'The frame without turns or straightening, for picking on it',
+          }),
+        ).toBeInTheDocument();
+
+        press(300, 200);
+        release(300, 200);
+        await waitFor(() => expect(ipc.developSampleNeutral).toHaveBeenCalledTimes(1));
+        const [frameId, , region] = ipc.developSampleNeutral.mock.calls[0] as [
+          string,
+          never,
+          { x: number; y: number; w: number; h: number },
+        ];
+        expect(frameId).toBe('summer-f00001');
+        expect(region.x + region.w / 2).toBeCloseTo(0.5, 6);
+
+        expect(await screen.findByText('The colour balance was set from that area.')).toBeVisible();
+        expect(slider('Cyan / red')).toHaveAttribute('aria-valuenow', '-20');
+        expect(slider('Magenta / green')).toHaveAttribute('aria-valuenow', '10');
+        expect(slider('Yellow / blue')).toHaveAttribute('aria-valuenow', '30');
+        expect(neutralButton()).toHaveAttribute('aria-pressed', 'false');
+        await canvasNamed('Frame 1');
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(savedRecipe()).toMatchObject({ color: { red_cyan: -20, blue_yellow: 30 } });
+      });
+
+      it('says when the area cannot be used, and keeps picking', async () => {
+        state.neutralRefused = 'That area is too far from neutral to correct.';
+        const user = await openFrame();
+        await user.click(neutralButton());
+        await screen.findByText(/part of the picture that should be grey/);
+        press(300, 200);
+        release(300, 200);
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+          'That area could not be used: That area is too far from neutral to correct.',
+        );
+        expect(neutralButton()).toHaveAttribute('aria-pressed', 'true');
+        expect(ipc.recipeSave).not.toHaveBeenCalled();
+      });
+
+      it('is one pick at a time, and Escape cancels it', async () => {
+        const user = await openFrame();
+        await user.click(screen.getByRole('button', { name: 'Pick white point' }));
+        await screen.findByText(/brightest part/);
+        await user.click(neutralButton());
+        expect(neutralButton()).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Pick white point' })).toHaveAttribute(
+          'aria-pressed',
+          'false',
+        );
+        await user.keyboard('{Escape}');
+        expect(neutralButton()).toHaveAttribute('aria-pressed', 'false');
+        expect(useUiStore.getState().view).toBe('develop');
+        expect(ipc.developSampleNeutral).not.toHaveBeenCalled();
+      });
+
+      it('switches to black and white, which hides saturation and vibrance and saves', async () => {
+        const user = await openFrame();
+        expect(slider('Saturation')).toBeInTheDocument();
+        await user.click(screen.getByRole('checkbox', { name: 'Black and white' }));
+        expect(await screen.findByRole('group', { name: 'Channel mix' })).toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: 'Saturation' })).not.toBeInTheDocument();
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(savedRecipe()).toMatchObject({ mono: { enabled: true } });
+
+        await user.click(screen.getByRole('checkbox', { name: 'Black and white' }));
+        expect(await screen.findByRole('slider', { name: 'Saturation' })).toBeInTheDocument();
+      });
+
+      it('has no accessibility violations while picking', async () => {
+        const user = await openFrame();
+        await user.click(neutralButton());
+        await screen.findByText(/part of the picture that should be grey/);
+        await expectNoA11yViolations(document.body);
+      });
+    });
+
     describe('picking the white and black points', () => {
       const frameRequests = () =>
         ipc.developRender.mock.calls.filter((c) => {
@@ -465,7 +581,7 @@ describe('DevelopView', () => {
         expect(frameRequests()).toHaveLength(1);
         expect(
           screen.getByRole('img', {
-            name: 'The frame without turns or straightening, for picking the white and black points',
+            name: 'The frame without turns or straightening, for picking on it',
           }),
         ).toBeInTheDocument();
 

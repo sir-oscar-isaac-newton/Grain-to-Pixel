@@ -20,6 +20,13 @@ const INSERT_TEXT: &str = "
             UNION SELECT tag_id FROM roll_tag WHERE roll_id = f.roll_id)))
     FROM frame f JOIN roll r ON r.id = f.roll_id";
 
+/// Replaces every search row with a fresh one.
+pub(crate) fn rebuild_all(conn: &Connection) -> Result<(), AppError> {
+    conn.execute("DELETE FROM search", []).map_err(db_error)?;
+    conn.execute(INSERT_TEXT, []).map_err(db_error)?;
+    Ok(())
+}
+
 pub(crate) fn refresh_frame(conn: &Connection, id: FrameId) -> Result<(), AppError> {
     let id = id.to_string();
     conn.execute(

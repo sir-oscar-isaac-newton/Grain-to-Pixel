@@ -252,8 +252,8 @@ All commands return `Result<T, AppError>`. `AppError { code, message, details? }
 | Jobs | `job_cancel(job_id)` | |
 | Frames | `frame_list(roll_id?, page)`, `frame_get(id)`, `frame_delete(ids)`, `frame_set_note(id, text)` | |
 | Develop | `develop_open(frame_id) -> DevelopInfo`, `develop_analyze(frame_id) -> Analysis`, `develop_render(frame_id, recipe, max_edge, seq) -> bytes`, `recipe_save(frame_id, recipe)`, `recipe_apply_to(frame_ids, source_frame_id, fields)` | `Analysis` = crop, film base, histogram, auto recipe |
-| Tags | `tag_list()`, `tag_apply(frame_ids, add[], remove[])`, `tag_rename(id, name)`, `tag_delete(id)` | |
-| Search | `search(query, page) -> FrameSummary[]` | `query`: `{text?, tags_all[], roll_id?, date_from?, date_to?, film_stock?}` |
+| Tags | `tag_list()`, `tag_apply(frame_ids, add[], remove[])`, `tag_apply_roll(roll_id, add[], remove[])`, `tag_rename(id, name)`, `tag_delete(id)` | `add` and `remove` are tag names; missing tags in `add` are created, unknown names in `remove` are skipped, all or nothing. A roll's tags count for all its frames. Mutations send `library://changed` |
+| Search | `search(query, page, page_size) -> FramePage` | `query`: `{text?, tags_all[] (tag ids), roll_id?, date_from?, date_to?, film_stock?, camera?, iso?}`, every part optional, all must match. `text`: every word, as a word start, accents ignored. `film_stock`/`camera`: equal ignoring case. `iso`: box or shot. Dates are partial; a roll matches when its shooting dates overlap the range, and a roll without dates never matches. Best text match first, otherwise newest roll first. `page_size` 1 to 500 |
 | Export | `export_start(frame_ids, options) -> JobId` | `options`: format (`tiff16`, `jpeg`), space, quality, dest dir, naming template |
 | System | `settings_get()`, `settings_set(patch)`, `diagnostics_export(dest)`, `log_client_event(level, msg)` | |
 

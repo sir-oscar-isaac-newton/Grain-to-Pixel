@@ -21,3 +21,9 @@ todo = "deny"
 print_stdout = "deny"
 print_stderr = "deny"
 dbg_macro = "deny"
+
+# SQLite is C code compiled by its build script. Build it optimized even in debug and test builds,
+# so the search timing tests (spec section 11, at most 100 ms over 50,000 frames) measure something
+# close to the shipped app instead of an unoptimized database.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3

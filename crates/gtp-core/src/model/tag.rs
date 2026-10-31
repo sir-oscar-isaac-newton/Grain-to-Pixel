@@ -29,13 +29,20 @@ impl Tag {
         Ok(Self::normalize(name)?.to_lowercase())
     }
 
-    /// Trims and collapses inner whitespace, keeping the case; rejects empty or very long names.
+    /// Trims and collapses inner whitespace, keeping the case; rejects empty or very long names and
+    /// names with control characters (whitespace such as tabs and line breaks becomes a space).
     pub fn normalize(name: &str) -> Result<String, AppError> {
         let normalized = name.split_whitespace().collect::<Vec<_>>().join(" ");
         if normalized.is_empty() {
             return Err(AppError::new(
                 ErrorCode::InvalidInput,
                 "A tag needs a name.",
+            ));
+        }
+        if normalized.chars().any(char::is_control) {
+            return Err(AppError::new(
+                ErrorCode::InvalidInput,
+                "A tag name cannot contain control characters.",
             ));
         }
         if normalized.chars().count() > MAX_TAG_CHARS {
@@ -67,6 +74,15 @@ mod tests {
         assert_eq!(Tag::key("Ålesund").unwrap(), Tag::key("ÅLESUND").unwrap());
         assert_eq!(Tag::key("München").unwrap(), Tag::key("MÜNCHEN").unwrap());
         assert_ne!(Tag::key("Ete").unwrap(), Tag::key("Été").unwrap());
+    }
+
+    #[test]
+    fn control_characters_are_rejected_but_tabs_and_line_breaks_are_spaces() {
+        assert_eq!(Tag::normalize("night\tshots\n2").unwrap(), "night shots 2");
+        for bad in ["bell\u{7}", "nul\u{0}", "esc\u{1b}[0m", "del\u{7f}"] {
+            let err = Tag::normalize(bad).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
+        }
     }
 
     #[test]

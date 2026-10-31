@@ -31,6 +31,22 @@ export const commands = {
 	 *  events, each new frame as `library://changed`. Returns the job id at once.
 	 */
 	importFiles: (paths: string[], rollId: RollId, kind: ImportKind) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("import_files", { paths, rollId, kind })),
+	/**  All tags, in name order. */
+	tagList: () => typedError<Tag[], AppError_Serialize>(__TAURI_INVOKE("tag_list")),
+	/**
+	 *  Adds the tags named in `add` (created when missing) to the frames and removes those named in
+	 *  `remove`, all or nothing.
+	 */
+	tagApply: (frameIds: FrameId[], add: string[], remove: string[]) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("tag_apply", { frameIds, add, remove })),
+	/**  The same for a roll: its tags count for every frame on it, also frames added later. */
+	tagApplyRoll: (rollId: RollId, add: string[], remove: string[]) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("tag_apply_roll", { rollId, add, remove })),
+	tagRename: (id: TagId, name: string) => typedError<Tag, AppError_Serialize>(__TAURI_INVOKE("tag_rename", { id, name })),
+	tagDelete: (id: TagId) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("tag_delete", { id })),
+	/**
+	 *  One page of the frames matching `query`: best text match first when there is text, otherwise
+	 *  newest roll first. `page` counts from 0, `page_size` is 1 to 500.
+	 */
+	search: (query: SearchQuery_Deserialize, page: number, pageSize: number) => typedError<FramePage_Serialize, AppError_Serialize>(__TAURI_INVOKE("search", { query, page, pageSize })),
 	/**  The app settings (spec section 5.4), feature flags included. */
 	settingsGet: () => typedError<Settings_Serialize, AppError_Serialize>(__TAURI_INVOKE("settings_get")),
 	/**  Changes the settings named in `patch`, saves them and returns the result. */
@@ -533,6 +549,66 @@ export type Roll_Serialize = {
 	created_at: string,
 };
 
+/**
+ *  What to look for in the library. Every part is optional and all given parts must match.
+ * 
+ *  - `text`: every word must match, as the start of a word, ignoring accents; it searches the
+ *    roll's name, film, camera, ISO, dates and notes, the frame note, and the names of the tags
+ *    (the frame's own and its roll's).
+ *  - `tags_all`: the frame must have every one of these tags, its own or from its roll.
+ *  - `film_stock`, `camera`: the roll's value, equal ignoring upper and lower case (plain letters).
+ *  - `iso`: the roll's box ISO or shot ISO.
+ *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
+ *    its shooting dates overlap the range; a roll without dates never matches a date filter.
+ */
+export type SearchQuery = SearchQuery_Serialize | SearchQuery_Deserialize;
+
+/**
+ *  What to look for in the library. Every part is optional and all given parts must match.
+ * 
+ *  - `text`: every word must match, as the start of a word, ignoring accents; it searches the
+ *    roll's name, film, camera, ISO, dates and notes, the frame note, and the names of the tags
+ *    (the frame's own and its roll's).
+ *  - `tags_all`: the frame must have every one of these tags, its own or from its roll.
+ *  - `film_stock`, `camera`: the roll's value, equal ignoring upper and lower case (plain letters).
+ *  - `iso`: the roll's box ISO or shot ISO.
+ *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
+ *    its shooting dates overlap the range; a roll without dates never matches a date filter.
+ */
+export type SearchQuery_Deserialize = {
+	text?: string | null,
+	tags_all?: TagId[],
+	roll_id?: RollId | null,
+	date_from?: string | null,
+	date_to?: string | null,
+	film_stock?: string | null,
+	camera?: string | null,
+	iso?: number | null,
+};
+
+/**
+ *  What to look for in the library. Every part is optional and all given parts must match.
+ * 
+ *  - `text`: every word must match, as the start of a word, ignoring accents; it searches the
+ *    roll's name, film, camera, ISO, dates and notes, the frame note, and the names of the tags
+ *    (the frame's own and its roll's).
+ *  - `tags_all`: the frame must have every one of these tags, its own or from its roll.
+ *  - `film_stock`, `camera`: the roll's value, equal ignoring upper and lower case (plain letters).
+ *  - `iso`: the roll's box ISO or shot ISO.
+ *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
+ *    its shooting dates overlap the range; a roll without dates never matches a date filter.
+ */
+export type SearchQuery_Serialize = {
+	text: string | null,
+	tags_all: TagId[],
+	roll_id: RollId | null,
+	date_from: string | null,
+	date_to: string | null,
+	film_stock: string | null,
+	camera: string | null,
+	iso: number | null,
+};
+
 export type Settings = Settings_Serialize | Settings_Deserialize;
 
 /**  Settings to change; fields left out keep their value. The last library is set by opening one. */
@@ -606,6 +682,18 @@ export type SkippedFile_Serialize = {
 	/**  Technical detail for the log or a tooltip. */
 	details: string | null,
 };
+
+/**
+ *  A free-form label on frames and rolls. The name keeps the spelling it was first typed with;
+ *  two names are the same tag when their [`Tag::key`]s are equal (case-insensitive across Unicode).
+ */
+export type Tag = {
+	id: TagId,
+	name: string,
+};
+
+/**  Identifies a tag. */
+export type TagId = string;
 
 export type Theme = "system" | "light" | "dark";
 

@@ -16,7 +16,8 @@ use gtp_core::{AppError, ErrorCode};
 use rusqlite::types::Type;
 use rusqlite::Row;
 
-pub use tag::FrameTags;
+pub use search::{MAX_SEARCH_CHARS, MAX_SEARCH_TAGS};
+pub use tag::{FrameTags, MAX_TAGGED_FRAMES, MAX_TAG_NAMES};
 
 /// SQL expression for "now" as RFC 3339 UTC text.
 pub(crate) const NOW: &str = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')";

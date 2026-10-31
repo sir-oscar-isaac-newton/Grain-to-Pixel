@@ -5,6 +5,8 @@ const logClientEventMock = vi.fn();
 const libraryOpenMock = vi.fn();
 const settingsSetMock = vi.fn();
 const frameDeleteMock = vi.fn();
+const searchMock = vi.fn();
+const tagApplyMock = vi.fn();
 vi.mock('@gtp/ipc-types', () => ({
   commands: {
     libraryInfo: () => libraryInfoMock(),
@@ -12,6 +14,8 @@ vi.mock('@gtp/ipc-types', () => ({
     libraryOpen: (path: string) => libraryOpenMock(path),
     settingsSet: (patch: unknown) => settingsSetMock(patch),
     frameDelete: (ids: string[]) => frameDeleteMock(ids),
+    search: (query: unknown, page: number, pageSize: number) => searchMock(query, page, pageSize),
+    tagApply: (ids: string[], add: string[], remove: string[]) => tagApplyMock(ids, add, remove),
   },
 }));
 
@@ -21,7 +25,9 @@ import {
   libraryInfo,
   libraryOpen,
   logClientEvent,
+  search,
   settingsSet,
+  tagApply,
   unwrap,
 } from './ipc';
 
@@ -32,6 +38,25 @@ describe('shared/ipc', () => {
     libraryOpenMock.mockReset();
     settingsSetMock.mockReset();
     frameDeleteMock.mockReset();
+    searchMock.mockReset();
+    tagApplyMock.mockReset();
+  });
+
+  it('search passes the query and the page and returns the page of frames', async () => {
+    const page = { items: [], total: 0, page: 2, page_size: 25 };
+    searchMock.mockResolvedValue({ status: 'ok', data: page });
+    const query = { text: 'portra', tags_all: [], date_from: '2026-07' };
+    await expect(search(query, 2, 25)).resolves.toEqual(page);
+    expect(searchMock).toHaveBeenCalledWith(query, 2, 25);
+  });
+
+  it('tagApply sends the names and throws the AppError of a refusal', async () => {
+    tagApplyMock.mockResolvedValue({ status: 'ok', data: null });
+    await expect(tagApply(['f1'], ['Night Market'], [])).resolves.toBeUndefined();
+    expect(tagApplyMock).toHaveBeenCalledWith(['f1'], ['Night Market'], []);
+    const error = { code: 'InvalidInput', message: 'A tag needs a name.' } as const;
+    tagApplyMock.mockResolvedValue({ status: 'error', error });
+    await expect(tagApply(['f1'], [''], [])).rejects.toMatchObject({ message: error.message });
   });
 
   it('frameDelete passes the ids and returns the report with files left', async () => {

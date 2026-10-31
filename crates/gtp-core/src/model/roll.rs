@@ -118,6 +118,14 @@ fn date_bounds(text: &str) -> Result<(Ymd, Ymd), AppError> {
     }
 }
 
+/// The first and last day a partial date covers, as full ISO dates: `2026-07` is
+/// `("2026-07-01", "2026-07-31")`. Full dates compare correctly as text.
+pub fn partial_date_span(text: &str) -> Result<(String, String), AppError> {
+    let (first, last) = date_bounds(text)?;
+    let iso = |(y, m, d): Ymd| format!("{y:04}-{m:02}-{d:02}");
+    Ok((iso(first), iso(last)))
+}
+
 /// Checks the shot dates of a roll: each is a valid partial date, and the range does not end before
 /// it starts (`2026-07-14` to `2026-07` is fine: July ends after the 14th).
 pub fn check_shot_range(from: Option<&str>, to: Option<&str>) -> Result<(), AppError> {
@@ -217,6 +225,22 @@ mod tests {
         roll.film_base_rgb = None;
         roll.film_base_confidence = Some(0.1);
         assert!(!roll.film_base_uncertain(), "no base, nothing to doubt");
+    }
+
+    #[test]
+    fn a_partial_date_spans_its_first_and_last_day() {
+        let span = |s: &str| partial_date_span(s).unwrap();
+        assert_eq!(span("2026"), ("2026-01-01".into(), "2026-12-31".into()));
+        assert_eq!(span("2026-07"), ("2026-07-01".into(), "2026-07-31".into()));
+        assert_eq!(span("2024-02"), ("2024-02-01".into(), "2024-02-29".into()));
+        assert_eq!(span("2025-02"), ("2025-02-01".into(), "2025-02-28".into()));
+        assert_eq!(
+            span("2026-07-14"),
+            ("2026-07-14".into(), "2026-07-14".into())
+        );
+        for bad in ["", "2026-7", "2026-13", "2025-02-29", "July"] {
+            assert!(partial_date_span(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

@@ -41,6 +41,28 @@ pub fn tag_apply_roll(
     library.write(|c| c.tag_apply_roll(roll, add, remove))
 }
 
+/// The tags of a roll, in name order.
+pub fn roll_tags(library: &Library, roll: RollId) -> Result<Vec<Tag>, AppError> {
+    library.read(|c| c.roll_tags(roll))
+}
+
+/// The tags put on any of the frames themselves (not those they have from their roll), each once,
+/// in name order. It is what a batch edit can remove.
+pub fn frames_own_tags(library: &Library, frames: &[FrameId]) -> Result<Vec<Tag>, AppError> {
+    library.read(|c| {
+        let mut found: Vec<Tag> = Vec::new();
+        for frame in frames {
+            for tag in c.frame_tags(*frame)?.own {
+                if !found.iter().any(|t| t.id == tag.id) {
+                    found.push(tag);
+                }
+            }
+        }
+        found.sort_by_key(|t| t.name.to_lowercase());
+        Ok(found)
+    })
+}
+
 /// Renames a tag everywhere. The name of another tag is refused.
 pub fn tag_rename(library: &Library, id: TagId, name: &str) -> Result<Tag, AppError> {
     library.write(|c| c.tag_rename(id, name))
@@ -228,6 +250,38 @@ mod tests {
         // The other roll is untouched by all of it.
         assert_eq!(hits("leica"), 1);
         let _ = f3;
+    }
+
+    #[test]
+    fn a_roll_and_a_selection_report_their_tags() {
+        let t = TempLib::new("reads");
+        let roll = t.roll("Japan", "Nikon F3");
+        let (f1, f2, f3) = (t.frame(roll, 1), t.frame(roll, 2), t.frame(roll, 3));
+        tag_apply_roll(&t.lib, roll, &names(&["Trip"]), &[]).unwrap();
+        tag_apply(&t.lib, &[f1], &names(&["street", "Alley"]), &[]).unwrap();
+        tag_apply(&t.lib, &[f2], &names(&["street"]), &[]).unwrap();
+
+        let of_roll: Vec<String> = roll_tags(&t.lib, roll)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert_eq!(of_roll, ["Trip"]);
+
+        let own = |frames: &[FrameId]| -> Vec<String> {
+            frames_own_tags(&t.lib, frames)
+                .unwrap()
+                .into_iter()
+                .map(|t| t.name)
+                .collect()
+        };
+        assert_eq!(own(&[f1, f2]), ["Alley", "street"], "each once, by name");
+        assert_eq!(
+            own(&[f3]),
+            Vec::<String>::new(),
+            "roll tags are not own tags"
+        );
+        assert!(own(&[]).is_empty());
     }
 
     #[test]

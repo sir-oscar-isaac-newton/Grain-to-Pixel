@@ -3,6 +3,7 @@
 
 pub mod delta_e;
 pub mod diff;
+pub mod fixture;
 pub mod golden;
 
 pub use delta_e::{delta_e2000, rec2020_to_lab};

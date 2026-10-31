@@ -44,6 +44,10 @@ export const commands = {
 	importFiles: (paths: string[], rollId: RollId, kind: ImportKind) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("import_files", { paths, rollId, kind })),
 	/**  All tags, in name order. */
 	tagList: () => typedError<Tag[], AppError_Serialize>(__TAURI_INVOKE("tag_list")),
+	/**  The tags of a roll, in name order. */
+	rollTags: (rollId: RollId) => typedError<Tag[], AppError_Serialize>(__TAURI_INVOKE("roll_tags", { rollId })),
+	/**  The tags on any of the frames themselves (not from their rolls), each once, in name order. */
+	framesOwnTags: (frameIds: FrameId[]) => typedError<Tag[], AppError_Serialize>(__TAURI_INVOKE("frames_own_tags", { frameIds })),
 	/**
 	 *  Adds the tags named in `add` (created when missing) to the frames and removes those named in
 	 *  `remove`, all or nothing.

@@ -9,6 +9,8 @@ import type {
   ImportResult,
   LibraryDetails,
   Roll,
+  SearchQuery,
+  Tag,
 } from '../../shared/ipc';
 
 export class IpcError extends Error {
@@ -81,6 +83,12 @@ export const state = {
     'exists' | 'is_empty' | 'has_library'
   >,
   noThumb: new Set<string>(),
+  /** Every tag of the library. */
+  tags: [] as Tag[],
+  /** Tag names put on a frame, by frame id. */
+  frameTags: {} as Record<string, string[]>,
+  /** Tag names put on a roll, by roll id. */
+  rollTags: {} as Record<string, string[]>,
   picked: '/films/Library' as string | null,
 };
 
@@ -101,6 +109,46 @@ function subscribe<T>(list: T[], cb: T) {
   return Promise.resolve(() => {
     const at = list.indexOf(cb);
     if (at >= 0) list.splice(at, 1);
+  });
+}
+
+const keyOf = (name: string) => name.trim().toLowerCase();
+
+function ensureTag(name: string): Tag {
+  const found = state.tags.find((t) => keyOf(t.name) === keyOf(name));
+  if (found) return found;
+  const created = { id: `tag-${state.tags.length + 1}`, name: name.trim() };
+  state.tags = [...state.tags, created].sort((a, b) => a.name.localeCompare(b.name));
+  return created;
+}
+
+function change(names: string[], add: string[], remove: string[]): string[] {
+  const kept = names.filter((n) => !remove.some((r) => keyOf(r) === keyOf(n)));
+  const added = add.filter((a) => !kept.some((k) => keyOf(k) === keyOf(a)));
+  return [...kept, ...added];
+}
+
+/** The frames a query finds: a small stand-in for the backend's search (no date matching). */
+function matching(q: SearchQuery): FrameSummary[] {
+  return state.frames.filter((f) => {
+    const roll = state.rolls.find((r) => r.id === f.roll_id);
+    const names = [...(state.frameTags[f.id] ?? []), ...(state.rollTags[f.roll_id] ?? [])];
+    if (q.roll_id && f.roll_id !== q.roll_id) return false;
+    if (q.film_stock && keyOf(roll?.film_stock ?? '') !== keyOf(q.film_stock)) return false;
+    if (q.camera && keyOf(roll?.camera ?? '') !== keyOf(q.camera)) return false;
+    if (q.iso && roll?.iso_box !== q.iso && roll?.iso_shot !== q.iso) return false;
+    for (const id of q.tags_all ?? []) {
+      const tag = state.tags.find((t) => t.id === id);
+      if (!tag || !names.some((n) => keyOf(n) === keyOf(tag.name))) return false;
+    }
+    const haystack = [roll?.name, roll?.film_stock, roll?.camera, f.note, ...names]
+      .join(' ')
+      .toLowerCase();
+    return (q.text ?? '')
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+      .every((word) => haystack.includes(word));
   });
 }
 
@@ -154,6 +202,29 @@ export const ipc = {
   frameList: vi.fn(async (q: { roll_id?: string | null; page: number; page_size: number }) =>
     pageOf(q.roll_id, q.page, q.page_size),
   ),
+  search: vi.fn(async (q: SearchQuery, page: number, size: number): Promise<FramePage> => {
+    const all = matching(q);
+    return {
+      items: all.slice(page * size, page * size + size),
+      total: all.length,
+      page,
+      page_size: size,
+    };
+  }),
+  tagList: vi.fn(async () => [...state.tags]),
+  rollTags: vi.fn(async (id: string) => (state.rollTags[id] ?? []).map(ensureTag)),
+  framesOwnTags: vi.fn(async (ids: string[]) => {
+    const names = new Set(ids.flatMap((id) => state.frameTags[id] ?? []));
+    return state.tags.filter((t) => names.has(t.name));
+  }),
+  tagApply: vi.fn(async (ids: string[], add: string[], remove: string[]) => {
+    add.forEach(ensureTag);
+    ids.forEach((id) => (state.frameTags[id] = change(state.frameTags[id] ?? [], add, remove)));
+  }),
+  tagApplyRoll: vi.fn(async (id: string, add: string[], remove: string[]) => {
+    add.forEach(ensureTag);
+    state.rollTags[id] = change(state.rollTags[id] ?? [], add, remove);
+  }),
   frameThumbnail: vi.fn(async (id: string) => {
     if (state.noThumb.has(id)) throw new IpcError({ code: 'NotFound', message: 'no thumbnail' });
     return new Uint8Array([0xff, 0xd8, 1, 2, 3]).buffer;
@@ -176,6 +247,9 @@ export function resetFake() {
   state.frames = [];
   state.folder = { exists: true, is_empty: true, has_library: false };
   state.noThumb = new Set();
+  state.tags = [];
+  state.frameTags = {};
+  state.rollTags = {};
   state.picked = '/films/Library';
   listeners.changed.length = 0;
   listeners.progress.length = 0;

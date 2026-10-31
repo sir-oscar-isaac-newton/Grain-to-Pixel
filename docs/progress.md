@@ -250,11 +250,11 @@
       "id": "U-01",
       "number": 34,
       "title": "Library view",
-      "branch": "feat/issue-34-library-view",
+      "branch": "feat/issue-34-library-search",
       "status": "in_progress",
       "pr": null,
       "commit": null,
-      "note": "Part 1 of 2: first run, rolls, grid, import; part 2: search, tags, batch tagging, 5,000-frame fps"
+      "note": "Part 1 merged (PR #126, fe0c1de): first run, rolls, grid, import. Part 2 in review: search and filters, TagChips, roll tags, batch tagging, 5,000-frame scroll measurement and the fixture command"
     }
   ]
 }

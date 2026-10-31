@@ -1,13 +1,16 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '../../shared/format';
-import { frameList } from '../../shared/ipc';
+import { frameList, search } from '../../shared/ipc';
 import { FirstRunDialog } from './FirstRunDialog';
 import { FrameGrid } from './FrameGrid';
 import { JobsPanel } from './JobsPanel';
 import styles from './library.module.css';
 import { useLibraryStore } from './library-store';
 import { RollSidebar } from './RollSidebar';
+import { SearchBar } from './SearchBar';
+import { isFiltered, toQuery } from './search-query';
+import { SelectionTags } from './SelectionTags';
 import { useLibraryEvents } from './use-library-events';
 
 /**
@@ -29,11 +32,26 @@ export function LibraryView() {
   }, []);
   useLibraryEvents(phase === 'ready');
 
+  const filters = useLibraryStore((s) => s.filters);
+  const filtered = isFiltered(filters);
+  const query = useMemo(() => toQuery(filters, rollId), [filters, rollId]);
+  const [found, setFound] = useState<number | null>(null);
+
+  // Nothing typed: the roll's frames in order. Otherwise the search, best match first.
   const fetchPage = useCallback(
-    (page: number, pageSize: number) => frameList({ roll_id: rollId, page, page_size: pageSize }),
-    [rollId],
+    (page: number, pageSize: number) =>
+      filtered
+        ? search(query, page, pageSize)
+        : frameList({ roll_id: rollId, page, page_size: pageSize }),
+    [filtered, query, rollId],
   );
+  const queryKey = filtered ? JSON.stringify(query) : (rollId ?? 'all');
   const rollHasName = rolls.some((r) => r.id === rollId);
+  const emptyText = filtered
+    ? t('library.search.noMatches')
+    : rollHasName
+      ? t('library.emptyRoll')
+      : t('library.emptyAll');
 
   return (
     <section aria-labelledby="library-title" className={styles.view}>
@@ -73,11 +91,14 @@ export function LibraryView() {
               </div>
             )}
             <JobsPanel />
+            <SearchBar total={found} />
+            {selectedCount > 0 && <SelectionTags />}
             <FrameGrid
               fetchPage={fetchPage}
-              queryKey={rollId ?? 'all'}
+              queryKey={queryKey}
               showRoll={rollId === null}
-              emptyText={rollHasName ? t('library.emptyRoll') : t('library.emptyAll')}
+              emptyText={emptyText}
+              onTotal={setFound}
             />
           </div>
         </div>

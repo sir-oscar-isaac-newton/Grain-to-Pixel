@@ -1,8 +1,8 @@
-//! System commands.
+//! System commands: settings, client logging, crash notes and jobs.
 
-use gtp_app::JobManager;
+use gtp_app::{AppContext, JobManager, Settings, SettingsPatch};
 use gtp_core::{AppError, ErrorCode, JobId};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use specta::Type;
 use tauri::State;
 
@@ -10,19 +10,18 @@ use crate::crash::CrashNote;
 use crate::error::CmdResult;
 use crate::state::AppState;
 
-/// Basic information about the running application.
-#[derive(Debug, Serialize, Type, PartialEq, Eq)]
-pub struct LibraryInfo {
-    pub app_version: String,
-}
-
-/// Stub for the real `library_info` of issue L-03; today it only reports the app version.
+/// The app settings (spec section 5.4), feature flags included.
 #[tauri::command]
 #[specta::specta]
-pub fn library_info() -> CmdResult<LibraryInfo> {
-    Ok(LibraryInfo {
-        app_version: env!("CARGO_PKG_VERSION").to_owned(),
-    })
+pub fn settings_get(ctx: State<'_, AppContext>) -> CmdResult<Settings> {
+    Ok(ctx.settings().get())
+}
+
+/// Changes the settings named in `patch`, saves them and returns the result.
+#[tauri::command]
+#[specta::specta]
+pub fn settings_set(ctx: State<'_, AppContext>, patch: SettingsPatch) -> CmdResult<Settings> {
+    ctx.settings().update(&patch)
 }
 
 /// Severity of an event reported by the UI.
@@ -96,20 +95,6 @@ pub fn job_cancel(jobs: State<'_, JobManager>, id: JobId) -> CmdResult<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn reports_the_crate_version() {
-        assert_eq!(
-            library_info().unwrap().app_version,
-            env!("CARGO_PKG_VERSION")
-        );
-    }
-
-    #[test]
-    fn serializes_with_snake_case_field() {
-        let json = serde_json::to_string(&library_info().unwrap()).unwrap();
-        assert!(json.contains("\"app_version\""));
-    }
 
     #[test]
     fn client_messages_must_be_non_empty_and_bounded() {

@@ -188,6 +188,15 @@
       "number": 27,
       "title": "Catalog schema, migrations, backup and integrity",
       "branch": "feat/issue-27-catalog-schema-and-migrations",
+      "status": "completed",
+      "pr": 118,
+      "commit": "804cf8c"
+    },
+    {
+      "id": "L-03",
+      "number": 28,
+      "title": "Library create/open, folder layout and settings",
+      "branch": "feat/issue-28-library-folder-and-settings",
       "status": "in_progress",
       "pr": null,
       "commit": null

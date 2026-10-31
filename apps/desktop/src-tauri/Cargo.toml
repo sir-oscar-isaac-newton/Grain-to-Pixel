@@ -12,7 +12,7 @@ name = "grain_to_pixel_desktop_lib"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-gtp-app = { path = "../../../crates/gtp-app", version = "0.0.0" }
+gtp-app = { path = "../../../crates/gtp-app", version = "0.0.0", features = ["specta"] }
 gtp-core ={ path = "../../../crates/gtp-core", version = "0.0.0", features = ["specta"] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }

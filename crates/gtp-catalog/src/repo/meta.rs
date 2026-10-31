@@ -4,6 +4,7 @@ use rusqlite::{params, OptionalExtension};
 
 use gtp_core::AppError;
 
+use super::NOW;
 use crate::db::db_error;
 use crate::Catalog;
 
@@ -26,6 +27,13 @@ impl Catalog {
                 params![key, value],
             )
             .map(|_| ())
+            .map_err(db_error)
+    }
+
+    /// The current time as the catalog stores it (RFC 3339 UTC, whole seconds).
+    pub fn now(&self) -> Result<String, AppError> {
+        self.conn
+            .query_row(&format!("SELECT {NOW}"), [], |row| row.get(0))
             .map_err(db_error)
     }
 }

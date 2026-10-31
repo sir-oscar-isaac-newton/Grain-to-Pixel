@@ -5,8 +5,16 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
-	/**  Stub for the real `library_info` of issue L-03; today it only reports the app version. */
-	libraryInfo: () => typedError<LibraryInfo, AppError_Serialize>(__TAURI_INVOKE("library_info")),
+	/**  The app version and the open library. */
+	libraryInfo: () => typedError<LibraryInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("library_info")),
+	/**  Creates a library in `path` (missing or an empty folder) and opens it. */
+	libraryCreate: (path: string, name: string) => typedError<LibraryInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("library_create", { path, name })),
+	/**  Opens the library in `path`. A library from a newer app version opens read-only. */
+	libraryOpen: (path: string) => typedError<LibraryInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("library_open", { path })),
+	/**  The app settings (spec section 5.4), feature flags included. */
+	settingsGet: () => typedError<Settings_Serialize, AppError_Serialize>(__TAURI_INVOKE("settings_get")),
+	/**  Changes the settings named in `patch`, saves them and returns the result. */
+	settingsSet: (patch: SettingsPatch_Deserialize) => typedError<Settings_Serialize, AppError_Serialize>(__TAURI_INVOKE("settings_set", { patch })),
 	/**  Writes an event from the UI (error boundary, `window.onerror`) to the application log. */
 	logClientEvent: (level: ClientLogLevel, message: string) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("log_client_event", { level, message })),
 	/**  Crashes of earlier runs, reported once so the UI can say something went wrong last time. */
@@ -54,6 +62,57 @@ export type CrashNote = {
 /**  Stable, machine-readable error category. The UI shows `message` and logs the code. */
 export type ErrorCode = "NotFound" | "InvalidInput" | "Io" | "Db" | "UnsupportedFormat" | "ScannerUnavailable" | "ScanFailed" | "Cancelled" | "LibraryTooNew" | "Internal";
 
+/**
+ *  Runtime feature flags with their defaults (spec section 10). Each flag is deleted after one
+ *  release in which it was fully on.
+ */
+export type Flags = Flags_Serialize | Flags_Deserialize;
+
+/**  Flags to change; the others keep their value. */
+export type FlagsPatch = FlagsPatch_Serialize | FlagsPatch_Deserialize;
+
+/**  Flags to change; the others keep their value. */
+export type FlagsPatch_Deserialize = {
+	dust_removal?: boolean | null,
+	triplet_import?: boolean | null,
+	guided_capture?: boolean | null,
+	dev_overlay?: boolean | null,
+	experimental_auto_levels?: boolean | null,
+};
+
+/**  Flags to change; the others keep their value. */
+export type FlagsPatch_Serialize = {
+	dust_removal: boolean | null,
+	triplet_import: boolean | null,
+	guided_capture: boolean | null,
+	dev_overlay: boolean | null,
+	experimental_auto_levels: boolean | null,
+};
+
+/**
+ *  Runtime feature flags with their defaults (spec section 10). Each flag is deleted after one
+ *  release in which it was fully on.
+ */
+export type Flags_Deserialize = {
+	dust_removal?: boolean,
+	triplet_import?: boolean,
+	guided_capture?: boolean,
+	dev_overlay?: boolean,
+	experimental_auto_levels?: boolean,
+};
+
+/**
+ *  Runtime feature flags with their defaults (spec section 10). Each flag is deleted after one
+ *  release in which it was fully on.
+ */
+export type Flags_Serialize = {
+	dust_removal: boolean,
+	triplet_import: boolean,
+	guided_capture: boolean,
+	dev_overlay: boolean,
+	experimental_auto_levels: boolean,
+};
+
 /**  A job finished. Sent once per job, after its last progress event. */
 export type JobDone = {
 	id: JobId,
@@ -99,9 +158,92 @@ export type JobResult =
 /**  The job did its work and has nothing to report. */
 { kind: "Finished" };
 
-/**  Basic information about the running application. */
-export type LibraryInfo = {
+/**  What the UI shows about the open library. */
+export type LibraryDetails = LibraryDetails_Serialize | LibraryDetails_Deserialize;
+
+/**  What the UI shows about the open library. */
+export type LibraryDetails_Deserialize = {
+	/**  The library folder, for display. */
+	path: string,
+	name: string,
+	created_at?: string | null,
+	/**  True for a library made by a newer app version: it can be browsed but not changed. */
+	read_only: boolean,
+	schema_version: number,
+	/**  Bytes free on the library's drive; `None` when the system cannot tell. */
+	free_bytes?: number | null,
+};
+
+/**  What the UI shows about the open library. */
+export type LibraryDetails_Serialize = {
+	/**  The library folder, for display. */
+	path: string,
+	name: string,
+	created_at: string | null,
+	/**  True for a library made by a newer app version: it can be browsed but not changed. */
+	read_only: boolean,
+	schema_version: number,
+	/**  Bytes free on the library's drive; `None` when the system cannot tell. */
+	free_bytes: number | null,
+};
+
+/**  The running app and the open library, if any. */
+export type LibraryInfo = LibraryInfo_Serialize | LibraryInfo_Deserialize;
+
+/**  The running app and the open library, if any. */
+export type LibraryInfo_Deserialize = {
 	app_version: string,
+	/**  `null` until a library is created or opened. */
+	library?: LibraryDetails_Deserialize | null,
+};
+
+/**  The running app and the open library, if any. */
+export type LibraryInfo_Serialize = {
+	app_version: string,
+	/**  `null` until a library is created or opened. */
+	library: LibraryDetails_Serialize | null,
+};
+
+export type Settings = Settings_Serialize | Settings_Deserialize;
+
+/**  Settings to change; fields left out keep their value. The last library is set by opening one. */
+export type SettingsPatch = SettingsPatch_Serialize | SettingsPatch_Deserialize;
+
+/**  Settings to change; fields left out keep their value. The last library is set by opening one. */
+export type SettingsPatch_Deserialize = {
+	window?: WindowSize | null,
+	theme?: Theme | null,
+	flags?: FlagsPatch_Deserialize | null,
+};
+
+/**  Settings to change; fields left out keep their value. The last library is set by opening one. */
+export type SettingsPatch_Serialize = {
+	window: WindowSize | null,
+	theme: Theme | null,
+	flags: FlagsPatch_Serialize | null,
+};
+
+export type Settings_Deserialize = {
+	/**  The library opened last, reopened by the UI at start. */
+	last_library?: string | null,
+	window?: WindowSize | null,
+	theme?: Theme,
+	flags?: Flags_Deserialize,
+};
+
+export type Settings_Serialize = {
+	/**  The library opened last, reopened by the UI at start. */
+	last_library: string | null,
+	window: WindowSize | null,
+	theme: Theme,
+	flags: Flags_Serialize,
+};
+
+export type Theme = "system" | "light" | "dark";
+
+export type WindowSize = {
+	width: number,
+	height: number,
 };
 
 /* Tauri Specta runtime */

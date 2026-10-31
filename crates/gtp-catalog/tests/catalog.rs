@@ -143,6 +143,46 @@ fn a_newer_library_is_refused_and_left_alone() {
 }
 
 #[test]
+fn a_reader_sees_committed_writes_and_cannot_write() {
+    let dir = TempDir::new("reader");
+    let mut writer = Catalog::open(&dir.db()).unwrap();
+    let reader = Catalog::open_reader(&dir.db()).unwrap();
+    assert!(writer.is_writer() && !reader.is_writer());
+    assert!(reader.list_rolls().unwrap().is_empty());
+    let r = writer.insert_roll(&roll("Seen")).unwrap();
+    assert_eq!(reader.list_rolls().unwrap(), vec![r]);
+    assert_eq!(reader.schema_version().unwrap(), SCHEMA_VERSION);
+
+    let mut reader = reader;
+    assert_eq!(
+        reader.insert_roll(&roll("Nope")).unwrap_err().code,
+        ErrorCode::Db
+    );
+    drop(reader);
+    drop(writer);
+    assert!(!Catalog::open(&dir.db())
+        .unwrap()
+        .recovered_from_unclean_exit());
+}
+
+#[test]
+fn a_newer_library_can_still_be_read() {
+    let dir = TempDir::new("newer-read");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("Future")).unwrap();
+    cat.close().unwrap();
+    Connection::open(dir.db())
+        .unwrap()
+        .pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+        .unwrap();
+    let reader = Catalog::open_reader(&dir.db()).unwrap();
+    assert_eq!(reader.schema_version().unwrap(), SCHEMA_VERSION + 1);
+    assert_eq!(reader.list_rolls().unwrap(), vec![r]);
+    let missing = Catalog::open_reader(&dir.0.join("nope.db")).err().unwrap();
+    assert_eq!(missing.code, ErrorCode::NotFound);
+}
+
+#[test]
 fn an_unclean_exit_is_noticed_and_checked_on_the_next_open() {
     let dir = TempDir::new("unclean");
     let cat = Catalog::open(&dir.db()).unwrap();

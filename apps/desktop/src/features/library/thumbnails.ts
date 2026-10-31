@@ -11,6 +11,8 @@ export const MAX_PARALLEL = 6;
 const cache = new Map<string, string>();
 const missing = new Set<string>();
 const inflight = new Map<string, Promise<string | null>>();
+const versions = new Map<string, number>();
+const listeners = new Set<() => void>();
 const waiting: Array<() => void> = [];
 let running = 0;
 
@@ -62,24 +64,33 @@ export function loadThumbnail(id: string): Promise<string | null> {
   if (pending) return pending;
 
   const request = (async () => {
-    await turn();
-    try {
-      const bytes = await frameThumbnail(id);
-      const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
-      remember(id, url);
-      return url;
-    } catch (error) {
-      if (error instanceof IpcError && error.error.code === 'NotFound') {
-        missing.add(id);
-        return null;
+    for (;;) {
+      const version = thumbnailVersion(id);
+      await turn();
+      try {
+        const bytes = await frameThumbnail(id);
+        // Regenerated while this was on its way: what arrived may be the old picture, ask again.
+        if (thumbnailVersion(id) !== version) continue;
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+        remember(id, url);
+        return url;
+      } catch (error) {
+        if (thumbnailVersion(id) !== version) continue;
+        if (error instanceof IpcError && error.error.code === 'NotFound') {
+          missing.add(id);
+          return null;
+        }
+        throw error;
+      } finally {
+        release();
       }
-      throw error;
-    } finally {
-      release();
-      inflight.delete(id);
     }
   })();
   inflight.set(id, request);
+  const done = () => {
+    if (inflight.get(id) === request) inflight.delete(id);
+  };
+  request.then(done, done);
   return request;
 }
 
@@ -88,12 +99,30 @@ export function forgetMissingThumbnails() {
   missing.clear();
 }
 
-/** Drops one thumbnail, for example after it was regenerated. */
+/**
+ * Drops one thumbnail after it was regenerated, and tells the cells showing it to load it again
+ * (see `thumbnailVersion`). A request already in flight notices the change and asks again.
+ */
 export function invalidateThumbnail(id: string) {
   const url = cache.get(id);
   if (url) URL.revokeObjectURL(url);
   cache.delete(id);
   missing.delete(id);
+  versions.set(id, thumbnailVersion(id) + 1);
+  for (const listener of [...listeners]) listener();
+}
+
+/** How many times a frame's thumbnail was invalidated; a cell reloads its picture when it changes. */
+export function thumbnailVersion(id: string): number {
+  return versions.get(id) ?? 0;
+}
+
+/** Calls `listener` whenever any thumbnail is invalidated. Returns a function that stops. */
+export function subscribeThumbnails(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 /** Drops everything (another library was opened). */
@@ -101,4 +130,5 @@ export function resetThumbnails() {
   for (const url of cache.values()) URL.revokeObjectURL(url);
   cache.clear();
   missing.clear();
+  versions.clear();
 }

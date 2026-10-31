@@ -9,6 +9,8 @@ import {
   isMissingThumbnail,
   loadThumbnail,
   resetThumbnails,
+  subscribeThumbnails,
+  thumbnailVersion,
 } from './thumbnails';
 
 vi.mock('../../shared/ipc', async () => (await import('./fake-ipc')).ipc);
@@ -56,6 +58,56 @@ describe('thumbnail cache', () => {
     ipc.frameThumbnail.mockRejectedValueOnce(new Error('disk on fire'));
     await expect(loadThumbnail('broken')).rejects.toThrow('disk on fire');
     expect(isMissingThumbnail('broken')).toBe(false);
+  });
+
+  it('drops a thumbnail that was regenerated, tells listeners, and loads it again', async () => {
+    const first = await loadThumbnail('a');
+    state.noThumb.add('b');
+    await loadThumbnail('b');
+    expect(isMissingThumbnail('b')).toBe(true);
+    const heard = vi.fn();
+    const stop = subscribeThumbnails(heard);
+    expect(thumbnailVersion('a')).toBe(0);
+
+    invalidateThumbnail('a');
+    expect(cachedThumbnail('a')).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(first);
+    expect(thumbnailVersion('a')).toBe(1);
+    expect(thumbnailVersion('other')).toBe(0);
+    expect(heard).toHaveBeenCalledTimes(1);
+
+    invalidateThumbnail('b');
+    expect(isMissingThumbnail('b')).toBe(false);
+    stop();
+    invalidateThumbnail('a');
+    expect(heard).toHaveBeenCalledTimes(2);
+    expect(thumbnailVersion('a')).toBe(2);
+
+    const again = await loadThumbnail('a');
+    expect(again).not.toBe(first);
+    expect(ipc.frameThumbnail).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not keep a picture that was already on its way when the thumbnail was regenerated', async () => {
+    let arrive: () => void = () => undefined;
+    ipc.frameThumbnail.mockImplementationOnce(
+      () =>
+        new Promise<ArrayBuffer>((resolve) => {
+          arrive = () => resolve(new ArrayBuffer(1));
+        }),
+    );
+    const pending = loadThumbnail('c');
+    await vi.waitFor(() => expect(ipc.frameThumbnail).toHaveBeenCalledTimes(1));
+
+    invalidateThumbnail('c');
+    arrive();
+    const url = await pending;
+
+    // The old bytes were thrown away and the thumbnail was asked for again.
+    expect(ipc.frameThumbnail).toHaveBeenCalledTimes(2);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect((vi.mocked(URL.createObjectURL).mock.calls[0]?.[0] as Blob).size).toBe(5);
+    expect(cachedThumbnail('c')).toBe(url);
   });
 
   it('asks the backend for a limited number of thumbnails at a time', async () => {

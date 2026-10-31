@@ -1,7 +1,7 @@
 //! Backend-to-UI events, declared with `tauri_specta` so their payloads are typed in the bindings
 //! and registered in `ipc.rs`. `library://changed` and the capture events follow with their issues.
 
-use gtp_core::{AppError, JobId, JobResult, RollId};
+use gtp_core::{AppError, FrameId, JobId, JobResult, RollId};
 use serde::Serialize;
 use specta::Type;
 
@@ -28,6 +28,7 @@ pub struct JobDone {
 #[tauri_specta(event_name = "library://changed")]
 pub struct LibraryChanged {
     pub roll_id: Option<RollId>,
+    pub frame_ids: Vec<FrameId>,
 }
 
 /// A job failed or was cancelled (`error.code` is `Cancelled`). Sent once per job, instead of

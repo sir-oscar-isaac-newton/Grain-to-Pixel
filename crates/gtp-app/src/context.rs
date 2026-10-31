@@ -3,16 +3,19 @@
 use std::path::Path;
 use std::sync::{Arc, PoisonError, RwLock};
 
-use gtp_core::{AppError, ErrorCode};
+use gtp_core::{AppError, ErrorCode, FrameId};
 
+use crate::jobs::LibraryEvents;
 use crate::services::develop::DevelopService;
 use crate::services::library::{Library, LibraryDetails};
 use crate::services::settings::SettingsStore;
+use crate::services::thumbnails::ThumbnailService;
 
 pub struct AppContext {
     settings: SettingsStore,
     library: RwLock<Option<Arc<Library>>>,
-    develop: DevelopService,
+    develop: Arc<DevelopService>,
+    thumbnails: ThumbnailService,
 }
 
 impl AppContext {
@@ -24,7 +27,8 @@ impl AppContext {
             Self {
                 settings,
                 library: RwLock::new(None),
-                develop: DevelopService::default(),
+                develop: Arc::new(DevelopService::default()),
+                thumbnails: ThumbnailService::default(),
             },
             note,
         )
@@ -37,6 +41,25 @@ impl AppContext {
     /// The frames open for editing in the Develop view.
     pub fn develop(&self) -> &DevelopService {
         &self.develop
+    }
+
+    /// Queues the thumbnails of these frames for regeneration from their saved recipes and returns
+    /// at once (after a recipe was saved or applied). `events` hears of the changed frames when
+    /// they are done.
+    pub fn regenerate_thumbnails(
+        &self,
+        events: Arc<dyn LibraryEvents>,
+        frames: Vec<FrameId>,
+    ) -> Result<(), AppError> {
+        self.thumbnails
+            .request(self.library()?, Arc::clone(&self.develop), events, frames);
+        Ok(())
+    }
+
+    /// A frame's thumbnail as bytes; a missing file is rebuilt from the saved recipe first.
+    pub fn thumbnail(&self, frame: FrameId) -> Result<Vec<u8>, AppError> {
+        self.thumbnails
+            .thumbnail(&self.develop, &*self.library()?, frame)
     }
 
     /// The open library, or `NotFound` when none is open.

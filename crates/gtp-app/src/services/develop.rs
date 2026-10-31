@@ -263,6 +263,36 @@ impl DevelopService {
         Ok(self.put(id, entry))
     }
 
+    /// What a thumbnail is rendered from: the cached proxy when the frame is open, otherwise the
+    /// original decoded just for this and not cached, so a batch of thumbnails cannot push the
+    /// frame being edited out of the cache. The roll's film base is read fresh.
+    pub(crate) fn thumbnail_input(
+        &self,
+        library: &Library,
+        id: FrameId,
+    ) -> Result<PipelineInput, AppError> {
+        let (frame, sources, base) = library.read(|c| {
+            let frame = c.get_frame(id)?;
+            let sources = c.sources_of(id)?;
+            let base = c.get_roll(frame.roll_id)?.film_base_rgb;
+            Ok((frame, sources, base))
+        })?;
+        let cached = self
+            .cache()
+            .iter()
+            .find(|(f, _)| *f == id)
+            .map(|(_, entry)| Arc::clone(&entry.rgb));
+        let rgb = match cached {
+            Some(rgb) => rgb,
+            None => load(library, &sources, &frame)?.rgb,
+        };
+        Ok(PipelineInput {
+            rgb,
+            ir: None,
+            film_base: base,
+        })
+    }
+
     /// Opens a frame for editing: decodes the original into the cache (when it is not there) and
     /// returns what the view needs. The roll's film base and the saved recipe are read fresh.
     pub fn open(&self, library: &Library, id: FrameId) -> Result<DevelopInfo, AppError> {
@@ -358,134 +388,13 @@ impl DevelopService {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use std::sync::atomic::Ordering;
 
-    use gtp_core::testing::synthetic::{self, Params};
-    use gtp_core::{FrameKind, RollId};
-    use gtp_io::{from_f32_linear, write_tiff16, Compression};
+    use gtp_core::FrameKind;
 
     use super::*;
-    use crate::library_fs::originals_rel;
-    use crate::services::roll_frame::{roll_create, roll_set_film_base, RollInput};
-
-    struct Fixture {
-        dir: PathBuf,
-        library: Library,
-        roll: RollId,
-        service: DevelopService,
-    }
-
-    impl Fixture {
-        fn new(label: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!(
-                "gtp-develop-{label}-{}-{}",
-                std::process::id(),
-                FrameId::new()
-            ));
-            let library = Library::create(&dir, "Develop").unwrap();
-            let roll = roll_create(
-                &library,
-                RollInput {
-                    name: "Roll".into(),
-                    ..RollInput::default()
-                },
-            )
-            .unwrap()
-            .id;
-            Self {
-                dir,
-                library,
-                roll,
-                service: DevelopService::default(),
-            }
-        }
-
-        /// A frame whose original is a synthetic negative of the given size.
-        fn frame(&self, index: u32, width: u32, height: u32) -> FrameId {
-            let scan = synthetic::negative(
-                u64::from(index),
-                &Params {
-                    width,
-                    height,
-                    rebate: [width / 14; 4],
-                    ..Params::default()
-                },
-            )
-            .unwrap();
-            let id = FrameId::new();
-            let rel = originals_rel(self.roll, id).join("scan.tif");
-            let path = self.library.resolve(&rel).unwrap();
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            write_tiff16(&path, &from_f32_linear(&scan.image), Compression::None).unwrap();
-            self.library
-                .write(|c| {
-                    c.insert_frame(&Frame {
-                        id,
-                        roll_id: self.roll,
-                        index_in_roll: index,
-                        kind: FrameKind::ScanRgbIr,
-                        width,
-                        height,
-                        has_ir: false,
-                        note: String::new(),
-                        created_at: String::new(),
-                        edited_at: None,
-                    })?;
-                    c.insert_source(&SourceFile {
-                        frame_id: id,
-                        role: SourceRole::Rgb,
-                        rel_path: rel.to_string_lossy().replace('\\', "/"),
-                        sha256: String::new(),
-                        bytes: 0,
-                    })
-                })
-                .unwrap();
-            id
-        }
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.dir);
-        }
-    }
-
-    impl Fixture {
-        /// A frame with no original file, enough for saving and copying recipes.
-        fn bare(&self, index: u32) -> FrameId {
-            let id = FrameId::new();
-            self.library
-                .write(|c| {
-                    c.insert_frame(&Frame {
-                        id,
-                        roll_id: self.roll,
-                        index_in_roll: index,
-                        kind: FrameKind::ScanRgbIr,
-                        width: 10,
-                        height: 10,
-                        has_ir: false,
-                        note: String::new(),
-                        created_at: String::new(),
-                        edited_at: None,
-                    })
-                })
-                .unwrap();
-            id
-        }
-
-        fn stored(&self, frame: FrameId) -> Option<Recipe> {
-            self.library.read(|c| c.load_recipe(frame)).unwrap()
-        }
-
-        fn edited(&self, frame: FrameId) -> bool {
-            self.library
-                .read(|c| c.get_frame(frame))
-                .unwrap()
-                .edited_at
-                .is_some()
-        }
-    }
+    use crate::services::roll_frame::roll_set_film_base;
+    use crate::services::testkit::Fixture;
 
     fn header(bytes: &[u8]) -> (u64, u32, u32) {
         (

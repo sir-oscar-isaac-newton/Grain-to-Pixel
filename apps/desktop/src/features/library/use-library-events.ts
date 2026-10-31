@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { onJobDone, onJobError, onJobProgress, onLibraryChanged } from '../../shared/ipc';
 import { useLibraryStore } from './library-store';
-import { forgetMissingThumbnails } from './thumbnails';
+import { forgetMissingThumbnails, invalidateThumbnail } from './thumbnails';
 
 /** Changes from an import arrive one frame at a time; reload once after this quiet time. */
 export const RELOAD_DELAY_MS = 150;
@@ -27,7 +27,10 @@ export function useLibraryEvents(enabled: boolean) {
     const store = useLibraryStore.getState;
 
     track(
-      onLibraryChanged(() => {
+      onLibraryChanged((_roll, regenerated) => {
+        // Frames whose thumbnails were regenerated reload their pictures at once; the rest of the
+        // screen waits for the quiet period below.
+        regenerated.forEach(invalidateThumbnail);
         clearTimeout(timer);
         timer = setTimeout(() => {
           forgetMissingThumbnails();

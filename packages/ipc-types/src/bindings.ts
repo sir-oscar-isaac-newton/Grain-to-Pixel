@@ -683,6 +683,7 @@ export type LibraryChanged = LibraryChanged_Serialize | LibraryChanged_Deseriali
  */
 export type LibraryChanged_Deserialize = {
 	roll_id?: RollId | null,
+	frame_ids: FrameId[],
 };
 
 /**
@@ -691,6 +692,7 @@ export type LibraryChanged_Deserialize = {
  */
 export type LibraryChanged_Serialize = {
 	roll_id: RollId | null,
+	frame_ids: FrameId[],
 };
 
 /**  What the UI shows about the open library. */

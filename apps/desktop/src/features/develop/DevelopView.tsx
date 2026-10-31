@@ -14,6 +14,7 @@ import {
 } from '../../shared/ipc';
 import { useLibraryStore } from '../library/library-store';
 import { useFrames } from '../library/use-frames';
+import { ApplySettingsDialog } from '../library/ApplySettingsDialog';
 import { ExportDialog } from '../library/ExportDialog';
 import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
@@ -99,6 +100,8 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
 
   const [pick, setPick] = useState<PickTarget | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const selection = useLibraryStore((s) => s.selected);
   const [guide, setGuide] = useState(false);
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -330,6 +333,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         <button type="button" onClick={() => setExporting(true)}>
           {t('export.open')}
         </button>
+        <button type="button" disabled={readOnly} onClick={() => setApplying(true)}>
+          {t('apply.open')}
+        </button>
         <span className={styles.spacer} />
         <button type="button" onClick={zoomOut} aria-label={t('develop.zoomOut')}>
           {t('develop.zoomOutText')}
@@ -505,6 +511,14 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
       </div>
 
       {exporting && <ExportDialog frameIds={[frame.id]} open onClose={() => setExporting(false)} />}
+      {applying && (
+        <ApplySettingsDialog
+          open
+          onClose={() => setApplying(false)}
+          sources={[frame.id]}
+          selected={[...selection]}
+        />
+      )}
 
       <Filmstrip
         frames={frames}

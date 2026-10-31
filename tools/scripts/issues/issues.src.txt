@@ -948,6 +948,7 @@ tech:
 FILES: apps/desktop/src/features/develop/ApplySettingsMenu.tsx; hook in use-library.ts for the selection.
 ROUTES used: recipe_apply_to.
 TESTS: menu with mocked ipc, confirmation, axe.
+DELIVERY (decided when U-06 was approved): the dialog starts from both views (the Library with at least two frames selected, where the source is chosen among the selected frames; Develop, where it is the open frame), and Colour and Tone are the groups ticked at first. There is no undo, so the button names the groups and the number of frames and a line says the settings are replaced; an undo would need the previous recipes kept, which is a backend issue of its own. Output is not offered, as the criteria list six groups and the export dialog has its own colour space. No backend change.
 
 ## P-12
 title: Export job - TIFF16 and JPEG with ICC

@@ -150,6 +150,10 @@ export const state = {
   }>,
   /** Sampling a neutral grey is refused with this message when set. */
   neutralRefused: null as string | null,
+  /** The settings applied to frames, in order. */
+  applies: [] as Array<{ frameIds: string[]; source: string; fields: string[] }>,
+  /** Applying settings is refused with this message when set. */
+  applyRefused: null as string | null,
   /** The exports started, in order. */
   exports: [] as Array<{ frameIds: string[]; options: unknown }>,
   /** Starting an export is refused with this message when set. */
@@ -398,6 +402,12 @@ export const ipc = {
     return new Uint8Array([0xff, 0xd8, 1, 2, 3]).buffer;
   }),
   importFiles: vi.fn(async () => 'job-1'),
+  recipeApplyTo: vi.fn(async (frameIds: string[], source: string, fields: string[]) => {
+    state.applies.push({ frameIds, source, fields });
+    if (state.applyRefused) {
+      throw new IpcError({ code: 'InvalidInput', message: state.applyRefused });
+    }
+  }),
   exportStart: vi.fn(async (frameIds: string[], options: unknown) => {
     state.exports.push({ frameIds, options });
     if (state.exportRefused) {
@@ -436,6 +446,8 @@ export function resetFake() {
   state.frameConfidence = 0.9;
   state.exportRefused = null;
   state.exports = [];
+  state.applies = [];
+  state.applyRefused = null;
   state.neutralSamples = [];
   state.neutralRefused = null;
   state.saveFails = null;

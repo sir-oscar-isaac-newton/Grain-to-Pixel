@@ -1590,3 +1590,24 @@ tech:
 FILES: crates/gtp-negative/src/flat_field.rs; storage of the reference follows the capture session design.
 INTERFACES: `flat_field_correct(&mut ImageF32, &FlatField) -> Result<()>`.
 TESTS: synthetic shading with the P-02 generator, identity, invalid references.
+
+## P-17
+title: Develop preview speed for large proxies
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+deps: P-11
+adr: no
+spec: specification section 11
+desc: Bring `develop_render` at 1600 px under the 100 ms budget for every frame shape. A 3:2 frame takes 73 ms but a square one (6x6, a 2048 x 2048 proxy) takes 109 ms, found when P-11 was measured.
+ac:
+- Per-stage timings of `develop_render` are recorded for a 3:2 and a square frame (extend the ignored timing test), so the fix targets the real cost
+- A 1600 px render of a square frame takes at most 100 ms and a 3:2 frame is no slower, on the same machine with the same typical edit
+- Output is bit-identical to before (golden harness and the existing render tests pass unchanged)
+- No new dependency, no schema or IPC change
+tech:
+FILES: crates/gtp-app/src/pipeline/ and crates/gtp-negative/src/ (the stages that turn out to be serial); crates/gtp-app/src/services/develop.rs (timing test).
+APPROACH: measure first. Colour, tone and geometry already use rayon; the candidates are the base normalize and invert stages, the downscale of the proxy on every render (`build_proxy`), the crop copy and the RGBA conversion. Parallelise the serial ones and avoid the repeated downscale when a render is at or near proxy size.
+TESTS: existing render and golden tests unchanged; timing run recorded in the PR (3:2 and square, per stage).
+NOTES: added after P-11 and L-08 were delivered, so it is GitHub issue #130, not 74 (issue and pull request numbers share one sequence). Use 130 as its `number` in docs/progress.md.

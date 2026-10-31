@@ -270,9 +270,9 @@
       "number": 36,
       "title": "Recipe save and apply to frames",
       "branch": "feat/issue-36-recipe-save-apply",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 129,
+      "commit": "921268b"
     }
   ]
 }

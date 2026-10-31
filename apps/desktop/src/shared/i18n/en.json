@@ -163,7 +163,34 @@
   },
   "develop": {
     "title": "Develop",
-    "placeholder": "Convert and edit a frame here."
+    "noFrame": "Choose a frame in the Library to develop it: double-click it, or select it and press Enter.",
+    "toLibrary": "Library",
+    "toolbar": "Develop tools",
+    "side": "Histogram and settings",
+    "before": "Before",
+    "beforeBadge": "Before",
+    "showingBefore": "Showing the automatic conversion (before). Press \\ to go back.",
+    "beforeLoading": "Preparing the “before” picture…",
+    "beforeUnavailable": "The automatic conversion could not be made, so there is no “before” picture.",
+    "updating": "Updating the picture…",
+    "renderFailed": "The picture could not be updated: {{message}}",
+    "opening": "Opening the frame…",
+    "openFailed": "The frame could not be opened: {{message}}",
+    "rendering": "Rendering the first picture…",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "zoomInText": "+",
+    "zoomOutText": "−",
+    "zoomLevel": "Zoom level",
+    "fit": "Fit",
+    "actual": "100%",
+    "histogram": {
+      "label": "Histogram of the picture shown",
+      "clipping": "Black clipped: {{black}}. White clipped: {{white}}."
+    },
+    "filmstrip": {
+      "label": "Frames of the current Library view"
+    }
   },
   "import": {
     "title": "Import",

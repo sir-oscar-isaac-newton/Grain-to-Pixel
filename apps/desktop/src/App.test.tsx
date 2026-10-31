@@ -17,7 +17,7 @@ vi.mock('./shared/ipc', () => ({
 
 describe('App shell', () => {
   beforeEach(() => {
-    useUiStore.setState({ view: 'library' });
+    useUiStore.setState({ view: 'library', developFrame: null });
     crashNotesTake.mockReset();
     crashNotesTake.mockResolvedValue([]);
   });
@@ -50,6 +50,8 @@ describe('App shell', () => {
     await user.click(screen.getByRole('button', { name: 'Develop' }));
     expect(screen.getByRole('heading', { level: 2, name: 'Develop' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Develop' })).toHaveAttribute('aria-current', 'page');
+    // No frame was chosen: the view says how to open one.
+    expect(screen.getByText(/double-click it, or select it and press Enter/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Import' }));
     expect(screen.getByRole('heading', { level: 2, name: 'Import' })).toBeInTheDocument();

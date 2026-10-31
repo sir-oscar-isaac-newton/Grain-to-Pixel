@@ -8,6 +8,8 @@ import type {
   FrameSummary,
   ImportResult,
   LibraryDetails,
+  Preview,
+  Recipe,
   Roll,
   SearchQuery,
   Tag,
@@ -73,6 +75,29 @@ export function makeFrames(rollId: string, count: number, prefix = rollId): Fram
   }));
 }
 
+/** A stand-in for a recipe: the tests only care which one it is, so it is a tagged object. */
+export function makeRecipe(tag: string): Recipe {
+  return { v: 1, tag } as unknown as Recipe;
+}
+
+const tagOf = (recipe: Recipe) => (recipe as unknown as { tag?: string }).tag ?? 'none';
+
+/** The colour of every pixel of a preview, by the recipe that made it. */
+export const PIXELS: Record<string, [number, number, number]> = {
+  saved: [10, 20, 30],
+  auto: [200, 100, 50],
+};
+
+/** A preview as the backend would answer: tiny, but sized like the real ones (3:2). */
+export function makePreview(recipe: Recipe, maxEdge: number, seq: number): Preview {
+  const width = Math.round(maxEdge / 16);
+  const height = Math.round((maxEdge * 2) / 3 / 16);
+  const [r, g, b] = PIXELS[tagOf(recipe)] ?? [128, 128, 128];
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < width * height; i += 1) rgba.set([r, g, b, 255], i * 4);
+  return { seq, width, height, rgba };
+}
+
 export const state = {
   details: null as LibraryDetails | null,
   lastLibrary: null as string | null,
@@ -83,6 +108,10 @@ export const state = {
     'exists' | 'is_empty' | 'has_library'
   >,
   noThumb: new Set<string>(),
+  /** Frames whose original cannot be opened in Develop. */
+  noScan: new Set<string>(),
+  /** Frames whose automatic analysis fails. */
+  noAnalysis: new Set<string>(),
   /** Every tag of the library. */
   tags: [] as Tag[],
   /** Tag names put on a frame, by frame id. */
@@ -225,6 +254,27 @@ export const ipc = {
     add.forEach(ensureTag);
     state.rollTags[id] = change(state.rollTags[id] ?? [], add, remove);
   }),
+  developOpen: vi.fn(async (id: string) => {
+    if (state.noScan.has(id)) {
+      throw new IpcError({ code: 'NotFound', message: 'This frame has no scan file.' });
+    }
+    return {
+      width: 5616,
+      height: 3744,
+      has_ir: false,
+      recipe: makeRecipe('saved'),
+      roll_base: null as [number, number, number] | null,
+    };
+  }),
+  developAnalyze: vi.fn(async (id: string) => {
+    if (state.noAnalysis.has(id)) {
+      throw new IpcError({ code: 'InvalidInput', message: 'The scan could not be analysed.' });
+    }
+    return { auto_recipe: makeRecipe('auto') };
+  }),
+  developRender: vi.fn(async (_id: string, recipe: Recipe, maxEdge: number, seq: number) =>
+    makePreview(recipe, maxEdge, seq),
+  ),
   frameThumbnail: vi.fn(async (id: string) => {
     if (state.noThumb.has(id)) throw new IpcError({ code: 'NotFound', message: 'no thumbnail' });
     return new Uint8Array([0xff, 0xd8, 1, 2, 3]).buffer;
@@ -249,6 +299,8 @@ export function resetFake() {
   state.frames = [];
   state.folder = { exists: true, is_empty: true, has_library: false };
   state.noThumb = new Set();
+  state.noScan = new Set();
+  state.noAnalysis = new Set();
   state.tags = [];
   state.frameTags = {};
   state.rollTags = {};
@@ -258,6 +310,11 @@ export function resetFake() {
   listeners.done.length = 0;
   listeners.error.length = 0;
   Object.values(ipc).forEach((fn) => {
-    if (typeof fn === 'function' && 'mockClear' in fn) (fn as ReturnType<typeof vi.fn>).mockClear();
+    if (typeof fn === 'function' && 'mockClear' in fn) {
+      // Clearing the calls keeps the implementations, but a result queued with Once and never
+      // used would leak into the next test, so those are dropped too.
+      (fn as ReturnType<typeof vi.fn>).mockClear();
+      (fn as ReturnType<typeof vi.fn>).mockReset();
+    }
   });
 }

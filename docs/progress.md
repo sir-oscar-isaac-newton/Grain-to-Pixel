@@ -316,10 +316,19 @@
       "number": 40,
       "title": "Colour and Tone panels with curve editor",
       "branch": "feat/issue-40-tone-panel",
+      "status": "completed",
+      "pr": 139,
+      "commit": "c370f4f",
+      "note": "Delivered in two PRs: part 1 #138 (2e8c9b3, branch feat/issue-40-colour-panel), part 2 #139 (c370f4f)"
+    },
+    {
+      "id": "P-12",
+      "number": 43,
+      "title": "Export job - TIFF16 and JPEG with ICC",
+      "branch": "feat/issue-43-export-job",
       "status": "in_progress",
       "pr": null,
-      "commit": null,
-      "note": "Part 1 of 2 merged in #138 (2e8c9b3) on branch feat/issue-40-colour-panel: Colour panel and neutral picker. Part 2: Tone panel and curve editor"
+      "commit": null
     },
     {
       "id": "P-14",

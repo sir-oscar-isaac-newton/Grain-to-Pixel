@@ -712,7 +712,7 @@ FILES:
 - crates/gtp-app/src/services/export.rs: job per frame: load original, pipeline::render(Full), output transform with ICC, naming template (`{roll}_{index:03}.{ext}`), write, insert export_log; cancel-safe (temp file then rename).
 - src-tauri/src/commands/{develop.rs, export.rs}; UI: features/develop copy/apply-to-roll menu, export dialog; features/settings/{SettingsView.tsx, FlagsList.tsx}.
 ROUTES: recipe_save(FrameId, Recipe); recipe_apply_to(FrameId[], source: FrameId, fields: RecipeField[]); export_start(FrameId[], ExportOptions{format: Tiff16|Jpeg, space: OutputSpace, quality, dest_dir, template}) -> JobId; settings UI over settings_get/set (flags, library path, free space).
-VALIDATION: dest_dir chosen via OS dialog and canonicalized; template sanitized (no path separators); overwrite requires confirmation.
+VALIDATION: dest_dir chosen via OS dialog and canonicalized; template sanitized (no path separators); an existing file is never overwritten (the name gets a number).
 MIGRATIONS: none (export_log exists in 0003).
 TESTS: save/reload round trip; apply_to copies only selected fields; export of a synthetic frame to TIFF16 and JPEG with the right ICC; temp-file cleanup on cancel; one 21 MP full export timed against the 10 s budget; settings flags default on/off per spec §10; vitest-axe on export dialog and settings.
 ACCEPTANCE: GTP-055/056/057 criteria; M3 exit (full file-based workflow end to end) confirmed by me.

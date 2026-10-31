@@ -297,9 +297,19 @@
       "number": 130,
       "title": "Develop preview speed for large proxies",
       "branch": "feat/issue-130-develop-preview-speed",
+      "status": "completed",
+      "pr": 134,
+      "commit": "e0c0d0f"
+    },
+    {
+      "id": "U-03",
+      "number": 39,
+      "title": "Base and Invert panel with film-base picker",
+      "branch": "feat/issue-39-base-invert-panel",
       "status": "in_progress",
       "pr": null,
-      "commit": null
+      "commit": null,
+      "note": "Part 1 of 2: film-base picker, roll default, level sliders, auto levels, autosave; part 2 after P-14: white and black point pickers"
     }
   ]
 }

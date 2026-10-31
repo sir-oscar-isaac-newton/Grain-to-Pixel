@@ -1,18 +1,36 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Histogram } from '@gtp/ui';
 import { useUiStore, type DevelopFrame } from '../../app/store';
-import type { FrameSummary } from '../../shared/ipc';
+import {
+  developAnalyze,
+  developSampleBase,
+  frameGet,
+  rollSetFilmBase,
+  type FrameSummary,
+} from '../../shared/ipc';
 import { useLibraryStore } from '../library/library-store';
 import { useFrames } from '../library/use-frames';
+import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
 import { Canvas } from './Canvas';
 import { actionForKey } from './develop-keys';
 import styles from './develop.module.css';
 import { Filmstrip } from './Filmstrip';
 import { clipping, computeHistogram } from './histogram';
+import { BaseInvertPanel } from './panels/BaseInvertPanel';
+import type { Fractions } from './picker';
+import { baseOf, levelsOf, triple, withBase, withLevels } from './recipe-parts';
 import { useDevelop } from './use-develop';
+import { usePicker } from './use-picker';
 import { useViewport } from './use-viewport';
+
+interface Notice {
+  tone: 'info' | 'error';
+  text: string;
+}
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * The Develop view: the open frame on a canvas with pan and zoom, a histogram of what is shown, a
@@ -53,20 +71,100 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   const query = useLibraryQuery();
   const frames = useFrames(query.fetchPage, query.queryKey, revision);
   const develop = useDevelop(frame.id);
-  const { preview } = develop;
-  const viewport = useViewport(preview ? { width: preview.width, height: preview.height } : null);
-  const { toggleBefore } = develop;
+  const { preview, recipe, info } = develop;
+  const readOnly = useLibraryStore((s) => s.library?.read_only ?? false);
+  // Frames edited here change on disk, so the filmstrip's thumbnails follow the events.
+  useLibraryEvents(true);
+
+  const [picking, setPicking] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const viewport = useViewport(
+    preview ? { width: preview.width, height: preview.height } : null,
+    !picking,
+  );
+  const { toggleBefore, setScanView, setRecipe } = develop;
   const { fit, actual, zoomIn, zoomOut } = viewport;
 
-  // A new frame starts fitted to the stage.
+  // A new frame starts fitted to the stage, with nothing being picked.
   useEffect(() => {
     fit();
+    setPicking(false);
+    setNotice(null);
   }, [frame.id, fit]);
+
+  // Picking shows the whole scan (the rebate is outside the crop) and goes back afterwards.
+  useEffect(() => {
+    setScanView(picking);
+    fit();
+  }, [picking, setScanView, fit]);
 
   const summary = frames.frameAt(frame.index);
   const label = t('library.frameLabel', {
     n: summary?.id === frame.id ? summary.index_in_roll : frame.index + 1,
   });
+
+  /** A click or box on the whole scan: the film base of this frame becomes what is under it. */
+  const picked = async (region: Fractions) => {
+    if (!recipe) return;
+    try {
+      const rgb = await developSampleBase(frame.id, region);
+      setRecipe(withBase(recipe, { source: 'manual', rgb: triple(rgb, 1) }));
+      setPicking(false);
+      setNotice({ tone: 'info', text: t('develop.base.picked') });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text: t('develop.base.pickFailed', { message: messageOf(error) }),
+      });
+    }
+  };
+  const pickBox = usePicker({
+    stageRef: viewport.stageRef,
+    active: picking && develop.showingScan,
+    onPick: (region) => void picked(region),
+  });
+
+  /** Finds the levels again, for the film base in use, and replaces the black and white points. */
+  const autoLevels = async () => {
+    if (!recipe) return;
+    const base = baseOf(recipe);
+    const given =
+      base.source === 'manual' ? base.rgb : info?.roll_base ? triple(info.roll_base, 1) : null;
+    setWorking(true);
+    try {
+      const analysis = await developAnalyze(frame.id, given);
+      setRecipe(withLevels(recipe, levelsOf(analysis.auto_recipe)));
+      setNotice({ tone: 'info', text: t('develop.levels.autoDone') });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text: t('develop.levels.autoFailed', { message: messageOf(error) }),
+      });
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  /** Makes this frame's picked base the roll's, which the frames that follow the roll then use. */
+  const makeRollDefault = async () => {
+    if (!recipe) return;
+    setWorking(true);
+    try {
+      const rollId =
+        summary?.id === frame.id ? summary.roll_id : (await frameGet(frame.id)).roll_id;
+      await rollSetFilmBase(rollId, baseOf(recipe).rgb);
+      await develop.refresh();
+      setNotice({ tone: 'info', text: t('develop.base.rollDefaultSet') });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text: t('develop.base.rollDefaultFailed', { message: messageOf(error) }),
+      });
+    } finally {
+      setWorking(false);
+    }
+  };
 
   const open = useCallback(
     (next: FrameSummary, index: number) => openInDevelop(next.id, index),
@@ -107,7 +205,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
           void step(1);
           break;
         case 'backToLibrary':
-          setView('library');
+          // Escape first cancels picking; only then does it leave the view.
+          if (picking) setPicking(false);
+          else setView('library');
           break;
         case 'fit':
           fit();
@@ -125,7 +225,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [toggleBefore, step, setView, fit, actual, zoomIn, zoomOut]);
+  }, [toggleBefore, step, setView, fit, actual, zoomIn, zoomOut, picking]);
 
   const bins = useMemo(() => (preview ? computeHistogram(preview.rgba) : null), [preview]);
   const lost = bins ? clipping(bins) : null;
@@ -167,10 +267,19 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
       <div className={styles.body}>
         <div
           ref={viewport.stageRef}
-          className={`${styles.stage} ${viewport.fitting ? '' : styles.pannable}`}
+          className={`${styles.stage} ${viewport.fitting || picking ? '' : styles.pannable} ${
+            picking && develop.showingScan ? styles.picking : ''
+          }`}
           aria-busy={develop.busy}
         >
-          {preview && <Canvas preview={preview} label={label} view={viewport.view} />}
+          {preview && (
+            <Canvas
+              preview={preview}
+              label={develop.showingScan ? t('develop.base.scanLabel') : label}
+              view={viewport.view}
+            />
+          )}
+          {pickBox && <div className={styles.pickBox} style={pickBox} />}
           {develop.showingBefore && (
             <span className={styles.badge}>{t('develop.beforeBadge')}</span>
           )}
@@ -203,21 +312,52 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 : undefined
             }
           />
-          <p role="status" className={styles.state}>
-            {develop.beforeUnavailable
-              ? t('develop.beforeUnavailable')
-              : develop.showBefore && !develop.showingBefore
-                ? t('develop.beforeLoading')
-                : develop.showingBefore
-                  ? t('develop.showingBefore')
-                  : develop.busy && preview
-                    ? t('develop.updating')
-                    : ''}
-          </p>
-          {develop.renderError && (
-            <p role="alert" className={styles.state}>
-              {t('develop.renderFailed', { message: develop.renderError })}
+          <div className={styles.statusArea}>
+            <p role="status" className={styles.state}>
+              {develop.beforeUnavailable
+                ? t('develop.beforeUnavailable')
+                : develop.showBefore && !develop.showingBefore
+                  ? t('develop.beforeLoading')
+                  : develop.showingBefore
+                    ? t('develop.showingBefore')
+                    : develop.busy && preview
+                      ? t('develop.updating')
+                      : ''}
             </p>
+            {develop.renderError && (
+              <p role="alert" className={styles.state}>
+                {t('develop.renderFailed', { message: develop.renderError })}
+              </p>
+            )}
+            {notice && (
+              <p role={notice.tone === 'error' ? 'alert' : 'status'} className={styles.state}>
+                {notice.text}
+              </p>
+            )}
+            {readOnly && <p className={styles.state}>{t('develop.readOnly')}</p>}
+            <p role={develop.saveStatus === 'error' ? 'alert' : 'status'} className={styles.state}>
+              {develop.saveStatus === 'saving'
+                ? t('develop.save.saving')
+                : develop.saveStatus === 'saved'
+                  ? t('develop.save.saved')
+                  : develop.saveStatus === 'error'
+                    ? t('develop.save.failed', { message: develop.saveError })
+                    : ''}
+            </p>
+          </div>
+          {recipe && (
+            <BaseInvertPanel
+              recipe={recipe}
+              rollBase={info?.roll_base ? triple(info.roll_base, 1) : null}
+              readOnly={readOnly}
+              picking={picking}
+              scanReady={develop.showingScan}
+              working={working}
+              onPickingChange={setPicking}
+              onChange={(next, options) => setRecipe(next, options)}
+              onAutoLevels={() => void autoLevels()}
+              onUseAsRollDefault={() => void makeRollDefault()}
+            />
           )}
         </aside>
       </div>

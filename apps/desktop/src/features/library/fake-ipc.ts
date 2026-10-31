@@ -75,13 +75,28 @@ export function makeFrames(rollId: string, count: number, prefix = rollId): Fram
   }));
 }
 
-/** A stand-in for a recipe: the tests only care which one it is, so it is a tagged object. */
-export function makeRecipe(tag: string): Recipe {
-  return { v: 1, tag } as unknown as Recipe;
+/**
+ * A stand-in for a recipe with the parts the Develop view touches (geometry, base, levels); the
+ * rest is not needed by any test. The tag says which one it is.
+ */
+export function makeRecipe(tag: string, over: Record<string, unknown> = {}): Recipe {
+  return {
+    v: 1,
+    tag,
+    geometry: {
+      crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+      angle_deg: 1.5,
+      rot90: 1,
+      flip_h: true,
+      flip_v: false,
+    },
+    base: { source: 'roll', rgb: [1, 1, 1] },
+    invert: { black: [0.1, 0.2, 0.3], white: [0.9, 0.8, 0.7] },
+    ...over,
+  } as unknown as Recipe;
 }
 
 const tagOf = (recipe: Recipe) => (recipe as unknown as { tag?: string }).tag ?? 'none';
-
 /** The colour of every pixel of a preview, by the recipe that made it. */
 export const PIXELS: Record<string, [number, number, number]> = {
   saved: [10, 20, 30],
@@ -112,6 +127,18 @@ export const state = {
   noScan: new Set<string>(),
   /** Frames whose automatic analysis fails. */
   noAnalysis: new Set<string>(),
+  /** The roll's film base, as Develop opens a frame. */
+  rollBase: null as [number, number, number] | null,
+  /** What picking the base on a frame gives (null: the area is refused). */
+  sampledBase: [0.8, 0.5, 0.3] as [number, number, number] | null,
+  /** The areas sampled for a film base, in order. */
+  samples: [] as Array<{ id: string; region: { x: number; y: number; w: number; h: number } }>,
+  /** The recipes saved, in order. */
+  saved: [] as Array<{ id: string; recipe: Recipe }>,
+  /** Saving fails with this message when set. */
+  saveFails: null as string | null,
+  /** The roll bases set, in order. */
+  rollBases: [] as Array<{ id: string; base: [number, number, number] | null }>,
   /** Every tag of the library. */
   tags: [] as Tag[],
   /** Tag names put on a frame, by frame id. */
@@ -263,15 +290,52 @@ export const ipc = {
       height: 3744,
       has_ir: false,
       recipe: makeRecipe('saved'),
-      roll_base: null as [number, number, number] | null,
+      roll_base: state.rollBase,
     };
   }),
-  developAnalyze: vi.fn(async (id: string) => {
+  developAnalyze: vi.fn(async (id: string, base: [number, number, number] | null) => {
     if (state.noAnalysis.has(id)) {
       throw new IpcError({ code: 'InvalidInput', message: 'The scan could not be analysed.' });
     }
-    return { auto_recipe: makeRecipe('auto') };
+    // The levels depend on the base that was given, as the real analysis's do.
+    return {
+      auto_recipe: makeRecipe('auto', {
+        base: { source: 'roll', rgb: base ?? [1, 1, 1] },
+        invert: base
+          ? { black: [0.01, 0.02, 0.03], white: [0.5, 0.6, 0.7] }
+          : { black: [0.05, 0.06, 0.07], white: [0.95, 0.85, 0.75] },
+      }),
+    };
   }),
+  developSampleBase: vi.fn(
+    async (id: string, region: { x: number; y: number; w: number; h: number }) => {
+      state.samples.push({ id, region });
+      if (!state.sampledBase) {
+        throw new IpcError({
+          code: 'InvalidInput',
+          message: 'That area is too dark to be film base.',
+        });
+      }
+      return state.sampledBase;
+    },
+  ),
+  frameGet: vi.fn(async (id: string) => {
+    const found = state.frames.find((f) => f.id === id);
+    if (!found) throw new IpcError({ code: 'NotFound', message: 'No such frame.' });
+    return found;
+  }),
+  recipeSave: vi.fn(async (id: string, recipe: Recipe) => {
+    if (state.saveFails) throw new IpcError({ code: 'Io', message: state.saveFails });
+    state.saved.push({ id, recipe });
+    return recipe;
+  }),
+  rollSetFilmBase: vi.fn(async (id: string, base: [number, number, number] | null) => {
+    state.rollBases.push({ id, base });
+    state.rollBase = base;
+    state.rolls = state.rolls.map((r) => (r.id === id ? { ...r, film_base_rgb: base } : r));
+    return state.rolls.find((r) => r.id === id) as Roll;
+  }),
+  logClientEvent: vi.fn(async () => undefined),
   developRender: vi.fn(async (_id: string, recipe: Recipe, maxEdge: number, seq: number) =>
     makePreview(recipe, maxEdge, seq),
   ),
@@ -301,6 +365,12 @@ export function resetFake() {
   state.noThumb = new Set();
   state.noScan = new Set();
   state.noAnalysis = new Set();
+  state.sampledBase = [0.8, 0.5, 0.3];
+  state.rollBase = null;
+  state.saved = [];
+  state.samples = [];
+  state.saveFails = null;
+  state.rollBases = [];
   state.tags = [];
   state.frameTags = {};
   state.rollTags = {};

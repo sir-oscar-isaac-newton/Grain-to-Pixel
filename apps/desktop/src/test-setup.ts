@@ -12,6 +12,16 @@ if (typeof URL.revokeObjectURL !== 'function') {
   URL.revokeObjectURL = vi.fn();
 }
 
+// jsdom has no ResizeObserver; Radix (the slider) needs one to exist, and there is nothing to
+// observe without layout.
+if (typeof ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 afterEach(() => {
   cleanup();
 });

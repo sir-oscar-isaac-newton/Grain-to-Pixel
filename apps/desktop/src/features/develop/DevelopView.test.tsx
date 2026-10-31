@@ -15,12 +15,14 @@ import {
 import { resetLibraryStore, useLibraryStore } from '../library/library-store';
 import { resetThumbnails } from '../library/thumbnails';
 import { DevelopView } from './DevelopView';
+import { baseOf, levelsOf } from './recipe-parts';
+import { SAVE_DELAY_MS, WHOLE_SCAN_GEOMETRY } from './use-develop';
 
 vi.mock('../../shared/ipc', async () => (await import('../library/fake-ipc')).ipc);
 
 /** A library with the roll "Summer" (5 frames) open and chosen, as the Library leaves it. */
-function openLibrary() {
-  state.details = libraryDetails();
+function openLibrary(details = {}) {
+  state.details = libraryDetails(details);
   state.rolls = [makeRoll({ id: 'summer', name: 'Summer' })];
   state.frames = makeFrames('summer', 5);
   useLibraryStore.setState({
@@ -160,7 +162,7 @@ describe('DevelopView', () => {
       expect(screen.getByText('Before', { selector: 'span' })).toBeInTheDocument();
       // The histogram follows what is shown.
       const calls = ipc.developRender.mock.calls;
-      expect(calls[calls.length - 1]?.[1]).toEqual({ v: 1, tag: 'auto' });
+      expect(calls[calls.length - 1]?.[1]).toMatchObject({ tag: 'auto' });
 
       await user.keyboard('\\');
       expect(toggle).toHaveAttribute('aria-pressed', 'false');
@@ -399,6 +401,322 @@ describe('DevelopView', () => {
     });
   });
 
+  describe('the Base and Invert panel', () => {
+    const rect = (left: number, top: number, width: number, height: number) =>
+      ({ left, top, width, height, right: left + width, bottom: top + height }) as DOMRect;
+
+    beforeEach(() => {
+      // jsdom does no layout: the picture is 400 x 300 at (100, 50) on a stage of 900 x 600.
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        if (this.tagName === 'CANVAS') return rect(100, 50, 400, 300);
+        if (this.hasAttribute('aria-busy')) return rect(0, 0, 900, 600);
+        return rect(0, 0, 0, 0);
+      });
+    });
+
+    const stage = () => document.querySelector('[aria-busy]') as HTMLElement;
+    const press = (x: number, y: number) =>
+      fireEvent.mouseDown(stage(), { button: 0, clientX: x, clientY: y });
+    const release = (x: number, y: number) => fireEvent.mouseUp(window, { clientX: x, clientY: y });
+    const wholeScanRequests = () =>
+      ipc.developRender.mock.calls.filter(
+        (c) =>
+          JSON.stringify((c[1] as { geometry?: unknown }).geometry) ===
+          JSON.stringify(WHOLE_SCAN_GEOMETRY),
+      );
+    const savedRecipe = () => state.saved[state.saved.length - 1]?.recipe;
+    const pickButton = () => screen.getByRole('button', { name: 'Pick film base' });
+
+    /** Opens frame 1 and turns picking on, with the whole scan on screen. */
+    async function startPicking() {
+      const user = userEvent.setup();
+      openLibrary();
+      open(1);
+      render(<DevelopView />);
+      await canvas();
+      await user.click(pickButton());
+      expect(await screen.findByText(/Click the clear film edge/)).toBeInTheDocument();
+      return user;
+    }
+
+    describe('picking the film base', () => {
+      it('shows the whole scan while picking, sets a base from a click, and saves it', async () => {
+        await startPicking();
+        expect(wholeScanRequests()).toHaveLength(1);
+        expect(
+          screen.getByRole('img', { name: 'The whole scan, for picking the film base' }),
+        ).toBeInTheDocument();
+        expect(pickButton()).toHaveAttribute('aria-pressed', 'true');
+
+        // A click in the middle of the picture: a small square around the middle of the scan.
+        press(300, 200);
+        release(300, 200);
+        await waitFor(() => expect(ipc.developSampleBase).toHaveBeenCalledTimes(1));
+        const [frameId, region] = ipc.developSampleBase.mock.calls[0] as [
+          string,
+          { x: number; y: number; w: number; h: number },
+        ];
+        expect(frameId).toBe('summer-f00001');
+        expect(region.x + region.w / 2).toBeCloseTo(0.5, 6);
+        expect(region.y + region.h / 2).toBeCloseTo(0.5, 6);
+
+        // The frame now has its own base, picking is over, and the picture is back.
+        expect(await screen.findByText('Picked on this frame.')).toBeInTheDocument();
+        expect(screen.getByText('Red 0.800, green 0.500, blue 0.300')).toBeInTheDocument();
+        expect(screen.getByText('Film base picked from that area.')).toBeInTheDocument();
+        expect(pickButton()).toHaveAttribute('aria-pressed', 'false');
+        await canvasNamed('Frame 1');
+
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(baseOf(savedRecipe() as never)).toEqual({ source: 'manual', rgb: [0.8, 0.5, 0.3] });
+        expect(await screen.findByText('Saved')).toBeInTheDocument();
+      });
+
+      it('sets the base from a box dragged on the rebate, and shows the box while it is dragged', async () => {
+        await startPicking();
+        press(200, 100);
+        fireEvent.mouseMove(window, { clientX: 300, clientY: 200 });
+        expect(document.querySelector('[class*="pickBox"]')).toBeInTheDocument();
+        release(300, 200);
+        await waitFor(() => expect(ipc.developSampleBase).toHaveBeenCalledTimes(1));
+        expect(ipc.developSampleBase.mock.calls[0]?.[1]).toEqual({
+          x: 0.25,
+          y: 50 / 300,
+          w: 0.25,
+          h: 100 / 300,
+        });
+        expect(document.querySelector('[class*="pickBox"]')).not.toBeInTheDocument();
+      });
+
+      it('ignores a press outside the picture', async () => {
+        await startPicking();
+        press(20, 20);
+        release(20, 20);
+        expect(ipc.developSampleBase).not.toHaveBeenCalled();
+        expect(pickButton()).toHaveAttribute('aria-pressed', 'true');
+      });
+
+      it('says when the area cannot be used, and keeps picking', async () => {
+        state.sampledBase = null;
+        await startPicking();
+        press(300, 200);
+        release(300, 200);
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+          'That area could not be used: That area is too dark to be film base.',
+        );
+        expect(pickButton()).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByText(/The roll has no film base yet/)).toBeInTheDocument();
+        expect(ipc.recipeSave).not.toHaveBeenCalled();
+      });
+
+      it('is cancelled by Escape, which leaves the view only when pressed again', async () => {
+        const user = await startPicking();
+        await user.keyboard('{Escape}');
+        expect(pickButton()).toHaveAttribute('aria-pressed', 'false');
+        expect(useUiStore.getState().view).toBe('develop');
+        await canvasNamed('Frame 1');
+
+        await user.keyboard('{Escape}');
+        expect(useUiStore.getState().view).toBe('library');
+      });
+
+      it('stops when another frame is opened', async () => {
+        const user = await startPicking();
+        await user.keyboard(']');
+        await canvasNamed('Frame 2');
+        expect(pickButton()).toHaveAttribute('aria-pressed', 'false');
+      });
+
+      it('goes back to the roll’s base, and the roll’s default is set from the picked one', async () => {
+        const user = await startPicking();
+        press(300, 200);
+        release(300, 200);
+        await screen.findByText('Picked on this frame.');
+
+        await user.click(screen.getByRole('button', { name: 'Use as the roll’s default' }));
+        await waitFor(() => expect(ipc.rollSetFilmBase).toHaveBeenCalledTimes(1));
+        expect(ipc.rollSetFilmBase).toHaveBeenCalledWith('summer', [0.8, 0.5, 0.3]);
+        // The frame is read again, so what follows the roll's base uses the new one.
+        await waitFor(() => expect(ipc.developOpen.mock.calls.length).toBeGreaterThanOrEqual(2));
+        expect(
+          await screen.findByText('This film base is now the roll’s default.'),
+        ).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Use the roll’s base' }));
+        expect(
+          await screen.findByText('Following the roll’s film base.', { exact: false }),
+        ).toBeInTheDocument();
+        await waitFor(() => expect(baseOf(savedRecipe() as never).source).toBe('roll'), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+      });
+
+      it('says when the roll’s base could not be set', async () => {
+        const user = await startPicking();
+        press(300, 200);
+        release(300, 200);
+        await screen.findByText('Picked on this frame.');
+        ipc.rollSetFilmBase.mockRejectedValueOnce(new Error('The roll is gone.'));
+        await user.click(screen.getByRole('button', { name: 'Use as the roll’s default' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+          'The roll’s film base could not be set: The roll is gone.',
+        );
+      });
+    });
+
+    describe('the levels', () => {
+      it('re-runs the automatic levels and saves them', async () => {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        await user.click(screen.getByRole('button', { name: 'Re-run auto levels' }));
+
+        await waitFor(() => expect(ipc.developAnalyze).toHaveBeenCalledWith('summer-f00001', null));
+        expect(
+          await screen.findByText('Levels set automatically for this film base.'),
+        ).toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Black point, red' })).toHaveAttribute(
+          'aria-valuenow',
+          '0.05',
+        );
+        expect(screen.getByRole('slider', { name: 'White point, blue' })).toHaveAttribute(
+          'aria-valuenow',
+          '0.75',
+        );
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(levelsOf(savedRecipe() as never)).toEqual({
+          black: [0.05, 0.06, 0.07],
+          white: [0.95, 0.85, 0.75],
+        });
+      });
+
+      it('fits the levels to the roll’s base, or to the base picked on the frame', async () => {
+        state.rollBase = [0.7, 0.5, 0.4];
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        await user.click(screen.getByRole('button', { name: 'Re-run auto levels' }));
+        await waitFor(() =>
+          expect(ipc.developAnalyze).toHaveBeenLastCalledWith('summer-f00001', [0.7, 0.5, 0.4]),
+        );
+
+        // Once a base has been picked, that is the one the levels are fitted to.
+        await user.click(pickButton());
+        await screen.findByText(/Click the clear film edge/);
+        press(300, 200);
+        release(300, 200);
+        await screen.findByText('Picked on this frame.');
+        await user.click(screen.getByRole('button', { name: 'Re-run auto levels' }));
+        await waitFor(() =>
+          expect(ipc.developAnalyze).toHaveBeenLastCalledWith('summer-f00001', [0.8, 0.5, 0.3]),
+        );
+        expect(screen.getByRole('slider', { name: 'White point, red' })).toHaveAttribute(
+          'aria-valuenow',
+          '0.5',
+        );
+      });
+
+      it('says when the automatic levels cannot be found, and changes nothing', async () => {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        await waitFor(() => expect(ipc.developAnalyze).toHaveBeenCalledTimes(1));
+        ipc.developAnalyze.mockRejectedValueOnce(new Error('The scan could not be analysed.'));
+        await user.click(screen.getByRole('button', { name: 'Re-run auto levels' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+          'The automatic levels could not be found: The scan could not be analysed.',
+        );
+        expect(screen.getByRole('slider', { name: 'Black point, red' })).toHaveAttribute(
+          'aria-valuenow',
+          '0.1',
+        );
+      });
+
+      it('overrides the levels with a slider, shows a sharp picture at once, and saves', async () => {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        ipc.developRender.mockClear();
+
+        screen.getByRole('slider', { name: 'White point, green' }).focus();
+        await user.keyboard('{ArrowRight}');
+        await waitFor(() => expect(ipc.developRender).toHaveBeenCalledTimes(1));
+        expect(ipc.developRender.mock.calls[0]?.[2]).toBe(2048);
+        expect(levelsOf(ipc.developRender.mock.calls[0]?.[1] as never).white).toEqual([
+          0.9, 0.805, 0.7,
+        ]);
+        expect(screen.getByRole('slider', { name: 'White point, green' })).toHaveAttribute(
+          'aria-valuenow',
+          '0.805',
+        );
+
+        expect(
+          await screen.findByText('Saved', undefined, { timeout: SAVE_DELAY_MS * 4 }),
+        ).toBeInTheDocument();
+        expect(levelsOf(savedRecipe() as never).white[1]).toBe(0.805);
+      });
+    });
+
+    describe('saving', () => {
+      it('says when an edit could not be saved', async () => {
+        state.saveFails = 'The disk is full.';
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        screen.getByRole('slider', { name: 'Black point, blue' }).focus();
+        await user.keyboard('{ArrowRight}');
+        expect(
+          await screen.findByRole('alert', undefined, { timeout: SAVE_DELAY_MS * 4 }),
+        ).toHaveTextContent('The edit could not be saved: The disk is full.');
+      });
+
+      it('saves an edit that is waiting when another frame is opened', async () => {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        await screen.findAllByRole('option');
+        screen.getByRole('slider', { name: 'Black point, blue' }).focus();
+        await user.keyboard('{ArrowRight}');
+        expect(ipc.recipeSave).not.toHaveBeenCalled();
+
+        await user.keyboard(']');
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1));
+        expect(ipc.recipeSave.mock.calls[0]?.[0]).toBe('summer-f00001');
+        expect(levelsOf(ipc.recipeSave.mock.calls[0]?.[1] as never).black[2]).toBe(0.305);
+      });
+    });
+
+    it('can be looked at but not used in a library from a newer version', async () => {
+      openLibrary({ read_only: true });
+      open(1);
+      render(<DevelopView />);
+      await canvas();
+      expect(await screen.findByText(/This library cannot be changed/)).toBeInTheDocument();
+      expect(pickButton()).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Re-run auto levels' })).toBeDisabled();
+      for (const slider of screen.getAllByRole('slider')) {
+        expect(slider).toHaveAttribute('data-disabled');
+      }
+    });
+  });
   describe('accessibility', () => {
     it('has no violations: empty, open, and showing "before"', async () => {
       const empty = render(<DevelopView />);
@@ -415,6 +733,18 @@ describe('DevelopView', () => {
       await waitFor(() => expect(ipc.developAnalyze).toHaveBeenCalled());
       await user.click(screen.getByRole('button', { name: 'Before' }));
       await screen.findByText(/Showing the automatic conversion/);
+      await expectNoA11yViolations(container);
+    });
+
+    it('has no violations while the film base is being picked', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      open(2);
+      const { container } = render(<DevelopView />);
+      await canvas();
+      await screen.findAllByRole('option');
+      await user.click(screen.getByRole('button', { name: 'Pick film base' }));
+      await screen.findByText(/Click the clear film edge/);
       await expectNoA11yViolations(container);
     });
   });

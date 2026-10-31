@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use gtp_app::services::develop::{self, DevelopAnalysis, DevelopInfo};
 use gtp_app::AppContext;
+use gtp_core::recipe::Crop;
 use gtp_core::{FrameId, Recipe, RecipeField};
 use tauri::State;
 
@@ -18,14 +19,31 @@ pub fn develop_open(ctx: State<'_, AppContext>, frame_id: FrameId) -> CmdResult<
     ctx.develop().open(&*ctx.library()?, frame_id)
 }
 
-/// Finds the frame, film base and levels of a frame, and the recipe they make.
+/// Finds the frame, film base and levels of a frame, and the recipe they make. With `base` (three
+/// linear scan values above 0, such as one picked on the rebate) the levels are fitted to that base
+/// instead of the roll's or a measured one.
 #[tauri::command(async)]
 #[specta::specta]
 pub fn develop_analyze(
     ctx: State<'_, AppContext>,
     frame_id: FrameId,
+    base: Option<[f32; 3]>,
 ) -> CmdResult<DevelopAnalysis> {
-    ctx.develop().analyze(&*ctx.library()?, frame_id)
+    ctx.develop().analyze(&*ctx.library()?, frame_id, base)
+}
+
+/// The film base from an area of the scan: the per-channel median, in linear scan values.
+/// `region` is in fractions of the whole scan (x, y, width, height, each 0 to 1), as a click on the
+/// rebate, or a box dragged over it, gives when the picture shows the whole scan.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn develop_sample_base(
+    ctx: State<'_, AppContext>,
+    frame_id: FrameId,
+    region: Crop,
+) -> CmdResult<[f32; 3]> {
+    ctx.develop()
+        .sample_base(&*ctx.library()?, frame_id, region)
 }
 
 /// A preview of the frame with `recipe`, as raw bytes, not JSON: a 16-byte little-endian header
@@ -89,6 +107,40 @@ mod tests {
     use super::*;
     use crate::sink::TauriJobSink;
 
+    #[test]
+    fn analysing_and_sampling_need_an_open_library_and_a_known_frame() {
+        let dir = std::env::temp_dir().join(format!(
+            "gtp-cmd-sample-{}-{}",
+            std::process::id(),
+            FrameId::new()
+        ));
+        let app = tauri::test::mock_app();
+        let (ctx, _) = AppContext::new(&dir.join("settings.json"));
+        app.manage(ctx);
+        let region = Crop {
+            x: 0.1,
+            y: 0.1,
+            w: 0.2,
+            h: 0.2,
+        };
+
+        // No library open: a typed NotFound.
+        let err = develop_analyze(app.state(), FrameId::new(), None).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        let err = develop_sample_base(app.state(), FrameId::new(), region).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+
+        // A library, but no such frame.
+        app.state::<AppContext>()
+            .create_library(&dir.join("lib"), "Cmd")
+            .unwrap();
+        let err = develop_analyze(app.state(), FrameId::new(), Some([0.8, 0.5, 0.3])).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        let err = develop_sample_base(app.state(), FrameId::new(), region).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     #[test]
     fn recipe_commands_map_errors_and_run_against_the_open_library() {
         let dir = std::env::temp_dir().join(format!(

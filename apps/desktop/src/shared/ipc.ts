@@ -260,9 +260,28 @@ export async function developOpen(...args: Args<'developOpen'>): Promise<Develop
   return unwrap(await commands.developOpen(...args));
 }
 
-/** Finds the frame, film base and levels, and the recipe they make. */
+/**
+ * Finds the frame, film base and levels, and the recipe they make. With a base (three linear scan
+ * values, such as one picked on the rebate) the levels are fitted to that base, instead of the
+ * roll's or a measured one; 
+ull leaves it to the backend.
+ */
 export async function developAnalyze(...args: Args<'developAnalyze'>): Promise<DevelopAnalysis> {
   return unwrap(await commands.developAnalyze(...args));
+}
+
+/** A rectangle in fractions of the whole picture (x, y, width, height, each 0 to 1). */
+export type Region = Args<'developSampleBase'>[1];
+
+/**
+ * The film base from an area of the whole scan, as the per-channel median in linear scan values.
+ * Needs the picture to show the whole uncropped scan, so that fractions of it are fractions of the
+ * scan.
+ */
+export async function developSampleBase(
+  ...args: Args<'developSampleBase'>
+): Promise<Data<'developSampleBase'>> {
+  return unwrap(await commands.developSampleBase(...args));
 }
 
 /** A group of settings that can be copied between frames (one panel of the Develop view). */

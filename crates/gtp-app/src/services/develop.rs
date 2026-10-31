@@ -17,11 +17,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::Serialize;
 
-use gtp_core::recipe::Crop;
+use gtp_core::recipe::{Crop, BASE_MAX, BASE_MIN};
 use gtp_core::{
     AppError, ErrorCode, Frame, FrameId, ImageF32, Recipe, RecipeField, SourceFile, SourceRole,
 };
 use gtp_io::{read_tiff16, to_f32_linear, Limits};
+use gtp_negative::{sample_film_base, Rect};
 
 use crate::pipeline::{
     analyze, build_proxy, to_rgba8_srgb, Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
@@ -83,8 +84,9 @@ pub struct DevelopAnalysis {
     pub base_rgb: [f32; 3],
     /// 0 to 1; low means the base should be sampled by hand.
     pub base_confidence: f32,
-    /// True when the base is the roll's rather than measured on this scan.
-    pub base_from_roll: bool,
+    /// True when the base was given (the roll's, or one picked on the frame) rather than measured
+    /// on this scan.
+    pub base_given: bool,
     pub histogram: HistogramData,
     /// A recipe with the automatic crop, base and levels, everything else at its default.
     pub auto_recipe: Recipe,
@@ -144,6 +146,47 @@ pub fn apply_recipe_to(
         }
         c.save_recipes(&updated)
     })
+}
+
+/// A film base must be finite and within the range a recipe holds.
+fn check_base(base: [f32; 3]) -> Result<(), AppError> {
+    if base
+        .iter()
+        .all(|v| v.is_finite() && (BASE_MIN..=BASE_MAX).contains(v))
+    {
+        return Ok(());
+    }
+    Err(
+        AppError::new(ErrorCode::InvalidInput, "That film base is not usable.")
+            .with_details(format!("{base:?}")),
+    )
+}
+
+/// The pixels of `image` that a region given in fractions of it covers: from the pixel the region
+/// starts in to the one it ends in, so a small region is never empty.
+fn pixel_area(region: Crop, image: &ImageF32) -> Result<Rect, AppError> {
+    let inside = |v: f32| v.is_finite() && (0.0..=1.0).contains(&v);
+    if !(inside(region.x)
+        && inside(region.y)
+        && inside(region.x + region.w)
+        && inside(region.y + region.h))
+        || region.w <= 0.0
+        || region.h <= 0.0
+    {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "Choose an area inside the picture.",
+        )
+        .with_details(format!("{region:?}")));
+    }
+    let span = |start: f32, length: f32, size: u32| {
+        let first = ((start * size as f32).floor() as u32).min(size.saturating_sub(1));
+        let last = (((start + length) * size as f32).ceil() as u32).clamp(first + 1, size);
+        (first, last - first)
+    };
+    let (x, w) = span(region.x, region.w, image.width);
+    let (y, h) = span(region.y, region.h, image.height);
+    Ok(Rect { x, y, w, h })
 }
 
 /// One frame's proxy and the state of its renders.
@@ -313,19 +356,46 @@ impl DevelopService {
         })
     }
 
-    /// Finds the frame, film base and levels on the cached proxy (loading it when needed).
-    pub fn analyze(&self, library: &Library, id: FrameId) -> Result<DevelopAnalysis, AppError> {
+    /// Finds the frame, film base and levels on the cached proxy (loading it when needed). With
+    /// `base` (linear scan values above 0, such as a base picked on the rebate) that base is used
+    /// instead of the roll's or a measured one, so the automatic levels fit it.
+    pub fn analyze(
+        &self,
+        library: &Library,
+        id: FrameId,
+        base: Option<[f32; 3]>,
+    ) -> Result<DevelopAnalysis, AppError> {
         let entry = self.ensure(library, id)?;
-        let analysis = analyze(&entry.input())?;
+        let mut input = entry.input();
+        if let Some(base) = base {
+            check_base(base)?;
+            input.film_base = Some(base);
+        }
+        let analysis = analyze(&input)?;
         Ok(DevelopAnalysis {
             frame_rect: analysis.frame.rect,
             frame_confidence: analysis.frame.confidence,
             base_rgb: analysis.base.rgb,
             base_confidence: analysis.base.confidence,
-            base_from_roll: analysis.base_from_roll,
+            base_given: analysis.base_from_roll,
             histogram: analysis.histogram.into(),
             auto_recipe: analysis.auto_recipe,
         })
+    }
+
+    /// The film base from an area of the scan, for picking it on the rebate: the per-channel median
+    /// of the area, in linear scan values. `region` is in fractions of the whole scan (x, y, width,
+    /// height, each from 0 to 1) and is taken from the cached proxy. An area that is too dark to be
+    /// film base is refused.
+    pub fn sample_base(
+        &self,
+        library: &Library,
+        id: FrameId,
+        region: Crop,
+    ) -> Result<[f32; 3], AppError> {
+        let entry = self.ensure(library, id)?;
+        let area = pixel_area(region, &entry.rgb)?;
+        sample_film_base(&entry.rgb, area)
     }
 
     /// Renders a preview whose long edge is at most `max_edge` (never above the proxy's) and
@@ -623,17 +693,161 @@ mod tests {
     fn analysis_finds_the_frame_and_base_and_makes_an_auto_recipe() {
         let t = Fixture::new("analyze");
         let id = t.frame(1, 1000, 700);
-        let found = t.service.analyze(&t.library, id).unwrap();
+        let found = t.service.analyze(&t.library, id, None).unwrap();
         assert!(found.frame_confidence > 0.5, "{}", found.frame_confidence);
         assert!(found.base_confidence > 0.5, "{}", found.base_confidence);
-        assert!(!found.base_from_roll);
+        assert!(!found.base_given);
         assert_eq!(found.auto_recipe.geometry.crop, found.frame_rect);
         assert_eq!(found.histogram.red.len(), 256);
         assert!(found.histogram.luma.iter().sum::<u32>() > 0);
 
         roll_set_film_base(&t.library, t.roll, Some(found.base_rgb)).unwrap();
         t.service.open(&t.library, id).unwrap();
-        assert!(t.service.analyze(&t.library, id).unwrap().base_from_roll);
+        assert!(t.service.analyze(&t.library, id, None).unwrap().base_given);
+    }
+
+    #[test]
+    fn analysis_with_a_given_base_uses_it_and_the_levels_fit_it() {
+        let t = Fixture::new("analyze-base");
+        let id = t.frame(1, 1000, 700);
+        let measured = t.service.analyze(&t.library, id, None).unwrap();
+        assert!(!measured.base_given);
+
+        // The base the scan really has gives the same picture as measuring it.
+        let same = t
+            .service
+            .analyze(&t.library, id, Some(measured.base_rgb))
+            .unwrap();
+        assert!(same.base_given);
+        assert_eq!(same.base_rgb, measured.base_rgb);
+        assert_eq!(same.auto_recipe.base.rgb, measured.base_rgb);
+        assert_eq!(same.auto_recipe.invert, measured.auto_recipe.invert);
+
+        // Another base is used as given, and the levels follow it.
+        let darker = measured.base_rgb.map(|v| v * 0.8);
+        let other = t.service.analyze(&t.library, id, Some(darker)).unwrap();
+        assert_eq!(other.base_rgb, darker);
+        assert_eq!(other.auto_recipe.base.rgb, darker);
+        assert_ne!(other.auto_recipe.invert, measured.auto_recipe.invert);
+    }
+
+    #[test]
+    fn a_base_that_is_not_usable_is_refused() {
+        let t = Fixture::new("analyze-bad-base");
+        let id = t.frame(1, 400, 300);
+        for bad in [
+            [f32::NAN, 0.5, 0.5],
+            [0.5, f32::INFINITY, 0.5],
+            [0.5, 0.5, 0.0],
+            [-0.1, 0.5, 0.5],
+            [0.5, 0.5, 1.0e9],
+        ] {
+            let err = t.service.analyze(&t.library, id, Some(bad)).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_base_is_sampled_from_an_area_of_the_scan_given_in_fractions() {
+        let t = Fixture::new("sample");
+        let id = t.frame(1, 1000, 700);
+        let measured = t.service.analyze(&t.library, id, None).unwrap().base_rgb;
+
+        // The rebate is a band of 1/14 of the width down the left side: a click and a box on it.
+        let click = Crop {
+            x: 0.02,
+            y: 0.45,
+            w: 0.02,
+            h: 0.03,
+        };
+        let drag = Crop {
+            x: 0.005,
+            y: 0.1,
+            w: 0.05,
+            h: 0.8,
+        };
+        for region in [click, drag] {
+            let picked = t.service.sample_base(&t.library, id, region).unwrap();
+            for (got, want) in picked.iter().zip(measured) {
+                assert!(
+                    (got - want).abs() / want < 0.02,
+                    "{picked:?} vs {measured:?}"
+                );
+            }
+        }
+        assert_eq!(
+            t.service.cached(),
+            [id],
+            "the proxy is kept for the next pick"
+        );
+    }
+
+    #[test]
+    fn an_area_outside_the_picture_or_without_size_is_refused() {
+        let t = Fixture::new("sample-bad");
+        let id = t.frame(1, 400, 300);
+        let area = |x, y, w, h| Crop { x, y, w, h };
+        for region in [
+            area(0.5, 0.5, 0.6, 0.1),
+            area(-0.1, 0.0, 0.2, 0.2),
+            area(0.1, 0.1, 0.0, 0.2),
+            area(0.1, 0.1, 0.2, -0.2),
+            area(f32::NAN, 0.1, 0.2, 0.2),
+            area(0.1, 0.1, f32::INFINITY, 0.2),
+        ] {
+            let err = t.service.sample_base(&t.library, id, region).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{region:?}");
+        }
+        let err = t
+            .service
+            .sample_base(&t.library, FrameId::new(), area(0.1, 0.1, 0.2, 0.2))
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn fractions_map_to_the_pixels_they_cover() {
+        let image = ImageF32::zeros(100, 80, 3).unwrap();
+        let area = |x, y, w, h| pixel_area(Crop { x, y, w, h }, &image).unwrap();
+        assert_eq!(
+            area(0.0, 0.0, 1.0, 1.0),
+            Rect {
+                x: 0,
+                y: 0,
+                w: 100,
+                h: 80
+            }
+        );
+        assert_eq!(
+            area(0.5, 0.5, 0.25, 0.25),
+            Rect {
+                x: 50,
+                y: 40,
+                w: 25,
+                h: 20
+            }
+        );
+        // A region smaller than a pixel still covers one, and one at the far edge stays inside.
+        assert_eq!(
+            area(0.2, 0.2, 1e-6, 1e-6),
+            Rect {
+                x: 20,
+                y: 16,
+                w: 1,
+                h: 1
+            }
+        );
+        let edge = area(0.99, 0.99, 0.005, 0.005);
+        assert_eq!(
+            edge,
+            Rect {
+                x: 99,
+                y: 79,
+                w: 1,
+                h: 1
+            }
+        );
+        assert!(edge.x + edge.w <= 100 && edge.y + edge.h <= 80);
     }
 
     #[test]

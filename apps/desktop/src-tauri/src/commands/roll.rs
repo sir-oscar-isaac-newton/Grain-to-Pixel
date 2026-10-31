@@ -1,11 +1,14 @@
 //! Roll commands over the open library (thin: parse, call the service, log).
 
+use std::sync::Arc;
+
 use gtp_app::services::roll_frame::{self, DeleteReport, RollInput};
 use gtp_app::AppContext;
 use gtp_core::{Roll, RollId};
 use tauri::State;
 
 use crate::error::CmdResult;
+use crate::sink::EventsState;
 
 /// Logs files a delete could not remove (the UI also gets them in the report).
 pub(crate) fn log_files_left(report: &DeleteReport) {
@@ -34,15 +37,22 @@ pub fn roll_list(ctx: State<'_, AppContext>) -> CmdResult<Vec<Roll>> {
     roll_frame::roll_list(&*ctx.library()?)
 }
 
-/// Sets the roll's film base (three linear values above 0), or clears it with `null`.
+/// Sets the roll's film base (three linear values above 0), or clears it with `null`. The frames
+/// that follow the roll's base look different now, so their thumbnails are regenerated in the
+/// background (a frame with a base picked by hand does not change).
 #[tauri::command(async)]
 #[specta::specta]
 pub fn roll_set_film_base(
     ctx: State<'_, AppContext>,
+    events: State<'_, EventsState>,
     id: RollId,
     base: Option<[f32; 3]>,
 ) -> CmdResult<Roll> {
-    roll_frame::roll_set_film_base(&*ctx.library()?, id, base)
+    let library = ctx.library()?;
+    let roll = roll_frame::roll_set_film_base(&library, id, base)?;
+    let following = roll_frame::frames_following_roll_base(&library, id)?;
+    ctx.regenerate_thumbnails(Arc::clone(&events.0), following)?;
+    Ok(roll)
 }
 
 /// Deletes a roll with its frames, then their files.
@@ -113,6 +123,45 @@ mod tests {
         assert_eq!(page.total, 0);
         assert_eq!(frame_delete(app.state(), vec![]).unwrap().frames_deleted, 0);
         assert_eq!(roll_delete(app.state(), roll.id).unwrap().frames_deleted, 0);
+
+        drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_rolls_base_is_set_checked_and_cleared() {
+        let dir = std::env::temp_dir().join(format!(
+            "gtp-cmd-rollbase-{}-{}",
+            std::process::id(),
+            FrameId::new()
+        ));
+        let app = tauri::test::mock_app();
+        crate::ipc::builder::<tauri::test::MockRuntime>().mount_events(&app);
+        app.manage(EventsState(Arc::new(crate::sink::TauriJobSink::new(
+            app.handle().clone(),
+        ))));
+        let (ctx, _) = AppContext::new(&dir.join("settings.json"));
+        app.manage(ctx);
+
+        let err = roll_set_film_base(app.state(), app.state(), RollId::new(), None).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound, "no library is open");
+
+        app.state::<AppContext>()
+            .create_library(&dir.join("lib"), "Cmd")
+            .unwrap();
+        let input = RollInput {
+            name: "Roll".into(),
+            ..RollInput::default()
+        };
+        let roll = roll_create(app.state(), input).unwrap();
+
+        let base = Some([0.8, 0.5, 0.3]);
+        let set = roll_set_film_base(app.state(), app.state(), roll.id, base).unwrap();
+        assert_eq!(set.film_base_rgb, base);
+        let bad = roll_set_film_base(app.state(), app.state(), roll.id, Some([0.8, 0.0, 0.3]));
+        assert_eq!(bad.unwrap_err().code, ErrorCode::InvalidInput);
+        let cleared = roll_set_film_base(app.state(), app.state(), roll.id, None).unwrap();
+        assert_eq!(cleared.film_base_rgb, None);
 
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);

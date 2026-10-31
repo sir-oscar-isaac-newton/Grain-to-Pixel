@@ -184,6 +184,41 @@
     "zoomLevel": "Zoom level",
     "fit": "Fit",
     "actual": "100%",
+    "base": {
+      "heading": "Film base",
+      "fromRoll": "Following the roll’s film base.",
+      "fromRollNone": "The roll has no film base yet, so this frame’s own is used.",
+      "manual": "Picked on this frame.",
+      "values": "Red {{r}}, green {{g}}, blue {{b}}",
+      "pick": "Pick film base",
+      "picking": "Click the clear film edge (the rebate), or drag a box over it. Escape cancels.",
+      "preparingScan": "Preparing the whole scan…",
+      "useRoll": "Use the roll’s base",
+      "makeRollDefault": "Use as the roll’s default",
+      "picked": "Film base picked from that area.",
+      "pickFailed": "That area could not be used: {{message}}",
+      "rollDefaultSet": "This film base is now the roll’s default.",
+      "rollDefaultFailed": "The roll’s film base could not be set: {{message}}",
+      "scanLabel": "The whole scan, for picking the film base"
+    },
+    "levels": {
+      "heading": "Levels",
+      "auto": "Re-run auto levels",
+      "autoDone": "Levels set automatically for this film base.",
+      "autoFailed": "The automatic levels could not be found: {{message}}",
+      "black": "Black point",
+      "white": "White point",
+      "red": "red",
+      "green": "green",
+      "blue": "blue",
+      "slider": "{{kind}}, {{channel}}"
+    },
+    "save": {
+      "saving": "Saving…",
+      "saved": "Saved",
+      "failed": "The edit could not be saved: {{message}}"
+    },
+    "readOnly": "This library cannot be changed, so nothing here can be edited.",
     "histogram": {
       "label": "Histogram of the picture shown",
       "clipping": "Black clipped: {{black}}. White clipped: {{white}}."

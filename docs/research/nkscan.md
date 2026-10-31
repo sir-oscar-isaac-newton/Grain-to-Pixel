@@ -26,11 +26,12 @@ Hardware: LS-50 with coolscan-mods firmware and an SA-21 jumpered as SA-30 (whol
 | Eject | `nkscan eject`: 12 s. |
 | File layout (`gtp-io` `tiff_info`) | RGB: 16 bit x 3, photometric RGB, uncompressed, **no ExtraSamples tag**. IR: 16-bit gray. `gtp-io::read_tiff16` reads both (RGB values 8 to 65535, a few samples clipped at the top; IR 32 to 57563). |
 | Driver revert | Device Manager roll back: back to "Nikon LS-50" on `oem53.inf` (Hamrick Software); the libwdi package `oem62.inf` stays in the driver store until removed with `pnputil /delete-driver oem62.inf`. |
-| macOS | **Not tested by us yet.** The author reports the LS-50 working on macOS with nkscan through Negpy. |
+| macOS: device (macOS 27.0.1, Apple M1 Pro, 2026-10-31) | **Listed with no driver setup** (`usb:01-1.4`). `dump` matches Windows: firmware 2.04, 17 INQUIRY pages, `max_frames: 40`, adapter 49, page 01h "36Strip", 4000 dpi, 3946-pixel CCD, 14-bit, focus range 0 to 323. The extra probe of the unlisted page E3h is refused by the scanner, which is expected. |
+| macOS: one frame, 2000 dpi, IR | **Works**: 2979 x 1973 px, `frame_1.tiff` plus `frame_1_IR.tiff`, 3 min 18 s end to end with ejection (load and detect 41 s, focus 27 s, metering 1 min 55 s, scan and write under 1 s after metering). F135, 25 frames detected, as on Windows. Two runs metered within 0.4 % of each other (red 208151 vs 208274). nkscan **does not create the output folder**: the first run failed with "No such file or directory" until it was made with `mkdir -p`. The scanner ejects after a scan unless `--no-eject` is given. |
 
 ## Spike checklist
 - [x] Windows 10/11: device listed? **Yes.** Driver: **WinUSB via Zadig is required**; VueScan's driver gives "incompatible driver".
-- [ ] macOS: device listed? (author-reported working via Negpy; to confirm with the CLI on the Mac)
+- [x] macOS: device listed? **Yes**, with no driver setup; a 2000 dpi frame with IR scans to the same RGB plus IR TIFF pair (2026-10-31, macOS 27.0.1, Apple M1 Pro).
 - [x] Output format and bit depth: 16-bit linear RGB TIFF plus a separate 16-bit IR TIFF per frame.
 - [x] Scan time and resolution: 4000 dpi single frame with IR 4.6 min end to end; 2000 dpi about 1.6 min per frame after the first. Multi-sample (`--samples`) not timed.
 - [ ] Crate API stable enough, or use CLI: the CLI is stable; the crate API had a breaking change in 0.17 (now async). Decide in H-01.
@@ -43,4 +44,6 @@ Hardware: LS-50 with coolscan-mods firmware and an SA-21 jumpered as SA-30 (whol
 - **Windows needs WinUSB.** The app cannot switch drivers itself; the scanner setup docs must explain Zadig and the roll-back. Users who prefer VueScan's driver can keep importing VueScan or Nikon Scan TIFFs instead.
 - **Integration:** start with the pinned CLI (stable interface, progress on stderr); move to the crate when its async API settles. Pin the exact version.
 - **For the importer (L/H issues):** nkscan names the IR file `<base>_<n>_IR.tiff` (upper case, `.tiff`); the import pairing rule must accept it, not only `*_ir.tif`.
-- **Open:** confirm on macOS with the CLI; time `--samples 2/4`; check how much of the top clipping is the rebate.
+- **macOS needs nothing installed** beyond nkscan itself: the scanner is used straight away.
+- **For H-02 (the nkscan adapter):** create the output folder before calling `scan` (nkscan does not), and pass `--no-eject` when more frames follow.
+- **Open:** time `--samples 2/4`; check how much of the top clipping is the rebate.

@@ -145,7 +145,7 @@
       "status": "in_progress",
       "pr": 111,
       "commit": null,
-      "note": "Windows done; macOS confirmation pending"
+      "note": "Windows done (#111); macOS confirmed 2026-10-31, recorded in the PR that closes #8"
     },
     {
       "id": "P-10",
@@ -215,9 +215,9 @@
       "number": 30,
       "title": "TIFF import job with hashing and thumbnails",
       "branch": "feat/issue-30-tiff-import-job",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 121,
+      "commit": "9bcb04c"
     }
   ]
 }

@@ -12,7 +12,9 @@ macro_rules! id_type {
     ($(#[$doc:meta])* $name:ident, $label:literal) => {
         $(#[$doc])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-        pub struct $name(Ulid);
+        #[cfg_attr(feature = "specta", derive(specta::Type), specta(transparent))]
+        // On the IPC boundary an id is its 26-character text.
+        pub struct $name(#[cfg_attr(feature = "specta", specta(type = String))] Ulid);
 
         impl $name {
             /// A new id, later than every id created before it.
@@ -76,6 +78,11 @@ id_type!(
     /// Identifies a tag.
     TagId,
     "tag"
+);
+id_type!(
+    /// Identifies a background job (import, scan, export, ...).
+    JobId,
+    "job"
 );
 
 #[cfg(test)]

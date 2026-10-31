@@ -146,8 +146,9 @@ pub fn render(input: &PipelineInput, recipe: &Recipe, target: RenderTarget) -> R
 pub fn analyze(input: &PipelineInput) -> Result<Analysis>;         // crop, base, histogram, auto recipe
 pub trait JobSink: Send + Sync { fn progress(&self, id: JobId, stage: &str, fraction: f32);
     fn done(&self, id: JobId, result: JobResult); fn error(&self, id: JobId, err: AppError); }
-pub struct JobManager; // spawn(kind, FnOnce(JobCtx) -> Result<JobResult>) -> JobId; cancel(JobId)
-pub struct JobCtx;     // progress(stage, fraction); is_cancelled()
+pub struct JobManager; // spawn(kind, FnOnce(&JobCtx) -> Result<JobResult>) -> Result<JobId>; cancel(JobId) -> bool; cancel_all()
+pub struct JobCtx;     // progress(stage, fraction) (throttled to 1 % steps); is_cancelled(); check_cancelled()?
+// Jobs run in parallel, one thread each (L-01); a panic in a job becomes an Internal error event.
 ```
 
 ### 3.5 Data flows

@@ -12,7 +12,8 @@ name = "grain_to_pixel_desktop_lib"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-gtp-core = { path = "../../../crates/gtp-core", version = "0.0.0", features = ["specta"] }
+gtp-app = { path = "../../../crates/gtp-app", version = "0.0.0" }
+gtp-core ={ path = "../../../crates/gtp-core", version = "0.0.0", features = ["specta"] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 # tauri-specta stack is still pre-release: pin exact versions (see docs/architecture.md).
@@ -25,6 +26,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 [dev-dependencies]
 serde_json = "1"
+# Mock runtime, to check that job events reach the webview layer (src/sink.rs tests).
+tauri = { version = "2", features = ["test"] }
 
 [lints]
 workspace = true

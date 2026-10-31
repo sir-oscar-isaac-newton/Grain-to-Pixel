@@ -7,21 +7,24 @@ use specta_typescript::Typescript;
 use tauri_specta::{collect_commands, collect_events, Builder};
 
 use crate::commands;
+use crate::events::{JobDone, JobError, JobProgress};
 
-/// Collects all commands and events (one place, shared by the app and the generator).
-pub fn builder() -> Builder<tauri::Wry> {
-    Builder::<tauri::Wry>::new()
+/// Collects all commands and events (one place, shared by the app, the generator and tests on
+/// the mock runtime).
+pub fn builder<R: tauri::Runtime>() -> Builder<R> {
+    Builder::<R>::new()
         .commands(collect_commands![
             commands::system::library_info,
             commands::system::log_client_event,
-            commands::system::crash_notes_take
+            commands::system::crash_notes_take,
+            commands::system::job_cancel
         ])
-        .events(collect_events![])
+        .events(collect_events![JobProgress, JobDone, JobError])
 }
 
 /// Writes the TypeScript bindings to `path` without starting the app.
 pub fn export_bindings(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    builder().export(Typescript::default(), path)?;
+    builder::<tauri::Wry>().export(Typescript::default(), path)?;
     Ok(())
 }
 
@@ -40,8 +43,14 @@ mod tests {
             text.contains("libraryInfo"),
             "command missing from bindings"
         );
-        for command in ["logClientEvent", "crashNotesTake"] {
+        for command in ["logClientEvent", "crashNotesTake", "jobCancel"] {
             assert!(text.contains(command), "{command} missing from bindings");
+        }
+        for event in ["job://progress", "job://done", "job://error"] {
+            assert!(text.contains(event), "event {event} missing from bindings");
+        }
+        for ty in ["JobProgress", "JobDone", "JobError", "JobResult"] {
+            assert!(text.contains(ty), "type {ty} missing from bindings");
         }
         assert!(text.contains("AppError"), "AppError missing from bindings");
         for code in gtp_core::ErrorCode::ALL {

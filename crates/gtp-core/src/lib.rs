@@ -4,13 +4,15 @@
 pub mod error;
 pub mod ids;
 pub mod image;
+pub mod job;
 pub mod model;
 pub mod recipe;
 #[cfg(feature = "testing")]
 pub mod testing;
 
 pub use error::{AppError, ErrorCode};
-pub use ids::{FrameId, RollId, TagId};
+pub use ids::{FrameId, JobId, RollId, TagId};
 pub use image::ImageF32;
+pub use job::JobResult;
 pub use model::{FilmFormat, Frame, FrameKind, Roll, SourceFile, SourceRole, Tag};
 pub use recipe::{migrate, Recipe};

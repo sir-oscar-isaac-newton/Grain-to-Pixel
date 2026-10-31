@@ -1,6 +1,7 @@
 //! System commands.
 
-use gtp_core::{AppError, ErrorCode};
+use gtp_app::JobManager;
+use gtp_core::{AppError, ErrorCode, JobId};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::State;
@@ -83,6 +84,15 @@ fn drain_crash_notes(state: &AppState) -> CmdResult<Vec<CrashNote>> {
 pub fn crash_notes_take(state: State<'_, AppState>) -> CmdResult<Vec<CrashNote>> {
     drain_crash_notes(&state)
 }
+
+/// Asks a job to stop. It ends with a `job://error` event with code `Cancelled` (or `job://done`
+/// if it was already finishing). Returns false when the job is not running, which is harmless.
+#[tauri::command]
+#[specta::specta]
+pub fn job_cancel(jobs: State<'_, JobManager>, id: JobId) -> CmdResult<bool> {
+    Ok(jobs.cancel(id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -7,12 +7,15 @@ mod error;
 mod events;
 mod ipc;
 mod logging;
+mod sink;
 mod state;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use gtp_app::JobManager;
 use tauri::webview::PageLoadEvent;
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 pub use ipc::export_bindings;
 
@@ -30,7 +33,7 @@ fn signal_ready(path: &Path) -> std::io::Result<()> {
 
 /// Builds and runs the desktop application.
 pub fn run() -> tauri::Result<()> {
-    let builder = ipc::builder();
+    let builder = ipc::builder::<tauri::Wry>();
     tauri::Builder::default()
         .manage(state::AppState::default())
         .on_page_load(|_webview, payload| {
@@ -45,9 +48,20 @@ pub fn run() -> tauri::Result<()> {
         .setup(move |app| {
             builder.mount_events(app);
             start_observability(app);
+            let sink = sink::TauriJobSink::new(app.handle().clone());
+            app.manage(JobManager::new(Arc::new(sink)));
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())?
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                // Running jobs stop at their next check instead of being cut off mid-write.
+                if let Some(jobs) = app.try_state::<JobManager>() {
+                    jobs.cancel_all();
+                }
+            }
+        });
+    Ok(())
 }
 
 /// Starts file logging and the panic hook, then collects crash notes from earlier runs.

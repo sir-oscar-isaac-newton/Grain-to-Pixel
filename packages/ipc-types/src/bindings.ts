@@ -42,6 +42,13 @@ export const commands = {
 	 *  events, each new frame as `library://changed`. Returns the job id at once.
 	 */
 	importFiles: (paths: string[], rollId: RollId, kind: ImportKind) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("import_files", { paths, rollId, kind })),
+	/**
+	 *  Opens a frame for editing: decodes its original into the proxy cache and returns its size, saved
+	 *  recipe and the roll's film base.
+	 */
+	developOpen: (frameId: FrameId) => typedError<DevelopInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_open", { frameId })),
+	/**  Finds the frame, film base and levels of a frame, and the recipe they make. */
+	developAnalyze: (frameId: FrameId) => typedError<DevelopAnalysis_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_analyze", { frameId })),
 	/**  All tags, in name order. */
 	tagList: () => typedError<Tag[], AppError_Serialize>(__TAURI_INVOKE("tag_list")),
 	/**  The tags of a roll, in name order. */
@@ -103,18 +110,199 @@ export type AppError_Serialize = {
 	details?: string,
 };
 
+/**  Film base in linear scan values; every channel is divided by it before inversion. */
+export type Base = Base_Serialize | Base_Deserialize;
+
+/**  Where the film base comes from. */
+export type BaseSource = 
+/**  The roll's measured film base. */
+"roll" | 
+/**  Sampled by the user for this frame. */
+"manual";
+
+/**  Film base in linear scan values; every channel is divided by it before inversion. */
+export type Base_Deserialize = {
+	source?: BaseSource,
+	rgb?: [(number | null), (number | null), (number | null)],
+};
+
+/**  Film base in linear scan values; every channel is divided by it before inversion. */
+export type Base_Serialize = {
+	source: BaseSource,
+	rgb: [(number | null), (number | null), (number | null)],
+};
+
 /**  Severity of an event reported by the UI. */
 export type ClientLogLevel = "Error" | "Warn" | "Info" | "Debug";
+
+/**
+ *  Colour sliders, all from -100 to 100 except saturation. Three opposing pairs, as in darkroom
+ *  filtration: a positive `red_cyan` adds red, a negative one adds cyan, and so on.
+ */
+export type Color = Color_Serialize | Color_Deserialize;
+
+/**
+ *  Colour sliders, all from -100 to 100 except saturation. Three opposing pairs, as in darkroom
+ *  filtration: a positive `red_cyan` adds red, a negative one adds cyan, and so on.
+ */
+export type Color_Deserialize = {
+	red_cyan?: number | null,
+	green_magenta?: number | null,
+	blue_yellow?: number | null,
+	temperature?: number | null,
+	tint?: number | null,
+	/**  0 is monochrome, 1 unchanged, 2 doubled. */
+	saturation?: number | null,
+	/**  Saturation that spares colours which are already vivid; -100 to 100. */
+	vibrance?: number | null,
+};
+
+/**
+ *  Colour sliders, all from -100 to 100 except saturation. Three opposing pairs, as in darkroom
+ *  filtration: a positive `red_cyan` adds red, a negative one adds cyan, and so on.
+ */
+export type Color_Serialize = {
+	red_cyan: number | null,
+	green_magenta: number | null,
+	blue_yellow: number | null,
+	temperature: number | null,
+	tint: number | null,
+	/**  0 is monochrome, 1 unchanged, 2 doubled. */
+	saturation: number | null,
+	/**  Saturation that spares colours which are already vivid; -100 to 100. */
+	vibrance: number | null,
+};
 
 /**  A crash from an earlier run, as the UI sees it. Details stay in the log and the note file. */
 export type CrashNote = {
 	file: string,
 };
 
+/**  Crop rectangle as fractions of the full frame (0 to 1). */
+export type Crop = Crop_Serialize | Crop_Deserialize;
+
+/**  Crop rectangle as fractions of the full frame (0 to 1). */
+export type Crop_Deserialize = {
+	x?: number | null,
+	y?: number | null,
+	w?: number | null,
+	h?: number | null,
+};
+
+/**  Crop rectangle as fractions of the full frame (0 to 1). */
+export type Crop_Serialize = {
+	x: number | null,
+	y: number | null,
+	w: number | null,
+	h: number | null,
+};
+
+/**  Tone curves; an empty list means "no change" for that curve. */
+export type Curves = Curves_Serialize | Curves_Deserialize;
+
+/**  Tone curves; an empty list means "no change" for that curve. */
+export type Curves_Deserialize = {
+	master?: ([(number | null), (number | null)])[],
+	r?: ([(number | null), (number | null)])[],
+	g?: ([(number | null), (number | null)])[],
+	b?: ([(number | null), (number | null)])[],
+};
+
+/**  Tone curves; an empty list means "no change" for that curve. */
+export type Curves_Serialize = {
+	master: ([(number | null), (number | null)])[],
+	r: ([(number | null), (number | null)])[],
+	g: ([(number | null), (number | null)])[],
+	b: ([(number | null), (number | null)])[],
+};
+
 /**  The outcome of a delete: rows removed, and files that could not be removed afterwards. */
 export type DeleteReport = {
 	frames_deleted: number,
 	files_left: string[],
+};
+
+/**  What the automatic analysis of a frame found. */
+export type DevelopAnalysis = DevelopAnalysis_Serialize | DevelopAnalysis_Deserialize;
+
+/**  What the automatic analysis of a frame found. */
+export type DevelopAnalysis_Deserialize = {
+	/**  The detected frame as fractions of the scan; the whole scan when not confident. */
+	frame_rect: Crop_Deserialize,
+	/**  0 to 1. */
+	frame_confidence: number | null,
+	base_rgb: [(number | null), (number | null), (number | null)],
+	/**  0 to 1; low means the base should be sampled by hand. */
+	base_confidence: number | null,
+	/**  True when the base is the roll's rather than measured on this scan. */
+	base_from_roll: boolean,
+	histogram: HistogramData,
+	/**  A recipe with the automatic crop, base and levels, everything else at its default. */
+	auto_recipe: Recipe_Deserialize,
+};
+
+/**  What the automatic analysis of a frame found. */
+export type DevelopAnalysis_Serialize = {
+	/**  The detected frame as fractions of the scan; the whole scan when not confident. */
+	frame_rect: Crop_Serialize,
+	/**  0 to 1. */
+	frame_confidence: number | null,
+	base_rgb: [(number | null), (number | null), (number | null)],
+	/**  0 to 1; low means the base should be sampled by hand. */
+	base_confidence: number | null,
+	/**  True when the base is the roll's rather than measured on this scan. */
+	base_from_roll: boolean,
+	histogram: HistogramData,
+	/**  A recipe with the automatic crop, base and levels, everything else at its default. */
+	auto_recipe: Recipe_Serialize,
+};
+
+/**  What the Develop view needs to open a frame. */
+export type DevelopInfo = DevelopInfo_Serialize | DevelopInfo_Deserialize;
+
+/**  What the Develop view needs to open a frame. */
+export type DevelopInfo_Deserialize = {
+	/**  Size of the original, not of the proxy. */
+	width: number,
+	height: number,
+	has_ir: boolean,
+	/**  The frame's saved recipe, or the default one when it was never edited. */
+	recipe: Recipe_Deserialize,
+	/**  The roll's measured film base, if it has one. */
+	roll_base?: [(number | null), (number | null), (number | null)] | null,
+};
+
+/**  What the Develop view needs to open a frame. */
+export type DevelopInfo_Serialize = {
+	/**  Size of the original, not of the proxy. */
+	width: number,
+	height: number,
+	has_ir: boolean,
+	/**  The frame's saved recipe, or the default one when it was never edited. */
+	recipe: Recipe_Serialize,
+	/**  The roll's measured film base, if it has one. */
+	roll_base: [(number | null), (number | null), (number | null)] | null,
+};
+
+/**  Infrared dust removal. */
+export type Dust = Dust_Serialize | Dust_Deserialize;
+
+/**  Infrared dust removal. */
+export type Dust_Deserialize = {
+	enabled?: boolean,
+	/**  Threshold on the normalized IR plane, 0 to 1. */
+	threshold?: number | null,
+	/**  How far the mask is grown, in pixels. */
+	grow_px?: number,
+};
+
+/**  Infrared dust removal. */
+export type Dust_Serialize = {
+	enabled: boolean,
+	/**  Threshold on the normalized IR plane, 0 to 1. */
+	threshold: number | null,
+	/**  How far the mask is grown, in pixels. */
+	grow_px: number,
 };
 
 /**  Stable, machine-readable error category. The UI shows `message` and logs the code. */
@@ -320,6 +508,36 @@ export type Frame_Serialize = {
 	edited_at: string | null,
 };
 
+export type Geometry = Geometry_Serialize | Geometry_Deserialize;
+
+export type Geometry_Deserialize = {
+	crop?: Crop_Deserialize,
+	/**  Straighten angle in degrees. */
+	angle_deg?: number | null,
+	/**  Quarter turns clockwise; normalized to 0 to 3. */
+	rot90?: number,
+	flip_h?: boolean,
+	flip_v?: boolean,
+};
+
+export type Geometry_Serialize = {
+	crop: Crop_Serialize,
+	/**  Straighten angle in degrees. */
+	angle_deg: number | null,
+	/**  Quarter turns clockwise; normalized to 0 to 3. */
+	rot90: number,
+	flip_h: boolean,
+	flip_v: boolean,
+};
+
+/**  256-bin histograms of the display values, one list of 256 counts per channel. */
+export type HistogramData = {
+	red: number[],
+	green: number[],
+	blue: number[],
+	luma: number[],
+};
+
 /**  What kind of files an import brings in. */
 export type ImportKind = 
 /**  16-bit scans, with infrared embedded or as `*_ir.tif`. */
@@ -348,6 +566,21 @@ export type ImportResult_Serialize = {
 	skipped: SkippedFile_Serialize[],
 	/**  Milliseconds each imported frame took (budget: 8,000 per frame, spec section 11). */
 	frame_ms: number[],
+};
+
+/**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
+export type Invert = Invert_Serialize | Invert_Deserialize;
+
+/**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
+export type Invert_Deserialize = {
+	black?: [(number | null), (number | null), (number | null)],
+	white?: [(number | null), (number | null), (number | null)],
+};
+
+/**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
+export type Invert_Serialize = {
+	black: [(number | null), (number | null), (number | null)],
+	white: [(number | null), (number | null), (number | null)],
 };
 
 /**  A job finished. Sent once per job, after its last progress event. */
@@ -500,6 +733,72 @@ export type LibraryInfo_Serialize = {
 	app_version: string,
 	/**  `null` until a library is created or opened. */
 	library: LibraryDetails_Serialize | null,
+};
+
+/**
+ *  Black-and-white conversion. When enabled, every pixel becomes `mix[0]*R + mix[1]*G + mix[2]*B`
+ *  in all three channels, which acts like a coloured filter on black-and-white film. Weights run
+ *  from -2 to 2; weights that sum to 1 keep the brightness.
+ */
+export type Mono = Mono_Serialize | Mono_Deserialize;
+
+/**
+ *  Black-and-white conversion. When enabled, every pixel becomes `mix[0]*R + mix[1]*G + mix[2]*B`
+ *  in all three channels, which acts like a coloured filter on black-and-white film. Weights run
+ *  from -2 to 2; weights that sum to 1 keep the brightness.
+ */
+export type Mono_Deserialize = {
+	enabled?: boolean,
+	mix?: [(number | null), (number | null), (number | null)],
+};
+
+/**
+ *  Black-and-white conversion. When enabled, every pixel becomes `mix[0]*R + mix[1]*G + mix[2]*B`
+ *  in all three channels, which acts like a coloured filter on black-and-white film. Weights run
+ *  from -2 to 2; weights that sum to 1 keep the brightness.
+ */
+export type Mono_Serialize = {
+	enabled: boolean,
+	mix: [(number | null), (number | null), (number | null)],
+};
+
+export type Output = Output_Serialize | Output_Deserialize;
+
+/**  Export colour space. */
+export type OutputSpace = "srgb" | "adobe_rgb" | "prophoto";
+
+export type Output_Deserialize = {
+	space?: OutputSpace,
+};
+
+export type Output_Serialize = {
+	space: OutputSpace,
+};
+
+export type Recipe = Recipe_Serialize | Recipe_Deserialize;
+
+export type Recipe_Deserialize = {
+	v?: number,
+	geometry?: Geometry_Deserialize,
+	base?: Base_Deserialize,
+	invert?: Invert_Deserialize,
+	color?: Color_Deserialize,
+	mono?: Mono_Deserialize,
+	tone?: Tone_Deserialize,
+	dust?: Dust_Deserialize,
+	output?: Output_Deserialize,
+};
+
+export type Recipe_Serialize = {
+	v: number,
+	geometry: Geometry_Serialize,
+	base: Base_Serialize,
+	invert: Invert_Serialize,
+	color: Color_Serialize,
+	mono: Mono_Serialize,
+	tone: Tone_Serialize,
+	dust: Dust_Serialize,
+	output: Output_Serialize,
 };
 
 /**
@@ -763,6 +1062,52 @@ export type Tag = {
 export type TagId = string;
 
 export type Theme = "system" | "light" | "dark";
+
+/**
+ *  Tone sliders. Applied in this order: exposure, contrast, highlights and shadows, whites and
+ *  blacks, dehaze, then the curves. The sliders from `contrast` on run from -100 to 100.
+ */
+export type Tone = Tone_Serialize | Tone_Deserialize;
+
+/**
+ *  Tone sliders. Applied in this order: exposure, contrast, highlights and shadows, whites and
+ *  blacks, dehaze, then the curves. The sliders from `contrast` on run from -100 to 100.
+ */
+export type Tone_Deserialize = {
+	exposure_ev?: number | null,
+	contrast?: number | null,
+	/**  Brightens or darkens only the bright part of the tonal range. */
+	highlights?: number | null,
+	/**  Brightens or darkens only the dark part of the tonal range. */
+	shadows?: number | null,
+	/**  Moves the point that counts as pure white. */
+	whites?: number | null,
+	/**  Moves the point that counts as pure black. */
+	blacks?: number | null,
+	/**  Removes (positive) or adds (negative) a uniform veil such as film fog or scanner flare. */
+	dehaze?: number | null,
+	curve?: Curves_Deserialize,
+};
+
+/**
+ *  Tone sliders. Applied in this order: exposure, contrast, highlights and shadows, whites and
+ *  blacks, dehaze, then the curves. The sliders from `contrast` on run from -100 to 100.
+ */
+export type Tone_Serialize = {
+	exposure_ev: number | null,
+	contrast: number | null,
+	/**  Brightens or darkens only the bright part of the tonal range. */
+	highlights: number | null,
+	/**  Brightens or darkens only the dark part of the tonal range. */
+	shadows: number | null,
+	/**  Moves the point that counts as pure white. */
+	whites: number | null,
+	/**  Moves the point that counts as pure black. */
+	blacks: number | null,
+	/**  Removes (positive) or adds (negative) a uniform veil such as film fog or scanner flare. */
+	dehaze: number | null,
+	curve: Curves_Serialize,
+};
 
 /**  One original that did not check out. */
 export type VerifyProblem = VerifyProblem_Serialize | VerifyProblem_Deserialize;

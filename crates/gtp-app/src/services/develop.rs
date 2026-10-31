@@ -1,0 +1,675 @@
+//! The Develop service (P-11): the backend of interactive editing.
+//!
+//! Opening a frame decodes its original once and keeps a [`PROXY_EDGE`] proxy (linear f32) in an
+//! in-memory LRU of [`CACHE_FRAMES`] frames; renders, analysis and the Develop view's previews all
+//! work on that proxy. The original is never touched. A preview travels as one buffer: a
+//! [`HEADER_BYTES`]-byte header followed by RGBA8 sRGB pixels (no JSON, no base64).
+//!
+//! Dragging a slider sends many renders. Each carries a sequence number, and per frame only the
+//! newest counts: a render that is superseded before it starts, or while it runs, comes back as
+//! `Cancelled` and its pixels are thrown away. (A render already running finishes first; stopping
+//! it midway would mean threading cancellation through every pipeline stage.) The recipe is clamped
+//! by the pipeline, so values from the UI can never reach the stages out of range.
+
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+
+use serde::Serialize;
+
+use gtp_core::recipe::Crop;
+use gtp_core::{AppError, ErrorCode, Frame, FrameId, ImageF32, Recipe, SourceFile, SourceRole};
+use gtp_io::{read_tiff16, to_f32_linear, Limits};
+
+use crate::pipeline::{
+    analyze, build_proxy, to_rgba8_srgb, Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
+};
+use crate::services::library::Library;
+
+/// Frames whose proxy is kept in memory (about 34 MB each).
+pub const CACHE_FRAMES: usize = 4;
+/// The smallest and largest long edge a preview may ask for.
+pub const MIN_EDGE: u32 = 256;
+pub const MAX_EDGE: u32 = 4096;
+/// Bytes before the pixels of a rendered preview: `seq` (u64), `width` (u32), `height` (u32), all
+/// little-endian.
+pub const HEADER_BYTES: usize = 16;
+
+/// What the Develop view needs to open a frame.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct DevelopInfo {
+    /// Size of the original, not of the proxy.
+    pub width: u32,
+    pub height: u32,
+    pub has_ir: bool,
+    /// The frame's saved recipe, or the default one when it was never edited.
+    pub recipe: Recipe,
+    /// The roll's measured film base, if it has one.
+    pub roll_base: Option<[f32; 3]>,
+}
+
+/// 256-bin histograms of the display values, one list of 256 counts per channel.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct HistogramData {
+    pub red: Vec<u32>,
+    pub green: Vec<u32>,
+    pub blue: Vec<u32>,
+    pub luma: Vec<u32>,
+}
+
+impl From<Histogram> for HistogramData {
+    fn from(h: Histogram) -> Self {
+        Self {
+            red: h.red.to_vec(),
+            green: h.green.to_vec(),
+            blue: h.blue.to_vec(),
+            luma: h.luma.to_vec(),
+        }
+    }
+}
+
+/// What the automatic analysis of a frame found.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct DevelopAnalysis {
+    /// The detected frame as fractions of the scan; the whole scan when not confident.
+    pub frame_rect: Crop,
+    /// 0 to 1.
+    pub frame_confidence: f32,
+    pub base_rgb: [f32; 3],
+    /// 0 to 1; low means the base should be sampled by hand.
+    pub base_confidence: f32,
+    /// True when the base is the roll's rather than measured on this scan.
+    pub base_from_roll: bool,
+    pub histogram: HistogramData,
+    /// A recipe with the automatic crop, base and levels, everything else at its default.
+    pub auto_recipe: Recipe,
+}
+
+/// One frame's proxy and the state of its renders.
+struct Entry {
+    rgb: Arc<ImageF32>,
+    has_ir: bool,
+    /// The roll's base as of the last open (the roll can get one after the proxy was built).
+    film_base: Mutex<Option<[f32; 3]>>,
+    /// The highest sequence number seen for this frame.
+    latest: AtomicU64,
+    /// One render at a time per frame, so a queue of superseded renders costs nothing.
+    render_lock: Mutex<()>,
+}
+
+impl Entry {
+    fn input(&self) -> PipelineInput {
+        PipelineInput {
+            rgb: Arc::clone(&self.rgb),
+            ir: None,
+            film_base: *self
+                .film_base
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        }
+    }
+
+    fn set_base(&self, base: Option<[f32; 3]>) {
+        *self
+            .film_base
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = base;
+    }
+
+    fn bytes(&self) -> usize {
+        self.rgb.data.len() * std::mem::size_of::<f32>()
+    }
+}
+
+/// The frames open for editing. One per app (it lives in the `AppContext`).
+#[derive(Default)]
+pub struct DevelopService {
+    /// Most recently used first.
+    cache: Mutex<Vec<(FrameId, Arc<Entry>)>>,
+}
+
+fn superseded() -> AppError {
+    AppError::new(
+        ErrorCode::Cancelled,
+        "A newer preview was requested, so this one was dropped.",
+    )
+}
+
+/// Decodes a frame's original and builds its proxy.
+fn load(library: &Library, sources: &[SourceFile], frame: &Frame) -> Result<Entry, AppError> {
+    let scan = sources
+        .iter()
+        .find(|s| s.role == SourceRole::Rgb)
+        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "This frame has no scan file."))?;
+    let path = library.resolve(Path::new(&scan.rel_path))?;
+    let tiff = read_tiff16(&path, &Limits::default())?;
+    let full = to_f32_linear(&tiff)?;
+    drop(tiff);
+    let proxy = build_proxy(&full, PROXY_EDGE)?;
+    Ok(Entry {
+        rgb: Arc::new(proxy),
+        has_ir: frame.has_ir,
+        film_base: Mutex::new(None),
+        latest: AtomicU64::new(0),
+        render_lock: Mutex::new(()),
+    })
+}
+
+impl DevelopService {
+    fn cache(&self) -> std::sync::MutexGuard<'_, Vec<(FrameId, Arc<Entry>)>> {
+        self.cache.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The cached entry, moved to the front.
+    fn get(&self, id: FrameId) -> Option<Arc<Entry>> {
+        let mut cache = self.cache();
+        let at = cache.iter().position(|(f, _)| *f == id)?;
+        let hit = cache.remove(at);
+        let entry = Arc::clone(&hit.1);
+        cache.insert(0, hit);
+        Some(entry)
+    }
+
+    /// Adds an entry at the front, evicting the oldest beyond [`CACHE_FRAMES`]. When another
+    /// thread cached the same frame meanwhile, that entry wins and is returned.
+    fn put(&self, id: FrameId, entry: Entry) -> Arc<Entry> {
+        let mut cache = self.cache();
+        if let Some(at) = cache.iter().position(|(f, _)| *f == id) {
+            let hit = cache.remove(at);
+            let existing = Arc::clone(&hit.1);
+            cache.insert(0, hit);
+            return existing;
+        }
+        let entry = Arc::new(entry);
+        cache.insert(0, (id, Arc::clone(&entry)));
+        cache.truncate(CACHE_FRAMES);
+        entry
+    }
+
+    /// The frame's entry, decoding its original when it is not cached.
+    fn ensure(&self, library: &Library, id: FrameId) -> Result<Arc<Entry>, AppError> {
+        if let Some(entry) = self.get(id) {
+            return Ok(entry);
+        }
+        let (frame, sources, base) = library.read(|c| {
+            let frame = c.get_frame(id)?;
+            let sources = c.sources_of(id)?;
+            let base = c.get_roll(frame.roll_id)?.film_base_rgb;
+            Ok((frame, sources, base))
+        })?;
+        let entry = load(library, &sources, &frame)?;
+        entry.set_base(base);
+        Ok(self.put(id, entry))
+    }
+
+    /// Opens a frame for editing: decodes the original into the cache (when it is not there) and
+    /// returns what the view needs. The roll's film base and the saved recipe are read fresh.
+    pub fn open(&self, library: &Library, id: FrameId) -> Result<DevelopInfo, AppError> {
+        let entry = self.ensure(library, id)?;
+        let (frame, recipe, base) = library.read(|c| {
+            let frame = c.get_frame(id)?;
+            let recipe = c.load_recipe(id)?;
+            let base = c.get_roll(frame.roll_id)?.film_base_rgb;
+            Ok((frame, recipe, base))
+        })?;
+        entry.set_base(base);
+        Ok(DevelopInfo {
+            width: frame.width,
+            height: frame.height,
+            has_ir: entry.has_ir,
+            recipe: recipe.unwrap_or_default(),
+            roll_base: base,
+        })
+    }
+
+    /// Finds the frame, film base and levels on the cached proxy (loading it when needed).
+    pub fn analyze(&self, library: &Library, id: FrameId) -> Result<DevelopAnalysis, AppError> {
+        let entry = self.ensure(library, id)?;
+        let analysis = analyze(&entry.input())?;
+        Ok(DevelopAnalysis {
+            frame_rect: analysis.frame.rect,
+            frame_confidence: analysis.frame.confidence,
+            base_rgb: analysis.base.rgb,
+            base_confidence: analysis.base.confidence,
+            base_from_roll: analysis.base_from_roll,
+            histogram: analysis.histogram.into(),
+            auto_recipe: analysis.auto_recipe,
+        })
+    }
+
+    /// Renders a preview whose long edge is at most `max_edge` (never above the proxy's) and
+    /// returns it as the header and RGBA8 bytes described at [`HEADER_BYTES`]. Returns `Cancelled`
+    /// when a newer sequence number arrived for this frame before the render started or while it
+    /// ran.
+    pub fn render(
+        &self,
+        library: &Library,
+        id: FrameId,
+        recipe: &Recipe,
+        max_edge: u32,
+        seq: u64,
+    ) -> Result<Vec<u8>, AppError> {
+        if !(MIN_EDGE..=MAX_EDGE).contains(&max_edge) {
+            return Err(AppError::new(
+                ErrorCode::InvalidInput,
+                "A preview must be between 256 and 4096 pixels on its long edge.",
+            )
+            .with_details(max_edge.to_string()));
+        }
+        let entry = self.ensure(library, id)?;
+        entry.latest.fetch_max(seq, Ordering::SeqCst);
+        let _turn = entry
+            .render_lock
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if entry.latest.load(Ordering::SeqCst) > seq {
+            return Err(superseded());
+        }
+        let image =
+            crate::pipeline::render(&entry.input(), recipe, RenderTarget::Preview { max_edge })?;
+        let rgba = to_rgba8_srgb(&image)?;
+        if entry.latest.load(Ordering::SeqCst) > seq {
+            return Err(superseded());
+        }
+        let mut out = Vec::with_capacity(HEADER_BYTES + rgba.len());
+        out.extend_from_slice(&seq.to_le_bytes());
+        out.extend_from_slice(&image.width.to_le_bytes());
+        out.extend_from_slice(&image.height.to_le_bytes());
+        out.extend_from_slice(&rgba);
+        Ok(out)
+    }
+
+    /// The cached frames, most recently used first.
+    pub fn cached(&self) -> Vec<FrameId> {
+        self.cache().iter().map(|(id, _)| *id).collect()
+    }
+
+    /// Memory held by the cached proxies.
+    pub fn cached_bytes(&self) -> usize {
+        self.cache().iter().map(|(_, e)| e.bytes()).sum()
+    }
+
+    /// Forgets every proxy (another library was opened).
+    pub fn clear(&self) {
+        self.cache().clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::atomic::Ordering;
+
+    use gtp_core::testing::synthetic::{self, Params};
+    use gtp_core::{FrameKind, RollId};
+    use gtp_io::{from_f32_linear, write_tiff16, Compression};
+
+    use super::*;
+    use crate::library_fs::originals_rel;
+    use crate::services::roll_frame::{roll_create, roll_set_film_base, RollInput};
+
+    struct Fixture {
+        dir: PathBuf,
+        library: Library,
+        roll: RollId,
+        service: DevelopService,
+    }
+
+    impl Fixture {
+        fn new(label: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "gtp-develop-{label}-{}-{}",
+                std::process::id(),
+                FrameId::new()
+            ));
+            let library = Library::create(&dir, "Develop").unwrap();
+            let roll = roll_create(
+                &library,
+                RollInput {
+                    name: "Roll".into(),
+                    ..RollInput::default()
+                },
+            )
+            .unwrap()
+            .id;
+            Self {
+                dir,
+                library,
+                roll,
+                service: DevelopService::default(),
+            }
+        }
+
+        /// A frame whose original is a synthetic negative of the given size.
+        fn frame(&self, index: u32, width: u32, height: u32) -> FrameId {
+            let scan = synthetic::negative(
+                u64::from(index),
+                &Params {
+                    width,
+                    height,
+                    rebate: [width / 14; 4],
+                    ..Params::default()
+                },
+            )
+            .unwrap();
+            let id = FrameId::new();
+            let rel = originals_rel(self.roll, id).join("scan.tif");
+            let path = self.library.resolve(&rel).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            write_tiff16(&path, &from_f32_linear(&scan.image), Compression::None).unwrap();
+            self.library
+                .write(|c| {
+                    c.insert_frame(&Frame {
+                        id,
+                        roll_id: self.roll,
+                        index_in_roll: index,
+                        kind: FrameKind::ScanRgbIr,
+                        width,
+                        height,
+                        has_ir: false,
+                        note: String::new(),
+                        created_at: String::new(),
+                        edited_at: None,
+                    })?;
+                    c.insert_source(&SourceFile {
+                        frame_id: id,
+                        role: SourceRole::Rgb,
+                        rel_path: rel.to_string_lossy().replace('\\', "/"),
+                        sha256: String::new(),
+                        bytes: 0,
+                    })
+                })
+                .unwrap();
+            id
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn header(bytes: &[u8]) -> (u64, u32, u32) {
+        (
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+            u32::from_le_bytes(bytes[12..16].try_into().unwrap()),
+        )
+    }
+
+    #[test]
+    fn opening_a_frame_reports_the_original_and_caches_a_proxy() {
+        let t = Fixture::new("open");
+        let id = t.frame(1, 2400, 1600);
+        assert!(t.service.cached().is_empty());
+
+        let info = t.service.open(&t.library, id).unwrap();
+        assert_eq!((info.width, info.height), (2400, 1600));
+        assert!(!info.has_ir);
+        assert_eq!(info.recipe, Recipe::default(), "never edited");
+        assert_eq!(info.roll_base, None);
+        assert_eq!(t.service.cached(), [id]);
+        // 2048 x 1365 pixels of three f32.
+        assert_eq!(t.service.cached_bytes(), 2048 * 1365 * 3 * 4);
+    }
+
+    #[test]
+    fn open_returns_the_saved_recipe_and_the_rolls_current_base() {
+        let t = Fixture::new("fresh");
+        let id = t.frame(1, 700, 500);
+        t.service.open(&t.library, id).unwrap();
+
+        let mut saved = Recipe::default();
+        saved.tone.exposure_ev = 0.5;
+        t.library.write(|c| c.save_recipe(id, &saved)).unwrap();
+        roll_set_film_base(&t.library, t.roll, Some([0.8, 0.5, 0.3])).unwrap();
+
+        // Cached already, yet the recipe and base are read again.
+        let info = t.service.open(&t.library, id).unwrap();
+        assert_eq!(info.recipe, saved);
+        assert_eq!(info.roll_base, Some([0.8, 0.5, 0.3]));
+        assert_eq!(t.service.cached().len(), 1, "no second copy");
+    }
+
+    #[test]
+    fn a_missing_frame_or_scan_is_not_found() {
+        let t = Fixture::new("missing");
+        let err = t.service.open(&t.library, FrameId::new()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+
+        let bare = FrameId::new();
+        t.library
+            .write(|c| {
+                c.insert_frame(&Frame {
+                    id: bare,
+                    roll_id: t.roll,
+                    index_in_roll: 9,
+                    kind: FrameKind::ScanRgbIr,
+                    width: 10,
+                    height: 10,
+                    has_ir: false,
+                    note: String::new(),
+                    created_at: String::new(),
+                    edited_at: None,
+                })
+            })
+            .unwrap();
+        let err = t.service.open(&t.library, bare).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        assert!(t.service.cached().is_empty());
+    }
+
+    #[test]
+    fn a_preview_is_a_header_then_rgba8_pixels() {
+        let t = Fixture::new("render");
+        let id = t.frame(1, 1200, 800);
+        t.service.open(&t.library, id).unwrap();
+
+        let bytes = t
+            .service
+            .render(&t.library, id, &Recipe::default(), 600, 42)
+            .unwrap();
+        let (seq, w, h) = header(&bytes);
+        assert_eq!(seq, 42);
+        assert!(w.max(h) <= 600 && w > 0 && h > 0);
+        assert_eq!(bytes.len(), HEADER_BYTES + (w * h * 4) as usize);
+        assert!(
+            bytes[HEADER_BYTES..].chunks(4).all(|px| px[3] == 255),
+            "opaque"
+        );
+
+        // The recipe changes the picture.
+        let mut brighter = Recipe::default();
+        brighter.tone.exposure_ev = 1.0;
+        let other = t
+            .service
+            .render(&t.library, id, &brighter, 600, 43)
+            .unwrap();
+        assert_ne!(bytes[HEADER_BYTES..], other[HEADER_BYTES..]);
+    }
+
+    #[test]
+    fn a_preview_is_never_larger_than_the_proxy() {
+        let t = Fixture::new("cap");
+        let id = t.frame(1, 2400, 1600);
+        let bytes = t
+            .service
+            .render(&t.library, id, &Recipe::default(), MAX_EDGE, 1)
+            .unwrap();
+        let (_, w, h) = header(&bytes);
+        assert!(w.max(h) <= PROXY_EDGE, "{w}x{h}");
+    }
+
+    #[test]
+    fn the_preview_size_is_validated() {
+        let t = Fixture::new("edge");
+        let id = t.frame(1, 700, 500);
+        for edge in [0, MIN_EDGE - 1, MAX_EDGE + 1] {
+            let err = t
+                .service
+                .render(&t.library, id, &Recipe::default(), edge, 1)
+                .unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{edge}");
+        }
+        for edge in [MIN_EDGE, MAX_EDGE] {
+            t.service
+                .render(&t.library, id, &Recipe::default(), edge, 1)
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn the_recipe_is_clamped_on_the_way_in_and_a_bad_one_is_refused() {
+        let t = Fixture::new("clamp");
+        let id = t.frame(1, 700, 500);
+        let mut wild = Recipe::default();
+        wild.tone.exposure_ev = 1000.0;
+        wild.tone.contrast = -5000.0;
+        let from_wild = t.service.render(&t.library, id, &wild, 400, 1).unwrap();
+        let from_clamped = t
+            .service
+            .render(&t.library, id, &wild.clone().clamped(), 400, 2)
+            .unwrap();
+        assert_eq!(from_wild[HEADER_BYTES..], from_clamped[HEADER_BYTES..]);
+
+        let mut broken = Recipe::default();
+        broken.tone.curve.master = vec![[0.5, 0.5]];
+        let err = t
+            .service
+            .render(&t.library, id, &broken, 400, 3)
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn only_the_newest_request_for_a_frame_gets_a_picture() {
+        let t = Fixture::new("stale");
+        let id = t.frame(1, 700, 500);
+        let recipe = Recipe::default();
+
+        t.service.render(&t.library, id, &recipe, 400, 10).unwrap();
+        // An older request arriving late is dropped; the same number is not "older".
+        let late = t
+            .service
+            .render(&t.library, id, &recipe, 400, 9)
+            .unwrap_err();
+        assert_eq!(late.code, ErrorCode::Cancelled);
+        t.service.render(&t.library, id, &recipe, 400, 10).unwrap();
+        t.service.render(&t.library, id, &recipe, 400, 11).unwrap();
+    }
+
+    #[test]
+    fn a_render_that_waits_its_turn_is_dropped_when_a_newer_one_arrives() {
+        let t = Fixture::new("queue");
+        let id = t.frame(1, 700, 500);
+        t.service.open(&t.library, id).unwrap();
+        let entry = t.service.get(id).unwrap();
+
+        // The frame is busy: hold its render turn, queue a request, then a newer one is seen.
+        let busy = entry.render_lock.lock().unwrap();
+        let result = std::thread::scope(|scope| {
+            let queued =
+                scope.spawn(|| t.service.render(&t.library, id, &Recipe::default(), 400, 1));
+            entry.latest.store(2, Ordering::SeqCst);
+            drop(busy);
+            queued.join().unwrap()
+        });
+        assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+    }
+
+    #[test]
+    fn requests_for_different_frames_do_not_supersede_each_other() {
+        let t = Fixture::new("two");
+        let (a, b) = (t.frame(1, 700, 500), t.frame(2, 700, 500));
+        let recipe = Recipe::default();
+        t.service.render(&t.library, a, &recipe, 400, 50).unwrap();
+        t.service.render(&t.library, b, &recipe, 400, 1).unwrap();
+    }
+
+    #[test]
+    fn the_cache_keeps_four_frames_and_drops_the_least_recently_used() {
+        let t = Fixture::new("lru");
+        let ids: Vec<FrameId> = (1..=5).map(|n| t.frame(n, 640, 480)).collect();
+        for id in &ids[..4] {
+            t.service.open(&t.library, *id).unwrap();
+        }
+        assert_eq!(t.service.cached(), [ids[3], ids[2], ids[1], ids[0]]);
+
+        // Using the oldest makes it the newest, so the next one to go is the second oldest.
+        t.service.open(&t.library, ids[0]).unwrap();
+        t.service.open(&t.library, ids[4]).unwrap();
+        assert_eq!(t.service.cached(), [ids[4], ids[0], ids[3], ids[2]]);
+        assert!(t.service.cached_bytes() <= CACHE_FRAMES * 640 * 480 * 3 * 4);
+
+        // An evicted frame renders again, by decoding its original once more.
+        t.service
+            .render(&t.library, ids[1], &Recipe::default(), 400, 1)
+            .unwrap();
+        assert_eq!(t.service.cached()[0], ids[1]);
+        assert_eq!(t.service.cached().len(), CACHE_FRAMES);
+
+        t.service.clear();
+        assert!(t.service.cached().is_empty());
+    }
+
+    #[test]
+    fn analysis_finds_the_frame_and_base_and_makes_an_auto_recipe() {
+        let t = Fixture::new("analyze");
+        let id = t.frame(1, 1000, 700);
+        let found = t.service.analyze(&t.library, id).unwrap();
+        assert!(found.frame_confidence > 0.5, "{}", found.frame_confidence);
+        assert!(found.base_confidence > 0.5, "{}", found.base_confidence);
+        assert!(!found.base_from_roll);
+        assert_eq!(found.auto_recipe.geometry.crop, found.frame_rect);
+        assert_eq!(found.histogram.red.len(), 256);
+        assert!(found.histogram.luma.iter().sum::<u32>() > 0);
+
+        roll_set_film_base(&t.library, t.roll, Some(found.base_rgb)).unwrap();
+        t.service.open(&t.library, id).unwrap();
+        assert!(t.service.analyze(&t.library, id).unwrap().base_from_roll);
+    }
+
+    /// A 1600 px preview of a 2048 px proxy, as the Develop view asks for while a slider moves, for
+    /// a 3:2 frame (35 mm) and a square one (6x6); run with
+    /// `cargo test -p gtp-app --release -- --ignored --nocapture time_a_develop_render`.
+    /// The budget is 100 ms (docs/specification.md section 11).
+    #[test]
+    #[ignore = "timing run, not a check"]
+    fn time_a_develop_render() {
+        let mut recipe = Recipe::default();
+        recipe.tone.exposure_ev = 0.3;
+        recipe.tone.contrast = 20.0;
+        recipe.tone.shadows = 20.0;
+        recipe.color.vibrance = 15.0;
+        recipe.geometry.angle_deg = 1.0;
+
+        // The synthetic generator stops at 4096 px a side, so these originals are smaller than a
+        // real 21 MP scan; the proxy, and so the render, is the same size.
+        for (label, width, height) in [("3:2", 4096, 2731), ("square", 4096, 4096)] {
+            let t = Fixture::new("time");
+            let id = t.frame(1, width, height);
+            let start = std::time::Instant::now();
+            t.service.open(&t.library, id).unwrap();
+            eprintln!(
+                "{label} {width}x{height}: open (decode, build the proxy) {:?}",
+                start.elapsed()
+            );
+            t.service.render(&t.library, id, &recipe, 1600, 0).unwrap();
+            let runs = 10;
+            let start = std::time::Instant::now();
+            for seq in 1..=runs {
+                t.service
+                    .render(&t.library, id, &recipe, 1600, u64::from(seq))
+                    .unwrap();
+            }
+            eprintln!(
+                "{label}: develop_render at 1600 px {:?} per render",
+                start.elapsed() / runs
+            );
+        }
+    }
+}

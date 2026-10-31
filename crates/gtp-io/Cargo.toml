@@ -6,6 +6,10 @@ publish = false
 
 [dependencies]
 gtp-core = { version = "0.0.0", path = "../gtp-core" }
+jpeg-encoder = "0.7.1"
+# Little CMS, built from its bundled C source (`static`) so no system library is needed.
+lcms2 = { version = "6.2.0", features = ["static"] }
+rayon = "1.12.0"
 sha2 = "0.11.1"
 # Scanners write uncompressed, LZW or Deflate TIFFs; JPEG and fax decoders stay off to keep the
 # attack surface of untrusted files small.

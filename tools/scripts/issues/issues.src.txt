@@ -880,6 +880,7 @@ FILES: apps/desktop/src/features/develop/panels/BaseInvertPanel.tsx; packages/ui
 ROUTES used: develop_analyze, roll_set_film_base, recipe_save.
 MIGRATIONS: none.
 TESTS: panel behaviour with mocked ipc, autosave debounce, axe.
+DELIVERY (decided when U-03 was approved): two parts, as for U-01. Part 1: the film-base picker (click and dragged box), the roll default, black and white sliders per channel, re-run auto levels, and autosave. Part 2, after P-14: the white-point and black-point pickers, which need `levels_from_sample` (P-14 is not in this issue's dependencies, though its criteria use it). Gaps found against the plan and closed in part 1: the preview is cropped, so while picking the canvas shows the whole scan (crop and geometry forced to identity for the preview only); sampling the scan needed a command (`develop_sample_base`, using `sample_film_base`); auto levels needed a base to fit (`develop_analyze` takes an optional base, and `DevelopAnalysis.base_from_roll` became `base_given`); and setting the roll's base regenerates the thumbnails of the frames that follow it (`frames_following_roll_base`). `Slider` uses Radix (`@radix-ui/react-slider`); a key press is reported as a release at once, so the sharp picture is not left behind a rough one. The view also listens to library events now, so the filmstrip's thumbnails follow an edit.
 
 ## U-04
 title: Colour and Tone panels with curve editor

@@ -37,7 +37,7 @@ export interface Viewport {
  * pan, and commands for the buttons and keys. The zoom is kept when the preview changes size (see
  * `viewport.ts`), so a sharper preview replaces a rougher one without the picture moving.
  */
-export function useViewport(image: Size | null): Viewport {
+export function useViewport(image: Size | null, panEnabled = true): Viewport {
   const stageRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<Size>({ width: 0, height: 0 });
   const [view, setView] = useState<View>(FIT_VIEW);
@@ -58,8 +58,8 @@ export function useViewport(image: Size | null): Viewport {
   }, []);
 
   // Latest values for the listeners below, which are attached once.
-  const live = useRef({ view, stage, size });
-  live.current = { view, stage, size };
+  const live = useRef({ view, stage, size, panEnabled });
+  live.current = { view, stage, size, panEnabled };
 
   const resolved = useMemo(() => resolveView(view, stage, size), [view, stage, size]);
 
@@ -88,7 +88,7 @@ export function useViewport(image: Size | null): Viewport {
     // Dragging pans a zoomed image. (Keys and buttons do everything else, so the stage itself needs
     // no keyboard handling.)
     const onMouseDown = (event: MouseEvent) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || !live.current.panEnabled) return;
       const { view: v, stage: s, size: i } = live.current;
       if (resolveView(v, s, i).fit) return;
       event.preventDefault();

@@ -6,6 +6,7 @@ const folderCheckMock = vi.fn();
 const jobCancelMock = vi.fn();
 const developOpenMock = vi.fn();
 const developAnalyzeMock = vi.fn();
+const developSampleBaseMock = vi.fn();
 const recipeSaveMock = vi.fn();
 const recipeApplyToMock = vi.fn();
 const handlers: Record<string, (event: { payload: unknown }) => void> = {};
@@ -29,7 +30,8 @@ vi.mock('@gtp/ipc-types', () => {
       folderCheck: (path: string) => folderCheckMock(path),
       jobCancel: (id: string) => jobCancelMock(id),
       developOpen: (id: string) => developOpenMock(id),
-      developAnalyze: (id: string) => developAnalyzeMock(id),
+      developAnalyze: (id: string, base: unknown) => developAnalyzeMock(id, base),
+      developSampleBase: (id: string, region: unknown) => developSampleBaseMock(id, region),
       recipeSave: (...args: unknown[]) => recipeSaveMock(...args),
       recipeApplyTo: (...args: unknown[]) => recipeApplyToMock(...args),
     },
@@ -46,6 +48,7 @@ import {
   IpcError,
   developAnalyze,
   developOpen,
+  developSampleBase,
   developRender,
   folderCheck,
   frameThumbnail,
@@ -108,6 +111,7 @@ describe('shared/ipc: library helpers', () => {
     beforeEach(() => {
       developOpenMock.mockReset();
       developAnalyzeMock.mockReset();
+      developSampleBaseMock.mockReset();
       recipeSaveMock.mockReset();
       recipeApplyToMock.mockReset();
     });
@@ -174,6 +178,19 @@ describe('shared/ipc: library helpers', () => {
       await expect(recipeApplyTo(['x'], 'f1', ['Tone'])).rejects.toBeInstanceOf(IpcError);
     });
 
+    it('samples the base from an area of the scan, in fractions of it', async () => {
+      const region = { x: 0.1, y: 0.2, w: 0.05, h: 0.4 };
+      developSampleBaseMock.mockResolvedValueOnce({ status: 'ok', data: [0.8, 0.5, 0.3] });
+      await expect(developSampleBase('f1', region)).resolves.toEqual([0.8, 0.5, 0.3]);
+      expect(developSampleBaseMock).toHaveBeenCalledWith('f1', region);
+
+      developSampleBaseMock.mockResolvedValueOnce({
+        status: 'error',
+        error: { code: 'InvalidInput', message: 'That area is too dark to be film base.' },
+      });
+      await expect(developSampleBase('f1', region)).rejects.toBeInstanceOf(IpcError);
+    });
+
     it('opens and analyses through the typed commands', async () => {
       developOpenMock.mockResolvedValue({ status: 'ok', data: { width: 6000 } });
       await expect(developOpen('f1')).resolves.toEqual({ width: 6000 });
@@ -183,7 +200,13 @@ describe('shared/ipc: library helpers', () => {
         status: 'error',
         error: { code: 'NotFound', message: 'This frame has no scan file.' },
       });
-      await expect(developAnalyze('f1')).rejects.toBeInstanceOf(IpcError);
+      await expect(developAnalyze('f1', null)).rejects.toBeInstanceOf(IpcError);
+      expect(developAnalyzeMock).toHaveBeenCalledWith('f1', null);
+
+      // A base picked on the rebate is passed on, so the levels are fitted to it.
+      developAnalyzeMock.mockResolvedValue({ status: 'ok', data: { base_given: true } });
+      await expect(developAnalyze('f1', [0.8, 0.5, 0.3])).resolves.toEqual({ base_given: true });
+      expect(developAnalyzeMock).toHaveBeenLastCalledWith('f1', [0.8, 0.5, 0.3]);
     });
   });
 

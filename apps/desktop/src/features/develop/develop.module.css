@@ -126,10 +126,20 @@
   gap: var(--space-3);
   min-width: 0;
   overflow: auto;
+  /* Room for the scrollbar is always there, so the panel does not shift when it appears. */
+  scrollbar-gutter: stable;
+}
+
+/* What the view has to say (updating, picked, saved...) in one place above the panel. It keeps
+   room for three lines, so the controls below do not move when a message comes and goes. */
+.statusArea {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 4.2em;
 }
 
 .state {
-  min-height: 1.2em;
   margin: 0;
   color: var(--text-muted);
   font-size: 0.85rem;
@@ -199,4 +209,64 @@
 .itemNumber {
   color: var(--text-muted);
   font-size: 0.75rem;
+}
+
+/* Panels in the side column */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.panelSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.panelText,
+.panelValues {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.panelValues {
+  font-variant-numeric: tabular-nums;
+}
+
+.panelButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.panelButtons button[aria-pressed='true'] {
+  background: #4a4a50;
+  border-color: var(--text);
+}
+
+.sliders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Picking: a crosshair on the picture, and the box being dragged. */
+.picking {
+  cursor: crosshair;
+}
+
+.pickBox {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--text);
+  background: rgb(255 255 255 / 12%);
 }

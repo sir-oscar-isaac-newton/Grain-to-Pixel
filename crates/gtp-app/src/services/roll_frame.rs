@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
+use gtp_core::recipe::BaseSource;
 use gtp_core::{
     AppError, ErrorCode, FilmFormat, Frame, FrameId, FrameKind, ImageF32, Roll, RollId,
 };
@@ -146,6 +147,27 @@ pub fn roll_set_film_base(
         roll.film_base_rgb = base;
         roll.film_base_confidence = None;
         c.update_roll(&roll)
+    })
+}
+
+/// The frames of a roll that follow the roll's film base: those whose recipe takes the base from the
+/// roll, or that were never edited. A frame with a base picked by hand does not change when the
+/// roll's base does.
+pub fn frames_following_roll_base(
+    library: &Library,
+    roll: RollId,
+) -> Result<Vec<FrameId>, AppError> {
+    library.read(|c| {
+        let mut following = Vec::new();
+        for frame in c.list_frames(roll)? {
+            let takes_roll_base = c
+                .load_recipe(frame.id)?
+                .is_none_or(|recipe| recipe.base.source == BaseSource::Roll);
+            if takes_roll_base {
+                following.push(frame.id);
+            }
+        }
+        Ok(following)
     })
 }
 
@@ -353,6 +375,7 @@ pub(crate) fn remove_tree(path: &Path, left: &mut Vec<String>) {
 #[cfg(test)]
 mod tests {
     use gtp_catalog::SCHEMA_VERSION;
+    use gtp_core::Recipe;
 
     use super::*;
     use crate::library_fs::DB_FILE;
@@ -440,6 +463,42 @@ mod tests {
 
     fn estimate(rgb: [f32; 3], confidence: f32) -> BaseEstimate {
         BaseEstimate { rgb, confidence }
+    }
+
+    #[test]
+    fn only_frames_that_follow_the_rolls_base_are_listed() {
+        let t = TempLib::new("following");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        let other = roll_create(t.lib(), input("Other")).unwrap();
+        let never_edited = frame_with_files(t.lib(), roll.id, 1);
+        let from_roll = frame_with_files(t.lib(), roll.id, 2);
+        let by_hand = frame_with_files(t.lib(), roll.id, 3);
+        let elsewhere = frame_with_files(t.lib(), other.id, 1);
+
+        let mut recipe = Recipe::default();
+        t.lib()
+            .write(|c| c.save_recipe(from_roll.id, &recipe))
+            .unwrap();
+        recipe.base.source = BaseSource::Manual;
+        recipe.base.rgb = [0.7, 0.5, 0.3];
+        t.lib()
+            .write(|c| {
+                c.save_recipe(by_hand.id, &recipe)?;
+                c.save_recipe(elsewhere.id, &Recipe::default())
+            })
+            .unwrap();
+
+        let mut following = frames_following_roll_base(t.lib(), roll.id).unwrap();
+        following.sort();
+        let mut want = vec![never_edited.id, from_roll.id];
+        want.sort();
+        assert_eq!(
+            following, want,
+            "not the one with a base picked by hand, nor another roll's"
+        );
+        assert!(frames_following_roll_base(t.lib(), RollId::new())
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

@@ -27,7 +27,11 @@ export const commands = {
 	rollUpdate: (id: RollId, input: RollInput_Deserialize) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_update", { id, input })),
 	/**  All rolls, newest first. */
 	rollList: () => typedError<Roll_Serialize[], AppError_Serialize>(__TAURI_INVOKE("roll_list")),
-	/**  Sets the roll's film base (three linear values above 0), or clears it with `null`. */
+	/**
+	 *  Sets the roll's film base (three linear values above 0), or clears it with `null`. The frames
+	 *  that follow the roll's base look different now, so their thumbnails are regenerated in the
+	 *  background (a frame with a base picked by hand does not change).
+	 */
 	rollSetFilmBase: (id: RollId, base: [(number | null), (number | null), (number | null)] | null) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_set_film_base", { id, base })),
 	/**  Deletes a roll with its frames, then their files. */
 	rollDelete: (id: RollId) => typedError<DeleteReport, AppError_Serialize>(__TAURI_INVOKE("roll_delete", { id })),
@@ -47,8 +51,18 @@ export const commands = {
 	 *  recipe and the roll's film base.
 	 */
 	developOpen: (frameId: FrameId) => typedError<DevelopInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_open", { frameId })),
-	/**  Finds the frame, film base and levels of a frame, and the recipe they make. */
-	developAnalyze: (frameId: FrameId) => typedError<DevelopAnalysis_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_analyze", { frameId })),
+	/**
+	 *  Finds the frame, film base and levels of a frame, and the recipe they make. With `base` (three
+	 *  linear scan values above 0, such as one picked on the rebate) the levels are fitted to that base
+	 *  instead of the roll's or a measured one.
+	 */
+	developAnalyze: (frameId: FrameId, base: [(number | null), (number | null), (number | null)] | null) => typedError<DevelopAnalysis_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_analyze", { frameId, base })),
+	/**
+	 *  The film base from an area of the scan: the per-channel median, in linear scan values.
+	 *  `region` is in fractions of the whole scan (x, y, width, height, each 0 to 1), as a click on the
+	 *  rebate, or a box dragged over it, gives when the picture shows the whole scan.
+	 */
+	developSampleBase: (frameId: FrameId, region: Crop_Deserialize) => typedError<[(number | null), (number | null), (number | null)], AppError_Serialize>(__TAURI_INVOKE("develop_sample_base", { frameId, region })),
 	/**
 	 *  Saves a frame's recipe, clamped into range, and marks the frame edited. Returns the recipe as
 	 *  stored. A recipe that could not be rendered (a tone curve with a single point) is refused.
@@ -244,8 +258,11 @@ export type DevelopAnalysis_Deserialize = {
 	base_rgb: [(number | null), (number | null), (number | null)],
 	/**  0 to 1; low means the base should be sampled by hand. */
 	base_confidence: number | null,
-	/**  True when the base is the roll's rather than measured on this scan. */
-	base_from_roll: boolean,
+	/**
+	 *  True when the base was given (the roll's, or one picked on the frame) rather than measured
+	 *  on this scan.
+	 */
+	base_given: boolean,
 	histogram: HistogramData,
 	/**  A recipe with the automatic crop, base and levels, everything else at its default. */
 	auto_recipe: Recipe_Deserialize,
@@ -260,8 +277,11 @@ export type DevelopAnalysis_Serialize = {
 	base_rgb: [(number | null), (number | null), (number | null)],
 	/**  0 to 1; low means the base should be sampled by hand. */
 	base_confidence: number | null,
-	/**  True when the base is the roll's rather than measured on this scan. */
-	base_from_roll: boolean,
+	/**
+	 *  True when the base was given (the roll's, or one picked on the frame) rather than measured
+	 *  on this scan.
+	 */
+	base_given: boolean,
 	histogram: HistogramData,
 	/**  A recipe with the automatic crop, base and levels, everything else at its default. */
 	auto_recipe: Recipe_Serialize,

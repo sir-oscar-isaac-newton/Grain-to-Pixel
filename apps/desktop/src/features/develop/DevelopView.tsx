@@ -5,9 +5,11 @@ import { useUiStore, type DevelopFrame } from '../../app/store';
 import {
   developAnalyze,
   developSampleBase,
+  developSampleLevels,
   frameGet,
   rollSetFilmBase,
   type FrameSummary,
+  type LevelsPoint,
 } from '../../shared/ipc';
 import { useLibraryStore } from '../library/library-store';
 import { useFrames } from '../library/use-frames';
@@ -20,10 +22,13 @@ import { Filmstrip } from './Filmstrip';
 import { clipping, computeHistogram } from './histogram';
 import { BaseInvertPanel } from './panels/BaseInvertPanel';
 import type { Fractions } from './picker';
-import { baseOf, levelsOf, triple, withBase, withLevels } from './recipe-parts';
+import { baseOf, levelsIn, levelsOf, triple, withBase, withLevels } from './recipe-parts';
 import { useDevelop } from './use-develop';
 import { usePicker } from './use-picker';
 import { useViewport } from './use-viewport';
+
+/** What is being picked on the picture: the film base, or the white or black point. */
+type PickTarget = 'base' | LevelsPoint;
 
 interface Notice {
   tone: 'info' | 'error';
@@ -76,28 +81,31 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   // Frames edited here change on disk, so the filmstrip's thumbnails follow the events.
   useLibraryEvents(true);
 
-  const [picking, setPicking] = useState(false);
+  const [pick, setPick] = useState<PickTarget | null>(null);
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const viewport = useViewport(
     preview ? { width: preview.width, height: preview.height } : null,
-    !picking,
+    pick === null,
   );
-  const { toggleBefore, setScanView, setRecipe } = develop;
+  const { toggleBefore, setPickView, setRecipe } = develop;
   const { fit, actual, zoomIn, zoomOut } = viewport;
 
   // A new frame starts fitted to the stage, with nothing being picked.
   useEffect(() => {
     fit();
-    setPicking(false);
+    setPick(null);
     setNotice(null);
   }, [frame.id, fit]);
 
-  // Picking shows the whole scan (the rebate is outside the crop) and goes back afterwards.
+  // Picking the base shows the whole scan (the rebate is outside the crop); picking the white or
+  // black point shows the frame without turns, so a click is a position in the cropped frame. The
+  // picture goes back afterwards.
+  const view = pick === null ? null : pick === 'base' ? 'scan' : 'frame';
   useEffect(() => {
-    setScanView(picking);
+    setPickView(view);
     fit();
-  }, [picking, setScanView, fit]);
+  }, [view, setPickView, fit]);
 
   const summary = frames.frameAt(frame.index);
   const label = t('library.frameLabel', {
@@ -110,7 +118,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     try {
       const rgb = await developSampleBase(frame.id, region);
       setRecipe(withBase(recipe, { source: 'manual', rgb: triple(rgb, 1) }));
-      setPicking(false);
+      setPick(null);
       setNotice({ tone: 'info', text: t('develop.base.picked') });
     } catch (error) {
       setNotice({
@@ -119,10 +127,31 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
       });
     }
   };
+  /** A click or box on the frame: the white or black point becomes what is under it. */
+  const pickedLevel = async (region: Fractions, point: LevelsPoint) => {
+    if (!recipe) return;
+    try {
+      const levels = await developSampleLevels(frame.id, recipe, region, point);
+      setRecipe(withLevels(recipe, levelsIn(levels)));
+      setPick(null);
+      setNotice({
+        tone: 'info',
+        text: t('develop.levels.picked', { kind: t(`develop.levels.${point}`).toLowerCase() }),
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text: t('develop.levels.pickFailed', { message: messageOf(error) }),
+      });
+    }
+  };
   const pickBox = usePicker({
     stageRef: viewport.stageRef,
-    active: picking && develop.showingScan,
-    onPick: (region) => void picked(region),
+    active: pick === 'base' ? develop.showingScan : pick !== null && develop.showingFrame,
+    onPick: (region) => {
+      if (pick === 'base') void picked(region);
+      else if (pick) void pickedLevel(region, pick);
+    },
   });
 
   /** Finds the levels again, for the film base in use, and replaces the black and white points. */
@@ -206,7 +235,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
           break;
         case 'backToLibrary':
           // Escape first cancels picking; only then does it leave the view.
-          if (picking) setPicking(false);
+          if (pick) setPick(null);
           else setView('library');
           break;
         case 'fit':
@@ -225,7 +254,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [toggleBefore, step, setView, fit, actual, zoomIn, zoomOut, picking]);
+  }, [toggleBefore, step, setView, fit, actual, zoomIn, zoomOut, pick]);
 
   const bins = useMemo(() => (preview ? computeHistogram(preview.rgba) : null), [preview]);
   const lost = bins ? clipping(bins) : null;
@@ -267,15 +296,21 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
       <div className={styles.body}>
         <div
           ref={viewport.stageRef}
-          className={`${styles.stage} ${viewport.fitting || picking ? '' : styles.pannable} ${
-            picking && develop.showingScan ? styles.picking : ''
+          className={`${styles.stage} ${viewport.fitting || pick !== null ? '' : styles.pannable} ${
+            pick !== null && (develop.showingScan || develop.showingFrame) ? styles.picking : ''
           }`}
           aria-busy={develop.busy}
         >
           {preview && (
             <Canvas
               preview={preview}
-              label={develop.showingScan ? t('develop.base.scanLabel') : label}
+              label={
+                develop.showingScan
+                  ? t('develop.base.scanLabel')
+                  : develop.showingFrame
+                    ? t('develop.levels.frameLabel')
+                    : label
+              }
               view={viewport.view}
             />
           )}
@@ -350,10 +385,10 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               recipe={recipe}
               rollBase={info?.roll_base ? triple(info.roll_base, 1) : null}
               readOnly={readOnly}
-              picking={picking}
-              scanReady={develop.showingScan}
+              pick={pick}
+              pickReady={pick === 'base' ? develop.showingScan : develop.showingFrame}
               working={working}
-              onPickingChange={setPicking}
+              onPickChange={setPick}
               onChange={(next, options) => setRecipe(next, options)}
               onAutoLevels={() => void autoLevels()}
               onUseAsRollDefault={() => void makeRollDefault()}

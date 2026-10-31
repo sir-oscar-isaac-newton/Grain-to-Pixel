@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use gtp_app::services::develop::{self, DevelopAnalysis, DevelopInfo};
+use gtp_app::services::develop::{self, DevelopAnalysis, DevelopInfo, LevelsPoint};
 use gtp_app::AppContext;
-use gtp_core::recipe::Crop;
+use gtp_core::recipe::{Crop, Invert};
 use gtp_core::{FrameId, Recipe, RecipeField};
 use tauri::State;
 
@@ -44,6 +44,22 @@ pub fn develop_sample_base(
 ) -> CmdResult<[f32; 3]> {
     ctx.develop()
         .sample_base(&*ctx.library()?, frame_id, region)
+}
+
+/// The recipe's levels with the white or black point set from an area of the frame, for the
+/// pickers: the density of the area's median, per channel. `region` is in fractions of the cropped
+/// frame as shown without straighten, turns or flips; the base and crop are the recipe's.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn develop_sample_levels(
+    ctx: State<'_, AppContext>,
+    frame_id: FrameId,
+    recipe: Recipe,
+    region: Crop,
+    point: LevelsPoint,
+) -> CmdResult<Invert> {
+    ctx.develop()
+        .sample_levels(&*ctx.library()?, frame_id, &recipe, region, point)
 }
 
 /// A preview of the frame with `recipe`, as raw bytes, not JSON: a 16-byte little-endian header
@@ -137,6 +153,15 @@ mod tests {
         let err = develop_analyze(app.state(), FrameId::new(), Some([0.8, 0.5, 0.3])).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
         let err = develop_sample_base(app.state(), FrameId::new(), region).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        let err = develop_sample_levels(
+            app.state(),
+            FrameId::new(),
+            Recipe::default(),
+            region,
+            LevelsPoint::White,
+        )
+        .unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);

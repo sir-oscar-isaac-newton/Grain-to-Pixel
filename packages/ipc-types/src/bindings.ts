@@ -64,6 +64,12 @@ export const commands = {
 	 */
 	developSampleBase: (frameId: FrameId, region: Crop_Deserialize) => typedError<[(number | null), (number | null), (number | null)], AppError_Serialize>(__TAURI_INVOKE("develop_sample_base", { frameId, region })),
 	/**
+	 *  The recipe's levels with the white or black point set from an area of the frame, for the
+	 *  pickers: the density of the area's median, per channel. `region` is in fractions of the cropped
+	 *  frame as shown without straighten, turns or flips; the base and crop are the recipe's.
+	 */
+	developSampleLevels: (frameId: FrameId, recipe: Recipe_Deserialize, region: Crop_Deserialize, point: LevelsPoint) => typedError<Invert_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_sample_levels", { frameId, recipe, region, point })),
+	/**
 	 *  Saves a frame's recipe, clamped into range, and marks the frame edited. Returns the recipe as
 	 *  stored. A recipe that could not be rendered (a tone curve with a single point) is refused.
 	 */
@@ -690,6 +696,9 @@ export type JobResult_Serialize =
 {
 	kind: "Verified",
 } & VerifyResult_Serialize;
+
+/**  Which end of the levels a picked area sets. */
+export type LevelsPoint = "white" | "black";
 
 /**
  *  Frames were added, changed or removed (by a job such as an import): refresh the roll, or

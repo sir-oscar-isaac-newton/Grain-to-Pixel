@@ -133,6 +133,15 @@ export const state = {
   sampledBase: [0.8, 0.5, 0.3] as [number, number, number] | null,
   /** The areas sampled for a film base, in order. */
   samples: [] as Array<{ id: string; region: { x: number; y: number; w: number; h: number } }>,
+  /** The areas sampled for a white or black point, in order. */
+  levelSamples: [] as Array<{
+    id: string;
+    recipe: Recipe;
+    region: { x: number; y: number; w: number; h: number };
+    point: 'white' | 'black';
+  }>,
+  /** Sampling a white or black point is refused with this message when set. */
+  levelsRefused: null as string | null,
   /** The recipes saved, in order. */
   saved: [] as Array<{ id: string; recipe: Recipe }>,
   /** Saving fails with this message when set. */
@@ -319,6 +328,24 @@ export const ipc = {
       return state.sampledBase;
     },
   ),
+  developSampleLevels: vi.fn(
+    async (
+      id: string,
+      recipe: Recipe,
+      region: { x: number; y: number; w: number; h: number },
+      point: 'white' | 'black',
+    ) => {
+      state.levelSamples.push({ id, recipe, region, point });
+      if (state.levelsRefused) {
+        throw new IpcError({ code: 'InvalidInput', message: state.levelsRefused });
+      }
+      const current = (recipe as unknown as { invert: { black: number[]; white: number[] } })
+        .invert;
+      return point === 'white'
+        ? { black: current.black, white: [0.6, 0.7, 0.8] }
+        : { black: [0.02, 0.03, 0.04], white: current.white };
+    },
+  ),
   frameGet: vi.fn(async (id: string) => {
     const found = state.frames.find((f) => f.id === id);
     if (!found) throw new IpcError({ code: 'NotFound', message: 'No such frame.' });
@@ -369,6 +396,8 @@ export function resetFake() {
   state.rollBase = null;
   state.saved = [];
   state.samples = [];
+  state.levelSamples = [];
+  state.levelsRefused = null;
   state.saveFails = null;
   state.rollBases = [];
   state.tags = [];

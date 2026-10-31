@@ -284,6 +284,19 @@ export async function developSampleBase(
   return unwrap(await commands.developSampleBase(...args));
 }
 
+/** Which end of the levels a picked area sets. */
+export type LevelsPoint = Args<'developSampleLevels'>[3];
+
+/**
+ * The recipe's levels with the white or black point set from an area of the frame. The area is in
+ * fractions of the cropped frame as the picture shows it without turns, flips or straightening.
+ */
+export async function developSampleLevels(
+  ...args: Args<'developSampleLevels'>
+): Promise<Data<'developSampleLevels'>> {
+  return unwrap(await commands.developSampleLevels(...args));
+}
+
 /** A group of settings that can be copied between frames (one panel of the Develop view). */
 export type RecipeField = Args<'recipeApplyTo'>[2][number];
 

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Slider } from '@gtp/ui';
-import type { Recipe } from '../../../shared/ipc';
+import type { LevelsPoint, Recipe } from '../../../shared/ipc';
 import styles from '../develop.module.css';
 import {
   baseOf,
@@ -16,6 +16,7 @@ import {
 const LEVEL_SLIDER_MAX = 4;
 const LEVEL_STEP = 0.005;
 const KINDS: readonly LevelKind[] = ['black', 'white'];
+const POINTS: readonly LevelsPoint[] = ['white', 'black'];
 const CHANNELS: ReadonlyArray<{ channel: Channel; name: 'red' | 'green' | 'blue' }> = [
   { channel: 0, name: 'red' },
   { channel: 1, name: 'green' },
@@ -28,11 +29,11 @@ interface BaseInvertPanelProps {
   rollBase: Triple | null;
   /** The library cannot be changed: everything is shown but nothing can be edited. */
   readOnly: boolean;
-  /** The film-base picker is on. */
-  picking: boolean;
-  /** The picture on screen is the whole scan, so a pick can be made on it. */
-  scanReady: boolean;
-  onPickingChange: (on: boolean) => void;
+  /** What is being picked on the picture, if anything. */
+  pick: 'base' | LevelsPoint | null;
+  /** The picture on screen is the one the pick is made on. */
+  pickReady: boolean;
+  onPickChange: (pick: 'base' | LevelsPoint | null) => void;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
   onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
   onAutoLevels: () => void;
@@ -50,9 +51,9 @@ export function BaseInvertPanel({
   recipe,
   rollBase,
   readOnly,
-  picking,
-  scanReady,
-  onPickingChange,
+  pick,
+  pickReady,
+  onPickChange,
   onChange,
   onAutoLevels,
   onUseAsRollDefault,
@@ -68,6 +69,7 @@ export function BaseInvertPanel({
     }).format(value);
   const shown = base.source === 'manual' ? base.rgb : (rollBase ?? base.rgb);
   const locked = readOnly || working;
+  const picking = pick === 'base';
 
   return (
     <div className={styles.panel}>
@@ -94,7 +96,7 @@ export function BaseInvertPanel({
             type="button"
             aria-pressed={picking}
             disabled={locked}
-            onClick={() => onPickingChange(!picking)}
+            onClick={() => onPickChange(picking ? null : 'base')}
           >
             {t('develop.base.pick')}
           </button>
@@ -117,7 +119,7 @@ export function BaseInvertPanel({
         </div>
         {picking && (
           <p className={styles.panelText} role="status">
-            {scanReady ? t('develop.base.picking') : t('develop.base.preparingScan')}
+            {pickReady ? t('develop.base.picking') : t('develop.base.preparingScan')}
           </p>
         )}
       </section>
@@ -130,7 +132,25 @@ export function BaseInvertPanel({
           <button type="button" disabled={locked} onClick={onAutoLevels}>
             {t('develop.levels.auto')}
           </button>
+          {POINTS.map((point) => (
+            <button
+              key={point}
+              type="button"
+              aria-pressed={pick === point}
+              disabled={locked}
+              onClick={() => onPickChange(pick === point ? null : point)}
+            >
+              {t(point === 'white' ? 'develop.levels.pickWhite' : 'develop.levels.pickBlack')}
+            </button>
+          ))}
         </div>
+        {(pick === 'white' || pick === 'black') && (
+          <p className={styles.panelText} role="status">
+            {pickReady
+              ? t(pick === 'white' ? 'develop.levels.pickingWhite' : 'develop.levels.pickingBlack')
+              : t('develop.levels.preparingFrame')}
+          </p>
+        )}
         {KINDS.map((kind) => (
           <div
             key={kind}

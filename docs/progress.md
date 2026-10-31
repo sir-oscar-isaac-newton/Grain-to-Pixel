@@ -155,6 +155,15 @@
       "status": "completed",
       "pr": 112,
       "commit": "b0269b7"
+    },
+    {
+      "id": "Q-01",
+      "number": 23,
+      "title": "Golden-image harness and ΔE2000",
+      "branch": "feat/issue-23-golden-image-harness-and-delta-e2000",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

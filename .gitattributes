@@ -4,3 +4,5 @@
 *.dng  filter=lfs diff=lfs merge=lfs -text
 *.nef  filter=lfs diff=lfs merge=lfs -text
 *.icc  filter=lfs diff=lfs merge=lfs -text
+# Golden renders are small and read by `cargo test`, which CI runs without LFS: plain git files.
+samples/public/golden/*.tif -filter -diff -merge -text

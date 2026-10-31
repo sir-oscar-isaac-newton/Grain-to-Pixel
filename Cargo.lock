@@ -1489,6 +1489,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gtp-benchmark"
+version = "0.0.0"
+dependencies = [
+ "gtp-app",
+ "gtp-core",
+ "gtp-io",
+]
+
+[[package]]
 name = "gtp-capture"
 version = "0.0.0"
 

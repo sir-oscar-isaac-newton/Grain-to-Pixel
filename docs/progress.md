@@ -251,10 +251,19 @@
       "number": 34,
       "title": "Library view",
       "branch": "feat/issue-34-library-search",
+      "status": "completed",
+      "pr": 127,
+      "commit": "5d8d2a0",
+      "note": "Delivered in two PRs: part 1 #126 (fe0c1de), part 2 #127 (5d8d2a0)"
+    },
+    {
+      "id": "P-11",
+      "number": 35,
+      "title": "Develop service - open, analyze and render",
+      "branch": "feat/issue-35-develop-service",
       "status": "in_progress",
       "pr": null,
-      "commit": null,
-      "note": "Part 1 merged (PR #126, fe0c1de): first run, rolls, grid, import. Part 2 in review: search and filters, TagChips, roll tags, batch tagging, 5,000-frame scroll measurement and the fixture command"
+      "commit": null
     }
   ]
 }

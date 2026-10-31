@@ -5,12 +5,14 @@ use std::sync::{Arc, PoisonError, RwLock};
 
 use gtp_core::{AppError, ErrorCode};
 
+use crate::services::develop::DevelopService;
 use crate::services::library::{Library, LibraryDetails};
 use crate::services::settings::SettingsStore;
 
 pub struct AppContext {
     settings: SettingsStore,
     library: RwLock<Option<Arc<Library>>>,
+    develop: DevelopService,
 }
 
 impl AppContext {
@@ -22,6 +24,7 @@ impl AppContext {
             Self {
                 settings,
                 library: RwLock::new(None),
+                develop: DevelopService::default(),
             },
             note,
         )
@@ -29,6 +32,11 @@ impl AppContext {
 
     pub fn settings(&self) -> &SettingsStore {
         &self.settings
+    }
+
+    /// The frames open for editing in the Develop view.
+    pub fn develop(&self) -> &DevelopService {
+        &self.develop
     }
 
     /// The open library, or `NotFound` when none is open.
@@ -61,6 +69,8 @@ impl AppContext {
     fn make_current(&self, library: Library) -> Result<LibraryDetails, AppError> {
         let details = library.details()?;
         *self.library.write().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(library));
+        // The proxies belong to the library that was open.
+        self.develop.clear();
         self.settings.set_last_library(&details.path)?;
         Ok(details)
     }

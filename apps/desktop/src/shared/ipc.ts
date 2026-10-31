@@ -11,6 +11,7 @@ import {
   type ImportResult,
   type LibraryDetails,
   type LibraryInfo,
+  type Recipe,
   type Settings,
   type SettingsPatch,
   type SkipReason,
@@ -233,12 +234,82 @@ function isAppError(value: unknown): value is AppError {
  * `AppError`s.
  */
 export async function frameThumbnail(id: string): Promise<ArrayBuffer> {
+  return invokeRaw('frame_thumbnail', { id });
+}
+
+/** Calls a raw-bytes command by name; an `AppError` it returns becomes an `IpcError`. */
+async function invokeRaw(command: string, args: Record<string, unknown>): Promise<ArrayBuffer> {
   try {
-    return await invoke<ArrayBuffer>('frame_thumbnail', { id });
+    return await invoke<ArrayBuffer>(command, args);
   } catch (error) {
     if (isAppError(error)) throw new IpcError(error);
     throw error;
   }
+}
+
+// Develop: opening a frame, analysing it and rendering previews of it.
+export type DevelopInfo = Data<'developOpen'>;
+export type DevelopAnalysis = Data<'developAnalyze'>;
+export type { Recipe };
+
+/**
+ * Opens a frame for editing (the backend decodes its original into a 2048 px proxy and keeps the
+ * last four) and returns its size, saved recipe and the roll's film base.
+ */
+export async function developOpen(...args: Args<'developOpen'>): Promise<DevelopInfo> {
+  return unwrap(await commands.developOpen(...args));
+}
+
+/** Finds the frame, film base and levels, and the recipe they make. */
+export async function developAnalyze(...args: Args<'developAnalyze'>): Promise<DevelopAnalysis> {
+  return unwrap(await commands.developAnalyze(...args));
+}
+
+/** A rendered preview: RGBA8 sRGB pixels, ready for `new ImageData(rgba, width, height)`. */
+export interface Preview {
+  /** The sequence number of the request this answers. */
+  seq: number;
+  width: number;
+  height: number;
+  rgba: Uint8ClampedArray;
+}
+
+const PREVIEW_HEADER_BYTES = 16;
+
+/**
+ * Reads a preview from the bytes of `develop_render`: a little-endian header (`seq` u64, `width`
+ * u32, `height` u32) and then the RGBA8 pixels.
+ */
+export function parsePreview(buffer: ArrayBuffer): Preview {
+  if (buffer.byteLength < PREVIEW_HEADER_BYTES) throw new Error('The preview is incomplete.');
+  const header = new DataView(buffer);
+  const seq = Number(header.getBigUint64(0, true));
+  const width = header.getUint32(8, true);
+  const height = header.getUint32(12, true);
+  if (buffer.byteLength !== PREVIEW_HEADER_BYTES + width * height * 4) {
+    throw new Error('The preview does not match its size.');
+  }
+  return {
+    seq,
+    width,
+    height,
+    rgba: new Uint8ClampedArray(buffer, PREVIEW_HEADER_BYTES, width * height * 4),
+  };
+}
+
+/**
+ * Renders a preview of the frame with `recipe`, at most `maxEdge` pixels on its long edge (256 to
+ * 4096; the proxy is 2048). Numbers `seq` upwards: when a newer request for the same frame arrives
+ * first, this one rejects with an `IpcError` whose code is `Cancelled`, which is not a failure.
+ * Like `frameThumbnail`, it is a raw-bytes command and not in the generated bindings.
+ */
+export async function developRender(
+  frameId: string,
+  recipe: Recipe,
+  maxEdge: number,
+  seq: number,
+): Promise<Preview> {
+  return parsePreview(await invokeRaw('develop_render', { frameId, recipe, maxEdge, seq }));
 }
 
 /** Opens the system folder picker; null when cancelled. */

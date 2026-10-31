@@ -29,6 +29,8 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::frame::frame_set_note,
             commands::frame::frame_delete,
             commands::ingest::import_files,
+            commands::develop::develop_open,
+            commands::develop::develop_analyze,
             commands::tags::tag_list,
             commands::tags::roll_tags,
             commands::tags::frames_own_tags,
@@ -53,12 +55,15 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
 
 /// Commands whose result is raw bytes (`tauri::ipc::Response`), which specta cannot describe. They
 /// are left out of the typed bindings and called by name from `shared/ipc.ts`.
-const RAW_COMMANDS: [&str; 1] = ["frame_thumbnail"];
+const RAW_COMMANDS: [&str; 2] = ["frame_thumbnail", "develop_render"];
 
 /// The handler of the raw-byte commands (a function of its own, so the closure's type is known).
 fn raw_handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static
 {
-    tauri::generate_handler![commands::frame::frame_thumbnail]
+    tauri::generate_handler![
+        commands::frame::frame_thumbnail,
+        commands::develop::develop_render
+    ]
 }
 
 /// The handler of the whole app: the typed commands of [`builder`] plus the raw-byte ones.
@@ -105,6 +110,8 @@ mod tests {
             "libraryOpen",
             "libraryVerify",
             "folderCheck",
+            "developOpen",
+            "developAnalyze",
             "settingsGet",
             "settingsSet",
             "rollCreate",
@@ -154,6 +161,8 @@ mod tests {
             "VerifyProblem",
             "VerifyReason",
             "FolderCheck",
+            "DevelopInfo",
+            "DevelopAnalysis",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }
@@ -291,6 +300,27 @@ mod tests {
             InvokeResponseBody::Json(json) => assert!(json.contains("\"has_library\":true")),
             other => unreachable!("expected JSON, got {other:?}"),
         }
+
+        // The develop preview is a raw-byte command too: it is routed to the service (a frame
+        // without a scan file is `NotFound`, a bad size `InvalidInput`, both typed errors), while
+        // `develop_open` answers in JSON. The pixels themselves are tested in `gtp-app`.
+        let recipe = serde_json::to_value(gtp_core::Recipe::default()).unwrap();
+        let render = |edge: u32, frame: FrameId| {
+            call(
+                &webview,
+                "develop_render",
+                serde_json::json!({ "frameId": frame, "recipe": recipe, "maxEdge": edge, "seq": 1 }),
+            )
+        };
+        assert_eq!(render(1600, frame.id).unwrap_err()["code"], "NotFound");
+        assert_eq!(render(10, frame.id).unwrap_err()["code"], "InvalidInput");
+        let opened = call(
+            &webview,
+            "develop_open",
+            serde_json::json!({ "frameId": frame.id }),
+        )
+        .unwrap_err();
+        assert_eq!(opened["code"], "NotFound");
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);
     }

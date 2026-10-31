@@ -791,6 +791,7 @@ ROUTES: `develop_open(FrameId) -> DevelopInfo { width, height, has_ir, recipe, r
 VALIDATION: max_edge in [256, 4096].
 MIGRATIONS: none.
 TESTS: open/render on synthetic frames, header layout, LRU eviction at the 5th frame, superseded render, clamping, timing.
+DELIVERY (decided when P-11 was approved): a superseded render is dropped by checking its sequence number before it starts (after waiting for the frame's render turn) and again before it returns, so no change to the pipeline stages; cooperative cancellation inside the stages is left for later if the budget needs it. The analysis type is named `DevelopAnalysis` on the IPC boundary. The infrared plane is not loaded yet (`has_ir` is reported; dust removal, P-13, will load it). `develop_render` is a raw-bytes command, routed through `ipc::RAW_COMMANDS` like `frame_thumbnail`; `shared/ipc.ts` gets `developOpen`, `developAnalyze` and `developRender` (with the header parsed), without any UI.
 
 ## L-08
 title: Recipe save and apply to frames

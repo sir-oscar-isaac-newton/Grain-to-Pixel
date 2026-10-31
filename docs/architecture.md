@@ -155,7 +155,7 @@ pub struct JobCtx;     // progress(stage, fraction) (throttled to 1 % steps); is
 
 **Raw-byte commands** (`develop_render`, `frame_thumbnail`) return `tauri::ipc::Response`, which specta cannot describe, so they stay out of the typed bindings: `ipc::RAW_COMMANDS` lists them, `ipc::invoke_handler` routes them beside the typed handler, and `shared/ipc.ts` calls them by name. The CSP already allows `blob:` images, so thumbnails need no asset-protocol scope.
 
-**Develop (interactive):** UI slider → `develop_render(frame_id, recipe, 1600, seq)` → `DevelopService` loads the proxy from the 4-entry LRU (built on `develop_open`) → `pipeline::render` (stages in fixed order) → RGBA8 bytes via `tauri::ipc::Response` → canvas. Stale results dropped by `seq`.
+**Develop (interactive):** UI slider → `develop_render(frame_id, recipe, 1600, seq)` → `DevelopService` loads the proxy from the 4-entry LRU (built on `develop_open`) → `pipeline::render` (stages in fixed order) → RGBA8 bytes via `tauri::ipc::Response` → canvas. Stale results dropped by `seq`: the service keeps the highest `seq` per frame and a render lock, so queued renders that were superseded cost nothing and a running one finishes but its result is dropped (cooperative cancellation inside the stages is not built; add it only if the 100 ms budget needs it). The service lives in the `AppContext` (`ctx.develop()`).
 
 **Scan roll:** `scan_start(params, roll_id)` → `ScanService` creates a job → `ScannerSource::scan(..., on_frame)` → per frame: write TIFFs into `originals/`, hash, thumbnail, catalog insert in one transaction, emit `library://changed` → cancel keeps finished frames; resume starts at the next frame number.
 
@@ -240,7 +240,7 @@ Forward-only; the library backs up to `library.db.bak-v<N>` before migrating; pr
 | frame | `frame_list(FrameQuery) → Page<FrameSummary>`, `frame_get(FrameId)`, `frame_delete(FrameId[])`, `frame_set_note(FrameId, String)` | RollFrame | 2.2 |
 | ingest | `import_files(paths, RollId, ImportKind) → JobId`, `triplet_group(paths) → TripletCandidate[]`, `scanner_list() → DeviceInfo[]`, `scan_start(ScanParams, RollId) → JobId` | Import, Scan | 2.3, 4.1, 5.1 |
 | capture | `light_list()`, `light_connect(port?) → LightInfo`, `light_set([u8;3])`, `light_off()`, `camera_list()`, `capture_profile_get/set`, `capture_test(Channel) → TestShot`, `capture_triplet(RollId) → JobId` | Capture | 6.3 |
-| develop | `develop_open(FrameId) → DevelopInfo`, `develop_analyze(FrameId) → Analysis`, `develop_render(FrameId, Recipe, max_edge, seq) → bytes`, `recipe_save(FrameId, Recipe)`, `recipe_apply_to(FrameId[], source, RecipeField[])` | Develop | 3.1, 3.3 |
+| develop | `develop_open(FrameId) → DevelopInfo`, `develop_analyze(FrameId) → DevelopAnalysis`, `develop_render(FrameId, Recipe, max_edge, seq) → bytes`, `recipe_save(FrameId, Recipe)`, `recipe_apply_to(FrameId[], source, RecipeField[])` | Develop | 3.1, 3.3 |
 | tags | `tag_list()`, `roll_tags(RollId)`, `frames_own_tags(FrameId[])`, `tag_apply(FrameId[], add[], remove[])`, `tag_apply_roll`, `tag_rename`, `tag_delete` | TagsSearch | 2.4 |
 | search | `search(SearchQuery, page) → Page<FrameSummary>` | TagsSearch | 2.4 |
 | export | `export_start(FrameId[], ExportOptions) → JobId` | Export | 3.3 |

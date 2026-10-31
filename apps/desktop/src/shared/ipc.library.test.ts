@@ -4,6 +4,8 @@ const invokeMock = vi.fn();
 const openMock = vi.fn();
 const folderCheckMock = vi.fn();
 const jobCancelMock = vi.fn();
+const developOpenMock = vi.fn();
+const developAnalyzeMock = vi.fn();
 const handlers: Record<string, (event: { payload: unknown }) => void> = {};
 const stop = vi.fn();
 
@@ -24,6 +26,8 @@ vi.mock('@gtp/ipc-types', () => {
     commands: {
       folderCheck: (path: string) => folderCheckMock(path),
       jobCancel: (id: string) => jobCancelMock(id),
+      developOpen: (id: string) => developOpenMock(id),
+      developAnalyze: (id: string) => developAnalyzeMock(id),
     },
     events: {
       libraryChanged: listener('libraryChanged'),
@@ -36,6 +40,9 @@ vi.mock('@gtp/ipc-types', () => {
 
 import {
   IpcError,
+  developAnalyze,
+  developOpen,
+  developRender,
   folderCheck,
   frameThumbnail,
   jobCancel,
@@ -43,6 +50,7 @@ import {
   onJobError,
   onJobProgress,
   onLibraryChanged,
+  parsePreview,
   pickFolder,
   pickTiffFiles,
 } from './ipc';
@@ -75,6 +83,73 @@ describe('shared/ipc: library helpers', () => {
       await expect(frameThumbnail('f1')).rejects.toThrow('no ipc');
       invokeMock.mockRejectedValueOnce('a plain string');
       await expect(frameThumbnail('f1')).rejects.toBe('a plain string');
+    });
+  });
+
+  describe('develop', () => {
+    /** The bytes of `develop_render`: seq u64, width u32, height u32 (little-endian), then RGBA8. */
+    function previewBytes(seq: number, width: number, height: number, pixels?: number[]) {
+      const rgba = pixels ?? new Array<number>(width * height * 4).fill(7);
+      const buffer = new ArrayBuffer(16 + rgba.length);
+      const view = new DataView(buffer);
+      view.setBigUint64(0, BigInt(seq), true);
+      view.setUint32(8, width, true);
+      view.setUint32(12, height, true);
+      new Uint8Array(buffer, 16).set(rgba);
+      return buffer;
+    }
+
+    beforeEach(() => {
+      developOpenMock.mockReset();
+      developAnalyzeMock.mockReset();
+    });
+
+    it('reads the header and the pixels of a preview', () => {
+      const pixels = [1, 2, 3, 255, 4, 5, 6, 255];
+      const preview = parsePreview(previewBytes(300, 2, 1, pixels));
+      expect(preview).toMatchObject({ seq: 300, width: 2, height: 1 });
+      expect([...preview.rgba]).toEqual(pixels);
+      expect(preview.rgba).toBeInstanceOf(Uint8ClampedArray);
+    });
+
+    it('refuses bytes that are too short or do not match their size', () => {
+      expect(() => parsePreview(new ArrayBuffer(8))).toThrow('incomplete');
+      expect(() => parsePreview(previewBytes(1, 2, 2).slice(0, 20))).toThrow('does not match');
+      expect(() => parsePreview(previewBytes(1, 2, 2, [1, 2, 3, 4]))).toThrow('does not match');
+    });
+
+    it('renders through the raw command with camel-case arguments', async () => {
+      invokeMock.mockResolvedValue(previewBytes(5, 1, 1, [9, 8, 7, 255]));
+      const recipe = { v: 1 } as unknown as Parameters<typeof developRender>[1];
+      const preview = await developRender('f1', recipe, 1600, 5);
+      expect(invokeMock).toHaveBeenCalledWith('develop_render', {
+        frameId: 'f1',
+        recipe,
+        maxEdge: 1600,
+        seq: 5,
+      });
+      expect(preview.seq).toBe(5);
+      expect([...preview.rgba]).toEqual([9, 8, 7, 255]);
+    });
+
+    it('turns a dropped render into an IpcError with the Cancelled code', async () => {
+      const error = { code: 'Cancelled', message: 'A newer preview was requested.' };
+      invokeMock.mockRejectedValueOnce(error);
+      const failure = developRender('f1', {} as never, 1600, 1);
+      await expect(failure).rejects.toBeInstanceOf(IpcError);
+      await expect(failure).rejects.toMatchObject({ error });
+    });
+
+    it('opens and analyses through the typed commands', async () => {
+      developOpenMock.mockResolvedValue({ status: 'ok', data: { width: 6000 } });
+      await expect(developOpen('f1')).resolves.toEqual({ width: 6000 });
+      expect(developOpenMock).toHaveBeenCalledWith('f1');
+
+      developAnalyzeMock.mockResolvedValue({
+        status: 'error',
+        error: { code: 'NotFound', message: 'This frame has no scan file.' },
+      });
+      await expect(developAnalyze('f1')).rejects.toBeInstanceOf(IpcError);
     });
   });
 

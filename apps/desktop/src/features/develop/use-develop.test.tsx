@@ -495,6 +495,76 @@ describe('useDevelop', () => {
     });
   });
 
+  describe('the detected frame', () => {
+    it('is the frame the analysis found, once it is done', async () => {
+      const { result } = renderHook(() => useDevelop('f1'));
+      expect(result.current.detected).toBeNull();
+      await waitFor(() =>
+        expect(result.current.detected).toEqual({
+          rect: { x: 0.05, y: 0.1, w: 0.9, h: 0.8 },
+          confidence: 0.9,
+        }),
+      );
+    });
+
+    it('counts a confidence that is not a number as none, and keeps the crop inside the scan', async () => {
+      ipc.developAnalyze.mockResolvedValueOnce({
+        frame_rect: { x: 0.5, y: null, w: 0.9, h: 0.5 },
+        frame_confidence: null,
+        auto_recipe: makeRecipe('auto'),
+      } as never);
+      const { result } = renderHook(() => useDevelop('f1'));
+      await waitFor(() => expect(result.current.detected).not.toBeNull());
+      expect(result.current.detected?.confidence).toBe(0);
+      const rect = result.current.detected?.rect;
+      expect(rect?.x).toBeCloseTo(0.1, 9);
+      expect([rect?.y, rect?.w, rect?.h]).toEqual([0, 0.9, 0.5]);
+    });
+
+    it('is asked for again by a refresh', async () => {
+      const { result } = renderHook(() => useDevelop('f1'));
+      await waitFor(() => expect(result.current.detected).not.toBeNull());
+      state.frameConfidence = 0.2;
+      await act(async () => {
+        await result.current.refresh();
+      });
+      await waitFor(() => expect(result.current.detected?.confidence).toBe(0.2));
+    });
+  });
+
+  describe('editing without drawing', () => {
+    it('changes and saves the recipe but asks for no preview, until told to draw it', async () => {
+      const { result } = renderHook(() => useDevelop('f1'));
+      await waitFor(() => expect(result.current.preview).not.toBeNull());
+      ipc.developRender.mockClear();
+
+      act(() => result.current.setRecipe(makeRecipe('moved'), { dragging: true, preview: false }));
+      act(() => result.current.setRecipe(makeRecipe('moved-again'), { preview: false }));
+      expect(result.current.recipe).toEqual(makeRecipe('moved-again'));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(ipc.developRender).not.toHaveBeenCalled();
+
+      act(() => result.current.rerender());
+      await waitFor(() => expect(ipc.developRender).toHaveBeenCalledTimes(1));
+      expect(ipc.developRender).toHaveBeenLastCalledWith(
+        'f1',
+        makeRecipe('moved-again'),
+        RELEASE_EDGE,
+        expect.any(Number),
+      );
+      await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+        timeout: SAVE_DELAY_MS * 4,
+      });
+      expect(ipc.recipeSave).toHaveBeenCalledWith('f1', makeRecipe('moved-again'));
+    });
+
+    it('draws nothing when there is no frame open', () => {
+      const { result } = renderHook(() => useDevelop(null));
+      act(() => result.current.rerender());
+      expect(ipc.developRender).not.toHaveBeenCalled();
+    });
+  });
+
   describe('refresh', () => {
     it('reads the frame again and renders the recipe being edited, which is kept', async () => {
       const { result } = renderHook(() => useDevelop('f1'));

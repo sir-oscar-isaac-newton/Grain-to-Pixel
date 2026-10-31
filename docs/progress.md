@@ -335,6 +335,15 @@
       "number": 44,
       "title": "Export dialog",
       "branch": "feat/issue-44-export-dialog",
+      "status": "completed",
+      "pr": 141,
+      "commit": "f358860"
+    },
+    {
+      "id": "U-05",
+      "number": 41,
+      "title": "Crop and geometry UI",
+      "branch": "feat/issue-41-crop-geometry-ui",
       "status": "in_progress",
       "pr": null,
       "commit": null

@@ -3,6 +3,7 @@
 // null), so reading goes through these and always gives plain numbers.
 import { identityCurve, type CurveChannel, type CurvePoint, type CurveSet } from '@gtp/ui';
 import type { Recipe } from '../../shared/ipc';
+import { clampCrop, type CropRect } from './crop';
 
 export type Triple = [number, number, number];
 export type BaseSource = 'roll' | 'manual';
@@ -146,6 +147,40 @@ export function withTone(recipe: Recipe, values: Partial<Tone>): Recipe {
 export function withCurve(recipe: Recipe, channel: CurveChannel, points: CurvePoint[]): Recipe {
   const curve = { ...curvesOf(recipe), [channel]: points.map((p) => [...p]) };
   return { ...recipe, tone: { ...recipe.tone, ...toneOf(recipe), curve } } as Recipe;
+}
+
+export interface GeometrySetting {
+  crop: CropRect;
+  angle_deg: number;
+  /** Quarter turns clockwise, 0 to 3. */
+  rot90: number;
+  flip_h: boolean;
+  flip_v: boolean;
+}
+
+/** The crop, straighten angle, turns and flips of a recipe, as plain values. */
+export function geometryOf(recipe: Recipe): GeometrySetting {
+  const g = recipe.geometry;
+  return {
+    crop: clampCrop({
+      x: plain(g?.crop?.x, 0),
+      y: plain(g?.crop?.y, 0),
+      w: plain(g?.crop?.w, 1),
+      h: plain(g?.crop?.h, 1),
+    }),
+    angle_deg: plain(g?.angle_deg, 0),
+    rot90: ((Math.round(plain(g?.rot90, 0)) % 4) + 4) % 4,
+    flip_h: g?.flip_h === true,
+    flip_v: g?.flip_v === true,
+  };
+}
+
+/** The recipe with some of its geometry replaced, the rest kept. */
+export function withGeometry(recipe: Recipe, values: Partial<GeometrySetting>): Recipe {
+  return {
+    ...recipe,
+    geometry: { ...recipe.geometry, ...geometryOf(recipe), ...values },
+  } as Recipe;
 }
 
 /** The recipe with its film base replaced. */

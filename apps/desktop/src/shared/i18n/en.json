@@ -268,6 +268,7 @@
       "blue": "blue",
       "slider": "{{kind}}, {{channel}}"
     },
+    "cropLabel": "The whole scan, for cropping",
     "pickFrameLabel": "The frame without turns or straightening, for picking on it",
     "colour": {
       "heading": "Colour",
@@ -283,6 +284,30 @@
       "tint": "Tint",
       "saturation": "Saturation",
       "vibrance": "Vibrance"
+    },
+    "crop": {
+      "heading": "Crop",
+      "edit": "Edit crop",
+      "useDetected": "Use the detected frame",
+      "useWhole": "Use the whole scan",
+      "lowConfidence": "The edges of the frame could not be found reliably, so the whole scan is used. Adjust the crop by hand.",
+      "preparing": "Preparing the whole scan…",
+      "editing": "Drag the frame or its sides, or move it with the arrow keys (Shift for larger steps). Escape stops.",
+      "area": "Crop area. Move it with the arrow keys; hold Shift for larger steps.",
+      "left": "Left side",
+      "top": "Top side",
+      "right": "Right side",
+      "bottom": "Bottom side"
+    },
+    "geometry": {
+      "heading": "Turn and straighten",
+      "rotateLeft": "Rotate left",
+      "rotateRight": "Rotate right",
+      "flipH": "Flip horizontally",
+      "flipV": "Flip vertically",
+      "straighten": "Straighten",
+      "degrees": "{{value}}°",
+      "reset": "Reset turns and straighten"
     },
     "tone": {
       "heading": "Tone",

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clampCrop } from './crop';
 import {
   IpcError,
   developAnalyze,
@@ -6,6 +7,7 @@ import {
   developRender,
   logClientEvent,
   recipeSave,
+  type DevelopAnalysis,
   type DevelopInfo,
   type Preview,
   type Recipe,
@@ -35,6 +37,12 @@ export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 /** What the picture shows while something is being picked on it. */
 export type PickView = 'scan' | 'frame';
 
+/** The frame the analysis found, as fractions of the scan, and how sure it is (0 to 1). */
+export interface DetectedFrame {
+  rect: { x: number; y: number; w: number; h: number };
+  confidence: number;
+}
+
 type Slot = 'after' | 'before' | 'pick';
 
 interface State {
@@ -48,6 +56,8 @@ interface State {
   auto: Recipe | null;
   /** The analysis failed, so "before" cannot be shown. */
   autoFailed: boolean;
+  /** The frame the analysis found, and how sure it is (0 to 1); null until the analysis is done. */
+  detected: DetectedFrame | null;
   after: Preview | null;
   before: Preview | null;
   /** The picture picking is done on: the whole scan, or the frame without turns. */
@@ -69,6 +79,7 @@ const EMPTY: State = {
   recipe: null,
   auto: null,
   autoFailed: false,
+  detected: null,
   after: null,
   before: null,
   pick: null,
@@ -95,6 +106,8 @@ export interface Develop {
   showingBefore: boolean;
   /** "Before" cannot be shown: the automatic recipe is not known (the analysis failed). */
   beforeUnavailable: boolean;
+  /** The frame the analysis found and how sure it is; null until the analysis is done. */
+  detected: DetectedFrame | null;
   /** The picture on screen is the whole uncropped scan, so a click on it can pick on the rebate. */
   showingScan: boolean;
   /** The picture on screen is the frame without turns or straightening, for the levels pickers. */
@@ -107,21 +120,34 @@ export interface Develop {
   toggleBefore: () => void;
   /**
    * Shows the whole scan (no crop or turn) or the frame without turns or straightening instead of
-   * the picture, or goes back to the picture with 
-ull.
+   * the picture, or goes back to the picture with `null`.
    */
   setPickView: (view: PickView | null) => void;
   /**
    * Changes the recipe, asks for a new preview, and saves the recipe after {@link SAVE_DELAY_MS}
    * without further changes. The preview is at {@link DRAG_EDGE} (at most once per
-   * {@link DRAG_DELAY_MS}) while `dragging`, at {@link RELEASE_EDGE} at once otherwise.
+   * {@link DRAG_DELAY_MS}) while `dragging`, at {@link RELEASE_EDGE} at once otherwise. With
+   * `preview: false` no preview is asked for (the picture on screen is not the edit, as while the
+   * crop is edited on the whole scan); {@link Develop.rerender} draws it afterwards.
    */
-  setRecipe: (recipe: Recipe, options?: { dragging?: boolean }) => void;
+  setRecipe: (recipe: Recipe, options?: { dragging?: boolean; preview?: boolean }) => void;
+  /** Asks for a preview of the recipe as it is now. */
+  rerender: () => void;
   /**
    * Reads the frame's settings again (the roll's film base may have changed) and renders it
    * afresh. The recipe being edited is kept.
    */
   refresh: () => Promise<void>;
+}
+
+/** The detected frame as plain numbers (a NaN travels as null, and counts as no confidence). */
+function detectedOf(analysis: DevelopAnalysis): DetectedFrame {
+  const rect = analysis.frame_rect;
+  const confidence = analysis.frame_confidence;
+  return {
+    rect: clampCrop({ x: rect.x ?? 0, y: rect.y ?? 0, w: rect.w ?? 1, h: rect.h ?? 1 }),
+    confidence: typeof confidence === 'number' && Number.isFinite(confidence) ? confidence : 0,
+  };
 }
 
 function messageOf(error: unknown): string {
@@ -232,7 +258,11 @@ export function useDevelop(frameId: string | null): Develop {
         developAnalyze(frameId, null).then(
           (analysis) => {
             if (gen === generation.current) {
-              setState((s) => ({ ...s, auto: analysis.auto_recipe }));
+              setState((s) => ({
+                ...s,
+                auto: analysis.auto_recipe,
+                detected: detectedOf(analysis),
+              }));
             }
           },
           () => {
@@ -275,7 +305,7 @@ export function useDevelop(frameId: string | null): Develop {
   }, [pickView, pick, status, send]);
 
   const setRecipe = useCallback(
-    (recipe: Recipe, options?: { dragging?: boolean }) => {
+    (recipe: Recipe, options?: { dragging?: boolean; preview?: boolean }) => {
       const id = frame.current;
       if (!id) return;
       const gen = generation.current;
@@ -285,7 +315,9 @@ export function useDevelop(frameId: string | null): Develop {
         saveStatus: s.saveStatus === 'error' ? 'idle' : s.saveStatus,
       }));
       clearTimeout(timer.current);
-      if (options?.dragging) {
+      if (options?.preview === false) {
+        // Nothing to draw: the picture on screen is not the edit.
+      } else if (options?.dragging) {
         timer.current = setTimeout(() => {
           void send(id, recipe, DRAG_EDGE, 'after', gen);
         }, DRAG_DELAY_MS);
@@ -300,6 +332,12 @@ export function useDevelop(frameId: string | null): Develop {
     },
     [send, flushSave],
   );
+
+  const rerender = useCallback(() => {
+    const id = frame.current;
+    const recipe = latestRecipe.current;
+    if (id && recipe) void send(id, recipe, RELEASE_EDGE, 'after', generation.current);
+  }, [send]);
 
   const toggleBefore = useCallback(() => {
     setState((s) => ({ ...s, showBefore: !s.showBefore }));
@@ -320,13 +358,24 @@ export function useDevelop(frameId: string | null): Develop {
       if (gen !== generation.current) return;
       // "Before" depends on the roll's base too: forget it, and ask the analysis again.
       accepted.current.before = -1;
-      setState((s) => ({ ...s, info, before: null, auto: null, autoFailed: false }));
+      setState((s) => ({
+        ...s,
+        info,
+        before: null,
+        auto: null,
+        autoFailed: false,
+        detected: null,
+      }));
       const recipe = latestRecipe.current ?? info.recipe;
       void send(id, recipe, RELEASE_EDGE, 'after', gen);
       developAnalyze(id, null).then(
         (analysis) => {
           if (gen === generation.current) {
-            setState((s) => ({ ...s, auto: analysis.auto_recipe }));
+            setState((s) => ({
+              ...s,
+              auto: analysis.auto_recipe,
+              detected: detectedOf(analysis),
+            }));
           }
         },
         () => {
@@ -354,6 +403,7 @@ export function useDevelop(frameId: string | null): Develop {
     showBefore: state.showBefore,
     showingBefore,
     beforeUnavailable: state.showBefore && state.autoFailed,
+    detected: state.detected,
     showingScan,
     showingFrame,
     busy: state.pending > 0,
@@ -363,6 +413,7 @@ export function useDevelop(frameId: string | null): Develop {
     toggleBefore,
     setPickView,
     setRecipe,
+    rerender,
     refresh,
   };
 }

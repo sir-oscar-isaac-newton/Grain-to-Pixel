@@ -154,6 +154,9 @@ export const state = {
   exports: [] as Array<{ frameIds: string[]; options: unknown }>,
   /** Starting an export is refused with this message when set. */
   exportRefused: null as string | null,
+  /** The frame the analysis finds, and how sure it is. */
+  frameRect: { x: 0.05, y: 0.1, w: 0.9, h: 0.8 },
+  frameConfidence: 0.9,
   /** The recipes saved, in order. */
   saved: [] as Array<{ id: string; recipe: Recipe }>,
   /** Saving fails with this message when set. */
@@ -320,6 +323,8 @@ export const ipc = {
     }
     // The levels depend on the base that was given, as the real analysis's do.
     return {
+      frame_rect: state.frameRect,
+      frame_confidence: state.frameConfidence,
       auto_recipe: makeRecipe('auto', {
         base: { source: 'roll', rgb: base ?? [1, 1, 1] },
         invert: base
@@ -427,6 +432,8 @@ export function resetFake() {
   state.samples = [];
   state.levelSamples = [];
   state.levelsRefused = null;
+  state.frameRect = { x: 0.05, y: 0.1, w: 0.9, h: 0.8 };
+  state.frameConfidence = 0.9;
   state.exportRefused = null;
   state.exports = [];
   state.neutralSamples = [];

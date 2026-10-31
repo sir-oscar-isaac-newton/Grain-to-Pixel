@@ -45,7 +45,7 @@ grain-to-pixel/
 │  ├─ public/                small shareable negatives (Git LFS) + MANIFEST.md
 │  └─ private/               personal scans (git-ignored)
 ├─ tools/
-│  ├─ benchmark/             compare output vs Nikon Scan 4 / Trichroma Lab (Cargo workspace member, added in GTP-030)
+│  ├─ benchmark/             gtp-benchmark: ΔE2000, golden-image tests (Q-01); later compare vs Nikon Scan 4 / Trichroma Lab
 │  └─ scripts/               dev + release helpers (cross-platform)
 │
 ├─ docs/                     documentation

@@ -107,7 +107,7 @@ Versions: use the latest stable release at implementation time and pin through l
 | `gtp-ingest` | `gtp-core`, `gtp-io` |
 | `gtp-app` | all `gtp-*` crates (the only crate allowed to combine feature crates) |
 | `src-tauri` | `gtp-app`, `gtp-core` |
-| `tools/benchmark` | `gtp-app`, `gtp-core` |
+| `tools/benchmark` (`gtp-benchmark`) | `gtp-app`, `gtp-core`, `gtp-io` (golden and reference files) |
 
 Feature crates never depend on each other. This resolves the composition gap noted in issue GTP-029 (see §9).
 
@@ -532,8 +532,8 @@ PROCESS: follow docs/workflow.md. Post a proposal for GTP-030 (then 031, 032 as 
 
 TASK: make quality and speed measurable.
 FILES:
-- tools/benchmark/{Cargo.toml, src/{main.rs, delta_e.rs, diff.rs, golden.rs, reference.rs, report.rs}, benches/{pipeline.rs}}; add to workspace members. Depends on gtp-app and gtp-core only.
-- samples/public/golden/*.tif (LFS) generated from synthetic fixtures; samples/MANIFEST schema in samples/README.md; docs/research/benchmark.md.
+- tools/benchmark/{Cargo.toml, src/{main.rs, delta_e.rs, diff.rs, golden.rs, reference.rs, report.rs}, benches/{pipeline.rs}}; add to workspace members. Depends on gtp-app, gtp-core and gtp-io (§3.3).
+- samples/public/golden/*.tif (plain git, not LFS, so CI reads them) generated from synthetic fixtures; samples/MANIFEST schema in samples/README.md; docs/research/benchmark.md.
 INTERFACES:
 - `delta_e2000(lab1, lab2) -> f32`; `ImageDiff { mean, p95, max }`; CLI: `benchmark golden [--bless]`, `benchmark reference --set <dir>`, `benchmark report`.
 - Reference manifest `samples/*/reference/<set>/manifest.toml`: [[frame]] id, source (tiff path), kind, render (reference render path).

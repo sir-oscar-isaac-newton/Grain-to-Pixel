@@ -5,10 +5,8 @@
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-// Keep in sync with docs/architecture.md section 3.3. Crates that do not exist yet
-// (gtp-app, the Tauri shell, tools/benchmark) are listed so their first PR passes.
-// When D-01 and Q-01 pick the package names of the Tauri shell and the benchmark tool,
-// replace the placeholders below.
+// Keep in sync with docs/architecture.md section 3.3. Crates that do not exist yet are listed
+// so their first PR passes. gtp-benchmark is tools/benchmark.
 export const ALLOWED = {
   'gtp-core': [],
   'gtp-io': ['gtp-core'],
@@ -27,7 +25,7 @@ export const ALLOWED = {
     'gtp-capture',
   ],
   'grain-to-pixel-desktop': ['gtp-app', 'gtp-core'],
-  'gtp-benchmark': ['gtp-app', 'gtp-core'],
+  'gtp-benchmark': ['gtp-app', 'gtp-core', 'gtp-io'],
 };
 
 /** @param {{name: string, dependencies: {name: string}[]}[]} packages workspace members */

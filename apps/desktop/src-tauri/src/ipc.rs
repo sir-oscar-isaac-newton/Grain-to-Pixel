@@ -17,6 +17,7 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::library::library_info,
             commands::library::library_create,
             commands::library::library_open,
+            commands::library::library_verify,
             commands::roll::roll_create,
             commands::roll::roll_update,
             commands::roll::roll_list,
@@ -74,6 +75,7 @@ mod tests {
             "jobCancel",
             "libraryCreate",
             "libraryOpen",
+            "libraryVerify",
             "settingsGet",
             "settingsSet",
             "rollCreate",
@@ -117,6 +119,9 @@ mod tests {
             "ImportKind",
             "SearchQuery",
             "Tag",
+            "VerifyResult",
+            "VerifyProblem",
+            "VerifyReason",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }

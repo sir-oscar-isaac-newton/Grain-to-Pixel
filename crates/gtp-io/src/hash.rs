@@ -7,11 +7,30 @@ use std::path::Path;
 use gtp_core::AppError;
 use sha2::{Digest, Sha256};
 
+/// Bytes read at a time while hashing.
+const HASH_CHUNK: usize = 1024 * 1024;
+
+fn hex(digest: &[u8]) -> String {
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 /// SHA-256 of the file as lower-case hex, read in chunks so large scans do not fill memory.
 pub fn sha256_file(path: &Path) -> Result<String, AppError> {
+    // Never stops early, so there is always a digest.
+    Ok(sha256_file_with(path, |_| true)?.unwrap_or_default())
+}
+
+/// [`sha256_file`] that reports its progress and can be stopped: `keep_going` is called after every
+/// chunk with the total bytes read so far, and returning `false` ends the hashing, which gives
+/// `Ok(None)`. Used to verify large originals as a cancellable job.
+pub fn sha256_file_with(
+    path: &Path,
+    mut keep_going: impl FnMut(u64) -> bool,
+) -> Result<Option<String>, AppError> {
     let mut file = File::open(path).map_err(|err| AppError::from_io(&err))?;
     let mut hasher = Sha256::new();
-    let mut buffer = vec![0u8; 64 * 1024];
+    let mut buffer = vec![0u8; HASH_CHUNK];
+    let mut total = 0u64;
     loop {
         let read = file
             .read(&mut buffer)
@@ -20,14 +39,13 @@ pub fn sha256_file(path: &Path) -> Result<String, AppError> {
             break;
         }
         hasher.update(&buffer[..read]);
+        total += read as u64;
+        if !keep_going(total) {
+            return Ok(None);
+        }
     }
-    Ok(hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+    Ok(Some(hex(&hasher.finalize())))
 }
-
 /// Sets the read-only attribute, so editors and stray writes cannot change an original.
 /// This does not stop the file from being deleted or replaced by someone with directory access.
 pub fn mark_read_only(path: &Path) -> Result<(), AppError> {
@@ -74,6 +92,31 @@ mod tests {
             .map(|b| format!("{b:02x}"))
             .collect();
         assert_eq!(sha256_file(&path).unwrap(), expected);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn hashing_reports_progress_and_can_be_stopped() {
+        let data = vec![3u8; HASH_CHUNK * 3 + 17];
+        let path = temp_file("progress", &data);
+        let mut seen = Vec::new();
+        let digest = sha256_file_with(&path, |read| {
+            seen.push(read);
+            true
+        })
+        .unwrap();
+        assert_eq!(digest, Some(sha256_file(&path).unwrap()));
+        let chunk = HASH_CHUNK as u64;
+        assert_eq!(seen, [chunk, chunk * 2, chunk * 3, chunk * 3 + 17]);
+
+        let mut calls = 0;
+        let stopped = sha256_file_with(&path, |_| {
+            calls += 1;
+            false
+        })
+        .unwrap();
+        assert_eq!(stopped, None);
+        assert_eq!(calls, 1, "stops after the first chunk, not at the end");
         fs::remove_file(path).unwrap();
     }
 

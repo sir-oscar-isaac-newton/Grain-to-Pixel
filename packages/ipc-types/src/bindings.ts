@@ -11,6 +11,12 @@ export const commands = {
 	libraryCreate: (path: string, name: string) => typedError<LibraryInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("library_create", { path, name })),
 	/**  Opens the library in `path`. A library from a newer app version opens read-only. */
 	libraryOpen: (path: string) => typedError<LibraryInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("library_open", { path })),
+	/**
+	 *  Starts verifying every original of the open library as a job (see `services::verify`). It only
+	 *  reads: progress and the `VerifyResult` arrive as `job://*` events, and it can be cancelled with
+	 *  `job_cancel`. Works on a read-only library too.
+	 */
+	libraryVerify: () => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("library_verify")),
 	rollCreate: (input: RollInput_Deserialize) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_create", { input })),
 	/**  Replaces every editable field of the roll with `input` (an empty field is cleared). */
 	rollUpdate: (id: RollId, input: RollInput_Deserialize) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_update", { id, input })),
@@ -359,7 +365,11 @@ export type JobResult_Deserialize =
 /**  A file import (L-05). */
 {
 	kind: "Imported",
-} & ImportResult_Deserialize;
+} & ImportResult_Deserialize | 
+/**  A library verify (L-07). */
+{
+	kind: "Verified",
+} & VerifyResult_Deserialize;
 
 /**  The result of a job that finished without error. */
 export type JobResult_Serialize = 
@@ -368,7 +378,11 @@ export type JobResult_Serialize =
 /**  A file import (L-05). */
 {
 	kind: "Imported",
-} & ImportResult_Serialize;
+} & ImportResult_Serialize | 
+/**  A library verify (L-07). */
+{
+	kind: "Verified",
+} & VerifyResult_Serialize;
 
 /**
  *  Frames were added, changed or removed (by a job such as an import): refresh the roll, or
@@ -406,6 +420,9 @@ export type LibraryDetails_Deserialize = {
 	schema_version: number,
 	/**  Bytes free on the library's drive; `None` when the system cannot tell. */
 	free_bytes?: number | null,
+	/**  When the library was last verified (RFC 3339), and how many problems it found. */
+	last_verify_at?: string | null,
+	last_verify_problems?: number | null,
 };
 
 /**  What the UI shows about the open library. */
@@ -419,6 +436,9 @@ export type LibraryDetails_Serialize = {
 	schema_version: number,
 	/**  Bytes free on the library's drive; `None` when the system cannot tell. */
 	free_bytes: number | null,
+	/**  When the library was last verified (RFC 3339), and how many problems it found. */
+	last_verify_at: string | null,
+	last_verify_problems: number | null,
 };
 
 /**  The running app and the open library, if any. */
@@ -683,6 +703,9 @@ export type SkippedFile_Serialize = {
 	details: string | null,
 };
 
+/**  Which plane or exposure a source file holds. */
+export type SourceRole = "rgb" | "ir" | "r" | "g" | "b";
+
 /**
  *  A free-form label on frames and rolls. The name keeps the spelling it was first typed with;
  *  two names are the same tag when their [`Tag::key`]s are equal (case-insensitive across Unicode).
@@ -696,6 +719,84 @@ export type Tag = {
 export type TagId = string;
 
 export type Theme = "system" | "light" | "dark";
+
+/**  One original that did not check out. */
+export type VerifyProblem = VerifyProblem_Serialize | VerifyProblem_Deserialize;
+
+/**  One original that did not check out. */
+export type VerifyProblem_Deserialize = {
+	frame_id: FrameId,
+	roll_id: RollId,
+	role: SourceRole,
+	/**  The file, relative to the library. */
+	rel_path: string,
+	reason: VerifyReason,
+	/**  Technical detail for the log or a tooltip. */
+	details?: string | null,
+};
+
+/**  One original that did not check out. */
+export type VerifyProblem_Serialize = {
+	frame_id: FrameId,
+	roll_id: RollId,
+	role: SourceRole,
+	/**  The file, relative to the library. */
+	rel_path: string,
+	reason: VerifyReason,
+	/**  Technical detail for the log or a tooltip. */
+	details: string | null,
+};
+
+/**  What is wrong with an original. */
+export type VerifyReason = 
+/**  The file is gone. */
+"Missing" | 
+/**  Its contents differ from what was recorded at import (damaged or replaced). */
+"Changed" | 
+/**  Its size differs from what was recorded, so it was not even hashed. */
+"WrongSize" | 
+/**
+ *  It exists but cannot be read (permissions, a disk error, in use), or its recorded path
+ *  points outside the library.
+ */
+"Unreadable";
+
+/**  What a library verify found. It only reports; nothing is changed or deleted. */
+export type VerifyResult = VerifyResult_Serialize | VerifyResult_Deserialize;
+
+/**  What a library verify found. It only reports; nothing is changed or deleted. */
+export type VerifyResult_Deserialize = {
+	/**  Original files examined. */
+	files_checked: number,
+	/**  Bytes of the originals as recorded at import. */
+	bytes_checked: number | null,
+	/**  Originals that are missing, changed or unreadable, in library order. */
+	problems: VerifyProblem_Deserialize[],
+	/**  Frames whose thumbnail file is missing (a rebuildable cache, not an error). */
+	thumbnails_missing: number,
+	/**
+	 *  Folders under `originals/` that belong to no roll or frame of the catalog and are not
+	 *  empty, relative to the library (for example left by a crash). Never deleted.
+	 */
+	stray_folders: string[],
+};
+
+/**  What a library verify found. It only reports; nothing is changed or deleted. */
+export type VerifyResult_Serialize = {
+	/**  Original files examined. */
+	files_checked: number,
+	/**  Bytes of the originals as recorded at import. */
+	bytes_checked: number | null,
+	/**  Originals that are missing, changed or unreadable, in library order. */
+	problems: VerifyProblem_Serialize[],
+	/**  Frames whose thumbnail file is missing (a rebuildable cache, not an error). */
+	thumbnails_missing: number,
+	/**
+	 *  Folders under `originals/` that belong to no roll or frame of the catalog and are not
+	 *  empty, relative to the library (for example left by a crash). Never deleted.
+	 */
+	stray_folders: string[],
+};
 
 export type WindowSize = {
 	width: number,

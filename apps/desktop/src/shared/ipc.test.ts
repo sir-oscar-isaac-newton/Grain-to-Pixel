@@ -6,6 +6,7 @@ const libraryOpenMock = vi.fn();
 const settingsSetMock = vi.fn();
 const frameDeleteMock = vi.fn();
 const searchMock = vi.fn();
+const libraryVerifyMock = vi.fn();
 const tagApplyMock = vi.fn();
 vi.mock('@gtp/ipc-types', () => ({
   commands: {
@@ -14,6 +15,7 @@ vi.mock('@gtp/ipc-types', () => ({
     libraryOpen: (path: string) => libraryOpenMock(path),
     settingsSet: (patch: unknown) => settingsSetMock(patch),
     frameDelete: (ids: string[]) => frameDeleteMock(ids),
+    libraryVerify: () => libraryVerifyMock(),
     search: (query: unknown, page: number, pageSize: number) => searchMock(query, page, pageSize),
     tagApply: (ids: string[], add: string[], remove: string[]) => tagApplyMock(ids, add, remove),
   },
@@ -24,6 +26,7 @@ import {
   frameDelete,
   libraryInfo,
   libraryOpen,
+  libraryVerify,
   logClientEvent,
   search,
   settingsSet,
@@ -40,6 +43,15 @@ describe('shared/ipc', () => {
     frameDeleteMock.mockReset();
     searchMock.mockReset();
     tagApplyMock.mockReset();
+    libraryVerifyMock.mockReset();
+  });
+
+  it('libraryVerify returns the job id and throws when no library is open', async () => {
+    libraryVerifyMock.mockResolvedValue({ status: 'ok', data: '01JOBID' });
+    await expect(libraryVerify()).resolves.toBe('01JOBID');
+    const error = { code: 'NotFound', message: 'No library is open.' } as const;
+    libraryVerifyMock.mockResolvedValue({ status: 'error', error });
+    await expect(libraryVerify()).rejects.toMatchObject({ message: error.message });
   });
 
   it('search passes the query and the page and returns the page of frames', async () => {

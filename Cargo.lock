@@ -1511,6 +1511,8 @@ dependencies = [
  "gtp-catalog",
  "gtp-core",
  "gtp-edit",
+ "gtp-ingest",
+ "gtp-io",
  "gtp-negative",
  "rayon",
  "serde",

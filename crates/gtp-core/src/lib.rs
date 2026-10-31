@@ -13,6 +13,6 @@ pub mod testing;
 pub use error::{AppError, ErrorCode};
 pub use ids::{FrameId, JobId, RollId, TagId};
 pub use image::ImageF32;
-pub use job::JobResult;
+pub use job::{ImportResult, JobResult, SkipReason, SkippedFile};
 pub use model::{FilmFormat, Frame, FrameKind, Roll, SourceFile, SourceRole, Tag};
 pub use recipe::{migrate, Recipe};

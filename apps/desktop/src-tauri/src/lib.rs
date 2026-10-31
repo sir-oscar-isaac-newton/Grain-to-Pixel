@@ -48,8 +48,9 @@ pub fn run() -> tauri::Result<()> {
         .setup(move |app| {
             builder.mount_events(app);
             start_observability(app);
-            let sink = sink::TauriJobSink::new(app.handle().clone());
-            app.manage(JobManager::new(Arc::new(sink)));
+            let sink = Arc::new(sink::TauriJobSink::new(app.handle().clone()));
+            app.manage(JobManager::new(sink.clone()));
+            app.manage(sink::EventsState(sink));
             app.manage(app_context(app));
             Ok(())
         })

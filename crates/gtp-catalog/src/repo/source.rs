@@ -8,7 +8,7 @@ use super::parse_col;
 use crate::db::db_error;
 use crate::Catalog;
 
-fn role_text(role: SourceRole) -> &'static str {
+pub(crate) fn role_text(role: SourceRole) -> &'static str {
     match role {
         SourceRole::Rgb => "rgb",
         SourceRole::Ir => "ir",

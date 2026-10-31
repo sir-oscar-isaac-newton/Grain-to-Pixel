@@ -14,7 +14,7 @@ use gtp_core::{AppError, ErrorCode, JobId, JobResult};
 
 pub use manager::JobManager;
 
-use cancel::CancelFlag;
+pub(crate) use cancel::CancelFlag;
 
 /// What a job does; used for logs and for listing running jobs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -121,4 +121,35 @@ impl JobCtx {
             Ok(())
         }
     }
+
+    /// A context outside any manager, for testing job bodies; returns its cancel flag.
+    #[cfg(test)]
+    pub(crate) fn standalone() -> (Self, CancelFlag) {
+        struct Quiet;
+        impl JobSink for Quiet {
+            fn progress(&self, _: JobId, _: &str, _: f32) {}
+            fn done(&self, _: JobId, _: JobResult) {}
+            fn error(&self, _: JobId, _: AppError) {}
+        }
+        let id = JobId::new();
+        let cancel = CancelFlag::default();
+        let ctx = Self {
+            id,
+            cancel: cancel.clone(),
+            emitter: Arc::new(Mutex::new(Emitter {
+                id,
+                sink: Arc::new(Quiet),
+                ended: false,
+                last: None,
+            })),
+        };
+        (ctx, cancel)
+    }
+}
+
+/// Library change notifications (the `library://changed` event), so the UI refreshes while a job
+/// adds or removes frames.
+pub trait LibraryEvents: Send + Sync {
+    /// Frames of `roll` (or of several rolls when `None`) were added, changed or removed.
+    fn library_changed(&self, roll: Option<gtp_core::RollId>);
 }

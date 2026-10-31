@@ -26,6 +26,11 @@ export const commands = {
 	frameSetNote: (id: FrameId, note: string) => typedError<Frame_Serialize, AppError_Serialize>(__TAURI_INVOKE("frame_set_note", { id, note })),
 	/**  Deletes frames (unknown ids are skipped), then their originals and thumbnails. */
 	frameDelete: (ids: FrameId[]) => typedError<DeleteReport, AppError_Serialize>(__TAURI_INVOKE("frame_delete", { ids })),
+	/**
+	 *  Starts importing `paths` into the roll as a job; progress and the result arrive as `job://*`
+	 *  events, each new frame as `library://changed`. Returns the job id at once.
+	 */
+	importFiles: (paths: string[], rollId: RollId, kind: ImportKind) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("import_files", { paths, rollId, kind })),
 	/**  The app settings (spec section 5.4), feature flags included. */
 	settingsGet: () => typedError<Settings_Serialize, AppError_Serialize>(__TAURI_INVOKE("settings_get")),
 	/**  Changes the settings named in `patch`, saves them and returns the result. */
@@ -43,9 +48,10 @@ export const commands = {
 
 /** Events */
 export const events = {
-	jobDone: makeEvent<JobDone, JobDone>("job://done"),
+	jobDone: makeEvent<JobDone_Serialize, JobDone_Deserialize>("job://done"),
 	jobError: makeEvent<JobError_Serialize, JobError_Deserialize>("job://error"),
 	jobProgress: makeEvent<JobProgress, JobProgress>("job://progress"),
+	libraryChanged: makeEvent<LibraryChanged_Serialize, LibraryChanged_Deserialize>("library://changed"),
 };
 
 /* Types */
@@ -248,10 +254,49 @@ export type Frame_Serialize = {
 	edited_at: string | null,
 };
 
+/**  What kind of files an import brings in. */
+export type ImportKind = 
+/**  16-bit scans, with infrared embedded or as `*_ir.tif`. */
+"TiffScan" | 
+/**  R, G and B exposures from a camera (H-06; not available yet). */
+"RgbTriplet";
+
+/**  What a file import did. */
+export type ImportResult = ImportResult_Serialize | ImportResult_Deserialize;
+
+/**  What a file import did. */
+export type ImportResult_Deserialize = {
+	/**  The new frames, in import order. */
+	frames: FrameId[],
+	/**  Files that were not imported, with the reason. */
+	skipped: SkippedFile_Deserialize[],
+	/**  Milliseconds each imported frame took (budget: 8,000 per frame, spec section 11). */
+	frame_ms: number[],
+};
+
+/**  What a file import did. */
+export type ImportResult_Serialize = {
+	/**  The new frames, in import order. */
+	frames: FrameId[],
+	/**  Files that were not imported, with the reason. */
+	skipped: SkippedFile_Serialize[],
+	/**  Milliseconds each imported frame took (budget: 8,000 per frame, spec section 11). */
+	frame_ms: number[],
+};
+
 /**  A job finished. Sent once per job, after its last progress event. */
-export type JobDone = {
+export type JobDone = JobDone_Serialize | JobDone_Deserialize;
+
+/**  A job finished. Sent once per job, after its last progress event. */
+export type JobDone_Deserialize = {
 	id: JobId,
-	result: JobResult,
+	result: JobResult_Deserialize,
+};
+
+/**  A job finished. Sent once per job, after its last progress event. */
+export type JobDone_Serialize = {
+	id: JobId,
+	result: JobResult_Serialize,
 };
 
 /**
@@ -289,9 +334,47 @@ export type JobProgress = {
 };
 
 /**  The result of a job that finished without error. */
-export type JobResult = 
+export type JobResult = JobResult_Serialize | JobResult_Deserialize;
+
+/**  The result of a job that finished without error. */
+export type JobResult_Deserialize = 
 /**  The job did its work and has nothing to report. */
-{ kind: "Finished" };
+{ kind: "Finished" } | 
+/**  A file import (L-05). */
+{
+	kind: "Imported",
+} & ImportResult_Deserialize;
+
+/**  The result of a job that finished without error. */
+export type JobResult_Serialize = 
+/**  The job did its work and has nothing to report. */
+{ kind: "Finished" } | 
+/**  A file import (L-05). */
+{
+	kind: "Imported",
+} & ImportResult_Serialize;
+
+/**
+ *  Frames were added, changed or removed (by a job such as an import): refresh the roll, or
+ *  everything when `roll_id` is `null`.
+ */
+export type LibraryChanged = LibraryChanged_Serialize | LibraryChanged_Deserialize;
+
+/**
+ *  Frames were added, changed or removed (by a job such as an import): refresh the roll, or
+ *  everything when `roll_id` is `null`.
+ */
+export type LibraryChanged_Deserialize = {
+	roll_id?: RollId | null,
+};
+
+/**
+ *  Frames were added, changed or removed (by a job such as an import): refresh the roll, or
+ *  everything when `roll_id` is `null`.
+ */
+export type LibraryChanged_Serialize = {
+	roll_id: RollId | null,
+};
 
 /**  What the UI shows about the open library. */
 export type LibraryDetails = LibraryDetails_Serialize | LibraryDetails_Deserialize;
@@ -473,6 +556,45 @@ export type Settings_Serialize = {
 	window: WindowSize | null,
 	theme: Theme,
 	flags: Flags_Serialize,
+};
+
+/**  Why a file was not imported. */
+export type SkipReason = 
+/**  Not a `.tif` or `.tiff` file. */
+"NotTiff" | 
+/**  An infrared file (`*_ir.tif`) whose scan was not picked, or one the scan does not need. */
+"OrphanIr" | 
+/**  The file could not be opened or read: missing, no permission, a disk error. */
+"Unreadable" | 
+/**  Larger than the app accepts. */
+"TooLarge" | 
+/**
+ *  Not a TIFF the app imports: damaged contents, 8-bit, gray, an unspecified extra channel,
+ *  an infrared plane of another size.
+ */
+"Unsupported" | 
+/**  The original written to the library did not read back identical. */
+"VerifyFailed";
+
+/**  A picked file that was not imported. */
+export type SkippedFile = SkippedFile_Serialize | SkippedFile_Deserialize;
+
+/**  A picked file that was not imported. */
+export type SkippedFile_Deserialize = {
+	/**  The file as picked, for display. */
+	path: string,
+	reason: SkipReason,
+	/**  Technical detail for the log or a tooltip. */
+	details?: string | null,
+};
+
+/**  A picked file that was not imported. */
+export type SkippedFile_Serialize = {
+	/**  The file as picked, for display. */
+	path: string,
+	reason: SkipReason,
+	/**  Technical detail for the log or a tooltip. */
+	details: string | null,
 };
 
 export type Theme = "system" | "light" | "dark";

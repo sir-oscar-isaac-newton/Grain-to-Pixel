@@ -239,7 +239,7 @@ fn remove_in_library(library: &Library, rel: &Path, left: &mut Vec<String>) {
 }
 
 /// Removes `path` (file or folder, read-only files included); missing is fine.
-fn remove_tree(path: &Path, left: &mut Vec<String>) {
+pub(crate) fn remove_tree(path: &Path, left: &mut Vec<String>) {
     let Ok(meta) = std::fs::symlink_metadata(path) else {
         return;
     };

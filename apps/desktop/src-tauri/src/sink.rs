@@ -1,11 +1,14 @@
-//! `TauriJobSink`: delivers job events from `gtp-app` to the UI as `job://*` events.
+//! `TauriJobSink`: delivers job events from `gtp-app` to the UI as `job://*` events, and library
+//! changes as `library://changed`.
 
-use gtp_app::JobSink;
-use gtp_core::{AppError, ErrorCode, JobId, JobResult};
+use std::sync::Arc;
+
+use gtp_app::{JobSink, LibraryEvents};
+use gtp_core::{AppError, ErrorCode, JobId, JobResult, RollId};
 use tauri::{AppHandle, Runtime};
 use tauri_specta::Event;
 
-use crate::events::{JobDone, JobError, JobProgress};
+use crate::events::{JobDone, JobError, JobProgress, LibraryChanged};
 
 pub struct TauriJobSink<R: Runtime> {
     app: AppHandle<R>,
@@ -48,6 +51,18 @@ impl<R: Runtime> JobSink for TauriJobSink<R> {
         delivered("job://error", JobError { id, error }.emit(&self.app));
     }
 }
+
+impl<R: Runtime> LibraryEvents for TauriJobSink<R> {
+    fn library_changed(&self, roll_id: Option<RollId>) {
+        delivered(
+            "library://changed",
+            LibraryChanged { roll_id }.emit(&self.app),
+        );
+    }
+}
+
+/// The library-change channel, managed as app state for commands that start jobs.
+pub struct EventsState(pub Arc<dyn LibraryEvents>);
 
 #[cfg(test)]
 mod tests {

@@ -7,7 +7,7 @@ use specta_typescript::Typescript;
 use tauri_specta::{collect_commands, collect_events, Builder};
 
 use crate::commands;
-use crate::events::{JobDone, JobError, JobProgress};
+use crate::events::{JobDone, JobError, JobProgress, LibraryChanged};
 
 /// Collects all commands and events (one place, shared by the app, the generator and tests on
 /// the mock runtime).
@@ -26,13 +26,19 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::frame::frame_get,
             commands::frame::frame_set_note,
             commands::frame::frame_delete,
+            commands::ingest::import_files,
             commands::system::settings_get,
             commands::system::settings_set,
             commands::system::log_client_event,
             commands::system::crash_notes_take,
             commands::system::job_cancel
         ])
-        .events(collect_events![JobProgress, JobDone, JobError])
+        .events(collect_events![
+            JobProgress,
+            JobDone,
+            JobError,
+            LibraryChanged
+        ])
 }
 
 /// Writes the TypeScript bindings to `path` without starting the app.
@@ -73,10 +79,16 @@ mod tests {
             "frameGet",
             "frameSetNote",
             "frameDelete",
+            "importFiles",
         ] {
             assert!(text.contains(command), "{command} missing from bindings");
         }
-        for event in ["job://progress", "job://done", "job://error"] {
+        for event in [
+            "job://progress",
+            "job://done",
+            "job://error",
+            "library://changed",
+        ] {
             assert!(text.contains(event), "event {event} missing from bindings");
         }
         for ty in [
@@ -88,6 +100,9 @@ mod tests {
             "FramePage",
             "FrameSummary",
             "DeleteReport",
+            "ImportResult",
+            "SkipReason",
+            "ImportKind",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }

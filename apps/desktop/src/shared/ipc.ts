@@ -113,6 +113,14 @@ export async function frameDelete(...args: Args<'frameDelete'>): Promise<DeleteR
   return unwrap(await commands.frameDelete(...args));
 }
 
+/**
+ * Starts importing files into a roll; returns the job id at once. Progress and the
+ * `ImportResult` arrive as `job://*` events, each new frame as `library://changed`.
+ */
+export async function importFiles(...args: Args<'importFiles'>): Promise<Data<'importFiles'>> {
+  return unwrap(await commands.importFiles(...args));
+}
+
 /** Crashes of earlier runs; the backend hands them out once. */
 export async function crashNotesTake(): Promise<CrashNote[]> {
   return unwrap(await commands.crashNotesTake());

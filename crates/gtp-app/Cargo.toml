@@ -13,6 +13,8 @@ specta = ["dep:specta", "gtp-core/specta"]
 gtp-catalog = { version = "0.0.0", path = "../gtp-catalog" }
 gtp-core = { version = "0.0.0", path = "../gtp-core" }
 gtp-edit = { version = "0.0.0", path = "../gtp-edit" }
+gtp-ingest = { version = "0.0.0", path = "../gtp-ingest" }
+gtp-io = { version = "0.0.0", path = "../gtp-io" }
 gtp-negative = { version = "0.0.0", path = "../gtp-negative" }
 fast_image_resize = "6.1.0"
 # Free space on the library's drive without unsafe platform calls.

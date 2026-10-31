@@ -1,5 +1,6 @@
 //! Use-case services over the feature crates. Each is called by a thin Tauri command.
 
+pub mod import;
 pub mod library;
 pub mod roll_frame;
 pub mod settings;

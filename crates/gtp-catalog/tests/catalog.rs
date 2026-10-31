@@ -360,6 +360,56 @@ fn recipes_round_trip_and_stamp_the_frame() {
 }
 
 #[test]
+fn an_imported_frame_is_numbered_and_stored_with_its_sources_and_recipe() {
+    let dir = TempDir::new("import");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("Scans")).unwrap();
+    let mut recipe = Recipe::default();
+    recipe.tone.exposure_ev = 0.3;
+    let mut stored = Vec::new();
+    for _ in 0..2 {
+        let f = frame(r.id, 99);
+        let sources = [SourceRole::Rgb, SourceRole::Ir].map(|role| SourceFile {
+            frame_id: f.id,
+            role,
+            rel_path: format!("originals/{}/{}/{role:?}.tif", r.id, f.id),
+            sha256: "ab".repeat(32),
+            bytes: 42,
+        });
+        stored.push(cat.insert_imported_frame(&f, &sources, &recipe).unwrap());
+    }
+    assert_eq!(
+        stored[0].index_in_roll, 1,
+        "numbering starts at 1, the given index is ignored"
+    );
+    assert_eq!(stored[1].index_in_roll, 2);
+    assert!(stored[0].edited_at.is_none(), "an import is not an edit");
+    assert_eq!(cat.sources_of(stored[0].id).unwrap().len(), 2);
+    assert_eq!(cat.load_recipe(stored[1].id).unwrap(), Some(recipe.clone()));
+    assert_eq!(cat.search_frames("portra").unwrap().len(), 2);
+
+    // A source of another frame fails the whole insert: nothing is left behind.
+    let f = frame(r.id, 1);
+    let wrong = SourceFile {
+        frame_id: FrameId::new(),
+        role: SourceRole::Rgb,
+        rel_path: "x".into(),
+        sha256: String::new(),
+        bytes: 0,
+    };
+    assert!(cat.insert_imported_frame(&f, &[wrong], &recipe).is_err());
+    assert_eq!(cat.get_frame(f.id).unwrap_err().code, ErrorCode::NotFound);
+    let orphan = frame(RollId::new(), 1);
+    assert_eq!(
+        cat.insert_imported_frame(&orphan, &[], &recipe)
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+    assert_eq!(cat.count_frames(None).unwrap(), 2);
+}
+
+#[test]
 fn invalid_roll_and_frame_input_is_rejected() {
     let dir = TempDir::new("invalid");
     let mut cat = Catalog::open(&dir.db()).unwrap();

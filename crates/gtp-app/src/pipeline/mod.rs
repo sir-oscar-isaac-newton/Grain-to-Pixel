@@ -275,47 +275,72 @@ mod tests {
         );
     }
 
-    /// A 1600 px preview from a 2048 px proxy with a typical edit; run with
-    /// `cargo test -p gtp-app --release -- --ignored --nocapture` to see the time.
+    /// Where the time of a 1600 px preview from a 2048 px proxy goes, with a typical edit, for a
+    /// 3:2 frame (35 mm) and a square one (6x6): the downscale, each stage, and the conversion to
+    /// 8-bit sRGB. The budget for the whole is 100 ms (docs/specification.md section 11). Run with
+    /// `cargo test -p gtp-app --release -- --ignored --nocapture time_a_1600_px_preview`.
     #[test]
     #[ignore = "timing run, not a check"]
     fn time_a_1600_px_preview() {
-        let s = scan(&Params {
-            width: 2048,
-            height: 1365,
-            rebate: [60; 4],
-            ..Params::default()
-        });
-        let mut recipe = true_recipe(&s);
-        recipe.tone.exposure_ev = 0.3;
-        recipe.tone.contrast = 20.0;
-        recipe.tone.shadows = 20.0;
-        recipe.color.vibrance = 15.0;
-        recipe.geometry.angle_deg = 1.0;
-        let input = input_of(&s, None);
-        let _warm_up = render(
-            &input,
-            &recipe,
-            RenderTarget::Preview {
+        use std::collections::BTreeMap;
+        use std::time::{Duration, Instant};
+
+        for (label, width, height) in [("3:2", 2048, 1365), ("square", 2048, 2048)] {
+            let s = scan(&Params {
+                width,
+                height,
+                rebate: [60; 4],
+                ..Params::default()
+            });
+            let mut recipe = true_recipe(&s);
+            recipe.tone.exposure_ev = 0.3;
+            recipe.tone.contrast = 20.0;
+            recipe.tone.shadows = 20.0;
+            recipe.color.vibrance = 15.0;
+            recipe.geometry.angle_deg = 1.0;
+            let input = input_of(&s, None);
+            let target = RenderTarget::Preview {
                 max_edge: PREVIEW_EDGE,
-            },
-        )
-        .unwrap();
-        let start = std::time::Instant::now();
-        let runs = 10;
-        for _ in 0..runs {
-            render(
-                &input,
-                &recipe,
-                RenderTarget::Preview {
-                    max_edge: PREVIEW_EDGE,
-                },
-            )
-            .unwrap();
+            };
+            for _ in 0..3 {
+                render(&input, &recipe, target).unwrap();
+            }
+
+            let runs: u32 = 20;
+            let mut stages = BTreeMap::<String, Duration>::new();
+            let (mut downscale, mut convert, mut whole) =
+                (Duration::ZERO, Duration::ZERO, Duration::ZERO);
+            for _ in 0..runs {
+                let started = Instant::now();
+                build_proxy(&input.rgb, PREVIEW_EDGE).unwrap();
+                downscale += started.elapsed();
+
+                let mut marks = Vec::new();
+                let started = Instant::now();
+                let image = render_traced(&input, &recipe, target, &mut |stage| {
+                    marks.push((stage, Instant::now()));
+                })
+                .unwrap();
+                let ended = Instant::now();
+                whole += ended - started;
+                for (n, (stage, at)) in marks.iter().enumerate() {
+                    let until = marks.get(n + 1).map_or(ended, |next| next.1);
+                    *stages.entry(format!("{stage:?}")).or_default() += until - *at;
+                }
+                let started = Instant::now();
+                to_rgba8_srgb(&image).unwrap();
+                convert += started.elapsed();
+            }
+            eprintln!(
+                "{label} {width}x{height}: render {:?}, to 8-bit sRGB {:?}, together {:?} (the downscale alone: {:?})",
+                whole / runs,
+                convert / runs,
+                (whole + convert) / runs,
+                downscale / runs
+            );
+            for (name, total) in stages {
+                eprintln!("    {name:<10} {:?}", total / runs);
+            }
         }
-        eprintln!(
-            "1600 px preview render: {:?} per render",
-            start.elapsed() / runs
-        );
     }
 }

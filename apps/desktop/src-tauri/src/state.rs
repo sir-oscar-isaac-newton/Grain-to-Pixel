@@ -1,4 +1,5 @@
-//! Shared application state managed by Tauri. Filled in by later issues (open library, job manager).
+//! Shared application state managed by Tauri. The job manager is managed on its own (it needs the
+//! app handle, so it is created at setup); the open library follows with L-03.
 
 use std::sync::Mutex;
 

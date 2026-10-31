@@ -1413,6 +1413,7 @@ dependencies = [
 name = "grain-to-pixel-desktop"
 version = "0.0.0"
 dependencies = [
+ "gtp-app",
  "gtp-core",
  "serde",
  "serde_json",

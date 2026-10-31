@@ -170,6 +170,15 @@
       "number": 16,
       "title": "Output colour transform and export encoders",
       "branch": "feat/issue-16-output-colour-transform-and-export",
+      "status": "completed",
+      "pr": 116,
+      "commit": "086d94b"
+    },
+    {
+      "id": "L-01",
+      "number": 26,
+      "title": "Job manager with progress, cancel and events",
+      "branch": "feat/issue-26-job-manager",
       "status": "in_progress",
       "pr": null,
       "commit": null

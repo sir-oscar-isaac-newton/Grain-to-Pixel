@@ -3,6 +3,7 @@
 import { vi } from 'vitest';
 import type {
   AppError,
+  Counters,
   FolderCheck,
   FramePage,
   FrameSummary,
@@ -185,6 +186,13 @@ export const state = {
   updateOutcome: { status: 'up_to_date' } as UpdateOutcome,
   updateCheckFails: null as string | null,
   updateInstallFails: null as string | null,
+  /** The counters of the open library; null while no library is open. */
+  counters: null as Counters | null,
+  /** Where the save dialog sends the diagnostics zip; null when the user cancels. */
+  diagnosticsPick: '/home/film/diagnostics.zip' as string | null,
+  /** The files the diagnostics were exported to, in order. */
+  diagnosticsExports: [] as string[],
+  diagnosticsFails: null as string | null,
   /** The exports started, in order. */
   exports: [] as Array<{ frameIds: string[]; options: unknown }>,
   /** Starting an export is refused with this message when set. */
@@ -324,6 +332,14 @@ export const ipc = {
     }
   }),
   updateRestart: vi.fn(async () => undefined),
+  countersGet: vi.fn(async () => state.counters),
+  pickDiagnosticsFile: vi.fn(async () => state.diagnosticsPick),
+  diagnosticsExport: vi.fn(async (dest: string) => {
+    if (state.diagnosticsFails) {
+      throw new IpcError({ code: 'Io', message: state.diagnosticsFails });
+    }
+    state.diagnosticsExports.push(dest);
+  }),
   folderCheck: vi.fn(async (path: string): Promise<FolderCheck> => ({
     path,
     free_bytes: 54_900_000_000,
@@ -528,6 +544,10 @@ export function resetFake() {
   state.updateOutcome = { status: 'up_to_date' };
   state.updateCheckFails = null;
   state.updateInstallFails = null;
+  state.counters = null;
+  state.diagnosticsPick = '/home/film/diagnostics.zip';
+  state.diagnosticsExports = [];
+  state.diagnosticsFails = null;
   state.applies = [];
   state.applyRefused = null;
   state.neutralSamples = [];

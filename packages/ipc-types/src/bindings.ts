@@ -131,6 +131,13 @@ export const commands = {
 	 *  if it was already finishing). Returns false when the job is not running, which is harmless.
 	 */
 	jobCancel: (id: JobId) => typedError<boolean, AppError_Serialize>(__TAURI_INVOKE("job_cancel", { id })),
+	/**  The activation counters of the open library (spec section 14), or `None` when none is open. */
+	countersGet: () => typedError<Counters_Serialize | null, AppError_Serialize>(__TAURI_INVOKE("counters_get")),
+	/**
+	 *  Writes the diagnostics zip (logs, versions, flags, counters, last job errors; no images) to
+	 *  `dest`, a `.zip` path the user chose. Nothing is uploaded.
+	 */
+	diagnosticsExport: (dest: string) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("diagnostics_export", { dest })),
 	/**
 	 *  Looks for a newer version. The UI calls it with `manual` false at launch and true from the
 	 *  "Check for updates" button.
@@ -235,6 +242,29 @@ export type Color_Serialize = {
 	saturation: number | null,
 	/**  Saturation that spares colours which are already vivid; -100 to 100. */
 	vibrance: number | null,
+};
+
+/**  The counters of one library. The `first_*` values are RFC 3339 times, set once. */
+export type Counters = Counters_Serialize | Counters_Deserialize;
+
+/**  The counters of one library. The `first_*` values are RFC 3339 times, set once. */
+export type Counters_Deserialize = {
+	first_import_at?: string | null,
+	first_convert_at?: string | null,
+	first_export_at?: string | null,
+	frames_imported: number,
+	frames_exported: number,
+	scans_failed: number,
+};
+
+/**  The counters of one library. The `first_*` values are RFC 3339 times, set once. */
+export type Counters_Serialize = {
+	first_import_at: string | null,
+	first_convert_at: string | null,
+	first_export_at: string | null,
+	frames_imported: number,
+	frames_exported: number,
+	scans_failed: number,
 };
 
 /**  A crash from an earlier run, as the UI sees it. Details stay in the log and the note file. */

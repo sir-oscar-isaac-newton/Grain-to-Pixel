@@ -455,6 +455,15 @@
       "status": "completed",
       "pr": 159,
       "commit": "81d0755"
+    },
+    {
+      "id": "D-05",
+      "number": 64,
+      "title": "Diagnostics export and local counters",
+      "branch": "feat/issue-64-diagnostics-export",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

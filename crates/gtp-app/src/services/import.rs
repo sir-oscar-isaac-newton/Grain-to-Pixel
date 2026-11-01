@@ -35,6 +35,7 @@ use crate::jobs::{JobCtx, LibraryEvents};
 use crate::library_fs::{originals_rel, thumb_rel};
 use crate::paths::display_path;
 use crate::pipeline::{analyze, render, PipelineInput, RenderTarget};
+use crate::services::counters;
 use crate::services::library::Library;
 use crate::services::roll_frame::{ensure_roll_base, remove_tree};
 use gtp_core::recipe::OutputSpace;
@@ -305,6 +306,7 @@ pub fn import_tiffs(
         match import_one(library, roll, candidate, frame_id, ctx, &progress) {
             Ok(frame) => {
                 result.frames.push(frame.id);
+                counters::count_import(library);
                 result
                     .frame_ms
                     .push(u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX));
@@ -475,6 +477,9 @@ mod tests {
         assert!(result.skipped.is_empty());
         assert_eq!(result.frame_ms.len(), 5);
         assert_eq!(*events.changed.lock().unwrap(), 5);
+        let counted = counters::read(s.lib()).unwrap();
+        assert_eq!(counted.frames_imported, 5);
+        assert!(counted.first_import_at.is_some());
 
         for (i, id) in result.frames.iter().enumerate() {
             let frame = s.lib().read(|c| c.get_frame(*id)).unwrap();
@@ -723,6 +728,11 @@ mod tests {
         let originals = s.lib().root().join("originals").join(s.roll.to_string());
         let frame_dirs = std::fs::read_dir(&originals).unwrap().count();
         assert_eq!(frame_dirs, 2, "no folder of an unfinished frame is left");
+        assert_eq!(
+            counters::read(s.lib()).unwrap().frames_imported,
+            2,
+            "the frames that finished are counted even though the job was cancelled"
+        );
         assert_eq!(files_under(&s.lib().root().join("thumbs")), 2);
     }
 

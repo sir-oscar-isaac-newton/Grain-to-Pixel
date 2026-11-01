@@ -32,7 +32,7 @@ The macOS build has the tethered-capture feature (`tether`) switched on; the Win
 
 Grain to Pixel asks GitHub Releases whether a newer version exists when it starts, at most once a day, and shows a notice with what is new. It installs nothing until you press **Install**, and checks the signature of the download first; a download that does not match is thrown away. It sends nothing about you or your library. **Settings > Check for updates now** asks at once. To stop the check, switch off **Check for updates** in the feature flags in Settings: the app then makes no network request at all.
 
-On Windows the installer closes the app and starts the new version. On macOS the app asks you to restart after the update is in place.
+On Windows the installer closes the app and starts the new version. On macOS the app asks you to restart after the update is in place. The ad-hoc signed app opens after an update without a new Gatekeeper warning (tried on a Mac with two test releases), so the Gatekeeper steps for the first start are needed only once.
 
 ## First start
 

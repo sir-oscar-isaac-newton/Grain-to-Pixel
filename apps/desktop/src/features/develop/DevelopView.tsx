@@ -40,6 +40,7 @@ import { clipping, computeHistogram } from './histogram';
 import { BaseInvertPanel } from './panels/BaseInvertPanel';
 import { ColourPanel } from './panels/ColourPanel';
 import { GeometryPanel } from './panels/GeometryPanel';
+import { SharpenPanel } from './panels/SharpenPanel';
 import { TonePanel } from './panels/TonePanel';
 import type { Fractions } from './picker';
 import {
@@ -579,6 +580,13 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 readOnly={readOnly}
                 working={working}
                 onChange={(next, options) => setRecipe(next, options)}
+              />
+              <SharpenPanel
+                recipe={recipe}
+                readOnly={readOnly}
+                working={working}
+                // Sharpening is applied at export: the picture on screen would not change.
+                onChange={(next, options) => setRecipe(next, { ...options, preview: false })}
               />
             </>
           )}

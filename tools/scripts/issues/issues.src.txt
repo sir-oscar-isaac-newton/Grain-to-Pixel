@@ -1645,6 +1645,7 @@ ROUTES used: none (recipe_save through the existing autosave).
 MIGRATIONS: none.
 TESTS: ratio maths (fit the largest crop, resize with a lock at every edge and corner, clamping at the picture's edges, the ratio after a quarter turn), panel with mocked ipc, axe.
 NOTES: asked for while U-05 was approved, so it is GitHub issue #142, not 75 (issue and pull request numbers share one sequence). Use 142 as its `number` in docs/progress.md. The crop of U-05 is free-form, as its criteria say.
+DELIVERY (decided when U-14 was approved): the lock resets to Free when another frame is opened (nothing is refitted behind your back), and the presets are the six of the issue plus Custom (6x7's 7:6 and XPan's 65:24 can be typed as custom ratios). The ratio maths is pure and tested on its own (`crop-ratio.ts`): the finished picture's ratio goes to the scan's orientation (a quarter turn swaps width and height), then to fractions of the scan (times scan height over scan width); every resize keeps the ratio, the scan and the smallest size, checked over many handles, points and ratios. A custom ratio is limited to 20 to 1 either way, so a crop of any allowed ratio can always be the smallest size. The exact-crop buttons (detected frame, whole scan) fit the ratio inside the area while a lock is on, so a locked crop always has its ratio. No backend or recipe change.
 
 ## U-15
 title: Verify library from the UI

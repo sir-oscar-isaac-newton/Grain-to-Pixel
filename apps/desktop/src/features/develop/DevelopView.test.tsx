@@ -33,6 +33,9 @@ function openLibrary(details = {}) {
   });
 }
 
+/** The filmstrip (the panels have lists of options of their own). */
+const strip = () => screen.getByRole('listbox', { name: 'Frames of the current Library view' });
+
 const open = (n: number) =>
   useUiStore.setState({
     view: 'develop',
@@ -213,7 +216,7 @@ describe('DevelopView', () => {
       render(<DevelopView />);
       await canvas();
       await waitFor(() => expect(ipc.search).toHaveBeenCalled());
-      expect(await screen.findAllByRole('option')).toHaveLength(5);
+      expect(await within(strip()).findAllByRole('option')).toHaveLength(5);
     });
 
     it('opens another frame when it is clicked', async () => {
@@ -222,7 +225,7 @@ describe('DevelopView', () => {
       open(1);
       render(<DevelopView />);
       await canvas();
-      const options = await screen.findAllByRole('option');
+      const options = await within(strip()).findAllByRole('option');
       await user.click(options[3] as HTMLElement);
       expect(frame()).toEqual({ id: 'summer-f00004', index: 3 });
       expect(await canvasNamed('Frame 4')).toBeInTheDocument();
@@ -812,6 +815,106 @@ describe('DevelopView', () => {
           const user = await openFrame();
           await user.click(screen.getByRole('button', { name: 'Edit crop' }));
           await screen.findByText(/Drag the frame or its sides/);
+          await expectNoA11yViolations(document.body);
+        });
+      });
+
+      describe('locking the crop to an aspect ratio', () => {
+        // The fake frame is 5616 x 3744 pixels (3:2) and its recipe is turned a quarter.
+        const ratioSelect = () => screen.getByRole('combobox', { name: 'Aspect ratio' });
+        const finishedRatio = (recipe: unknown) => {
+          const g = (
+            recipe as {
+              geometry: { rot90: number; crop: { w: number; h: number } };
+            }
+          ).geometry;
+          const inScan = (g.crop.w * 5616) / (g.crop.h * 3744);
+          return g.rot90 % 2 === 0 ? inScan : 1 / inScan;
+        };
+
+        async function openFrame() {
+          const user = userEvent.setup();
+          openLibrary();
+          open(1);
+          render(<DevelopView />);
+          await canvas();
+          await waitFor(() => expect(ipc.developAnalyze).toHaveBeenCalled());
+          return user;
+        }
+
+        it('fits the largest crop of the ratio for the finished picture, and saves it', async () => {
+          const user = await openFrame();
+          expect(ratioSelect()).toHaveValue('free');
+          await user.selectOptions(ratioSelect(), '4:3');
+          await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+            timeout: SAVE_DELAY_MS * 4,
+          });
+          const crop = cropOf(savedRecipe());
+          // Turned a quarter, 4:3 is 3:4 in the scan: half the width, all the height.
+          expect(crop.w).toBeCloseTo(0.5, 9);
+          expect(crop.h).toBeCloseTo(1, 9);
+          expect(crop.x).toBeCloseTo(0.25, 9);
+          expect(finishedRatio(savedRecipe())).toBeCloseTo(4 / 3, 9);
+          expect(screen.getByText(/keeps the ratio 4:3/)).toBeInTheDocument();
+        });
+
+        it('keeps the ratio when the crop is resized by dragging a corner', async () => {
+          const user = await openFrame();
+          await user.selectOptions(ratioSelect(), '4:3');
+          await user.click(screen.getByRole('button', { name: 'Edit crop' }));
+          await screen.findByText(/Drag the frame or its sides/);
+          const grip = document.querySelector('[data-handle="se"]') as HTMLElement;
+          // The crop is {0.25, 0, 0.5, 1} on a picture of 400 x 300 at (100, 50): its corner is
+          // at (400, 350). Drag it up and in.
+          fireEvent.pointerDown(grip, { button: 0, pointerId: 1, clientX: 400, clientY: 350 });
+          fireEvent.pointerMove(grip, { pointerId: 1, clientX: 320, clientY: 200 });
+          fireEvent.pointerUp(grip, { pointerId: 1 });
+          await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+            timeout: SAVE_DELAY_MS * 4,
+          });
+          const crop = cropOf(savedRecipe());
+          expect(crop.x).toBeCloseTo(0.25, 6);
+          expect(crop.w).toBeCloseTo(0.3, 6);
+          expect(crop.h).toBeCloseTo(0.6, 6);
+          expect(finishedRatio(savedRecipe())).toBeCloseTo(4 / 3, 6);
+        });
+
+        it('keeps the finished picture’s ratio when it is turned', async () => {
+          const user = await openFrame();
+          await user.selectOptions(ratioSelect(), '4:3');
+          await user.click(screen.getByRole('button', { name: 'Rotate right' }));
+          await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+            timeout: SAVE_DELAY_MS * 4,
+          });
+          expect(savedRecipe()).toMatchObject({ geometry: { rot90: 2 } });
+          expect(finishedRatio(savedRecipe())).toBeCloseTo(4 / 3, 9);
+        });
+
+        it('swaps to portrait', async () => {
+          const user = await openFrame();
+          await user.selectOptions(ratioSelect(), '3:2');
+          await user.click(screen.getByRole('button', { name: 'Swap landscape and portrait' }));
+          await waitFor(() => expect(screen.getByText(/keeps the ratio 2:3/)).toBeInTheDocument());
+          await waitFor(() => expect(finishedRatio(savedRecipe())).toBeCloseTo(2 / 3, 9), {
+            timeout: SAVE_DELAY_MS * 4,
+          });
+        });
+
+        it('is free again when another frame is opened', async () => {
+          const user = await openFrame();
+          await user.selectOptions(ratioSelect(), '1:1');
+          expect(ratioSelect()).toHaveValue('1:1');
+          // The select has focus, and keys are left to it; let go of it first.
+          (document.activeElement as HTMLElement).blur();
+          await user.keyboard(']');
+          await canvasNamed('Frame 2');
+          expect(ratioSelect()).toHaveValue('free');
+          expect(screen.queryByText(/keeps the ratio/)).not.toBeInTheDocument();
+        });
+
+        it('has no accessibility violations with a ratio locked', async () => {
+          const user = await openFrame();
+          await user.selectOptions(ratioSelect(), 'custom');
           await expectNoA11yViolations(document.body);
         });
       });

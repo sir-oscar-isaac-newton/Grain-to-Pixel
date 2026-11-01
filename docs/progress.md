@@ -371,6 +371,15 @@
       "number": 90,
       "title": "Customizable keyboard shortcuts",
       "branch": "feat/issue-90-keyboard-shortcuts",
+      "status": "completed",
+      "pr": 149,
+      "commit": "071f5c0"
+    },
+    {
+      "id": "U-14",
+      "number": 142,
+      "title": "Crop aspect ratio presets and lock",
+      "branch": "feat/issue-142-crop-aspect-ratios",
       "status": "in_progress",
       "pr": null,
       "commit": null

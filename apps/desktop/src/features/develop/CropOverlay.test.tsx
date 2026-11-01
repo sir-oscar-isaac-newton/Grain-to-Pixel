@@ -9,7 +9,11 @@ import { CropOverlay } from './CropOverlay';
 type Change = [CropRect, { dragging: boolean }];
 
 /** The overlay with state, as the view has it, remembering every change it reported. */
-function setup(initial: CropRect = { x: 0.2, y: 0.2, w: 0.5, h: 0.4 }, disabled = false) {
+function setup(
+  initial: CropRect = { x: 0.2, y: 0.2, w: 0.5, h: 0.4 },
+  disabled = false,
+  lock: number | null = null,
+) {
   const changes: Change[] = [];
   function Harness() {
     const [crop, setCrop] = useState(initial);
@@ -18,6 +22,7 @@ function setup(initial: CropRect = { x: 0.2, y: 0.2, w: 0.5, h: 0.4 }, disabled 
         crop={crop}
         style={{ width: 400, height: 300 }}
         disabled={disabled}
+        lock={lock}
         label="Crop area"
         onChange={(next, options) => {
           changes.push([next, options]);
@@ -141,6 +146,61 @@ describe('CropOverlay', () => {
       fireEvent.pointerUp(area(), { pointerId: 1 });
       fireEvent.pointerMove(area(), { pointerId: 1, ...screenAt(0.6, 0.6) });
       expect(changes).toHaveLength(0);
+    });
+  });
+
+  describe('locked to a ratio', () => {
+    const square: CropRect = { x: 0.2, y: 0.2, w: 0.4, h: 0.4 };
+
+    it('keeps the ratio when a corner is dragged', () => {
+      layout();
+      const { changes, container } = setup(square, false, 1);
+      const grip = container.querySelector('[data-handle="se"]') as HTMLElement;
+      fireEvent.pointerDown(grip, { button: 0, pointerId: 1, ...screenAt(0.6, 0.6) });
+      fireEvent.pointerMove(grip, { pointerId: 1, ...screenAt(0.8, 0.7) });
+      expect(last(changes)[1]).toEqual({ dragging: true });
+      fireEvent.pointerUp(grip, { pointerId: 1 });
+      const got = last(changes)[0];
+      expect([got.x, got.y]).toEqual([0.2, 0.2]);
+      expect(got.w).toBeCloseTo(0.6, 6);
+      expect(got.h).toBeCloseTo(0.6, 6);
+      expect(last(changes)[1]).toEqual({ dragging: false });
+    });
+
+    it('lets the other dimension follow when a side is dragged', () => {
+      layout();
+      const { changes, container } = setup(square, false, 1);
+      const grip = container.querySelector('[data-handle="e"]') as HTMLElement;
+      fireEvent.pointerDown(grip, { button: 0, pointerId: 1, ...screenAt(0.6, 0.4) });
+      fireEvent.pointerMove(grip, { pointerId: 1, ...screenAt(0.8, 0.4) });
+      fireEvent.pointerUp(grip, { pointerId: 1 });
+      const got = last(changes)[0];
+      expect(got.w).toBeCloseTo(0.6, 6);
+      expect(got.h).toBeCloseTo(0.6, 6);
+      expect(got.y).toBeCloseTo(0.1, 6);
+    });
+
+    it('does not change the size when the crop is moved, by pointer or key', async () => {
+      layout();
+      const user = userEvent.setup();
+      const { changes } = setup(square, false, 1);
+      fireEvent.pointerDown(area(), { button: 0, pointerId: 1, ...screenAt(0.4, 0.4) });
+      fireEvent.pointerMove(area(), { pointerId: 1, ...screenAt(0.5, 0.45) });
+      fireEvent.pointerUp(area(), { pointerId: 1 });
+      expect([last(changes)[0].w, last(changes)[0].h]).toEqual([0.4, 0.4]);
+      area().focus();
+      await user.keyboard('{ArrowRight}');
+      expect([last(changes)[0].w, last(changes)[0].h]).toEqual([0.4, 0.4]);
+    });
+
+    it('is free again with no lock', () => {
+      layout();
+      const { changes, container } = setup(square, false, null);
+      const grip = container.querySelector('[data-handle="e"]') as HTMLElement;
+      fireEvent.pointerDown(grip, { button: 0, pointerId: 1, ...screenAt(0.6, 0.4) });
+      fireEvent.pointerMove(grip, { pointerId: 1, ...screenAt(0.8, 0.4) });
+      fireEvent.pointerUp(grip, { pointerId: 1 });
+      expect(last(changes)[0].h).toBeCloseTo(0.4, 6);
     });
   });
 

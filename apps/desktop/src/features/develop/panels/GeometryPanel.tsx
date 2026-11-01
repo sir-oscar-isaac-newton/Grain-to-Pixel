@@ -1,7 +1,28 @@
 import { useTranslation } from 'react-i18next';
 import { Slider } from '@gtp/ui';
 import type { Recipe } from '../../../shared/ipc';
-import { FULL_CROP, MIN_CROP, edgesOf, moveEdge, sameCrop, type Edge } from '../crop';
+import {
+  FULL_CROP,
+  MIN_CROP,
+  edgesOf,
+  moveEdge,
+  sameCrop,
+  type CropRect,
+  type Edge,
+} from '../crop';
+import {
+  PRESET_MODES,
+  customRatio,
+  finishedRatio,
+  fitInside,
+  fitLargest,
+  fractionRatio,
+  moveEdgeLocked,
+  ratioInScan,
+  type RatioMode,
+  type RatioState,
+  type ScanSize,
+} from '../crop-ratio';
 import styles from '../develop.module.css';
 import { geometryOf, withGeometry } from '../recipe-parts';
 import type { DetectedFrame } from '../use-develop';
@@ -27,6 +48,11 @@ interface GeometryPanelProps {
   detected: DetectedFrame | null;
   /** The straighten slider is in use, so a grid helps to judge a horizon. */
   onGuideChange: (on: boolean) => void;
+  /** The aspect ratio the crop is locked to, if any (an editing aid: it is not stored). */
+  ratio: RatioState;
+  onRatioChange: (ratio: RatioState) => void;
+  /** The size of the scan, which the ratio of the crop depends on; null until it is known. */
+  scan: ScanSize | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
   onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
 }
@@ -45,6 +71,9 @@ export function GeometryPanel({
   onCroppingChange,
   detected,
   onGuideChange,
+  ratio,
+  onRatioChange,
+  scan,
   onChange,
 }: GeometryPanelProps) {
   const { t, i18n } = useTranslation();
@@ -66,6 +95,44 @@ export function GeometryPanel({
     });
   const change = (values: Parameters<typeof withGeometry>[1], dragging = false) =>
     onChange(withGeometry(recipe, values), { dragging });
+
+  /** The crop's width over height, as fractions of the scan, for a ratio setting and a turn. */
+  const fractionsFor = (state: RatioState, rot90: number): number | null => {
+    if (!scan) return null;
+    const finished = finishedRatio(state, scan, rot90);
+    return finished === null ? null : fractionRatio(ratioInScan(finished, rot90), scan);
+  };
+  const k = fractionsFor(ratio, geometry.rot90);
+  /** The crop for a ratio setting and turn: the largest of the ratio around the crop's centre. */
+  const refit = (state: RatioState, rot90 = geometry.rot90): CropRect => {
+    const wanted = fractionsFor(state, rot90);
+    return wanted === null ? geometry.crop : fitLargest(geometry.crop, wanted);
+  };
+  const chooseRatio = (next: RatioState) => {
+    onRatioChange(next);
+    const crop = refit(next);
+    if (!sameCrop(crop, geometry.crop)) change({ crop });
+  };
+  const turnTo = (rot90: number) => change({ rot90, crop: refit(ratio, rot90) });
+  /** With a lock, the exact crops below become the largest of the ratio inside them. */
+  const detectedCrop = detected ? (k ? fitInside(detected.rect, k) : detected.rect) : FULL_CROP;
+  const wholeCrop = k ? fitInside(FULL_CROP, k) : FULL_CROP;
+  const ratioText = (() => {
+    if (k === null || !scan) return '';
+    const finished = finishedRatio(ratio, scan, geometry.rot90) ?? 1;
+    return PRESET_MODES.includes(ratio.mode as (typeof PRESET_MODES)[number]) &&
+      ratio.mode !== 'scan'
+      ? ratio.portrait
+        ? ratio.mode.split(':').reverse().join(':')
+        : ratio.mode
+      : t('develop.crop.ratio.decimal', {
+          value: new Intl.NumberFormat(i18n.language, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }).format(finished),
+        });
+  })();
+  const customInvalid = ratio.mode === 'custom' && customRatio(ratio.custom) === null;
 
   const confident = detected !== null && detected.confidence >= LOW_CONFIDENCE;
   const turned = geometry.rot90 !== 0 || geometry.flip_h || geometry.flip_v;
@@ -107,15 +174,15 @@ export function GeometryPanel({
           </button>
           <button
             type="button"
-            disabled={locked || !confident || sameCrop(geometry.crop, detected.rect)}
-            onClick={() => change({ crop: detected ? detected.rect : FULL_CROP })}
+            disabled={locked || !confident || sameCrop(geometry.crop, detectedCrop)}
+            onClick={() => change({ crop: detectedCrop })}
           >
             {t('develop.crop.useDetected')}
           </button>
           <button
             type="button"
-            disabled={locked || sameCrop(geometry.crop, FULL_CROP)}
-            onClick={() => change({ crop: FULL_CROP })}
+            disabled={locked || sameCrop(geometry.crop, wholeCrop)}
+            onClick={() => change({ crop: wholeCrop })}
           >
             {t('develop.crop.useWhole')}
           </button>
@@ -125,6 +192,78 @@ export function GeometryPanel({
             {cropReady ? t('develop.crop.editing') : t('develop.crop.preparing')}
           </p>
         )}
+        <div className={styles.ratio}>
+          <label className={styles.ratioField}>
+            {t('develop.crop.ratio.label')}
+            <select
+              value={ratio.mode}
+              disabled={locked || !scan}
+              onChange={(event) =>
+                chooseRatio({ ...ratio, mode: event.target.value as RatioMode, portrait: false })
+              }
+            >
+              <option value="free">{t('develop.crop.ratio.free')}</option>
+              <option value="scan">{t('develop.crop.ratio.scan')}</option>
+              {PRESET_MODES.filter((mode) => mode !== 'scan').map((mode) => (
+                <option key={mode} value={mode}>
+                  {mode}
+                </option>
+              ))}
+              <option value="custom">{t('develop.crop.ratio.custom')}</option>
+            </select>
+          </label>
+          {ratio.mode === 'custom' && (
+            <fieldset className={styles.ratioPair}>
+              <legend>{t('develop.crop.ratio.customLegend')}</legend>
+              {(['w', 'h'] as const).map((side) => (
+                <label key={side} className={styles.ratioField}>
+                  {t(`develop.crop.ratio.${side === 'w' ? 'width' : 'height'}`)}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={ratio.custom[side]}
+                    disabled={locked}
+                    aria-invalid={customInvalid}
+                    onChange={(event) =>
+                      chooseRatio({
+                        ...ratio,
+                        custom: { ...ratio.custom, [side]: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {customInvalid && (
+            <p className={styles.panelText} role="alert">
+              {t('develop.crop.ratio.invalid')}
+            </p>
+          )}
+          {ratio.mode !== 'free' && (
+            <div className={styles.panelButtons}>
+              <button
+                type="button"
+                disabled={locked || k === null}
+                onClick={() => chooseRatio({ ...ratio, portrait: !ratio.portrait })}
+              >
+                {t('develop.crop.ratio.swap')}
+              </button>
+              <button
+                type="button"
+                disabled={locked || k === null || sameCrop(geometry.crop, refit(ratio))}
+                onClick={() => change({ crop: refit(ratio) })}
+              >
+                {t('develop.crop.ratio.fit')}
+              </button>
+            </div>
+          )}
+          {k !== null && (
+            <p className={styles.panelText}>
+              {t('develop.crop.ratio.locked', { ratio: ratioText })}
+            </p>
+          )}
+        </div>
         <div className={styles.sliders}>
           {EDGES.map((edge) => {
             const [min, max] = range(edge);
@@ -139,7 +278,14 @@ export function GeometryPanel({
                 format={percent}
                 disabled={locked}
                 onChange={(next, dragging) =>
-                  change({ crop: moveEdge(geometry.crop, edge, next) }, dragging)
+                  change(
+                    {
+                      crop: k
+                        ? moveEdgeLocked(geometry.crop, edge, next, k)
+                        : moveEdge(geometry.crop, edge, next),
+                    },
+                    dragging,
+                  )
                 }
               />
             );
@@ -152,18 +298,10 @@ export function GeometryPanel({
           {t('develop.geometry.heading')}
         </h3>
         <div className={styles.panelButtons}>
-          <button
-            type="button"
-            disabled={locked}
-            onClick={() => change({ rot90: (geometry.rot90 + 3) % 4 })}
-          >
+          <button type="button" disabled={locked} onClick={() => turnTo((geometry.rot90 + 3) % 4)}>
             {t('develop.geometry.rotateLeft')}
           </button>
-          <button
-            type="button"
-            disabled={locked}
-            onClick={() => change({ rot90: (geometry.rot90 + 1) % 4 })}
-          >
+          <button type="button" disabled={locked} onClick={() => turnTo((geometry.rot90 + 1) % 4)}>
             {t('develop.geometry.rotateRight')}
           </button>
           <button
@@ -199,7 +337,15 @@ export function GeometryPanel({
           <button
             type="button"
             disabled={locked || (!turned && levelled)}
-            onClick={() => change({ rot90: 0, flip_h: false, flip_v: false, angle_deg: 0 })}
+            onClick={() =>
+              change({
+                rot90: 0,
+                flip_h: false,
+                flip_v: false,
+                angle_deg: 0,
+                crop: refit(ratio, 0),
+              })
+            }
           >
             {t('develop.geometry.reset')}
           </button>

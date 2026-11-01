@@ -21,7 +21,8 @@ export type Edge = 'left' | 'right' | 'top' | 'bottom';
 /** The places a crop can be grabbed: its sides and corners, by compass point. */
 export type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
-const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
+export const clamp = (value: number, low: number, high: number) =>
+  Math.min(high, Math.max(low, value));
 
 export interface Edges {
   left: number;

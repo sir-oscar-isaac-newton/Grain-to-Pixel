@@ -461,9 +461,9 @@
       "number": 64,
       "title": "Diagnostics export and local counters",
       "branch": "feat/issue-64-diagnostics-export",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 162,
+      "commit": "cd6b0a7"
     }
   ]
 }

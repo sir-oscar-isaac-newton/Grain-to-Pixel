@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use gtp_core::testing::synthetic::{self, Params};
+use gtp_core::testing::synthetic::{self, Params, Pattern};
 use gtp_core::{Frame, FrameId, FrameKind, Recipe, RollId, SourceFile, SourceRole};
 use gtp_io::{from_f32_linear, write_tiff16, Compression};
 
@@ -27,12 +27,25 @@ pub(crate) fn add_frame(
     width: u32,
     height: u32,
 ) -> FrameId {
+    add_frame_with(library, roll, index, width, height, Pattern::default())
+}
+
+/// [`add_frame`] with a chosen picture (the default one is a smooth gradient).
+pub(crate) fn add_frame_with(
+    library: &Library,
+    roll: RollId,
+    index: u32,
+    width: u32,
+    height: u32,
+    pattern: Pattern,
+) -> FrameId {
     let scan = synthetic::negative(
         u64::from(index),
         &Params {
             width,
             height,
             rebate: [width / 14; 4],
+            pattern,
             ..Params::default()
         },
     )
@@ -96,6 +109,17 @@ impl Fixture {
     /// A frame whose original is a synthetic negative of the given size.
     pub(crate) fn frame(&self, index: u32, width: u32, height: u32) -> FrameId {
         add_frame(&self.library, self.roll, index, width, height)
+    }
+
+    /// A frame whose picture is `pattern` (steps, blobs, ...), for tests that need edges.
+    pub(crate) fn frame_with(
+        &self,
+        index: u32,
+        width: u32,
+        height: u32,
+        pattern: Pattern,
+    ) -> FrameId {
+        add_frame_with(&self.library, self.roll, index, width, height, pattern)
     }
 
     /// A frame with no original file, enough for saving and copying recipes.

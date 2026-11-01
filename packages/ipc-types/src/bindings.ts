@@ -910,10 +910,12 @@ export type OutputSpace = "srgb" | "adobe_rgb" | "prophoto";
 
 export type Output_Deserialize = {
 	space?: OutputSpace,
+	sharpen?: Sharpen_Deserialize,
 };
 
 export type Output_Serialize = {
 	space: OutputSpace,
+	sharpen: Sharpen_Serialize,
 };
 
 export type Recipe = Recipe_Serialize | Recipe_Deserialize;
@@ -1168,6 +1170,48 @@ export type Settings_Serialize = {
 	 *  that is not here has its default key, which the UI knows; the app only keeps the shape.
 	 */
 	keys: { [key in string]: string },
+};
+
+/**
+ *  Output sharpening: an unsharp mask on the luminance of the exported image. It is applied once,
+ *  at export, to the image at its final size, never to the working image or the preview.
+ */
+export type Sharpen = Sharpen_Serialize | Sharpen_Deserialize;
+
+/**
+ *  Output sharpening: an unsharp mask on the luminance of the exported image. It is applied once,
+ *  at export, to the image at its final size, never to the working image or the preview.
+ */
+export type Sharpen_Deserialize = {
+	/**
+	 *  How much of the difference between the image and its blur is added back, in percent;
+	 *  0 changes nothing. The limit is 150.
+	 */
+	amount?: number | null,
+	/**
+	 *  The blur's radius (the standard deviation of the Gaussian) in pixels of the exported image,
+	 *  from 0.3 to 3. It is not scaled to the image: a larger export wants a larger radius for the
+	 *  same look.
+	 */
+	radius_px?: number | null,
+};
+
+/**
+ *  Output sharpening: an unsharp mask on the luminance of the exported image. It is applied once,
+ *  at export, to the image at its final size, never to the working image or the preview.
+ */
+export type Sharpen_Serialize = {
+	/**
+	 *  How much of the difference between the image and its blur is added back, in percent;
+	 *  0 changes nothing. The limit is 150.
+	 */
+	amount: number | null,
+	/**
+	 *  The blur's radius (the standard deviation of the Gaussian) in pixels of the exported image,
+	 *  from 0.3 to 3. It is not scaled to the image: a larger export wants a larger radius for the
+	 *  same look.
+	 */
+	radius_px: number | null,
 };
 
 /**  Why a file was not imported. */

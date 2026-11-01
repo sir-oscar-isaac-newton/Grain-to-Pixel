@@ -20,6 +20,8 @@ export interface Levels {
   white: Triple;
 }
 
+const clampTo = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
+
 const plain = (value: number | null | undefined, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
@@ -147,6 +149,39 @@ export function withTone(recipe: Recipe, values: Partial<Tone>): Recipe {
 export function withCurve(recipe: Recipe, channel: CurveChannel, points: CurvePoint[]): Recipe {
   const curve = { ...curvesOf(recipe), [channel]: points.map((p) => [...p]) };
   return { ...recipe, tone: { ...recipe.tone, ...toneOf(recipe), curve } } as Recipe;
+}
+
+/** The output sharpening of a recipe: how much, in percent, and the radius in exported pixels. */
+export interface SharpenSetting {
+  amount: number;
+  radius_px: number;
+}
+
+/** The range of each value, and the radius used when none is chosen (the recipe's own limits). */
+export const SHARPEN_AMOUNT_MAX = 150;
+export const SHARPEN_RADIUS_MIN = 0.3;
+export const SHARPEN_RADIUS_MAX = 3;
+export const SHARPEN_DEFAULT: SharpenSetting = { amount: 0, radius_px: 1 };
+
+/** The sharpening of a recipe as plain numbers, inside their ranges (off when missing). */
+export function sharpenOf(recipe: Recipe): SharpenSetting {
+  const s = recipe.output?.sharpen;
+  return {
+    amount: clampTo(plain(s?.amount, SHARPEN_DEFAULT.amount), 0, SHARPEN_AMOUNT_MAX),
+    radius_px: clampTo(
+      plain(s?.radius_px, SHARPEN_DEFAULT.radius_px),
+      SHARPEN_RADIUS_MIN,
+      SHARPEN_RADIUS_MAX,
+    ),
+  };
+}
+
+/** The recipe with some of its sharpening replaced; the colour space of the output is kept. */
+export function withSharpen(recipe: Recipe, values: Partial<SharpenSetting>): Recipe {
+  return {
+    ...recipe,
+    output: { ...recipe.output, sharpen: { ...sharpenOf(recipe), ...values } },
+  } as Recipe;
 }
 
 export interface GeometrySetting {

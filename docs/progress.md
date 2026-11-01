@@ -389,6 +389,15 @@
       "number": 104,
       "title": "Output sharpening",
       "branch": "feat/issue-104-output-sharpening",
+      "status": "completed",
+      "pr": 151,
+      "commit": "6a917fc"
+    },
+    {
+      "id": "U-16",
+      "number": 152,
+      "title": "Output sharpening controls",
+      "branch": "feat/issue-152-sharpening-controls",
       "status": "in_progress",
       "pr": null,
       "commit": null

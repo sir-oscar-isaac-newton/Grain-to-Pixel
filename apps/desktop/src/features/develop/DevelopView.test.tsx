@@ -869,7 +869,8 @@ describe('DevelopView', () => {
           fireEvent.pointerDown(grip, { button: 0, pointerId: 1, clientX: 400, clientY: 350 });
           fireEvent.pointerMove(grip, { pointerId: 1, clientX: 320, clientY: 200 });
           fireEvent.pointerUp(grip, { pointerId: 1 });
-          await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+          // The ratio itself was saved before the drag on a slow machine: wait for the drag's save.
+          await waitFor(() => expect(cropOf(savedRecipe()).w).toBeCloseTo(0.3, 6), {
             timeout: SAVE_DELAY_MS * 4,
           });
           const crop = cropOf(savedRecipe());
@@ -940,6 +941,69 @@ describe('DevelopView', () => {
           expect(screen.getByRole('button', { name: 'Use the detected frame' })).toBeDisabled();
           expect(screen.getByRole('button', { name: 'Use the whole scan' })).toBeEnabled();
         });
+      });
+    });
+
+    describe('the Sharpen panel', () => {
+      const sharpenOf = (recipe: unknown) =>
+        (recipe as { output: { sharpen: { amount: number; radius_px: number } } }).output.sharpen;
+
+      async function openFrame() {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        return user;
+      }
+
+      it('saves the amount and the radius with the recipe, and draws nothing new', async () => {
+        const user = await openFrame();
+        ipc.developRender.mockClear();
+        screen.getByRole('slider', { name: 'Amount' }).focus();
+        await user.keyboard('{PageUp}');
+        screen.getByRole('slider', { name: 'Radius' }).focus();
+        await user.keyboard('{ArrowRight}');
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(sharpenOf(savedRecipe())).toEqual({ amount: 10, radius_px: 1.1 });
+        // Sharpening is applied at export, so the picture on screen is not asked for again.
+        expect(ipc.developRender).not.toHaveBeenCalled();
+        expect(screen.getByRole('slider', { name: 'Amount' })).toHaveAttribute(
+          'aria-valuenow',
+          '10',
+        );
+      });
+
+      it('resets to off, at a radius of one pixel', async () => {
+        const user = await openFrame();
+        screen.getByRole('slider', { name: 'Amount' }).focus();
+        await user.keyboard('{End}');
+        const reset = screen.getByRole('button', { name: 'Reset sharpening' });
+        await waitFor(() => expect(reset).toBeEnabled());
+        await user.click(reset);
+        await waitFor(() => expect(sharpenOf(savedRecipe())).toEqual({ amount: 0, radius_px: 1 }), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(screen.getByRole('slider', { name: 'Amount' })).toHaveAttribute(
+          'aria-valuenow',
+          '0',
+        );
+      });
+
+      it('is out of reach in a library that cannot be changed', async () => {
+        openLibrary({ read_only: true });
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        expect(screen.getByRole('slider', { name: 'Amount' })).toHaveAttribute('data-disabled');
+        expect(screen.getByRole('button', { name: 'Reset sharpening' })).toBeDisabled();
+      });
+
+      it('has no accessibility violations', async () => {
+        await openFrame();
+        await expectNoA11yViolations(document.body);
       });
     });
 

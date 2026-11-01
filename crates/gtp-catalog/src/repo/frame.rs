@@ -11,7 +11,7 @@ use crate::{fts, Catalog};
 const COLUMNS: &str =
     "id, roll_id, index_in_roll, kind, width, height, has_ir, note, created_at, edited_at";
 
-/// The frame columns of COLUMNS, each prefixed with the alias ..
+/// The frame columns of COLUMNS, each prefixed with the alias `f`..
 pub(super) fn prefixed_columns() -> String {
     COLUMNS
         .split(", ")

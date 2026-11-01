@@ -267,7 +267,8 @@
       "Geometry": "Crop and geometry",
       "Base": "Film base",
       "Invert": "Levels",
-      "Dust": "Dust removal"
+      "Dust": "Dust removal",
+      "Output": "Output sharpening"
     },
     "hint": {
       "Color": "Balance, temperature, tint, saturation and black and white.",
@@ -275,7 +276,8 @@
       "Geometry": "The crop, turns, flips and straightening. Frames are not always cropped the same.",
       "Base": "Where the film base comes from, and its values.",
       "Invert": "The black and white points of the inversion.",
-      "Dust": "The infrared dust removal settings."
+      "Dust": "The infrared dust removal settings.",
+      "Output": "The amount and radius of the sharpening applied when exporting."
     },
     "short": {
       "Color": "colour",
@@ -283,7 +285,8 @@
       "Geometry": "geometry",
       "Base": "film base",
       "Invert": "levels",
-      "Dust": "dust removal"
+      "Dust": "dust removal",
+      "Output": "output sharpening"
     },
     "to": "Apply to",
     "selection_one": "The other selected frame ({{count}})",
@@ -457,6 +460,15 @@
       "straighten": "Straighten",
       "degrees": "{{value}}°",
       "reset": "Reset turns and straighten"
+    },
+    "sharpen": {
+      "heading": "Output sharpening",
+      "note": "Applied when you export, not in the preview, so nothing on screen changes. The radius is in pixels of the exported image: a smaller export wants a smaller radius.",
+      "amount": "Amount",
+      "radius": "Radius",
+      "percent": "{{value}}%",
+      "pixels": "{{value}} px",
+      "reset": "Reset sharpening"
     },
     "tone": {
       "heading": "Tone",

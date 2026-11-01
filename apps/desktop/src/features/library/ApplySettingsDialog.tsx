@@ -6,7 +6,15 @@ import styles from './library.module.css';
 import { messageOf, useLibraryStore } from './library-store';
 
 /** The groups of settings that can be copied, in the order they are shown. */
-const GROUPS: readonly RecipeField[] = ['Color', 'Tone', 'Geometry', 'Base', 'Invert', 'Dust'];
+const GROUPS: readonly RecipeField[] = [
+  'Color',
+  'Tone',
+  'Geometry',
+  'Base',
+  'Invert',
+  'Dust',
+  'Output',
+];
 /** Ticked when the dialog opens: crop, base and levels usually differ from frame to frame. */
 const DEFAULT_GROUPS: readonly RecipeField[] = ['Color', 'Tone'];
 /** Frames offered as the source when many are selected (the rest can still be targets). */

@@ -279,9 +279,37 @@ pub enum OutputSpace {
     Prophoto,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// The radius of the output sharpening when none is chosen, in pixels of the exported image.
+pub const DEFAULT_SHARPEN_RADIUS_PX: f32 = 1.0;
+
+/// Output sharpening: an unsharp mask on the luminance of the exported image. It is applied once,
+/// at export, to the image at its final size, never to the working image or the preview.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct Sharpen {
+    /// How much of the difference between the image and its blur is added back, in percent;
+    /// 0 changes nothing. The limit is 150.
+    pub amount: f32,
+    /// The blur's radius (the standard deviation of the Gaussian) in pixels of the exported image,
+    /// from 0.3 to 3. It is not scaled to the image: a larger export wants a larger radius for the
+    /// same look.
+    pub radius_px: f32,
+}
+
+impl Default for Sharpen {
+    fn default() -> Self {
+        Self {
+            amount: 0.0,
+            radius_px: DEFAULT_SHARPEN_RADIUS_PX,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
 pub struct Output {
     pub space: OutputSpace,
+    pub sharpen: Sharpen,
 }

@@ -81,6 +81,8 @@ mod tests {
         assert_eq!(value["color"]["saturation"], 1.0);
         assert_eq!(value["dust"]["enabled"], true);
         assert_eq!(value["output"]["space"], "srgb");
+        assert_eq!(value["output"]["sharpen"]["amount"], 0.0);
+        assert_eq!(value["output"]["sharpen"]["radius_px"], 1.0);
         assert_eq!(value["color"]["vibrance"], 0.0);
         assert_eq!(value["tone"]["dehaze"], 0.0);
         assert_eq!(value["mono"]["enabled"], false);
@@ -99,6 +101,19 @@ mod tests {
         assert_eq!(recipe.geometry, defaults.geometry);
         assert_eq!(recipe.color.saturation, 1.0);
         assert_eq!(recipe.dust, defaults.dust);
+    }
+
+    #[test]
+    fn a_recipe_from_before_output_sharpening_loads_with_it_off() {
+        let recipe = migrate(r#"{"v":1,"output":{"space":"adobe_rgb"}}"#).unwrap();
+        assert_eq!(recipe.output.space, OutputSpace::AdobeRgb);
+        assert_eq!(recipe.output.sharpen.amount, 0.0);
+        assert_eq!(recipe.output.sharpen.radius_px, 1.0);
+        // And one with it keeps it, clamped on load.
+        let recipe =
+            migrate(r#"{"v":1,"output":{"sharpen":{"amount":90,"radius_px":9}}}"#).unwrap();
+        assert_eq!(recipe.output.sharpen.amount, 90.0);
+        assert_eq!(recipe.output.sharpen.radius_px, 3.0);
     }
 
     #[test]

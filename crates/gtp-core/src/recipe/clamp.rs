@@ -3,8 +3,12 @@
 //! Clamping is idempotent: clamping an already clamped recipe changes nothing.
 
 use super::v1::{
-    Color, Crop, CurvePoint, Dust, Geometry, Invert, Mono, Recipe, Tone, REC2020_LUMA,
+    Color, Crop, CurvePoint, Dust, Geometry, Invert, Mono, Output, Recipe, Tone,
+    DEFAULT_SHARPEN_RADIUS_PX, REC2020_LUMA,
 };
+
+#[cfg(test)]
+use super::v1::Sharpen;
 
 /// Smallest crop width or height, as a fraction of the frame.
 pub const MIN_CROP_SIZE: f32 = 0.01;
@@ -25,6 +29,11 @@ pub const CURVE_POINTS_MAX: usize = 16;
 pub const DUST_GROW_PX_MAX: u32 = 10;
 /// Limit of each black-and-white mix weight.
 pub const MONO_WEIGHT_MAX: f32 = 2.0;
+/// Output sharpening: the amount runs from 0 to this, in percent; the radius from the first to the
+/// second, in pixels of the exported image.
+pub const SHARPEN_AMOUNT_MAX: f32 = 150.0;
+pub const SHARPEN_RADIUS_MIN_PX: f32 = 0.3;
+pub const SHARPEN_RADIUS_MAX_PX: f32 = 3.0;
 
 fn fin(value: f32, lo: f32, hi: f32, default: f32) -> f32 {
     if value.is_finite() {
@@ -106,6 +115,16 @@ fn clamp_dust(dust: &mut Dust) {
     dust.grow_px = dust.grow_px.min(DUST_GROW_PX_MAX);
 }
 
+fn clamp_output(output: &mut Output) {
+    output.sharpen.amount = fin(output.sharpen.amount, 0.0, SHARPEN_AMOUNT_MAX, 0.0);
+    output.sharpen.radius_px = fin(
+        output.sharpen.radius_px,
+        SHARPEN_RADIUS_MIN_PX,
+        SHARPEN_RADIUS_MAX_PX,
+        DEFAULT_SHARPEN_RADIUS_PX,
+    );
+}
+
 impl Recipe {
     /// Brings every value into its documented range (see the constants of this module).
     /// The version number `v` is not touched; `migrate` handles versions.
@@ -119,6 +138,7 @@ impl Recipe {
         clamp_mono(&mut self.mono);
         clamp_tone(&mut self.tone);
         clamp_dust(&mut self.dust);
+        clamp_output(&mut self.output);
     }
 
     /// [`Recipe::clamp`] on a value.
@@ -194,6 +214,10 @@ mod tests {
                         threshold: n(),
                         grow_px,
                     };
+                    r.output.sharpen = Sharpen {
+                        amount: n(),
+                        radius_px: n(),
+                    };
                     r
                 },
             )
@@ -262,6 +286,58 @@ mod tests {
         }
         assert!(in_range(r.dust.threshold, 0.0, 1.0));
         assert!(r.dust.grow_px <= DUST_GROW_PX_MAX);
+        assert!(in_range(r.output.sharpen.amount, 0.0, SHARPEN_AMOUNT_MAX));
+        assert!(in_range(
+            r.output.sharpen.radius_px,
+            SHARPEN_RADIUS_MIN_PX,
+            SHARPEN_RADIUS_MAX_PX,
+        ));
+    }
+
+    #[test]
+    fn sharpening_is_off_by_default_and_its_values_are_clamped() {
+        let defaults = Recipe::default().output.sharpen;
+        assert_eq!(defaults.amount, 0.0, "amount 0 changes nothing");
+        assert_eq!(defaults.radius_px, DEFAULT_SHARPEN_RADIUS_PX);
+
+        let mut r = Recipe::default();
+        r.output.sharpen = Sharpen {
+            amount: 999.0,
+            radius_px: 0.0,
+        };
+        let r = r.clamped();
+        assert_eq!(r.output.sharpen.amount, SHARPEN_AMOUNT_MAX);
+        assert_eq!(r.output.sharpen.radius_px, SHARPEN_RADIUS_MIN_PX);
+
+        let mut r = Recipe::default();
+        r.output.sharpen = Sharpen {
+            amount: -5.0,
+            radius_px: 40.0,
+        };
+        let r = r.clamped();
+        assert_eq!(r.output.sharpen.amount, 0.0);
+        assert_eq!(r.output.sharpen.radius_px, SHARPEN_RADIUS_MAX_PX);
+    }
+
+    #[test]
+    fn sharpening_values_that_are_not_numbers_fall_back_to_the_defaults() {
+        let mut r = Recipe::default();
+        r.output.sharpen = Sharpen {
+            amount: f32::NAN,
+            radius_px: f32::INFINITY,
+        };
+        let r = r.clamped();
+        assert_eq!(r.output.sharpen, Sharpen::default());
+    }
+
+    #[test]
+    fn values_inside_their_ranges_are_left_alone() {
+        let mut r = Recipe::default();
+        r.output.sharpen = Sharpen {
+            amount: 80.0,
+            radius_px: 1.5,
+        };
+        assert_eq!(r.clone().clamped(), r);
     }
 
     proptest! {

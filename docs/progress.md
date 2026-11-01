@@ -380,6 +380,15 @@
       "number": 142,
       "title": "Crop aspect ratio presets and lock",
       "branch": "feat/issue-142-crop-aspect-ratios",
+      "status": "completed",
+      "pr": 150,
+      "commit": "d4224a7"
+    },
+    {
+      "id": "P-15",
+      "number": 104,
+      "title": "Output sharpening",
+      "branch": "feat/issue-104-output-sharpening",
       "status": "in_progress",
       "pr": null,
       "commit": null

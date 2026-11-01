@@ -18,6 +18,7 @@ use gtp_core::recipe::OutputSpace;
 use gtp_core::{
     AppError, ErrorCode, ExportResult, ExportedFile, FailedExport, FrameId, ImageF32, Recipe,
 };
+use gtp_edit::apply_sharpen;
 use gtp_io::{encode_jpeg, encode_tiff16, JPEG_QUALITY};
 
 use crate::jobs::JobCtx;
@@ -294,8 +295,14 @@ fn export_one(
         ir: None,
         film_base: roll.film_base_rgb,
     };
-    let image = render(&input, &recipe, RenderTarget::Full)?;
+    let mut image = render(&input, &recipe, RenderTarget::Full)?;
     drop(input);
+    // Output sharpening belongs here, on the image at its final size, and nowhere else: the render
+    // that previews and thumbnails use never sharpens.
+    let sharpen = recipe.clone().clamped().output.sharpen;
+    if sharpen.amount > 0.0 {
+        apply_sharpen(&mut image, &sharpen)?;
+    }
     progress(2.0);
     ctx.check_cancelled()?;
 
@@ -372,6 +379,7 @@ pub fn export_frames(
 mod tests {
     use std::sync::Mutex;
 
+    use gtp_core::testing::synthetic::Pattern;
     use gtp_core::{JobId, JobResult};
     use gtp_io::{icc_profile, read_tiff16, Limits};
 
@@ -618,6 +626,87 @@ mod tests {
         assert!(logged
             .iter()
             .any(|r| r.format == "jpeg" && r.path.ends_with("Roll_003.jpg")));
+    }
+
+    /// The pixels of a TIFF the export wrote.
+    fn pixels(path: &Path) -> Vec<u16> {
+        read_tiff16(path, &Limits::default()).unwrap().data
+    }
+
+    fn export_to(t: &Fixture, id: FrameId, name: &str) -> PathBuf {
+        let out = t.dir.join(name);
+        run(
+            t,
+            &[id],
+            &options(&out, ExportFormat::Tiff16, OutputSpace::Srgb),
+        )
+        .unwrap();
+        out.join("Roll_001.tif")
+    }
+
+    #[test]
+    fn output_sharpening_changes_the_file_only_when_its_amount_is_above_zero() {
+        let t = Fixture::new("export-sharpen");
+        // Steps, so there are edges to sharpen.
+        let id = t.frame_with(1, 200, 140, Pattern::Wedge);
+        let mut recipe = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        t.library.write(|c| c.save_recipe(id, &recipe)).unwrap();
+        let plain = pixels(&export_to(&t, id, "plain"));
+
+        // An amount of 0 is the same file, whatever the radius.
+        recipe.output.sharpen.radius_px = 2.5;
+        t.library.write(|c| c.save_recipe(id, &recipe)).unwrap();
+        assert_eq!(pixels(&export_to(&t, id, "zero")), plain);
+
+        recipe.output.sharpen.amount = 120.0;
+        t.library.write(|c| c.save_recipe(id, &recipe)).unwrap();
+        let sharp = pixels(&export_to(&t, id, "sharp"));
+        assert_eq!(sharp.len(), plain.len());
+        assert_ne!(sharp, plain);
+        // More local contrast: the picture's pixels differ more from their neighbours.
+        let activity = |data: &[u16]| -> u64 {
+            data.chunks(3)
+                .zip(data.chunks(3).skip(1))
+                .map(|(a, b)| u64::from(a[1].abs_diff(b[1])))
+                .sum()
+        };
+        assert!(activity(&sharp) > activity(&plain));
+    }
+
+    #[test]
+    fn the_preview_render_never_sharpens() {
+        let t = Fixture::new("export-sharpen-preview");
+        let id = t.frame(1, 600, 400);
+        let mut recipe = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        let plain = t.service.render(&t.library, id, &recipe, 600, 1).unwrap();
+        recipe.output.sharpen.amount = 150.0;
+        recipe.output.sharpen.radius_px = 3.0;
+        let sharp = t.service.render(&t.library, id, &recipe, 600, 2).unwrap();
+        // The same picture (the header holds the sequence number, which differs).
+        let header = crate::services::develop::HEADER_BYTES;
+        assert_eq!(plain[header..], sharp[header..]);
+    }
+
+    #[test]
+    fn out_of_range_sharpening_in_a_saved_recipe_is_clamped_not_refused() {
+        let t = Fixture::new("export-sharpen-clamp");
+        let id = t.frame(1, 200, 140);
+        let mut recipe = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        recipe.output.sharpen.amount = 9000.0;
+        recipe.output.sharpen.radius_px = 90.0;
+        t.library.write(|c| c.save_recipe(id, &recipe)).unwrap();
+        let result = run(
+            &t,
+            &[id],
+            &options(
+                &t.dir.join("clamped"),
+                ExportFormat::Tiff16,
+                OutputSpace::Srgb,
+            ),
+        )
+        .unwrap();
+        assert!(result.failed.is_empty(), "{:?}", result.failed);
+        assert_eq!(result.files.len(), 1);
     }
 
     #[test]

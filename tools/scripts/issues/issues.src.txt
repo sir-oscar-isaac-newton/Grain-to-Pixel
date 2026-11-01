@@ -1122,6 +1122,7 @@ tech:
 FILES: apps/desktop/src/features/develop/panels/DustPanel.tsx.
 ROUTES used: develop_render, recipe_save.
 TESTS: panel visibility by has_ir, controls with mocked ipc, axe.
+DELIVERY (decided when U-12 was approved): the panel shows when `DevelopInfo.has_ir` is true, which is the frame's flag (a frame whose infrared file cannot be used still shows it; the backend then skips the stage with a warning). The threshold is shown as Sensitivity (100 % minus the threshold), so more finds more dust; the recipe keeps the threshold. The `dust_removal` flag is read once when the view opens, and the panel says when it is off. Edits draw the preview again (unlike sharpening). Visible dust removal on a real scan: the backend was compared before and after on four real LS-50 scans (see P-13); the human confirms it in the app.
 
 ## U-08
 title: Scanner import UI

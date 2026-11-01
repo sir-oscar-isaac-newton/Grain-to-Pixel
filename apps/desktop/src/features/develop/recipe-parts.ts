@@ -184,6 +184,36 @@ export function withSharpen(recipe: Recipe, values: Partial<SharpenSetting>): Re
   } as Recipe;
 }
 
+/** The dust removal of a recipe: on or off, the threshold (0 to 1) and the growth in pixels. */
+export interface DustSetting {
+  enabled: boolean;
+  threshold: number;
+  grow_px: number;
+}
+
+export const DUST_GROW_MAX = 10;
+export const DUST_DEFAULT: DustSetting = { enabled: true, threshold: 0.5, grow_px: 2 };
+
+/** The dust removal of a recipe as plain numbers, inside their ranges (the defaults when missing). */
+export function dustOf(recipe: Recipe): DustSetting {
+  const d = recipe.dust;
+  return {
+    enabled: d?.enabled === undefined || d.enabled === null ? DUST_DEFAULT.enabled : d.enabled,
+    threshold: clampTo(plain(d?.threshold, DUST_DEFAULT.threshold), 0, 1),
+    grow_px: Math.round(clampTo(plain(d?.grow_px, DUST_DEFAULT.grow_px), 0, DUST_GROW_MAX)),
+  };
+}
+
+/** The recipe with some of its dust removal replaced. */
+export function withDust(recipe: Recipe, values: Partial<DustSetting>): Recipe {
+  return { ...recipe, dust: { ...dustOf(recipe), ...values } } as Recipe;
+}
+
+/** The slider's sensitivity in percent for a threshold: a lower threshold finds more dust. */
+export const sensitivityOf = (threshold: number): number => Math.round((1 - threshold) * 100);
+
+/** The threshold for a sensitivity in percent. */
+export const thresholdOf = (sensitivity: number): number => Math.round(100 - sensitivity) / 100;
 export interface GeometrySetting {
   crop: CropRect;
   angle_deg: number;

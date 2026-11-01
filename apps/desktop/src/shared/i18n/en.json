@@ -497,6 +497,17 @@
       "degrees": "{{value}}°",
       "reset": "Reset turns and straighten"
     },
+    "dust": {
+      "heading": "Dust removal",
+      "note": "Removes the dust and scratches that the infrared plane of the scan shows. The preview uses a smaller copy of the plane, so very fine specks may only disappear in the exported file.",
+      "flagOff": "Dust removal is switched off in Settings, so these controls have no effect until it is switched on.",
+      "enabled": "Remove dust",
+      "sensitivity": "Sensitivity",
+      "grow": "Widen spots by",
+      "percent": "{{value}} %",
+      "pixels": "{{value}} px",
+      "reset": "Reset dust removal"
+    },
     "sharpen": {
       "heading": "Output sharpening",
       "note": "Applied when you export, not in the preview, so nothing on screen changes. The radius is in pixels of the exported image: a smaller export wants a smaller radius.",

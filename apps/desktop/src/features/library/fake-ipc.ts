@@ -186,6 +186,8 @@ export const state = {
   /** How many library checks were started, and starting one is refused with this message when set. */
   verifies: 0,
   verifyRefused: null as string | null,
+  /** Whether the frames opened in Develop have an infrared plane. */
+  hasIr: false,
   /** The frame the analysis finds, and how sure it is. */
   frameRect: { x: 0.05, y: 0.1, w: 0.9, h: 0.8 },
   frameConfidence: 0.9,
@@ -362,7 +364,7 @@ export const ipc = {
     return {
       width: 5616,
       height: 3744,
-      has_ir: false,
+      has_ir: state.hasIr,
       recipe: makeRecipe('saved'),
       roll_base: state.rollBase,
     };
@@ -499,6 +501,7 @@ export function resetFake() {
   state.frameConfidence = 0.9;
   state.exportRefused = null;
   state.verifies = 0;
+  state.hasIr = false;
   state.verifyRefused = null;
   state.exports = [];
   state.flags = { ...DEFAULT_FLAGS };

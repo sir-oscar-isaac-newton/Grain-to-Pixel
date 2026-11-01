@@ -1007,6 +1007,76 @@ describe('DevelopView', () => {
       });
     });
 
+    describe('the Dust panel', () => {
+      const dustOf = (recipe: unknown) =>
+        (recipe as { dust: { enabled: boolean; threshold: number; grow_px: number } }).dust;
+
+      async function openFrame(hasIr = true) {
+        state.hasIr = hasIr;
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        return user;
+      }
+
+      it('is there only for a frame with an infrared plane', async () => {
+        await openFrame(false);
+        expect(screen.queryByRole('heading', { name: 'Dust removal' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: 'Sensitivity' })).not.toBeInTheDocument();
+      });
+
+      it('saves a changed sensitivity and growth, and draws the picture again', async () => {
+        const user = await openFrame();
+        expect(screen.getByRole('heading', { name: 'Dust removal' })).toBeInTheDocument();
+        ipc.developRender.mockClear();
+        screen.getByRole('slider', { name: 'Sensitivity' }).focus();
+        await user.keyboard('{ArrowRight}');
+        screen.getByRole('slider', { name: 'Widen spots by' }).focus();
+        await user.keyboard('{ArrowRight}');
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        await waitFor(() => expect(dustOf(savedRecipe())).toMatchObject({ grow_px: 3 }), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(dustOf(savedRecipe())).toEqual({ enabled: true, threshold: 0.49, grow_px: 3 });
+        // Dust removal changes the picture, so the preview is asked for again.
+        await waitFor(() => expect(ipc.developRender).toHaveBeenCalled());
+      });
+
+      it('switches off and saves it', async () => {
+        const user = await openFrame();
+        await user.click(screen.getByRole('checkbox', { name: 'Remove dust' }));
+        await waitFor(() => expect(dustOf(savedRecipe()).enabled).toBe(false), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+      });
+
+      it('says when dust removal is switched off in Settings', async () => {
+        state.flags.dust_removal = false;
+        await openFrame();
+        expect(await screen.findByText(/switched off in Settings/)).toBeInTheDocument();
+      });
+
+      it('is out of reach in a library that cannot be changed', async () => {
+        state.hasIr = true;
+        openLibrary({ read_only: true });
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        expect(screen.getByRole('checkbox', { name: 'Remove dust' })).toBeDisabled();
+        expect(screen.getByRole('slider', { name: 'Sensitivity' })).toHaveAttribute(
+          'data-disabled',
+        );
+      });
+
+      it('has no accessibility violations', async () => {
+        await openFrame();
+        await expectNoA11yViolations(document.body);
+      });
+    });
     describe('the Tone panel', () => {
       async function openFrame() {
         const user = userEvent.setup();

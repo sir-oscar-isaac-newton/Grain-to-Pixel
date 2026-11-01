@@ -407,6 +407,15 @@
       "number": 49,
       "title": "IR dust removal stage",
       "branch": "feat/issue-49-ir-dust-removal",
+      "status": "completed",
+      "pr": 155,
+      "commit": "7748469"
+    },
+    {
+      "id": "U-15",
+      "number": 147,
+      "title": "Verify library from the UI",
+      "branch": "feat/issue-147-verify-from-ui",
       "status": "in_progress",
       "pr": null,
       "commit": null

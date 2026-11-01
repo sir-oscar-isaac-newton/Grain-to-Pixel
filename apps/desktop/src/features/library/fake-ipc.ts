@@ -13,6 +13,7 @@ import type {
   Roll,
   SearchQuery,
   Tag,
+  VerifyResult,
 } from '../../shared/ipc';
 
 export class IpcError extends Error {
@@ -182,6 +183,9 @@ export const state = {
   exports: [] as Array<{ frameIds: string[]; options: unknown }>,
   /** Starting an export is refused with this message when set. */
   exportRefused: null as string | null,
+  /** How many library checks were started, and starting one is refused with this message when set. */
+  verifies: 0,
+  verifyRefused: null as string | null,
   /** The frame the analysis finds, and how sure it is. */
   frameRect: { x: 0.05, y: 0.1, w: 0.9, h: 0.8 },
   frameConfidence: 0.9,
@@ -206,7 +210,10 @@ export const listeners = {
   done: [] as Array<
     (e: {
       id: string;
-      result: { kind: 'Finished' } | ({ kind: 'Imported' } & ImportResult);
+      result:
+        | { kind: 'Finished' }
+        | ({ kind: 'Imported' } & ImportResult)
+        | ({ kind: 'Verified' } & VerifyResult);
     }) => void
   >,
   error: [] as Array<(e: { id: string; error: AppError }) => void>,
@@ -454,6 +461,13 @@ export const ipc = {
     }
     return 'job-export-1';
   }),
+  libraryVerify: vi.fn(async () => {
+    state.verifies += 1;
+    if (state.verifyRefused) {
+      throw new IpcError({ code: 'NotFound', message: state.verifyRefused });
+    }
+    return 'job-verify-1';
+  }),
   jobCancel: vi.fn(async () => true),
   onLibraryChanged: vi.fn((cb: (roll: string | null, frameIds: string[]) => void) =>
     subscribe(listeners.changed, cb),
@@ -484,6 +498,8 @@ export function resetFake() {
   state.frameRect = { x: 0.05, y: 0.1, w: 0.9, h: 0.8 };
   state.frameConfidence = 0.9;
   state.exportRefused = null;
+  state.verifies = 0;
+  state.verifyRefused = null;
   state.exports = [];
   state.flags = { ...DEFAULT_FLAGS };
   state.keys = {};

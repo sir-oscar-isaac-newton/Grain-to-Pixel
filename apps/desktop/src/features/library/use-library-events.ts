@@ -62,7 +62,19 @@ export function useLibraryEvents(enabled: boolean) {
                   exported: result.files,
                   failed: result.failed,
                 }
-              : { state: 'done' as const, fraction: 1 };
+              : result.kind === 'Verified'
+                ? {
+                    state: 'done' as const,
+                    fraction: 1,
+                    verified: {
+                      files_checked: result.files_checked,
+                      bytes_checked: result.bytes_checked,
+                      problems: result.problems,
+                      thumbnails_missing: result.thumbnails_missing,
+                      stray_folders: result.stray_folders,
+                    },
+                  }
+                : { state: 'done' as const, fraction: 1 };
         store().patchJob(e.id, patch);
       }),
     );

@@ -13,6 +13,7 @@ import {
   type ExportedFile,
   type FailedExport,
   type Tag,
+  type VerifyResult,
 } from '../../shared/ipc';
 import { NO_FILTERS, type Filters } from './search-query';
 import { resetThumbnails } from './thumbnails';
@@ -20,10 +21,10 @@ import { resetThumbnails } from './thumbnails';
 export type Phase = 'loading' | 'needs-library' | 'ready';
 export type JobState = 'running' | 'done' | 'error' | 'cancelled';
 
-/** A background job started from this screen (an import or an export), as the progress list shows it. */
+/** A background job started from this screen (an import, an export or a verify), as the progress list shows it. */
 export interface JobRow {
   id: string;
-  kind: 'import' | 'export';
+  kind: 'import' | 'export' | 'verify';
   /** An import: the roll the files go into. An export: empty. */
   rollName: string;
   /** An export: how many frames were asked for, and the folder they go to. */
@@ -36,6 +37,8 @@ export interface JobRow {
   /** An export: the files written, and the frames that could not be exported. */
   exported?: ExportedFile[];
   failed?: FailedExport[];
+  /** A verify: what it found. */
+  verified?: VerifyResult;
   /** The backend's message when the job failed. */
   message?: string;
 }

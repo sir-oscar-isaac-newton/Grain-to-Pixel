@@ -134,7 +134,7 @@ IDs are ULIDs (sortable, collision-safe). Originals are **immutable**; every edi
   "mono":     { "enabled": false, "mix": [0.2627, 0.6780, 0.0593] },    // black and white; mix defaults to Rec.2020 luma
   "tone":     { "exposure_ev": 0, "contrast": 0, "highlights": 0, "shadows": 0, "whites": 0, "blacks": 0, "dehaze": 0, "curve": { "master": [[0,0],[1,1]], "r": [], "g": [], "b": [] } },
   "dust":     { "enabled": true, "threshold": 0.5, "grow_px": 2 },
-  "output":   { "space": "srgb" }
+  "output":   { "space": "srgb", "sharpen": { "amount": 0, "radius_px": 1.0 } }
 }
 ```
 
@@ -158,6 +158,7 @@ Rules: unknown fields are ignored; a missing field means default; `v` bumps only
 | `tone.curve.*` | points in the unit square, sorted and unique by input, at most 16 per curve; empty means no change |
 | `dust.threshold` | 0 to 1 (0.5) |
 | `dust.grow_px` | 0 to 10 (2) |
+| `output.sharpen.amount` / `radius_px` | 0 to 150 percent (0, which changes nothing) / 0.3 to 3 pixels of the exported image (1.0) |
 
 ### 4.2 Processing pipeline (order is fixed, see `rules/colour-pipeline.md`)
 
@@ -171,7 +172,7 @@ Rules: unknown fields are ignored; a missing field means default; `v` bumps only
 8. **Geometry:** crop (fractions of the source, rounded to whole pixels), then straighten by `angle_deg` (positive turns the picture clockwise) around the crop centre, then `rot90` quarter turns clockwise, then flips in the final orientation. The straightened output is the largest rectangle with the crop's aspect ratio that fits inside the rotated crop, so there are no empty corners (a few degrees cost a few percent of the frame; `output_size` reports it). Angle 0 copies pixels exactly; any other angle samples each output pixel once, with Catmull-Rom bicubic, at the position of the composed transform. Turns and flips never cause a second resample.
 
 **Pipeline (`gtp-app`):** `render(input, recipe, target)` runs the stages in this fixed order on a clamped copy of the recipe: IR dust (hook; P-12), crop (`geometry.crop`, an exact pixel copy, so later stages and auto levels see only the frame), normalize, invert, colour, tone, geometry (straighten, turns, flips; one resample at most). The film base is the recipe's `base.rgb` when `base.source` is `manual`, otherwise the roll's measured base, falling back to `base.rgb`. `render` never computes automatic values; `analyze` does (on a 1600 px proxy: base unless the roll has one, frame detection on the normalized scan, auto levels on the cropped frame, a render for the histogram) and returns them as a recipe. `Preview { max_edge }` downscales first with an area filter (no overshoot at the rebate edge); the Develop view keeps a 2048 px proxy and previews at 1600 px. Results are linear Rec.2020; `to_rgba8_srgb` converts to sRGB primaries and the sRGB curve for display, and the histogram (256 bins per channel plus luma) is taken from those display values. Per-pixel stages run in parallel over rows (`rayon`) with results identical to a single thread.
-9. **Output transform** to the export space with ICC embedded.
+9. **Output transform** to the export space with ICC embedded, preceded at export by **output sharpening** (`output.sharpen`): an unsharp mask on the luminance of the image at its final size. The Rec.2020 luma `Y` is encoded as `E = Y^(1/2.4)` (edges are what the eye sees in an encoded image; in linear light the halo would be strong on the bright side and weak on the dark one), blurred with a Gaussian of standard deviation `radius_px` (edges repeated, kernel reaching 3 standard deviations), and `E2 = max(0, E + amount/100 * (E - blur))`; each pixel is then scaled by `E2^2.4 / Y`, so hue and saturation are kept and no colour fringes appear. An amount of 0 changes nothing at all and a flat image stays flat. It runs once, in the export job, after the full-size render and only when the amount is above 0; `render` never sharpens, so previews and thumbnails are never sharpened. The radius is in pixels of the image it is given and is not scaled: a larger export wants a larger radius for the same look, and a future resize option must sharpen after it. Measured on 22 MP frames (release build, this machine): 0.12 to 0.15 s at amount 100, whatever the radius from 0.3 to 3, against an export of 4.2 to 4.4 s.
 
 **Colour management (MVP):** internal working space is linear Rec.2020-primaries f32. Scanner values are assumed linear in that space (no input profile); white balance compensates. Preview assumes an sRGB display. Export spaces: sRGB (default), Adobe RGB, ProPhoto. OS display profiles are post-MVP.
 

@@ -1579,8 +1579,9 @@ ac:
 - The radius is defined relative to the output size and documented
 tech:
 FILES: crates/gtp-edit/src/sharpen.rs; crates/gtp-core/src/recipe (output block, clamp).
-INTERFACES: `sharpen(&mut ImageF32, &Sharpen)`.
+INTERFACES: `apply_sharpen(&mut ImageF32, &Sharpen)`.
 TESTS: identity at 0, flat image, edge contrast increases with amount, clamping and JSON round trip.
+DELIVERY (decided when P-15 was approved): the radius is the standard deviation of the Gaussian in pixels of the exported image (`radius_px`, as named) and is not scaled with the size; the criterion's `relative to the output size` is met by defining it on the image it is applied to, which is the exported one, and by documenting it. The export has no resize yet, so the image at its final size is the full-size render; a future resize must sharpen after it. The stage sharpens the luminance in a gamma 2.4 encoding and scales each pixel by the new luma over the old, keeping hue and saturation; it runs in the export job only, after the full-size render, and only when the amount is above 0, so `render` (previews, thumbnails) never sharpens. There is no control for it in the UI yet: the values live in the recipe's output block. Measured on 22 MP frames: 0.12 to 0.15 s at amount 100, against an export of 4.2 to 4.4 s.
 
 ## P-16
 title: Flat-field correction for camera copies

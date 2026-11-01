@@ -6,6 +6,7 @@
 mod color;
 mod curve;
 mod geometry;
+mod sharpen;
 mod tone;
 
 pub use color::{
@@ -13,6 +14,7 @@ pub use color::{
 };
 pub use curve::{Curve, LUT_SIZE};
 pub use geometry::{apply_geometry, output_size};
+pub use sharpen::{apply_sharpen, KERNEL_SIGMAS, SHARPEN_GAMMA};
 pub use tone::{
     apply_tone, BLACKS_RANGE, DEHAZE_ADD_VEIL, DEHAZE_SATURATION, DEHAZE_VEIL_PERCENTILE,
     HIGHLIGHT_RANGE_STOPS, MID_GREY, REGION_STOPS, SHADOW_RANGE_STOPS, WHITES_RANGE,

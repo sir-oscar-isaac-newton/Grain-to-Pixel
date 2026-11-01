@@ -27,6 +27,13 @@ import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
 import { Canvas, pictureStyle } from './Canvas';
 import { CropOverlay } from './CropOverlay';
+import {
+  FREE_RATIO,
+  finishedRatio,
+  fractionRatio,
+  ratioInScan,
+  type RatioState,
+} from './crop-ratio';
 import styles from './develop.module.css';
 import { Filmstrip } from './Filmstrip';
 import { clipping, computeHistogram } from './histogram';
@@ -111,6 +118,8 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   const [applying, setApplying] = useState(false);
   const selection = useLibraryStore((s) => s.selected);
   const [guide, setGuide] = useState(false);
+  // The aspect ratio the crop is locked to: an editing aid for this frame, not part of the recipe.
+  const [ratio, setRatio] = useState<RatioState>(FREE_RATIO);
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const viewport = useViewport(
@@ -125,6 +134,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     fit();
     setPick(null);
     setNotice(null);
+    setRatio(FREE_RATIO);
   }, [frame.id, fit]);
 
   // Picking the base shows the whole scan (the rebate is outside the crop); picking the white or
@@ -143,6 +153,12 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     if (wasCropping.current && pick !== 'crop') rerender();
     wasCropping.current = pick === 'crop';
   }, [pick, rerender]);
+
+  const scan = info ? { width: info.width, height: info.height } : null;
+  const turns = recipe ? geometryOf(recipe).rot90 : 0;
+  const lockedTo = scan ? finishedRatio(ratio, scan, turns) : null;
+  /** The locked ratio as width over height of the crop in fractions of the scan, or null. */
+  const lock = scan && lockedTo !== null ? fractionRatio(ratioInScan(lockedTo, turns), scan) : null;
 
   const summary = frames.frameAt(frame.index);
   const label = t('library.frameLabel', {
@@ -439,6 +455,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               crop={geometryOf(recipe).crop}
               style={pictureStyle(preview, viewport.view)}
               disabled={readOnly || working}
+              lock={lock}
               label={t('develop.crop.area')}
               onChange={(crop, options) =>
                 setRecipe(withGeometry(recipe, { crop }), { ...options, preview: false })
@@ -529,6 +546,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 onCroppingChange={(on) => setPick(on ? 'crop' : null)}
                 detected={develop.detected}
                 onGuideChange={setGuide}
+                ratio={ratio}
+                onRatioChange={setRatio}
+                scan={scan}
                 onChange={(next, options) =>
                   setRecipe(next, pick === 'crop' ? { ...options, preview: false } : options)
                 }

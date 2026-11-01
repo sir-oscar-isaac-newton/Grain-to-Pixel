@@ -1,6 +1,7 @@
 import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import styles from './develop.module.css';
 import { moveCrop, nudgeCrop, resizeByHandle, type CropRect, type Handle } from './crop';
+import { resizeLocked } from './crop-ratio';
 
 const HANDLES: readonly Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
@@ -9,6 +10,8 @@ interface CropOverlayProps {
   /** Where the picture is on the stage (see `pictureStyle`), so the overlay lines up with it. */
   style: CSSProperties;
   disabled: boolean;
+  /** Width over height of the crop as fractions of the scan, when it is locked to a ratio. */
+  lock?: number | null;
   /** Names the crop area for assistive technology and says how to move it. */
   label: string;
   /** The crop changed; `dragging` while it is being dragged with the pointer. */
@@ -33,7 +36,7 @@ const percent = (value: number) => `${Number((value * 100).toFixed(3))}%`;
  * move it when it has focus (0.5%, or 5% with Shift). The handles are for the pointer only: the
  * sides can also be set with the sliders of the Geometry panel.
  */
-export function CropOverlay({ crop, style, disabled, label, onChange }: CropOverlayProps) {
+export function CropOverlay({ crop, style, disabled, lock, label, onChange }: CropOverlayProps) {
   const layer = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
 
@@ -63,7 +66,9 @@ export function CropOverlay({ crop, style, disabled, label, onChange }: CropOver
     const next =
       current.grip === 'move'
         ? moveCrop(current.crop, at.x - current.from.x, at.y - current.from.y)
-        : resizeByHandle(current.crop, current.grip, at);
+        : lock
+          ? resizeLocked(current.crop, current.grip, at, lock)
+          : resizeByHandle(current.crop, current.grip, at);
     current.latest = next;
     onChange(next, { dragging: true });
   };

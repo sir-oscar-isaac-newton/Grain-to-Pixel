@@ -395,3 +395,31 @@
       transparent 0
     );
 }
+
+/* The aspect ratio lock of the crop. */
+.ratio {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ratioField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 0.85rem;
+}
+
+.ratioPair {
+  display: flex;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.ratioPair legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  font-size: 0.85rem;
+}

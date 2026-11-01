@@ -105,6 +105,9 @@ fn start_observability(app: &tauri::App) {
     let Ok(dir) = app.path().app_log_dir() else {
         return;
     };
+    if let Ok(mut slot) = app.state::<state::AppState>().log_dir.lock() {
+        *slot = Some(dir.clone());
+    }
     match logging::init(&dir) {
         Ok(guard) => {
             // Dropping the guard would stop the log writer, so it lives as long as the app.

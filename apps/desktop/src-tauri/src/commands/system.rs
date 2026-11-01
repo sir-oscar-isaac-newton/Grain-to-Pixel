@@ -1,6 +1,9 @@
-//! System commands: settings, client logging, crash notes and jobs.
+//! System commands: settings, client logging, crash notes, jobs, counters and diagnostics.
 
-use gtp_app::{AppContext, JobManager, Settings, SettingsPatch};
+use std::path::Path;
+
+use gtp_app::services::{counters, diagnostics};
+use gtp_app::{AppContext, Counters, JobManager, Settings, SettingsPatch};
 use gtp_core::{AppError, ErrorCode, JobId};
 use serde::Deserialize;
 use specta::Type;
@@ -102,6 +105,71 @@ pub fn job_cancel(jobs: State<'_, JobManager>, id: JobId) -> CmdResult<bool> {
     Ok(jobs.cancel(id))
 }
 
+/// The activation counters of the open library (spec section 14), or `None` when none is open.
+#[tauri::command]
+#[specta::specta]
+pub fn counters_get(ctx: State<'_, AppContext>) -> CmdResult<Option<Counters>> {
+    counters_of(&ctx)
+}
+
+fn counters_of(ctx: &AppContext) -> CmdResult<Option<Counters>> {
+    match ctx.library() {
+        Ok(library) => Ok(Some(counters::read(&library)?)),
+        Err(_) => Ok(None),
+    }
+}
+
+const MAX_DEST_CHARS: usize = 1024;
+
+fn export_diagnostics(
+    ctx: &AppContext,
+    jobs: &JobManager,
+    state: &AppState,
+    dest: &str,
+) -> CmdResult<()> {
+    let dest = dest.trim();
+    if dest.is_empty() || dest.chars().count() > MAX_DEST_CHARS {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "Choose where to save the diagnostics.",
+        ));
+    }
+    let log_dir = state
+        .log_dir
+        .lock()
+        .map_err(|_| AppError::internal("log folder state is poisoned"))?
+        .clone()
+        .unwrap_or_default();
+    let flags = ctx.settings().get().flags;
+    let library = ctx.library().ok();
+    let job_errors = jobs.recent_errors();
+    diagnostics::export(
+        &diagnostics::Source {
+            app_version: env!("CARGO_PKG_VERSION"),
+            log_dir: &log_dir,
+            flags: &flags,
+            library: library.as_deref(),
+            job_errors: &job_errors,
+        },
+        Path::new(dest),
+    )?;
+    tracing::info!("diagnostics exported");
+    Ok(())
+}
+
+/// Writes the diagnostics zip (logs, versions, flags, counters, last job errors; no images) to
+/// `dest`, a `.zip` path the user chose. Nothing is uploaded.
+#[tauri::command]
+#[specta::specta]
+pub async fn diagnostics_export(
+    ctx: State<'_, AppContext>,
+    jobs: State<'_, JobManager>,
+    state: State<'_, AppState>,
+    dest: String,
+) -> CmdResult<()> {
+    export_diagnostics(&ctx, &jobs, &state, &dest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,6 +230,79 @@ mod tests {
         });
         assert_eq!(drain_crash_notes(&state).unwrap().len(), 1);
         assert!(drain_crash_notes(&state).unwrap().is_empty());
+    }
+
+    struct Quiet;
+
+    impl gtp_app::JobSink for Quiet {
+        fn progress(&self, _: JobId, _: &str, _: f32) {}
+        fn done(&self, _: JobId, _: gtp_core::JobResult) {}
+        fn error(&self, _: JobId, _: AppError) {}
+    }
+
+    fn temp_dir(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "gtp-system-{label}-{}-{}",
+            std::process::id(),
+            gtp_core::FrameId::new()
+        ))
+    }
+
+    #[test]
+    fn the_diagnostics_zip_is_written_from_the_logs_the_library_and_the_job_errors() {
+        let dir = temp_dir("diag");
+        let logs = dir.join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::write(logs.join("app.log"), "INFO hello\n").unwrap();
+        let state = AppState::default();
+        *state.log_dir.lock().unwrap() = Some(logs);
+        let (ctx, _) = AppContext::new(&dir.join("settings.json"));
+        ctx.create_library(&dir.join("lib"), "Diag").unwrap();
+        let jobs = JobManager::new(std::sync::Arc::new(Quiet));
+        assert_eq!(
+            counters_of(&ctx).unwrap().map(|c| c.frames_imported),
+            Some(0)
+        );
+
+        let dest = dir.join("out.zip");
+        export_diagnostics(&ctx, &jobs, &state, &dest.display().to_string()).unwrap();
+        let bytes = std::fs::read(&dest).unwrap();
+        assert_eq!(&bytes[..2], b"PK", "a zip file");
+        let text = String::from_utf8_lossy(&bytes);
+        for name in ["info.json", "job-errors.json", "logs/app.log"] {
+            assert!(text.contains(name), "{name} missing from the zip");
+        }
+
+        for bad in ["", "   ", "no-extension", "x.txt"] {
+            assert_eq!(
+                export_diagnostics(&ctx, &jobs, &state, bad)
+                    .unwrap_err()
+                    .code,
+                ErrorCode::InvalidInput,
+                "{bad:?}"
+            );
+        }
+        drop(ctx);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn without_a_library_there_are_no_counters_but_the_export_still_works() {
+        let dir = temp_dir("nolib");
+        std::fs::create_dir_all(&dir).unwrap();
+        let (ctx, _) = AppContext::new(&dir.join("settings.json"));
+        assert_eq!(counters_of(&ctx).unwrap(), None);
+        let jobs = JobManager::new(std::sync::Arc::new(Quiet));
+        let dest = dir.join("out.zip");
+        export_diagnostics(
+            &ctx,
+            &jobs,
+            &AppState::default(),
+            &dest.display().to_string(),
+        )
+        .unwrap();
+        assert_eq!(&std::fs::read(&dest).unwrap()[..2], b"PK");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[derive(Clone, Default)]

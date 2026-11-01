@@ -11,6 +11,7 @@ import {
 } from '../../shared/ipc';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import { useLibraryEvents } from '../library/use-library-events';
+import { DiagnosticsSection } from './DiagnosticsSection';
 import { FLAG_NAMES, flagsOf, type FlagName, type FlagValues } from './flags';
 import { KeyboardSettings } from './KeyboardSettings';
 import { UpdatesSection } from './UpdatesSection';
@@ -171,6 +172,8 @@ export function SettingsView() {
       {library && <VerifySection onFinished={refreshLibrary} />}
 
       {flags && <UpdatesSection enabled={flags.update_check} />}
+
+      <DiagnosticsSection />
 
       <section aria-labelledby="settings-flags" className={styles.section}>
         <h3 id="settings-flags" className={styles.heading}>

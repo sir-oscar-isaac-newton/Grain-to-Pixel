@@ -24,6 +24,7 @@ use gtp_io::{encode_jpeg, encode_tiff16, JPEG_QUALITY};
 use crate::jobs::JobCtx;
 use crate::paths::{canonical_dir, display_path};
 use crate::pipeline::{analyze, build_proxy, render, PipelineInput, RenderTarget, PROXY_EDGE};
+use crate::services::counters;
 use crate::services::develop::{read_ir_or_skip, read_scan};
 use crate::services::library::Library;
 
@@ -361,6 +362,7 @@ pub fn export_frames(
                 {
                     tracing::warn!(frame = %frame_id, error = %err.message, "export not logged");
                 }
+                counters::count_export(library);
                 result.files.push(ExportedFile {
                     frame_id: *frame_id,
                     path: shown,
@@ -842,6 +844,12 @@ mod tests {
             .read(|c| c.exports_of(no_scan))
             .unwrap()
             .is_empty());
+        let counted = counters::read(&t.library).unwrap();
+        assert_eq!(
+            counted.frames_exported, 2,
+            "only the files that were written"
+        );
+        assert!(counted.first_export_at.is_some());
     }
 
     #[test]

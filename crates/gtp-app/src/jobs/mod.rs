@@ -6,12 +6,14 @@
 //! scanner, the camera), the service that starts those jobs enforces it.
 
 mod cancel;
+mod errors;
 mod manager;
 
 use std::sync::{Arc, Mutex, PoisonError};
 
 use gtp_core::{AppError, ErrorCode, JobId, JobResult};
 
+pub use errors::{JobErrorEntry, JobErrorLog, MAX_JOB_ERRORS};
 pub use manager::JobManager;
 
 pub(crate) use cancel::CancelFlag;
@@ -43,7 +45,9 @@ pub const PROGRESS_STEP: f32 = 0.01;
 /// Event state of one job, shared by its context and the manager; the lock keeps the order.
 struct Emitter {
     id: JobId,
+    kind: JobKind,
     sink: Arc<dyn JobSink>,
+    errors: Arc<JobErrorLog>,
     ended: bool,
     last: Option<(String, f32)>,
 }
@@ -79,7 +83,10 @@ impl Emitter {
         self.ended = true;
         match outcome {
             Ok(result) => self.sink.done(self.id, result),
-            Err(error) => self.sink.error(self.id, error),
+            Err(error) => {
+                self.errors.record(self.kind, &error);
+                self.sink.error(self.id, error);
+            }
         }
     }
 }
@@ -145,7 +152,9 @@ impl JobCtx {
             cancel: cancel.clone(),
             emitter: Arc::new(Mutex::new(Emitter {
                 id,
+                kind: JobKind::Import,
                 sink,
+                errors: Arc::default(),
                 ended: false,
                 last: None,
             })),

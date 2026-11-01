@@ -299,6 +299,25 @@
       "upToDate": "You have the newest version.",
       "off": "The update check is switched off. Switch on “Check for updates” in the feature flags below to use this button.",
       "failed": "Could not check for updates: {{message}}"
+    },
+    "diagnostics": {
+      "heading": "Diagnostics",
+      "intro": "If something goes wrong, you can save a zip with the logs, the versions, your feature flags, the counters below and the last job errors. It holds no pictures and no folder names, and nothing is sent anywhere: you decide whether to share it.",
+      "export": "Export diagnostics",
+      "exporting": "Saving…",
+      "saved": "Saved the diagnostics to {{path}}.",
+      "failed": "Could not save the diagnostics: {{message}}",
+      "countersHeading": "Counters",
+      "countersNote": "These stay in your library and are used only to see how far the app got.",
+      "noLibrary": "Open a library to see its counters.",
+      "countersFailed": "Could not read the counters: {{message}}",
+      "never": "Not yet",
+      "firstImport": "First import",
+      "firstConvert": "First edit",
+      "firstExport": "First export",
+      "framesImported": "Frames imported",
+      "framesExported": "Frames exported",
+      "scansFailed": "Scans that failed"
     }
   },
   "update": {

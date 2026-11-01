@@ -1,12 +1,13 @@
 // The only place that talks to the Tauri backend. It wraps the commands generated from Rust
 // (packages/ipc-types) and turns the `{ status: 'error' }` results into thrown `IpcError`s.
 import { invoke } from '@tauri-apps/api/core';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import {
   events,
   commands,
   type AppError,
   type ClientLogLevel,
+  type Counters,
   type CrashNote,
   type ExportedFile,
   type FailedExport,
@@ -27,6 +28,7 @@ import {
 export type {
   AppError,
   ClientLogLevel,
+  Counters,
   CrashNote,
   ExportedFile,
   FailedExport,
@@ -418,6 +420,25 @@ export async function developRender(
   seq: number,
 ): Promise<Preview> {
   return parsePreview(await invokeRaw('develop_render', { frameId, recipe, maxEdge, seq }));
+}
+
+/** The activation counters of the open library; null when no library is open. */
+export async function countersGet(): Promise<Counters | null> {
+  return unwrap(await commands.countersGet());
+}
+
+/** Writes the diagnostics zip (logs, versions, flags, counters, last job errors) to `dest`. */
+export async function diagnosticsExport(dest: string): Promise<void> {
+  unwrap(await commands.diagnosticsExport(dest));
+}
+
+/** Opens the system save dialog for the diagnostics zip; null when cancelled. */
+export async function pickDiagnosticsFile(): Promise<string | null> {
+  const chosen = await saveDialog({
+    defaultPath: 'grain-to-pixel-diagnostics.zip',
+    filters: [{ name: 'Zip', extensions: ['zip'] }],
+  });
+  return chosen ?? null;
 }
 
 /** Opens the system folder picker; null when cancelled. */

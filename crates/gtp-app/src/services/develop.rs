@@ -29,6 +29,7 @@ use crate::pipeline::{
     analyze, build_plane_proxy, build_proxy, inverted_frame, normalized_frame, to_rgba8_srgb,
     Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
 };
+use crate::services::counters;
 use crate::services::library::Library;
 
 /// Frames whose proxy is kept in memory (about 34 MB each).
@@ -126,6 +127,7 @@ pub fn save_recipe(library: &Library, frame: FrameId, recipe: Recipe) -> Result<
         gtp_edit::Curve::new(curve)?;
     }
     library.write(|c| c.save_recipe(frame, &recipe))?;
+    counters::count_convert(library);
     Ok(recipe)
 }
 
@@ -1228,6 +1230,7 @@ mod tests {
         let t = Fixture::new("save");
         let id = t.bare(1);
         assert!(!t.edited(id));
+        assert_eq!(counters::read(&t.library).unwrap().first_convert_at, None);
         let mut recipe = Recipe::default();
         recipe.tone.exposure_ev = 0.7;
         recipe.geometry.rot90 = 1;
@@ -1236,6 +1239,10 @@ mod tests {
         assert_eq!(stored, recipe, "in range already, so unchanged");
         assert_eq!(t.stored(id), Some(recipe.clone()));
         assert!(t.edited(id));
+        assert!(counters::read(&t.library)
+            .unwrap()
+            .first_convert_at
+            .is_some());
         // The Develop view gets it back when it opens the frame again.
         let scan = t.frame(2, 400, 300);
         save_recipe(&t.library, scan, recipe.clone()).unwrap();

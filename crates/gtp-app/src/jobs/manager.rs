@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use gtp_core::{AppError, JobId, JobResult};
 
-use super::{CancelFlag, Emitter, JobCtx, JobKind, JobSink};
+use super::{CancelFlag, Emitter, JobCtx, JobErrorEntry, JobErrorLog, JobKind, JobSink};
 
 struct Running {
     kind: JobKind,
@@ -20,6 +20,7 @@ type RunningJobs = Arc<Mutex<HashMap<JobId, Running>>>;
 pub struct JobManager {
     sink: Arc<dyn JobSink>,
     running: RunningJobs,
+    errors: Arc<JobErrorLog>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -39,6 +40,7 @@ impl JobManager {
         Self {
             sink,
             running: Arc::default(),
+            errors: Arc::default(),
         }
     }
 
@@ -56,7 +58,9 @@ impl JobManager {
             cancel: cancel.clone(),
             emitter: Arc::new(Mutex::new(Emitter {
                 id,
+                kind,
                 sink: Arc::clone(&self.sink),
+                errors: Arc::clone(&self.errors),
                 ended: false,
                 last: None,
             })),
@@ -103,6 +107,11 @@ impl JobManager {
         for job in lock(&self.running).values() {
             job.cancel.cancel();
         }
+    }
+
+    /// The errors of the last finished jobs, oldest first (cancellations left out).
+    pub fn recent_errors(&self) -> Vec<JobErrorEntry> {
+        self.errors.recent()
     }
 
     /// The running jobs and their kinds.
@@ -251,6 +260,38 @@ mod tests {
         assert!(
             matches!(&events[..], [Event::Error(i, e)] if *i == id && e.code == ErrorCode::Cancelled)
         );
+    }
+
+    #[test]
+    fn failed_jobs_are_remembered_for_diagnostics_but_cancelled_ones_are_not() {
+        let (jobs, rx) = manager();
+        jobs.spawn(JobKind::Import, |_| {
+            Err(AppError::new(ErrorCode::UnsupportedFormat, "not a TIFF"))
+        })
+        .unwrap();
+        events_until_end(&rx);
+        jobs.spawn(JobKind::Export, |ctx| {
+            ctx.progress("encoding", 0.5);
+            Ok(JobResult::Finished)
+        })
+        .unwrap();
+        events_until_end(&rx);
+        let (go_tx, go_rx) = mpsc::channel::<()>();
+        let id = jobs
+            .spawn(JobKind::Scan, move |ctx| {
+                let _ = go_rx.recv_timeout(WAIT);
+                ctx.check_cancelled().map(|()| JobResult::Finished)
+            })
+            .unwrap();
+        assert!(jobs.cancel(id));
+        go_tx.send(()).unwrap();
+        events_until_end(&rx);
+
+        let recent = jobs.recent_errors();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].job, "Import");
+        assert_eq!(recent[0].code, "UnsupportedFormat");
+        assert_eq!(recent[0].message, "not a TIFF");
     }
 
     #[test]

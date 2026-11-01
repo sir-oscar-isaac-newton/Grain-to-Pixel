@@ -51,6 +51,8 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::system::log_client_event,
             commands::system::crash_notes_take,
             commands::system::job_cancel,
+            commands::system::counters_get,
+            commands::system::diagnostics_export,
             commands::update::update_check,
             commands::update::update_install,
             commands::update::update_restart
@@ -116,6 +118,8 @@ mod tests {
             "logClientEvent",
             "crashNotesTake",
             "jobCancel",
+            "countersGet",
+            "diagnosticsExport",
             "libraryCreate",
             "libraryOpen",
             "libraryVerify",
@@ -184,6 +188,7 @@ mod tests {
             "DevelopInfo",
             "DevelopAnalysis",
             "RecipeField",
+            "Counters",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }

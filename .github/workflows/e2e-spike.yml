@@ -1,0 +1,40 @@
+name: e2e-spike
+
+# TEMPORARY (T-07): finds what a hosted Windows runner allows. Removed before the PR is merged.
+on:
+  push:
+    branches: [feat/issue-69-windows-e2e-on-ci]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the app with the debugging port in its window settings
+        shell: bash
+        run: pnpm --filter @gtp/desktop exec tauri build --no-bundle --config src-tauri/tauri.e2e.conf.json
+
+      - name: What the runner allows
+        shell: pwsh
+        run: ./tools/scripts/e2e/spike.ps1

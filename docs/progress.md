@@ -443,6 +443,15 @@
       "number": 62,
       "title": "Packaging - NSIS and dmg installers",
       "branch": "feat/issue-62-packaging-nsis-dmg",
+      "status": "completed",
+      "pr": 158,
+      "commit": "2eb01de"
+    },
+    {
+      "id": "T-06",
+      "number": 63,
+      "title": "Updater and release pipeline",
+      "branch": "feat/issue-63-updater-release-pipeline",
       "status": "in_progress",
       "pr": null,
       "commit": null

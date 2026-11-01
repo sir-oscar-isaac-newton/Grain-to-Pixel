@@ -6,3 +6,6 @@
 *.icc  filter=lfs diff=lfs merge=lfs -text
 # Golden renders are small and read by `cargo test`, which CI runs without LFS: plain git files.
 samples/public/golden/*.tif -filter -diff -merge -text
+
+# Signed test fixtures must stay byte for byte (the updater tests verify a signature over them).
+apps/desktop/src-tauri/tests/fixtures/updater/* -text

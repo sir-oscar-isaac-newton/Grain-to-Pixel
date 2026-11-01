@@ -1,0 +1,23 @@
+.offer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.notes {
+  max-height: 10rem;
+  margin: 0;
+  overflow-y: auto;
+  font: inherit;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+.buttons {
+  display: flex;
+  gap: var(--space-2);
+}

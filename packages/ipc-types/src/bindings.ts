@@ -131,6 +131,21 @@ export const commands = {
 	 *  if it was already finishing). Returns false when the job is not running, which is harmless.
 	 */
 	jobCancel: (id: JobId) => typedError<boolean, AppError_Serialize>(__TAURI_INVOKE("job_cancel", { id })),
+	/**
+	 *  Looks for a newer version. The UI calls it with `manual` false at launch and true from the
+	 *  "Check for updates" button.
+	 */
+	updateCheck: (manual: boolean) => typedError<UpdateOutcome_Serialize, AppError_Serialize>(__TAURI_INVOKE("update_check", { manual })),
+	/**
+	 *  Downloads the update `update_check` found, checks its signature and installs it. On Windows the
+	 *  installer takes over and the app closes; elsewhere `update_restart` starts the new version.
+	 */
+	updateInstall: () => typedError<null, AppError_Serialize>(__TAURI_INVOKE("update_install")),
+	/**
+	 *  Starts the app again, after an update was installed. Running jobs stop at their next check, as
+	 *  they do when the app is closed.
+	 */
+	updateRestart: () => __TAURI_INVOKE<void>("update_restart"),
 };
 
 /** Events */
@@ -455,6 +470,7 @@ export type FlagsPatch_Deserialize = {
 	guided_capture?: boolean | null,
 	dev_overlay?: boolean | null,
 	experimental_auto_levels?: boolean | null,
+	update_check?: boolean | null,
 };
 
 /**  Flags to change; the others keep their value. */
@@ -464,6 +480,7 @@ export type FlagsPatch_Serialize = {
 	guided_capture: boolean | null,
 	dev_overlay: boolean | null,
 	experimental_auto_levels: boolean | null,
+	update_check: boolean | null,
 };
 
 /**
@@ -476,6 +493,8 @@ export type Flags_Deserialize = {
 	guided_capture?: boolean,
 	dev_overlay?: boolean,
 	experimental_auto_levels?: boolean,
+	/**  Ask GitHub Releases for a newer version at launch. The only network call the app makes. */
+	update_check?: boolean,
 };
 
 /**
@@ -488,6 +507,8 @@ export type Flags_Serialize = {
 	guided_capture: boolean,
 	dev_overlay: boolean,
 	experimental_auto_levels: boolean,
+	/**  Ask GitHub Releases for a newer version at launch. The only network call the app makes. */
+	update_check: boolean,
 };
 
 /**  What the first-run dialog shows about a folder before a library is created or opened there. */
@@ -1315,6 +1336,31 @@ export type Tone_Serialize = {
 	dehaze: number | null,
 	curve: Curves_Serialize,
 };
+
+/**  What the update check found. */
+export type UpdateOutcome = UpdateOutcome_Serialize | UpdateOutcome_Deserialize;
+
+/**  What the update check found. */
+export type UpdateOutcome_Deserialize = 
+/**  The `update_check` flag is off: nothing was asked. */
+{ status: "disabled" } | 
+/**  The last check was less than a day ago: nothing was asked. */
+{ status: "not_due" } | 
+/**  This is the newest version. */
+{ status: "up_to_date" } | 
+/**  A newer version can be installed. */
+{ status: "available"; version: string; current_version: string; notes?: string | null };
+
+/**  What the update check found. */
+export type UpdateOutcome_Serialize = 
+/**  The `update_check` flag is off: nothing was asked. */
+{ status: "disabled" } | 
+/**  The last check was less than a day ago: nothing was asked. */
+{ status: "not_due" } | 
+/**  This is the newest version. */
+{ status: "up_to_date" } | 
+/**  A newer version can be installed. */
+{ status: "available"; version: string; current_version: string; notes: string | null };
 
 /**  One original that did not check out. */
 export type VerifyProblem = VerifyProblem_Serialize | VerifyProblem_Deserialize;

@@ -18,6 +18,7 @@ import {
   type SettingsPatch,
   type SkipReason,
   type SkippedFile,
+  type UpdateOutcome,
   type VerifyProblem,
   type VerifyReason,
   type VerifyResult,
@@ -36,6 +37,7 @@ export type {
   SettingsPatch,
   SkipReason,
   SkippedFile,
+  UpdateOutcome,
   VerifyProblem,
   VerifyReason,
   VerifyResult,
@@ -92,6 +94,24 @@ export async function settingsDefaults(): Promise<Settings> {
 /** Changes the named settings and returns all of them. */
 export async function settingsSet(patch: SettingsPatch): Promise<Settings> {
   return unwrap(await commands.settingsSet(patch));
+}
+
+/**
+ * Asks whether a newer version exists. `manual` is true for the button, which ignores the limit of
+ * one check a day; nothing is asked when the update check is switched off.
+ */
+export async function updateCheck(manual: boolean): Promise<UpdateOutcome> {
+  return unwrap(await commands.updateCheck(manual));
+}
+
+/** Downloads the update the last check found, verifies its signature and installs it. */
+export async function updateInstall(): Promise<void> {
+  unwrap(await commands.updateInstall());
+}
+
+/** Starts the app again to use the version that was installed. */
+export async function updateRestart(): Promise<void> {
+  await commands.updateRestart();
 }
 
 // Rolls and frames. Argument and result types come straight from the generated commands.

@@ -69,7 +69,7 @@ describe('SettingsView', () => {
   });
 
   describe('the feature flags', () => {
-    it('lists the five flags with what they do and their defaults', async () => {
+    it('lists the six flags with what they do and their defaults', async () => {
       openLibrary();
       render(<SettingsView />);
       const group = await screen.findByRole('group', { name: 'Feature flags' });
@@ -80,6 +80,7 @@ describe('SettingsView', () => {
         expect.stringContaining('Guided capture'),
         expect.stringContaining('Developer overlay'),
         expect.stringContaining('Experimental auto levels'),
+        expect.stringContaining('Check for updates'),
       ]);
       expect(switches.map((s) => (s as HTMLInputElement).checked)).toEqual([
         true,
@@ -87,6 +88,7 @@ describe('SettingsView', () => {
         true,
         false,
         false,
+        true,
       ]);
       expect(
         within(flag(/Developer overlay/).closest('label') as HTMLElement).getByText(

@@ -5,6 +5,7 @@ import { App } from './App';
 import { useUiStore } from './app/store';
 
 const crashNotesTake = vi.fn();
+const updateCheck = vi.fn();
 vi.mock('./features/library/LibraryView', async () => {
   const { createElement } = await import('react');
   return { LibraryView: () => createElement('h2', null, 'Library') };
@@ -18,6 +19,9 @@ vi.mock('./features/settings/SettingsView', async () => {
 vi.mock('./shared/ipc', () => ({
   libraryInfo: () => Promise.resolve({ app_version: '1.2.3', library: null }),
   crashNotesTake: () => crashNotesTake(),
+  updateCheck: () => updateCheck(),
+  updateInstall: () => Promise.resolve(),
+  updateRestart: () => Promise.resolve(),
 }));
 
 describe('App shell', () => {
@@ -25,6 +29,8 @@ describe('App shell', () => {
     useUiStore.setState({ view: 'library', developFrame: null });
     crashNotesTake.mockReset();
     crashNotesTake.mockResolvedValue([]);
+    updateCheck.mockReset();
+    updateCheck.mockResolvedValue({ status: 'up_to_date' });
   });
 
   it('tells the user when the previous run crashed, and the notice can be dismissed', async () => {
@@ -40,6 +46,28 @@ describe('App shell', () => {
     render(<App />);
     await screen.findByText('Version 1.2.3');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('offers an update that was found at launch, and Later puts it away', async () => {
+    updateCheck.mockResolvedValue({
+      status: 'available',
+      version: '0.2.0',
+      current_version: '0.1.0',
+      notes: null,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByRole('status')).toHaveTextContent('Version 0.2.0 is available');
+    await user.click(screen.getByRole('button', { name: 'Later' }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('starts without a word when the update check fails', async () => {
+    updateCheck.mockRejectedValue(new Error('offline'));
+    render(<App />);
+    await screen.findByText('Version 1.2.3');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('starts on the Library view and shows the backend version', async () => {

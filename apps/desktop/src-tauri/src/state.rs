@@ -5,8 +5,10 @@ use std::sync::Mutex;
 
 use crate::crash::CrashNote;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct AppState {
     /// Crash notes found at startup, handed to the UI once by `crash_notes_take`.
     pub crash_notes: Mutex<Vec<CrashNote>>,
+    /// The update the last check found, installed when the user asks for it.
+    pub pending_update: Mutex<Option<tauri_plugin_updater::Update>>,
 }

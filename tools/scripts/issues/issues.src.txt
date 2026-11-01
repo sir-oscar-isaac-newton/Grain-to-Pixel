@@ -1397,7 +1397,7 @@ adr: no
 spec: specification sections 9 and 15
 desc: Tauri updater with a signed manifest and a tag-triggered draft-release workflow.
 ac:
-- The workflow on a v*.*.* tag runs gates, builds on windows-latest and macos-14 and creates a DRAFT release with installers and signed latest.json
+- The workflow on a v*.*.* tag runs gates, builds on windows-latest and macos-15 and creates a DRAFT release with installers and signed latest.json
 - The updater finds a newer prerelease, verifies the signature and prompts (never installs silently); a tampered manifest is rejected
 - A setting disables the update check
 - The human created the updater key pair and stored the private key in GitHub secrets
@@ -1405,6 +1405,7 @@ tech:
 FILES: .github/workflows/release.yml; tauri.conf.json updater endpoint and public key; settings flag `update_check`.
 ROUTES / MIGRATIONS: none.
 TESTS: dry run on a pre-release tag; updater signature tests; verify behaviour on unsigned macOS builds and document it.
+DELIVERY (decided when T-06 was approved): `update_check(manual)`, `update_install()` and `update_restart()` in the desktop adapter hold the `Updater` built at start; `update_check` answers disabled, not_due, up_to_date or available. The check runs at launch at most once a day (`last_update_check` in settings.json, kept by the app) and from a Settings button; the sixth runtime flag `update_check` (default on) switches the only network call off. `requireSignedVersion` is on. Signature tests use a throwaway key pair (public key, payload and signature committed, private key not kept) against a local server. `release.yml` runs on tags, checks tag, versions and key (`check-bundle.mjs release`), calls ci.yml, then builds with `tauri-action` pinned to a commit and creates a DRAFT release with `latest.json`; the macOS runner is macos-15, like the rest of the CI (the criterion said macos-14). The updater public key is put in tauri.conf.json by the human; until then it holds a placeholder that only the release workflow refuses. Human: create the key pair and the two secrets; a dry run on a prerelease tag; the update across two real releases on both systems (also the answer for unsigned macOS builds).
 
 ## D-05
 title: Diagnostics export and local counters

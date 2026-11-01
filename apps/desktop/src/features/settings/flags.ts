@@ -7,6 +7,7 @@ export const FLAG_NAMES = [
   'guided_capture',
   'dev_overlay',
   'experimental_auto_levels',
+  'update_check',
 ] as const;
 
 export type FlagName = (typeof FLAG_NAMES)[number];
@@ -21,5 +22,6 @@ export function flagsOf(settings: Settings): FlagValues {
     guided_capture: flags?.guided_capture === true,
     dev_overlay: flags?.dev_overlay === true,
     experimental_auto_levels: flags?.experimental_auto_levels === true,
+    update_check: flags?.update_check === true,
   };
 }

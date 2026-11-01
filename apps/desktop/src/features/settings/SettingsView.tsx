@@ -13,6 +13,7 @@ import { messageOf, useLibraryStore } from '../library/library-store';
 import { useLibraryEvents } from '../library/use-library-events';
 import { FLAG_NAMES, flagsOf, type FlagName, type FlagValues } from './flags';
 import { KeyboardSettings } from './KeyboardSettings';
+import { UpdatesSection } from './UpdatesSection';
 import { VerifySection } from './VerifySection';
 import styles from './settings.module.css';
 
@@ -168,6 +169,8 @@ export function SettingsView() {
       </section>
 
       {library && <VerifySection onFinished={refreshLibrary} />}
+
+      {flags && <UpdatesSection enabled={flags.update_check} />}
 
       <section aria-labelledby="settings-flags" className={styles.section}>
         <h3 id="settings-flags" className={styles.heading}>

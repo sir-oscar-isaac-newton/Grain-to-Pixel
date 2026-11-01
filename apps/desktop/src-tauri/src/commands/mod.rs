@@ -9,3 +9,4 @@ pub mod roll;
 pub mod search;
 pub mod system;
 pub mod tags;
+pub mod update;

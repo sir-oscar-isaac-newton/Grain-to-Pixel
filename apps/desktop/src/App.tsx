@@ -6,6 +6,7 @@ import { DevelopView } from './features/develop/DevelopView';
 import { ImportView } from './features/import/ImportView';
 import { LibraryView } from './features/library/LibraryView';
 import { SettingsView } from './features/settings/SettingsView';
+import { UpdateNotice } from './features/update/UpdateNotice';
 import { crashNotesTake, libraryInfo } from './shared/ipc';
 
 const VIEWS: readonly View[] = ['library', 'develop', 'import', 'settings'];
@@ -73,6 +74,7 @@ export function App() {
             </button>
           </div>
         )}
+        <UpdateNotice />
         {view === 'library' && <LibraryView />}
         {view === 'develop' && <DevelopView />}
         {view === 'import' && <ImportView />}

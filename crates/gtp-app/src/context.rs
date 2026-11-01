@@ -23,11 +23,13 @@ impl AppContext {
     /// the returned note) and no library open.
     pub fn new(settings_file: &Path) -> (Self, Option<String>) {
         let (settings, note) = SettingsStore::load(settings_file);
+        let develop = DevelopService::default();
+        develop.set_dust_removal(settings.get().flags.dust_removal);
         (
             Self {
                 settings,
                 library: RwLock::new(None),
-                develop: Arc::new(DevelopService::default()),
+                develop: Arc::new(develop),
                 thumbnails: ThumbnailService::default(),
             },
             note,

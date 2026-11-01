@@ -29,7 +29,9 @@ pub fn settings_defaults() -> Settings {
 #[tauri::command]
 #[specta::specta]
 pub fn settings_set(ctx: State<'_, AppContext>, patch: SettingsPatch) -> CmdResult<Settings> {
-    ctx.settings().update(&patch)
+    let settings = ctx.settings().update(&patch)?;
+    ctx.develop().set_dust_removal(settings.flags.dust_removal);
+    Ok(settings)
 }
 
 /// Severity of an event reported by the UI.

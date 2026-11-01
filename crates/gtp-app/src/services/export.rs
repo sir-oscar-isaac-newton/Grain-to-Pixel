@@ -2,7 +2,7 @@
 //! 16-bit TIFF or JPEG files with the ICC profile of the chosen colour space embedded.
 //!
 //! One job exports the frames one after the other, so memory holds a single full-size image. Per
-//! frame: decode the original, render it with the saved recipe (the automatic one when the frame
+//! frame: decode the original (and its infrared plane, for dust removal), render it with the saved recipe (the automatic one when the frame
 //! was never edited, as for thumbnails), convert and write through a temporary file and a rename,
 //! and log the file in `export_log`. A frame that cannot be exported is reported in the result and
 //! the others carry on; a cancel stops before the next frame or before a write, and the files
@@ -24,7 +24,7 @@ use gtp_io::{encode_jpeg, encode_tiff16, JPEG_QUALITY};
 use crate::jobs::JobCtx;
 use crate::paths::{canonical_dir, display_path};
 use crate::pipeline::{analyze, build_proxy, render, PipelineInput, RenderTarget, PROXY_EDGE};
-use crate::services::develop::read_scan;
+use crate::services::develop::{read_ir_or_skip, read_scan};
 use crate::services::library::Library;
 
 /// Most frames one export may name.
@@ -251,6 +251,7 @@ fn export_one(
     library: &Library,
     frame_id: FrameId,
     options: &ExportOptions,
+    dust_removal: bool,
     dir: &Path,
     ctx: &JobCtx,
     progress: &dyn Fn(f32),
@@ -275,6 +276,10 @@ fn export_one(
     )?;
 
     let full: ImageF32 = read_scan(library, &sources)?;
+    // The infrared plane, at full size like the scan; a plane that cannot be used is skipped.
+    let ir = read_ir_or_skip(library, &sources, &frame, (full.width, full.height))
+        .filter(|_| dust_removal)
+        .map(Arc::new);
     progress(1.0);
     ctx.check_cancelled()?;
     let recipe: Recipe = match saved {
@@ -292,7 +297,7 @@ fn export_one(
     };
     let input = PipelineInput {
         rgb: Arc::new(full),
-        ir: None,
+        ir,
         film_base: roll.film_base_rgb,
     };
     let mut image = render(&input, &recipe, RenderTarget::Full)?;
@@ -315,12 +320,13 @@ fn export_one(
     Ok(path)
 }
 
-/// Exports `frame_ids` as described in the module docs. Ends with `Cancelled` when cancelled
+/// Exports `frame_ids` as described in the module docs; `dust_removal` is the feature flag of that name. Ends with `Cancelled` when cancelled
 /// (files already written stay), or with the error of the options or the library.
 pub fn export_frames(
     library: &Library,
     frame_ids: &[FrameId],
     options: &ExportOptions,
+    dust_removal: bool,
     ctx: &JobCtx,
 ) -> Result<ExportResult, AppError> {
     if frame_ids.is_empty() || frame_ids.len() > MAX_FRAMES {
@@ -337,7 +343,15 @@ pub fn export_frames(
         let started = Instant::now();
         let progress = |step: f32| ctx.progress(STAGE, (i as f32 + step / STEPS) / total);
         progress(0.0);
-        match export_one(library, *frame_id, options, &dir, ctx, &progress) {
+        match export_one(
+            library,
+            *frame_id,
+            options,
+            dust_removal,
+            &dir,
+            ctx,
+            &progress,
+        ) {
             Ok(path) => {
                 let shown = display_path(&path);
                 // The file is written; a library that cannot take the log row (read-only) does not
@@ -379,8 +393,8 @@ pub fn export_frames(
 mod tests {
     use std::sync::Mutex;
 
-    use gtp_core::testing::synthetic::Pattern;
-    use gtp_core::{JobId, JobResult};
+    use gtp_core::testing::synthetic::{Params, Pattern};
+    use gtp_core::{JobId, JobResult, SourceRole};
     use gtp_io::{icc_profile, read_tiff16, Limits};
 
     use super::*;
@@ -433,7 +447,7 @@ mod tests {
         options: &ExportOptions,
     ) -> Result<ExportResult, AppError> {
         let (ctx, _) = JobCtx::standalone();
-        export_frames(&t.library, ids, options, &ctx)
+        export_frames(&t.library, ids, options, true, &ctx)
     }
 
     /// Cancels the job once its progress reaches `at`.
@@ -466,7 +480,7 @@ mod tests {
         });
         let (ctx, flag) = JobCtx::standalone_with(sink.clone());
         *sink.flag.lock().unwrap() = Some(flag);
-        export_frames(&t.library, ids, options, &ctx)
+        export_frames(&t.library, ids, options, true, &ctx)
     }
 
     #[test]
@@ -644,6 +658,73 @@ mod tests {
         out.join("Roll_001.tif")
     }
 
+    /// An export of one frame with the dust removal flag as given.
+    fn export_dust(t: &Fixture, id: FrameId, name: &str, dust_removal: bool) -> PathBuf {
+        let out = t.dir.join(name);
+        let (ctx, _) = JobCtx::standalone();
+        export_frames(
+            &t.library,
+            &[id],
+            &options(&out, ExportFormat::Tiff16, OutputSpace::Srgb),
+            dust_removal,
+            &ctx,
+        )
+        .unwrap();
+        let written = std::fs::read_dir(&out).unwrap().next().unwrap().unwrap();
+        written.path()
+    }
+
+    #[test]
+    fn dust_is_removed_from_the_file_only_when_the_flag_is_on_and_the_frame_has_a_plane() {
+        let t = Fixture::new("export-dust");
+        let params = Params {
+            width: 200,
+            height: 140,
+            rebate: [14; 4],
+            dust_specks: 6,
+            with_ir: true,
+            ..Params::default()
+        };
+        let id = t.frame_params(1, &params);
+        let recipe = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        t.library.write(|c| c.save_recipe(id, &recipe)).unwrap();
+        let on = pixels(&export_dust(&t, id, "on", true));
+        let off = pixels(&export_dust(&t, id, "off", false));
+        assert_eq!(on.len(), off.len());
+        assert_ne!(on, off, "the specks were filled");
+
+        // Without the flag the file is what a frame with no plane gives.
+        let no_plane = Params {
+            with_ir: false,
+            ..params
+        };
+        let bare = t.frame_params(2, &no_plane);
+        t.library.write(|c| c.save_recipe(bare, &recipe)).unwrap();
+        let plain = pixels(&export_dust(&t, bare, "bare-on", true));
+        assert_eq!(plain, pixels(&export_dust(&t, bare, "bare-off", false)));
+    }
+
+    #[test]
+    fn a_missing_infrared_file_does_not_stop_the_export() {
+        let t = Fixture::new("export-dust-missing");
+        let params = Params {
+            width: 200,
+            height: 140,
+            rebate: [14; 4],
+            dust_specks: 6,
+            with_ir: true,
+            ..Params::default()
+        };
+        let id = t.frame_params(1, &params);
+        let recipe = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        t.library.write(|c| c.save_recipe(id, &recipe)).unwrap();
+        let sources = t.library.read(|c| c.sources_of(id)).unwrap();
+        let ir = sources.iter().find(|s| s.role == SourceRole::Ir).unwrap();
+        std::fs::remove_file(t.library.resolve(Path::new(&ir.rel_path)).unwrap()).unwrap();
+        let dusty = pixels(&export_dust(&t, id, "missing", true));
+        let off = pixels(&export_dust(&t, id, "off", false));
+        assert_eq!(dusty, off, "exported as if there were no plane");
+    }
     #[test]
     fn output_sharpening_changes_the_file_only_when_its_amount_is_above_zero() {
         let t = Fixture::new("export-sharpen");
@@ -812,6 +893,7 @@ mod tests {
             &t.library,
             &ids,
             &options(&t.dir.join("out"), ExportFormat::Jpeg, OutputSpace::Srgb),
+            true,
             &ctx,
         )
         .unwrap();

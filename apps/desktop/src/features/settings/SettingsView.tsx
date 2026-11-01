@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUiStore } from '../../app/store';
 import { formatBytes } from '../../shared/format';
@@ -10,8 +10,10 @@ import {
   type LibraryDetails,
 } from '../../shared/ipc';
 import { messageOf, useLibraryStore } from '../library/library-store';
+import { useLibraryEvents } from '../library/use-library-events';
 import { FLAG_NAMES, flagsOf, type FlagName, type FlagValues } from './flags';
 import { KeyboardSettings } from './KeyboardSettings';
+import { VerifySection } from './VerifySection';
 import styles from './settings.module.css';
 
 /**
@@ -22,6 +24,8 @@ export function SettingsView() {
   const { t, i18n } = useTranslation();
   const setView = useUiStore((s) => s.setView);
   const opened = useLibraryStore((s) => s.library);
+  // The check started here reports through the job events.
+  useLibraryEvents(true);
 
   const [library, setLibrary] = useState<LibraryDetails | null>(opened);
   const [flags, setFlags] = useState<FlagValues | null>(null);
@@ -58,6 +62,18 @@ export function SettingsView() {
       alive = false;
     };
   }, [t]);
+
+  /** Reads the library again (a check just finished, so "last verified" changed). */
+  const refreshLibrary = useCallback(() => {
+    libraryInfo().then(
+      (info) => {
+        if (info.library) setLibrary(info.library);
+      },
+      () => {
+        // The figures stay as they were.
+      },
+    );
+  }, []);
 
   const save = async (patch: Partial<FlagValues>) => {
     const names = Object.keys(patch) as FlagName[];
@@ -115,6 +131,23 @@ export function SettingsView() {
                   ? formatBytes(library.free_bytes, i18n.language)
                   : t('settings.library.freeUnknown')}
               </dd>
+              <dt>{t('settings.library.verified')}</dt>
+              <dd>
+                {library.last_verify_at
+                  ? t('settings.library.verifiedAt', {
+                      when: new Intl.DateTimeFormat(i18n.language, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }).format(new Date(library.last_verify_at)),
+                      problems:
+                        (library.last_verify_problems ?? 0) === 0
+                          ? t('settings.library.noProblems')
+                          : t('settings.library.problems', {
+                              count: library.last_verify_problems ?? 0,
+                            }),
+                    })
+                  : t('settings.library.neverVerified')}
+              </dd>
             </dl>
             {library.read_only && (
               <p role="status" className={styles.muted}>
@@ -133,6 +166,8 @@ export function SettingsView() {
           </>
         )}
       </section>
+
+      {library && <VerifySection onFinished={refreshLibrary} />}
 
       <section aria-labelledby="settings-flags" className={styles.section}>
         <h3 id="settings-flags" className={styles.heading}>

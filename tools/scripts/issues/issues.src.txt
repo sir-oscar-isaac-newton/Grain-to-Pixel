@@ -1671,6 +1671,7 @@ ROUTES used: library_verify, job_cancel, library_info (last_verify_at, last_veri
 MIGRATIONS: none.
 TESTS: the section with mocked ipc (never verified, last result, running, cancel, clean result, problems of each kind, a failed job), axe.
 NOTES: asked for while U-07 was approved, since the verify job of L-07 has no UI, so it is GitHub issue #147, not 76 (issue and pull request numbers share one sequence). Use 147 as its `number` in docs/progress.md.
+DELIVERY (decided when U-15 was approved): the check is a job row of kind `verify` in the library store (with the result attached), like imports and exports, so it survives leaving Settings and shows in the Library view's job list; Settings follows the job events itself while it is open. The result is shown inline under the button, with the problems in a scrolling list; the section reads the library again when a check ends, so Last verified is current. A cancelled check records nothing and says so.
 
 ## U-16
 title: Output sharpening controls

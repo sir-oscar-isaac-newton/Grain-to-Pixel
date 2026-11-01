@@ -18,6 +18,9 @@ import {
   type SettingsPatch,
   type SkipReason,
   type SkippedFile,
+  type VerifyProblem,
+  type VerifyReason,
+  type VerifyResult,
 } from '@gtp/ipc-types';
 
 export type {
@@ -33,6 +36,9 @@ export type {
   SettingsPatch,
   SkipReason,
   SkippedFile,
+  VerifyProblem,
+  VerifyReason,
+  VerifyResult,
 };
 
 export class IpcError extends Error {

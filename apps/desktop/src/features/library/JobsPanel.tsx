@@ -20,6 +20,13 @@ export function describeJob(job: JobRow, t: TFunction, language: string): Progre
   if (job.failed && job.failed.length > 0) {
     parts.push(t('jobs.exportFailed', { count: job.failed.length }));
   }
+  if (job.state === 'done' && job.verified) {
+    parts.push(
+      job.verified.problems.length > 0
+        ? t('jobs.verifyProblems', { count: job.verified.problems.length })
+        : t('jobs.verifyClean'),
+    );
+  }
   if (job.state === 'cancelled' && job.kind === 'export') {
     parts.push(t('jobs.exportCancelled'));
   }
@@ -29,7 +36,9 @@ export function describeJob(job: JobRow, t: TFunction, language: string): Progre
     label:
       job.kind === 'export'
         ? t('jobs.export', { count: job.frames ?? 0 })
-        : t('jobs.import', { roll: job.rollName }),
+        : job.kind === 'verify'
+          ? t('jobs.verify')
+          : t('jobs.import', { roll: job.rollName }),
     fraction: job.fraction,
     state: job.state,
     stateLabel: t(`jobs.${job.state}`),

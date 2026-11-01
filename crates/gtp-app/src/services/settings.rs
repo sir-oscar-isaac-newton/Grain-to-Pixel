@@ -17,6 +17,8 @@ pub const WINDOW_SIDE: std::ops::RangeInclusive<u32> = 200..=16_384;
 pub const MAX_KEYS: usize = 64;
 pub const MAX_ACTION_CHARS: usize = 64;
 pub const MAX_KEY_CHARS: usize = 32;
+/// The update check at launch runs at most this often, in seconds (specification section 15).
+pub const UPDATE_CHECK_INTERVAL_SECS: u64 = 24 * 60 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -46,6 +48,8 @@ pub struct Flags {
     pub guided_capture: bool,
     pub dev_overlay: bool,
     pub experimental_auto_levels: bool,
+    /// Ask GitHub Releases for a newer version at launch. The only network call the app makes.
+    pub update_check: bool,
 }
 
 impl Default for Flags {
@@ -56,6 +60,7 @@ impl Default for Flags {
             guided_capture: true,
             dev_overlay: false,
             experimental_auto_levels: false,
+            update_check: true,
         }
     }
 }
@@ -72,6 +77,21 @@ pub struct Settings {
     /// The keyboard shortcuts the user changed, action name to key (`Q`, `[`, `Escape`). An action
     /// that is not here has its default key, which the UI knows; the app only keeps the shape.
     pub keys: BTreeMap<String, String>,
+    /// When the update check last got an answer, in seconds since 1970; none before the first.
+    /// Kept by the app, not by a patch, and not shown to the UI.
+    #[cfg_attr(feature = "specta", specta(skip))]
+    pub last_update_check: Option<u64>,
+}
+
+impl Settings {
+    /// Whether the update check at launch may ask now: the flag is on and the last answer is at
+    /// least a day old (or in the future, which a clock set back can cause).
+    pub fn update_check_due(&self, now: u64) -> bool {
+        self.flags.update_check
+            && self
+                .last_update_check
+                .is_none_or(|last| last > now || now - last >= UPDATE_CHECK_INTERVAL_SECS)
+    }
 }
 
 /// Flags to change; the others keep their value.
@@ -84,6 +104,7 @@ pub struct FlagsPatch {
     pub guided_capture: Option<bool>,
     pub dev_overlay: Option<bool>,
     pub experimental_auto_levels: Option<bool>,
+    pub update_check: Option<bool>,
 }
 
 /// Settings to change; fields left out keep their value. The last library is set by opening one.
@@ -169,6 +190,7 @@ impl Settings {
                     &mut flags.experimental_auto_levels,
                     f.experimental_auto_levels,
                 ),
+                (&mut flags.update_check, f.update_check),
             ] {
                 if let Some(value) = value {
                     *slot = value;
@@ -256,6 +278,14 @@ impl SettingsStore {
         })
     }
 
+    /// Records when the update check last got an answer.
+    pub fn set_last_update_check(&self, now: u64) -> Result<Settings, AppError> {
+        self.change(|settings| {
+            settings.last_update_check = Some(now);
+            Ok(())
+        })
+    }
+
     fn change(
         &self,
         edit: impl FnOnce(&mut Settings) -> Result<(), AppError>,
@@ -289,7 +319,41 @@ mod tests {
         let flags = Settings::default().flags;
         assert!(flags.dust_removal && flags.triplet_import && flags.guided_capture);
         assert!(!flags.dev_overlay && !flags.experimental_auto_levels);
+        assert!(flags.update_check);
         assert_eq!(Settings::default().theme, Theme::System);
+        assert_eq!(Settings::default().last_update_check, None);
+    }
+
+    #[test]
+    fn the_update_check_is_due_once_a_day_and_never_when_off() {
+        const DAY: u64 = UPDATE_CHECK_INTERVAL_SECS;
+        let mut settings = Settings::default();
+        assert!(settings.update_check_due(1_000), "never asked");
+        settings.last_update_check = Some(1_000);
+        assert!(!settings.update_check_due(1_000 + DAY - 1));
+        assert!(settings.update_check_due(1_000 + DAY));
+        assert!(settings.update_check_due(500), "a clock set back");
+        settings.flags.update_check = false;
+        assert!(!settings.update_check_due(1_000 + 10 * DAY));
+        assert!(!Settings {
+            flags: Flags {
+                update_check: false,
+                ..Flags::default()
+            },
+            ..Settings::default()
+        }
+        .update_check_due(0));
+    }
+
+    #[test]
+    fn the_time_of_the_last_check_is_kept_across_a_reload() {
+        let path = temp_file("last-check");
+        let (store, _) = SettingsStore::load(&path);
+        store.set_last_update_check(1_700_000_000).unwrap();
+        let (reloaded, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert_eq!(reloaded.get().last_update_check, Some(1_700_000_000));
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]

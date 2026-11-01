@@ -13,6 +13,7 @@ import type {
   Roll,
   SearchQuery,
   Tag,
+  UpdateOutcome,
   VerifyResult,
 } from '../../shared/ipc';
 
@@ -127,6 +128,7 @@ export const DEFAULT_FLAGS = {
   guided_capture: true,
   dev_overlay: false,
   experimental_auto_levels: false,
+  update_check: true,
 };
 
 export const state = {
@@ -179,6 +181,10 @@ export const state = {
   settingsUnreadable: null as string | null,
   /** Saving settings is refused with this message when set. */
   settingsRefused: null as string | null,
+  /** What the update check finds, and the message the check or the install fails with when set. */
+  updateOutcome: { status: 'up_to_date' } as UpdateOutcome,
+  updateCheckFails: null as string | null,
+  updateInstallFails: null as string | null,
   /** The exports started, in order. */
   exports: [] as Array<{ frameIds: string[]; options: unknown }>,
   /** Starting an export is refused with this message when set. */
@@ -308,6 +314,16 @@ export const ipc = {
     if (patch.keys) state.keys = { ...patch.keys };
     return { last_library: state.lastLibrary, flags: { ...state.flags }, keys: { ...state.keys } };
   }),
+  updateCheck: vi.fn<(manual: boolean) => Promise<UpdateOutcome>>(async () => {
+    if (state.updateCheckFails) throw new IpcError({ code: 'Io', message: state.updateCheckFails });
+    return state.flags.update_check ? state.updateOutcome : { status: 'disabled' };
+  }),
+  updateInstall: vi.fn(async () => {
+    if (state.updateInstallFails) {
+      throw new IpcError({ code: 'InvalidInput', message: state.updateInstallFails });
+    }
+  }),
+  updateRestart: vi.fn(async () => undefined),
   folderCheck: vi.fn(async (path: string): Promise<FolderCheck> => ({
     path,
     free_bytes: 54_900_000_000,
@@ -509,6 +525,9 @@ export function resetFake() {
   state.settingsPatches = [];
   state.settingsUnreadable = null;
   state.settingsRefused = null;
+  state.updateOutcome = { status: 'up_to_date' };
+  state.updateCheckFails = null;
+  state.updateInstallFails = null;
   state.applies = [];
   state.applyRefused = null;
   state.neutralSamples = [];

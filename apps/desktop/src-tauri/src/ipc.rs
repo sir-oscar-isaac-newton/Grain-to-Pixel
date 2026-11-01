@@ -50,7 +50,10 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::system::settings_set,
             commands::system::log_client_event,
             commands::system::crash_notes_take,
-            commands::system::job_cancel
+            commands::system::job_cancel,
+            commands::update::update_check,
+            commands::update::update_install,
+            commands::update::update_restart
         ])
         .events(collect_events![
             JobProgress,
@@ -146,6 +149,9 @@ mod tests {
             "tagRename",
             "tagDelete",
             "search",
+            "updateCheck",
+            "updateInstall",
+            "updateRestart",
         ] {
             assert!(text.contains(command), "{command} missing from bindings");
         }

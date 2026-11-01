@@ -3,6 +3,7 @@ name: CI
 # Gates 1-6 of docs/workflow.md section 8 on Windows and macOS (arm64) in job `ci`;
 # gate 7 in jobs `smoke-macos` and `smoke-windows` (launch test); the WebDriver test is e2e-windows.yml; gate 8 lives in pr-title.yml.
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [develop, main]
@@ -116,7 +117,6 @@ jobs:
 
       - name: Smoke test (launch and wait for ready)
         run: pnpm smoke
-
 
   # Gate 7b: the same launch test on Windows (the WebDriver test of the window is e2e-windows.yml).
   smoke-windows:

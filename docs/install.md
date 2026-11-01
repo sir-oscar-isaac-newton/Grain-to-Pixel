@@ -28,6 +28,12 @@ xattr -dr com.apple.quarantine "/Applications/Grain to Pixel.app"
 
 The macOS build has the tethered-capture feature (`tether`) switched on; the Windows build has it switched off.
 
+## Updates
+
+Grain to Pixel asks GitHub Releases whether a newer version exists when it starts, at most once a day, and shows a notice with what is new. It installs nothing until you press **Install**, and checks the signature of the download first; a download that does not match is thrown away. It sends nothing about you or your library. **Settings > Check for updates now** asks at once. To stop the check, switch off **Check for updates** in the feature flags in Settings: the app then makes no network request at all.
+
+On Windows the installer closes the app and starts the new version. On macOS the app asks you to restart after the update is in place.
+
 ## First start
 
 The app asks for a library folder. Choose or create an empty folder on a disk with room for your scans; originals are copied there and never changed.

@@ -23,6 +23,8 @@ tauri = { version = "2", features = [] }
 # Native folder and file pickers (first-run dialog, import button); only the "open" permission is granted.
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
+# Also needed by the code `tauri::generate_context!` writes for the plugin settings in tauri.conf.json.
+serde_json = "1"
 # tauri-specta stack is still pre-release: pin exact versions (see docs/architecture.md).
 specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 specta-typescript = "=0.0.13"
@@ -30,9 +32,9 @@ tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tauri-plugin-updater = "2"
 
 [dev-dependencies]
-serde_json = "1"
 # Mock runtime, to check that job events reach the webview layer (src/sink.rs tests).
 tauri = { version = "2", features = ["test"] }
 

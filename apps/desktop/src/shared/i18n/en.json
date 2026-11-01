@@ -285,8 +285,31 @@
       "experimental_auto_levels": {
         "name": "Experimental auto levels",
         "purpose": "An alternative way to find the black and white points."
+      },
+      "update_check": {
+        "name": "Check for updates",
+        "purpose": "Asks GitHub Releases for a newer version when the app starts, at most once a day. Turn it off to make no network request at all."
       }
+    },
+    "updates": {
+      "heading": "Updates",
+      "intro": "Grain to Pixel asks GitHub Releases whether a newer version exists. It sends nothing about you or your library, and it never installs anything without your say.",
+      "check": "Check for updates now",
+      "checking": "Checking…",
+      "upToDate": "You have the newest version.",
+      "off": "The update check is switched off. Switch on “Check for updates” in the feature flags below to use this button.",
+      "failed": "Could not check for updates: {{message}}"
     }
+  },
+  "update": {
+    "available": "Version {{version}} is available. You have {{current}}.",
+    "notes": "What is new",
+    "install": "Install",
+    "later": "Later",
+    "installing": "Downloading the update and checking its signature…",
+    "installed": "The update is installed. Restart to use it.",
+    "restart": "Restart now",
+    "failed": "The update was not installed: {{message}}"
   },
   "apply": {
     "open": "Apply settings…",

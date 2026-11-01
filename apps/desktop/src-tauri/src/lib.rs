@@ -37,6 +37,9 @@ pub fn run() -> tauri::Result<()> {
     let handler = ipc::invoke_handler(&builder);
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Only the typed `update_*` commands reach it: no `updater:` permission is granted, so the
+        // page cannot call the plugin directly.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state::AppState::default())
         .on_page_load(|_webview, payload| {
             if matches!(payload.event(), PageLoadEvent::Finished) {
@@ -54,6 +57,7 @@ pub fn run() -> tauri::Result<()> {
             app.manage(JobManager::new(sink.clone()));
             app.manage(sink::EventsState(sink));
             app.manage(app_context(app));
+            app.manage(update_state(app));
             Ok(())
         })
         .build(tauri::generate_context!())?
@@ -80,6 +84,19 @@ fn app_context(app: &tauri::App) -> AppContext {
         tracing::warn!(%note, "settings reset to defaults");
     }
     ctx
+}
+
+/// The updater, built from `tauri.conf.json`; a failure is logged and leaves the update commands
+/// reporting an error, so a bad updater setting never stops the app.
+fn update_state(app: &tauri::App) -> commands::update::UpdateState {
+    use tauri_plugin_updater::UpdaterExt;
+    commands::update::UpdateState(match app.updater() {
+        Ok(updater) => Some(updater),
+        Err(err) => {
+            tracing::warn!(%err, "the updater could not be set up");
+            None
+        }
+    })
 }
 
 /// Starts file logging and the panic hook, then collects crash notes from earlier runs.

@@ -1,4 +1,4 @@
-﻿//! Application layer (ADR 0005): the only crate that combines the feature crates. It holds the
+//! Application layer (ADR 0005): the only crate that combines the feature crates. It holds the
 //! render pipeline (`pipeline::render`, `analyze`, the proxy builder and display conversion), the
 //! job manager (`jobs`), the library folder and settings (`context`, `services`). It does not
 //! depend on Tauri.
@@ -17,4 +17,7 @@ pub use pipeline::{
     RenderTarget, Stage, PREVIEW_EDGE, PROXY_EDGE, STAGE_ORDER,
 };
 pub use services::library::{Library, LibraryDetails};
-pub use services::settings::{Flags, FlagsPatch, Settings, SettingsPatch, Theme, WindowSize};
+pub use services::settings::{
+    Flags, FlagsPatch, Settings, SettingsPatch, SettingsStore, Theme, WindowSize,
+    UPDATE_CHECK_INTERVAL_SECS,
+};

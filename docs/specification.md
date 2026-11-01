@@ -237,7 +237,7 @@ CREATE INDEX idx_roll_tag_tag ON roll_tag(tag_id);
 
 ### 5.4 App-level settings
 
-`settings.json` in the OS app-config dir: last library path, window size, feature flags, theme. Per-library values live in the `meta` table.
+`settings.json` in the OS app-config dir: last library path, window size, feature flags, theme, and the keyboard shortcuts the user changed (`keys`, action name to key: only the changed ones are stored, and an empty map is the defaults; at most 64, action names of letters, digits, `.`, `-` and `_`, keys of 1 to 32 printable characters, and no two actions on one key, compared without case). Per-library values live in the `meta` table.
 
 ## 6. Public interface (Tauri commands and events)
 
@@ -415,7 +415,7 @@ The scan itself is hardware-bound and not budgeted, but the UI must stay respons
 
 **Accessibility (target: WCAG 2.1 AA for application chrome):**
 - Everything operable by keyboard (grid navigation with arrows, `[`/`]` previous/next frame, slider keys, curve points movable with arrow keys); visible focus rings; logical tab order.
-- **Colour keys** in the Develop view: `Q` adds red, `A` cyan, `W` green, `S` magenta, `E` blue, `D` yellow. A press moves the matching slider by 10 steps, Shift+press by 1. Tone sliders have no keys yet. All shortcuts are customizable: the key map is a user setting (action name to key), these keys are only the defaults, and a key assigned to two actions is rejected with a message.
+- **Colour keys** in the Develop view: `Q` adds red, `A` cyan, `W` green, `S` magenta, `E` blue, `D` yellow. A press moves the matching slider by 10 steps, Shift+press by 1. Tone sliders have no keys yet. All shortcuts are customizable: the key map is a user setting (action name to key), these keys are only the defaults, and a key assigned to two actions is rejected with a message. The actions are the eight of the Develop view (before/after `\`, previous and next frame `[` and `]`, back to the Library `Escape`, fit `0`, actual size `1`, zoom `+` and `-`) and the six colour keys. A key is one printable character other than space (letters are compared without case, so Shift never changes which action a key means), or the default `Escape`; Settings has a Keyboard section where *Change* takes the next key pressed (Escape cancels, a combination with Ctrl, Alt or Command is refused) and *Reset keyboard to defaults* clears the changes. A change is saved at once and applies the next time the Develop view opens. Shortcuts are ignored while typing in a field and while a dialog is open (a held colour key draws rough previews and the sharp one when it is let go), and every action stays reachable without its key.
 - Radix primitives for dialogs, menus and sliders (labelled, ARIA-correct); every control has an accessible name; status/progress uses `aria-live`.
 - Contrast >= 4.5:1 for text; colour is never the only signal; respects `prefers-reduced-motion`; UI scales with the OS text-size setting.
 - `eslint-plugin-jsx-a11y` in lint, `vitest-axe` on key components, manual screen-reader pass (NVDA, VoiceOver) before v0.1.0.

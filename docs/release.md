@@ -16,7 +16,7 @@ pnpm --filter @gtp/desktop exec tauri signer generate -w "$HOME/.tauri/gtp-updat
 
 ## Each release
 
-1. Set the same version in `apps/desktop/src-tauri/tauri.conf.json` (`version`) and in `Cargo.toml` (`[workspace.package]`), for example `0.1.0`. The updater compares this number with the one in `latest.json`, so a build that keeps the old number is never offered the new one.
+1. Set the same version in `apps/desktop/src-tauri/tauri.conf.json` (`version`) and in `Cargo.toml` (`[workspace.package]`), for example `0.1.0`. Every `version = "0.0.0"` on a path dependency in the crates' `Cargo.toml` files (`crates/*`, `apps/desktop/src-tauri`, `tools/benchmark`) must change too, then run `cargo update --workspace` so `Cargo.lock` follows. The updater compares this number with the one in `latest.json`, so a build that keeps the old number is never offered the new one.
 2. Merge that change, then tag the merge commit and push the tag:
 
 ```bash

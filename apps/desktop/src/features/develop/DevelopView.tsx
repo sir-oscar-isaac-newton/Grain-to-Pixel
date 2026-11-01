@@ -9,6 +9,7 @@ import {
   developSampleNeutral,
   frameGet,
   rollSetFilmBase,
+  settingsGet,
   type FrameSummary,
   type LevelsPoint,
 } from '../../shared/ipc';
@@ -39,6 +40,7 @@ import { Filmstrip } from './Filmstrip';
 import { clipping, computeHistogram } from './histogram';
 import { BaseInvertPanel } from './panels/BaseInvertPanel';
 import { ColourPanel } from './panels/ColourPanel';
+import { DustPanel } from './panels/DustPanel';
 import { GeometryPanel } from './panels/GeometryPanel';
 import { SharpenPanel } from './panels/SharpenPanel';
 import { TonePanel } from './panels/TonePanel';
@@ -113,6 +115,23 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   const readOnly = useLibraryStore((s) => s.library?.read_only ?? false);
   // Frames edited here change on disk, so the filmstrip's thumbnails follow the events.
   useLibraryEvents(true);
+
+  // The `dust_removal` flag of the settings, read once when the view opens (null: not known).
+  const [dustFlag, setDustFlag] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    settingsGet().then(
+      (settings) => {
+        if (alive) setDustFlag(settings.flags?.dust_removal ?? null);
+      },
+      () => {
+        // The panel then does not say anything about the flag.
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const [pick, setPick] = useState<PickTarget | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -566,6 +585,15 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 onAutoLevels={() => void autoLevels()}
                 onUseAsRollDefault={() => void makeRollDefault()}
               />
+              {info?.has_ir && (
+                <DustPanel
+                  recipe={recipe}
+                  readOnly={readOnly}
+                  working={working}
+                  flagOn={dustFlag}
+                  onChange={(next, options) => setRecipe(next, options)}
+                />
+              )}
               <ColourPanel
                 recipe={recipe}
                 readOnly={readOnly}

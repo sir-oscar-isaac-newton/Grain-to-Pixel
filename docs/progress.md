@@ -416,6 +416,15 @@
       "number": 147,
       "title": "Verify library from the UI",
       "branch": "feat/issue-147-verify-from-ui",
+      "status": "completed",
+      "pr": 156,
+      "commit": "a27d6fc"
+    },
+    {
+      "id": "U-12",
+      "number": 50,
+      "title": "Dust panel",
+      "branch": "feat/issue-50-dust-panel",
       "status": "in_progress",
       "pr": null,
       "commit": null

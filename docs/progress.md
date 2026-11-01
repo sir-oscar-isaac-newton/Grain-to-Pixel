@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-30",
+  "updated": "2026-11-01",
   "rules": "status is in_progress while the issue's branch exists or its PR is open; completed only after the PR is merged and closed (see docs/workflow.md section 10)",
   "issues": [
     {
@@ -425,9 +425,9 @@
       "number": 50,
       "title": "Dust panel",
       "branch": "feat/issue-50-dust-panel",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 157,
+      "commit": "2e1389d"
     },
     {
       "id": "P-14",
@@ -437,6 +437,15 @@
       "status": "completed",
       "pr": 136,
       "commit": "22644ee"
+    },
+    {
+      "id": "T-05",
+      "number": 62,
+      "title": "Packaging - NSIS and dmg installers",
+      "branch": "feat/issue-62-packaging-nsis-dmg",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

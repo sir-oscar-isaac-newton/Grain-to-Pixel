@@ -5,6 +5,11 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
+[features]
+# Tethered capture from a camera. Nothing is behind it yet; the macOS installer is built with it
+# on and the Windows installer without (specification section 15, docs/install.md).
+tether = []
+
 [lib]
 name = "grain_to_pixel_desktop_lib"
 

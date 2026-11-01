@@ -41,4 +41,4 @@ git push origin --delete v0.0.1-rc.1
 
 ## Trying the updater by hand
 
-The real update needs two releases: install the first, publish a second with a higher version, and start the first. The app should offer the new version (once a day at launch, or at once with **Settings > Check for updates now**), install it only after you press Install, and then restart. On a Mac, check that the updated app opens without a new Gatekeeper warning and write what you saw in `docs/install.md`.
+The real update needs two releases: install the first, publish a second with a higher version, and start the first. The app should offer the new version (once a day at launch, or at once with **Settings > Check for updates now**), install it only after you press Install, and then restart. On a Mac, check that the updated app opens without a new Gatekeeper warning. This was tried with the releases `v0.0.1` and `v0.0.2` on Windows and a Mac: both updated, and the Mac showed no new warning (`docs/install.md`).

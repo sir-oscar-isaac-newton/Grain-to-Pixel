@@ -869,7 +869,8 @@ describe('DevelopView', () => {
           fireEvent.pointerDown(grip, { button: 0, pointerId: 1, clientX: 400, clientY: 350 });
           fireEvent.pointerMove(grip, { pointerId: 1, clientX: 320, clientY: 200 });
           fireEvent.pointerUp(grip, { pointerId: 1 });
-          await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+          // The ratio itself was saved before the drag on a slow machine: wait for the drag's save.
+          await waitFor(() => expect(cropOf(savedRecipe()).w).toBeCloseTo(0.3, 6), {
             timeout: SAVE_DELAY_MS * 4,
           });
           const crop = cropOf(savedRecipe());

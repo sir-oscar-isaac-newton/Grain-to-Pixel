@@ -452,9 +452,9 @@
       "number": 63,
       "title": "Updater and release pipeline",
       "branch": "feat/issue-63-updater-release-pipeline",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 159,
+      "commit": "81d0755"
     }
   ]
 }

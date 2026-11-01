@@ -1382,6 +1382,7 @@ tech:
 FILES: apps/desktop/src-tauri/tauri.conf.json bundle settings; docs/install.md.
 ROUTES / MIGRATIONS: none.
 TESTS: bundle build in CI; manual install checks.
+DELIVERY (decided when T-05 was approved): a separate `Bundle` workflow builds the NSIS installer on windows-latest and the dmg (with `--features tether`) on macos-15 when the bundle settings change and on pushes to develop, and keeps both as artifacts; the Windows installer is gated at 40 MB, the dmg size only reported. The NSIS installer installs per user. `tether` is an empty Cargo feature until the capture work uses it. `pnpm check:bundle` keeps the settings from drifting. The two human install checks stay open until someone has installed on clean Windows and macOS.
 
 ## T-06
 title: Updater and release pipeline

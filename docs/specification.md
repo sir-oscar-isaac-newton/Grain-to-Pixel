@@ -431,6 +431,7 @@ The scan itself is hardware-bound and not budgeted, but the UI must stay respons
 ## 15. Deployment and releases
 
 - **Targets:** Windows x64 NSIS installer (`.exe`) and macOS arm64 `.dmg` (ad-hoc signed). No native Windows ARM64 build until someone with an ARM device can test it; the x64 installer is the stopgap there.
+- **Installers:** built by the `Bundle` workflow (`bundle.yml`) with `tauri build --bundles nsis` on Windows and `--bundles dmg --features tether` on macOS, and kept as artifacts. The NSIS installer installs per user (no administrator rights) and must be at most 40 MB (the workflow fails above that); the dmg size is reported only. `pnpm check:bundle` keeps the settings in `tauri.conf.json` from drifting. Install steps for the unsigned builds (SmartScreen, Gatekeeper) are in [install.md](install.md).
 - **Versioning:** SemVer, `CHANGELOG.md` kept from conventional commits. One channel (stable); prereleases use `-beta.N` tags and are not offered by the updater unless the user opts in.
 - **Pipeline:** push tag `vX.Y.Z` triggers GitHub Actions: lint/test, then `tauri build` on `windows-latest` and `macos-15`, then a **draft** GitHub Release with installers and the signed `latest.json` for the updater. The author reviews and publishes.
 - **Updates:** Tauri updater checks `latest.json` at launch (once per day) and prompts; never installs silently. To be verified in the M7 spike: updater behaviour on unsigned macOS builds (quarantine flag on the downloaded bundle).

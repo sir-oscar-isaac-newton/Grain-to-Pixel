@@ -85,6 +85,9 @@ jobs:
       - name: Progress record is valid
         run: pnpm check:progress
 
+      - name: Installer settings
+        run: pnpm check:bundle
+
   # Gate 7a: the built app starts and renders its page on macOS (Tauri has no WebDriver for WebKit).
   smoke-macos:
     name: smoke-macos

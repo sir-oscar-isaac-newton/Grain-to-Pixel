@@ -26,7 +26,20 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
+    "targets": ["nsis", "dmg"],
+    "category": "Photography",
+    "shortDescription": "Scan, convert, edit and archive film negatives",
+    "longDescription": "Grain to Pixel scans or imports film negatives, converts them to positives and keeps them in a local library. Nothing leaves your computer.",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "11.0"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

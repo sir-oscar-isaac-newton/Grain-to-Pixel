@@ -1669,3 +1669,25 @@ ROUTES used: library_verify, job_cancel, library_info (last_verify_at, last_veri
 MIGRATIONS: none.
 TESTS: the section with mocked ipc (never verified, last result, running, cancel, clean result, problems of each kind, a failed job), axe.
 NOTES: asked for while U-07 was approved, since the verify job of L-07 has no UI, so it is GitHub issue #147, not 76 (issue and pull request numbers share one sequence). Use 147 as its `number` in docs/progress.md.
+
+## U-16
+title: Output sharpening controls
+milestone: M3
+type: feature
+size: S
+estimate: 0.5d
+deps: P-15, U-04
+adr: no
+spec: specification section 4.2 step 9
+desc: Controls for the output sharpening of P-15, in the Develop view's side panel: an Amount slider (0 to 150) and a Radius slider (0.3 to 3 pixels), saved with the recipe like the other panels. Sharpening is applied only when exporting, so the panel says so, and says what the radius is measured in.
+ac:
+- A Sharpen section in the side panel with Amount (0 to 150, in steps of 1) and Radius (0.3 to 3, in steps of 0.1) sliders, previewed by nothing and saved with the recipe by the autosave; both work with the keyboard and a button resets them
+- The section says that the preview is not sharpened, that it is applied when exporting, and that the radius is in pixels of the exported image
+- The Apply settings dialog offers the output settings (the sharpening) as a group to copy to other frames
+- axe clean; strings via t()
+tech:
+FILES: apps/desktop/src/features/develop/panels/SharpenPanel.tsx, recipe-parts.ts (output helpers), DevelopView.tsx, library/ApplySettingsDialog.tsx (the Output group), fake-ipc.ts, en.json.
+ROUTES used: recipe_save (through the existing autosave).
+MIGRATIONS: none.
+TESTS: the panel with mocked ipc (values, ranges, keyboard steps, reset, disabled in a read-only library), the recipe helpers, the Apply settings group, axe.
+NOTES: asked for while P-15 was approved, since sharpening has no control in the UI, so it is GitHub issue #152, not 77 (issue and pull request numbers share one sequence). Use 152 as its `number` in docs/progress.md. The Output group copies the whole output block (colour space as well as sharpening); the export dialog still chooses the colour space of an export.

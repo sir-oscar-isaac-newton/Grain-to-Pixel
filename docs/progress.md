@@ -398,6 +398,15 @@
       "number": 152,
       "title": "Output sharpening controls",
       "branch": "feat/issue-152-sharpening-controls",
+      "status": "completed",
+      "pr": 154,
+      "commit": "bf8cb3d"
+    },
+    {
+      "id": "P-13",
+      "number": 49,
+      "title": "IR dust removal stage",
+      "branch": "feat/issue-49-ir-dust-removal",
       "status": "in_progress",
       "pr": null,
       "commit": null

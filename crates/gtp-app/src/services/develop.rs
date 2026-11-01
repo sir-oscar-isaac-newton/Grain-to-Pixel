@@ -12,7 +12,7 @@
 //! by the pipeline, so values from the UI can never reach the stages out of range.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
@@ -26,8 +26,8 @@ use gtp_io::{read_tiff16, to_f32_linear, Limits};
 use gtp_negative::{levels_from_sample, sample_film_base, LevelPoint, Rect};
 
 use crate::pipeline::{
-    analyze, build_proxy, inverted_frame, normalized_frame, to_rgba8_srgb, Histogram,
-    PipelineInput, RenderTarget, PROXY_EDGE,
+    analyze, build_plane_proxy, build_proxy, inverted_frame, normalized_frame, to_rgba8_srgb,
+    Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
 };
 use crate::services::library::Library;
 
@@ -212,6 +212,8 @@ fn pixel_area(region: Crop, image: &ImageF32) -> Result<Rect, AppError> {
 /// One frame's proxy and the state of its renders.
 struct Entry {
     rgb: Arc<ImageF32>,
+    /// The infrared plane at the size of `rgb`, when the frame has one that could be read.
+    ir: Option<Arc<ImageF32>>,
     has_ir: bool,
     /// The roll's base as of the last open (the roll can get one after the proxy was built).
     film_base: Mutex<Option<[f32; 3]>>,
@@ -222,10 +224,11 @@ struct Entry {
 }
 
 impl Entry {
-    fn input(&self) -> PipelineInput {
+    /// What a render starts from; the infrared plane only when `dust` (the `dust_removal` flag).
+    fn input(&self, dust: bool) -> PipelineInput {
         PipelineInput {
             rgb: Arc::clone(&self.rgb),
-            ir: None,
+            ir: self.ir.clone().filter(|_| dust),
             film_base: *self
                 .film_base
                 .lock()
@@ -250,6 +253,8 @@ impl Entry {
 pub struct DevelopService {
     /// Most recently used first.
     cache: Mutex<Vec<(FrameId, Arc<Entry>)>>,
+    /// The `dust_removal` feature flag is off (see [`Self::set_dust_removal`]).
+    dust_off: AtomicBool,
 }
 
 fn superseded() -> AppError {
@@ -270,12 +275,63 @@ pub(crate) fn read_scan(library: &Library, sources: &[SourceFile]) -> Result<Ima
     to_f32_linear(&tiff)
 }
 
-/// Decodes a frame's original and builds its proxy.
+/// Decodes a frame's infrared plane at full size (linear f32, 1 channel), which must be as big as
+/// the scan `like`.
+pub(crate) fn read_ir(
+    library: &Library,
+    sources: &[SourceFile],
+    like: (u32, u32),
+) -> Result<ImageF32, AppError> {
+    let source = sources
+        .iter()
+        .find(|s| s.role == SourceRole::Ir)
+        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "This frame has no infrared file."))?;
+    let path = library.resolve(Path::new(&source.rel_path))?;
+    let plane = to_f32_linear(&read_tiff16(&path, &Limits::default())?)?;
+    if plane.channels != 1 || (plane.width, plane.height) != like {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "The infrared file does not fit the scan.",
+        )
+        .with_details(format!(
+            "{}x{}x{} against {}x{}",
+            plane.width, plane.height, plane.channels, like.0, like.1
+        )));
+    }
+    Ok(plane)
+}
+
+/// The infrared plane of a frame, or `None` when it has none or it cannot be used: dust removal is
+/// then skipped, and editing goes on (the problem is logged).
+pub(crate) fn read_ir_or_skip(
+    library: &Library,
+    sources: &[SourceFile],
+    frame: &Frame,
+    like: (u32, u32),
+) -> Option<ImageF32> {
+    if !frame.has_ir {
+        return None;
+    }
+    match read_ir(library, sources, like) {
+        Ok(plane) => Some(plane),
+        Err(err) => {
+            tracing::warn!(frame = %frame.id, error = %err.message, "infrared plane not used");
+            None
+        }
+    }
+}
+
+/// Decodes a frame's original and builds its proxy (and that of its infrared plane).
 fn load(library: &Library, sources: &[SourceFile], frame: &Frame) -> Result<Entry, AppError> {
     let full = read_scan(library, sources)?;
     let proxy = build_proxy(&full, PROXY_EDGE)?;
+    let ir = read_ir_or_skip(library, sources, frame, (full.width, full.height))
+        .map(|plane| build_plane_proxy(&plane, PROXY_EDGE))
+        .transpose()?
+        .map(Arc::new);
     Ok(Entry {
         rgb: Arc::new(proxy),
+        ir,
         has_ir: frame.has_ir,
         film_base: Mutex::new(None),
         latest: AtomicU64::new(0),
@@ -284,6 +340,15 @@ fn load(library: &Library, sources: &[SourceFile], frame: &Frame) -> Result<Entr
 }
 
 impl DevelopService {
+    /// Turns dust removal on or off for the renders that follow (the `dust_removal` feature flag).
+    pub fn set_dust_removal(&self, on: bool) {
+        self.dust_off.store(!on, Ordering::Relaxed);
+    }
+
+    fn dust_removal(&self) -> bool {
+        !self.dust_off.load(Ordering::Relaxed)
+    }
+
     fn cache(&self) -> std::sync::MutexGuard<'_, Vec<(FrameId, Arc<Entry>)>> {
         self.cache.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -348,16 +413,14 @@ impl DevelopService {
             .cache()
             .iter()
             .find(|(f, _)| *f == id)
-            .map(|(_, entry)| Arc::clone(&entry.rgb));
-        let rgb = match cached {
-            Some(rgb) => rgb,
-            None => load(library, &sources, &frame)?.rgb,
+            .map(|(_, entry)| Arc::clone(entry));
+        let entry = match cached {
+            Some(entry) => entry,
+            None => Arc::new(load(library, &sources, &frame)?),
         };
-        Ok(PipelineInput {
-            rgb,
-            ir: None,
-            film_base: base,
-        })
+        let mut input = entry.input(self.dust_removal());
+        input.film_base = base;
+        Ok(input)
     }
 
     /// Opens a frame for editing: decodes the original into the cache (when it is not there) and
@@ -390,7 +453,7 @@ impl DevelopService {
         base: Option<[f32; 3]>,
     ) -> Result<DevelopAnalysis, AppError> {
         let entry = self.ensure(library, id)?;
-        let mut input = entry.input();
+        let mut input = entry.input(self.dust_removal());
         if let Some(base) = base {
             check_base(base)?;
             input.film_base = Some(base);
@@ -435,7 +498,7 @@ impl DevelopService {
         point: LevelsPoint,
     ) -> Result<Invert, AppError> {
         let entry = self.ensure(library, id)?;
-        let frame = normalized_frame(&entry.input(), recipe)?;
+        let frame = normalized_frame(&entry.input(self.dust_removal()), recipe)?;
         let area = pixel_area(region, &frame)?;
         levels_from_sample(&frame, area, point.into(), &recipe.clone().clamped().invert)
     }
@@ -453,7 +516,7 @@ impl DevelopService {
         region: Crop,
     ) -> Result<Color, AppError> {
         let entry = self.ensure(library, id)?;
-        let frame = inverted_frame(&entry.input(), recipe)?;
+        let frame = inverted_frame(&entry.input(self.dust_removal()), recipe)?;
         let Rect { x, y, w, h } = pixel_area(region, &frame)?;
         neutral_balance(&frame, Area { x, y, w, h }, &recipe.clone().clamped().color)
     }
@@ -486,8 +549,11 @@ impl DevelopService {
         if entry.latest.load(Ordering::SeqCst) > seq {
             return Err(superseded());
         }
-        let image =
-            crate::pipeline::render(&entry.input(), recipe, RenderTarget::Preview { max_edge })?;
+        let image = crate::pipeline::render(
+            &entry.input(self.dust_removal()),
+            recipe,
+            RenderTarget::Preview { max_edge },
+        )?;
         let rgba = to_rgba8_srgb(&image)?;
         if entry.latest.load(Ordering::SeqCst) > seq {
             return Err(superseded());
@@ -596,6 +662,67 @@ mod tests {
         assert!(t.service.cached().is_empty());
     }
 
+    #[test]
+    fn a_frame_with_an_infrared_plane_is_dusted_in_the_preview_unless_the_flag_is_off() {
+        use gtp_core::testing::synthetic::Params;
+        let t = Fixture::new("dust-preview");
+        let dusty = Params {
+            width: 400,
+            height: 300,
+            rebate: [28; 4],
+            dust_specks: 8,
+            with_ir: true,
+            ..Params::default()
+        };
+        let id = t.frame_params(1, &dusty);
+        let recipe = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        let render = |seq: u64| {
+            t.service.render(&t.library, id, &recipe, 400, seq).unwrap()[HEADER_BYTES..].to_vec()
+        };
+        let on = render(1);
+        t.service.set_dust_removal(false);
+        let off = render(2);
+        assert_ne!(on, off, "the flag switches the stage");
+        t.service.set_dust_removal(true);
+        assert_eq!(render(3), on, "and back");
+
+        // Dust removal off in the recipe has the same effect as the flag.
+        let mut no_dust = recipe.clone();
+        no_dust.dust.enabled = false;
+        let bytes = t.service.render(&t.library, id, &no_dust, 400, 4).unwrap();
+        assert_eq!(bytes[HEADER_BYTES..], off[..]);
+    }
+
+    #[test]
+    fn an_infrared_file_that_does_not_fit_is_skipped_and_the_frame_still_opens() {
+        use gtp_core::testing::synthetic::Params;
+        let t = Fixture::new("dust-bad-plane");
+        let params = Params {
+            width: 200,
+            height: 150,
+            rebate: [14; 4],
+            dust_specks: 4,
+            with_ir: true,
+            ..Params::default()
+        };
+        let id = t.frame_params(1, &params);
+        let sources = t.library.read(|c| c.sources_of(id)).unwrap();
+        let ir = sources.iter().find(|s| s.role == SourceRole::Ir).unwrap();
+        let path = t.library.resolve(Path::new(&ir.rel_path)).unwrap();
+        let small = gtp_io::Tiff16 {
+            width: 10,
+            height: 10,
+            channels: 1,
+            data: vec![0; 100],
+        };
+        gtp_io::write_tiff16(&path, &small, gtp_io::Compression::None).unwrap();
+        let info = t.service.open(&t.library, id).unwrap();
+        assert!(info.has_ir);
+        t.service
+            .render(&t.library, id, &Recipe::default(), 300, 1)
+            .unwrap();
+        assert!(t.service.get(id).unwrap().ir.is_none());
+    }
     #[test]
     fn a_preview_is_a_header_then_rgba8_pixels() {
         let t = Fixture::new("render");
@@ -962,7 +1089,7 @@ mod tests {
 
         // What the Color stage receives, balanced by those colours: channels equal within 2%.
         let entry = t.service.ensure(&t.library, id).unwrap();
-        let frame = inverted_frame(&entry.input(), &recipe).unwrap();
+        let frame = inverted_frame(&entry.input(true), &recipe).unwrap();
         let area = pixel_area(region, &frame).unwrap();
         let gains = gtp_edit::channel_gains(&color);
         let mut sums = [0.0f64; 3];

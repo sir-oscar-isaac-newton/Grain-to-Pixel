@@ -9,6 +9,7 @@ gtp-core = { version = "0.0.0", path = "../gtp-core" }
 rayon = "1.12.0"
 
 [dev-dependencies]
+gtp-core = { path = "../gtp-core", version = "0.0.0", features = ["testing"] }
 proptest = "1.12.0"
 serde_json = "1"
 

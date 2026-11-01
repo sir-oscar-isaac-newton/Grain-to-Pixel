@@ -1,10 +1,11 @@
 //! Edit stages over linear `ImageF32` buffers: colour balance and tone (in place) and geometry
-//! (a new buffer); IR dust removal follows. Per-pixel loops run in parallel with `rayon`; each
+//! (a new buffer), IR dust removal and output sharpening. Per-pixel loops run in parallel with `rayon`; each
 //! pixel or output row is independent, so the result is the same as on one thread. Every tuning constant is a named, documented `pub const`
 //! so it can be calibrated against reference renders (issue Q-03).
 
 mod color;
 mod curve;
+mod dust;
 mod geometry;
 mod sharpen;
 mod tone;
@@ -13,6 +14,10 @@ pub use color::{
     apply_color, channel_gains, neutral_balance, Area, AXIS_STOPS, TEMPERATURE_STOPS, TINT_STOPS,
 };
 pub use curve::{Curve, LUT_SIZE};
+pub use dust::{
+    remove_dust, DustReport, DIAGONAL_WEIGHT, DUST_CLEAR_PERCENTILE, MAX_MASKED_FRACTION,
+    MAX_SPOT_FRACTION,
+};
 pub use geometry::{apply_geometry, output_size};
 pub use sharpen::{apply_sharpen, KERNEL_SIGMAS, SHARPEN_GAMMA};
 pub use tone::{

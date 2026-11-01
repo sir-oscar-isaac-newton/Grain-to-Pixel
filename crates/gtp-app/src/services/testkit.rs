@@ -39,22 +39,36 @@ pub(crate) fn add_frame_with(
     height: u32,
     pattern: Pattern,
 ) -> FrameId {
-    let scan = synthetic::negative(
-        u64::from(index),
-        &Params {
-            width,
-            height,
-            rebate: [width / 14; 4],
-            pattern,
-            ..Params::default()
-        },
-    )
-    .unwrap();
+    let params = Params {
+        width,
+        height,
+        rebate: [width / 14; 4],
+        pattern,
+        ..Params::default()
+    };
+    add_frame_params(library, roll, index, &params)
+}
+
+/// A frame whose original is the synthetic negative of `params`, with its infrared plane (as a
+/// file of its own, like the LS-50 import makes) when the parameters ask for one.
+pub(crate) fn add_frame_params(
+    library: &Library,
+    roll: RollId,
+    index: u32,
+    params: &Params,
+) -> FrameId {
+    let (width, height) = (params.width, params.height);
+    let scan = synthetic::negative(u64::from(index), params).unwrap();
     let id = FrameId::new();
     let rel = originals_rel(roll, id).join("scan.tif");
     let path = library.resolve(&rel).unwrap();
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     write_tiff16(&path, &from_f32_linear(&scan.image), Compression::None).unwrap();
+    let ir_rel = originals_rel(roll, id).join("ir.tif");
+    if let Some(ir) = &scan.ir {
+        let ir_path = library.resolve(&ir_rel).unwrap();
+        write_tiff16(&ir_path, &from_f32_linear(ir), Compression::None).unwrap();
+    }
     library
         .write(|c| {
             c.insert_frame(&Frame {
@@ -64,7 +78,7 @@ pub(crate) fn add_frame_with(
                 kind: FrameKind::ScanRgbIr,
                 width,
                 height,
-                has_ir: false,
+                has_ir: scan.ir.is_some(),
                 note: String::new(),
                 created_at: String::new(),
                 edited_at: None,
@@ -75,7 +89,17 @@ pub(crate) fn add_frame_with(
                 rel_path: rel.to_string_lossy().replace('\\', "/"),
                 sha256: String::new(),
                 bytes: 0,
-            })
+            })?;
+            if scan.ir.is_some() {
+                c.insert_source(&SourceFile {
+                    frame_id: id,
+                    role: SourceRole::Ir,
+                    rel_path: ir_rel.to_string_lossy().replace('\\', "/"),
+                    sha256: String::new(),
+                    bytes: 0,
+                })?;
+            }
+            Ok(())
         })
         .unwrap();
     id
@@ -120,6 +144,11 @@ impl Fixture {
         pattern: Pattern,
     ) -> FrameId {
         add_frame_with(&self.library, self.roll, index, width, height, pattern)
+    }
+
+    /// A frame whose original and infrared plane are the synthetic negative of `params`.
+    pub(crate) fn frame_params(&self, index: u32, params: &Params) -> FrameId {
+        add_frame_params(&self.library, self.roll, index, params)
     }
 
     /// A frame with no original file, enough for saving and copying recipes.

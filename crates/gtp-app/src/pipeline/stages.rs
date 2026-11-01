@@ -3,12 +3,13 @@
 use gtp_core::recipe::{BaseSource, Crop, Geometry};
 use gtp_core::{AppError, ImageF32, Recipe};
 
+use super::proxy::resize_plane;
 use super::PipelineInput;
 
 /// One step of the render pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
-    /// IR dust removal; a no-op until P-12.
+    /// IR dust removal (`dust` in the recipe); skipped without an infrared plane.
     Dust,
     /// Crop to the frame (`geometry.crop`), as an exact pixel copy.
     Crop,
@@ -52,7 +53,24 @@ pub(crate) fn run_stage(
     recipe: &Recipe,
 ) -> Result<ImageF32, AppError> {
     match stage {
-        Stage::Dust => {}
+        Stage::Dust => {
+            if let (true, Some(ir)) = (recipe.dust.enabled, &input.ir) {
+                // A preview is made from a smaller copy of the scan; the plane follows it.
+                let resized;
+                let plane = if (ir.width, ir.height) == (image.width, image.height) {
+                    ir.as_ref()
+                } else {
+                    resized = resize_plane(ir, image.width, image.height)?;
+                    &resized
+                };
+                let report = gtp_edit::remove_dust(&mut image, plane, &recipe.dust)?;
+                tracing::debug!(
+                    masked = report.masked,
+                    applied = report.applied,
+                    "dust removal"
+                );
+            }
+        }
         Stage::Crop => {
             if recipe.geometry.crop != Crop::default() {
                 let crop_only = Geometry {

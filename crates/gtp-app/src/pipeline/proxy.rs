@@ -5,7 +5,7 @@
 //! the sharp rebate edge, which keeps film-base measurement and frame detection reliable on proxies.
 
 use fast_image_resize::images::TypedImage;
-use fast_image_resize::pixels::F32x3;
+use fast_image_resize::pixels::{F32x3, F32};
 use fast_image_resize::{FilterType, ResizeAlg, ResizeOptions, Resizer};
 use gtp_core::{AppError, ErrorCode, ImageF32};
 use rayon::prelude::*;
@@ -15,6 +15,61 @@ pub const PROXY_EDGE: u32 = 2048;
 /// Long edge of interactive previews (while a slider is dragged).
 pub const PREVIEW_EDGE: u32 = 1600;
 
+/// The size of a `width` x `height` picture shrunk to a long edge of `max_edge`, or `None` when it
+/// is already that small.
+fn proxy_size(width: u32, height: u32, max_edge: u32) -> Option<(u32, u32)> {
+    let long = width.max(height);
+    if long <= max_edge {
+        return None;
+    }
+    let scale = f64::from(max_edge) / f64::from(long);
+    let shrink = |side: u32| ((f64::from(side) * scale).round() as u32).clamp(1, max_edge);
+    Some(if width >= height {
+        (max_edge, shrink(height))
+    } else {
+        (shrink(width), max_edge)
+    })
+}
+
+/// [`build_proxy`] for a 1-channel plane (the infrared plane): the same size, the same area filter.
+pub fn build_plane_proxy(plane: &ImageF32, max_edge: u32) -> Result<ImageF32, AppError> {
+    if max_edge == 0 {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "A proxy needs a size above 0.",
+        ));
+    }
+    match proxy_size(plane.width, plane.height, max_edge) {
+        Some((w, h)) => resize_plane(plane, w, h),
+        None => Ok(plane.clone()),
+    }
+}
+
+/// A 1-channel plane resized to `width` x `height` with the area filter.
+pub fn resize_plane(plane: &ImageF32, width: u32, height: u32) -> Result<ImageF32, AppError> {
+    if plane.channels != 1 || width == 0 || height == 0 {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "A plane resize needs 1 channel and a size.",
+        )
+        .with_details(format!("{} channels, {width}x{height}", plane.channels)));
+    }
+    if (plane.width, plane.height) == (width, height) {
+        return Ok(plane.clone());
+    }
+    let resize_error =
+        |err: &dyn std::fmt::Display| AppError::internal(format!("plane resize: {err}"));
+    let pixels: Vec<F32> = plane.data.par_iter().map(|&v| F32::new(v)).collect();
+    let source =
+        TypedImage::from_pixels(plane.width, plane.height, pixels).map_err(|e| resize_error(&e))?;
+    let mut target = TypedImage::<F32>::new(width, height);
+    let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Box));
+    Resizer::new()
+        .resize_typed(&source, &mut target, &options)
+        .map_err(|e| resize_error(&e))?;
+    let data = target.pixels().iter().map(|p| p.0).collect();
+    ImageF32::new(width, height, 1, data)
+}
 /// A copy of `image` whose long edge is at most `max_edge`, keeping the aspect ratio. An image
 /// that is already small enough is returned unchanged (as a copy). Needs 3 channels.
 pub fn build_proxy(image: &ImageF32, max_edge: u32) -> Result<ImageF32, AppError> {
@@ -31,16 +86,8 @@ pub fn build_proxy(image: &ImageF32, max_edge: u32) -> Result<ImageF32, AppError
         ));
     }
     let (w, h) = (image.width, image.height);
-    let long = w.max(h);
-    if long <= max_edge {
+    let Some((new_w, new_h)) = proxy_size(w, h, max_edge) else {
         return Ok(image.clone());
-    }
-    let scale = f64::from(max_edge) / f64::from(long);
-    let shrink = |side: u32| ((f64::from(side) * scale).round() as u32).clamp(1, max_edge);
-    let (new_w, new_h) = if w >= h {
-        (max_edge, shrink(h))
-    } else {
-        (shrink(w), max_edge)
     };
 
     // The resize works on its own pixel type, so the pixels are copied in and out; those copies
@@ -147,6 +194,30 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_plane_proxy_has_the_size_of_the_picture_proxy_and_keeps_flat_values() {
+        for ((w, h), edge) in [
+            ((6000, 4000), PROXY_EDGE),
+            ((4000, 6000), PREVIEW_EDGE),
+            ((90, 60), 100),
+        ] {
+            let plane = ImageF32::new(w, h, 1, vec![0.8; (w * h) as usize]).unwrap();
+            let picture = build_proxy(&flat(w, h, 0.4), edge).unwrap();
+            let small = build_plane_proxy(&plane, edge).unwrap();
+            assert_eq!((small.width, small.height), (picture.width, picture.height));
+            assert_eq!(small.channels, 1);
+            assert!(small.data.iter().all(|v| (v - 0.8).abs() < 1e-5));
+        }
+    }
+
+    #[test]
+    fn a_plane_is_resized_by_averaging_and_a_wrong_request_is_refused() {
+        let plane = ImageF32::new(4, 2, 1, vec![0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]).unwrap();
+        let half = resize_plane(&plane, 2, 1).unwrap();
+        assert!(half.data.iter().all(|v| (v - 0.5).abs() < 1e-5));
+        assert!(resize_plane(&flat(4, 2, 0.5), 2, 1).is_err());
+        assert!(resize_plane(&plane, 0, 1).is_err());
+    }
     #[test]
     fn a_small_image_is_returned_as_is() {
         let small = flat(800, 600, 0.4);

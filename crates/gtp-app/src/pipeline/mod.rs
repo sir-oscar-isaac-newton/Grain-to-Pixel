@@ -16,14 +16,15 @@ use gtp_core::{AppError, ErrorCode, ImageF32, Recipe};
 
 pub use analyze::{analyze, Analysis};
 pub use display::{histogram, to_rgba8_srgb, Histogram};
-pub use proxy::{build_proxy, PREVIEW_EDGE, PROXY_EDGE};
+pub use proxy::{build_plane_proxy, build_proxy, resize_plane, PREVIEW_EDGE, PROXY_EDGE};
 pub use stages::{Stage, STAGE_ORDER};
 /// What a render starts from.
 #[derive(Debug, Clone)]
 pub struct PipelineInput {
     /// The scan (or a proxy of it): linear RGB, 3 channels.
     pub rgb: Arc<ImageF32>,
-    /// The infrared plane, if the scan has one (used by dust removal, P-12).
+    /// The infrared plane (1 channel), if the scan has one and dust removal is wanted. It is the size
+    /// of `rgb`; a render at another size resizes it.
     pub ir: Option<Arc<ImageF32>>,
     /// The roll's measured film base, if there is one.
     pub film_base: Option<[f32; 3]>,
@@ -163,6 +164,81 @@ mod tests {
         }
     }
 
+    fn dusty(specks: u32) -> Synthetic {
+        scan(&Params {
+            width: 800,
+            height: 600,
+            rebate: [60, 40, 90, 50],
+            dust_specks: specks,
+            with_ir: specks > 0,
+            ..Params::default()
+        })
+    }
+
+    fn with_ir(s: &Synthetic) -> PipelineInput {
+        PipelineInput {
+            ir: s.ir.clone().map(Arc::new),
+            ..input_of(s, None)
+        }
+    }
+
+    /// How many samples of two renders differ by more than a tenth.
+    fn wrong(a: &ImageF32, b: &ImageF32) -> usize {
+        a.data
+            .iter()
+            .zip(&b.data)
+            .filter(|(x, y)| (*x - *y).abs() > 0.1)
+            .count()
+    }
+
+    #[test]
+    fn the_dust_stage_fills_the_specks_the_infrared_plane_shows() {
+        let (dust, clean) = (dusty(6), dusty(0));
+        let recipe = true_recipe(&dust);
+        let want = render(&input_of(&clean, None), &recipe, RenderTarget::Full).unwrap();
+        let without = render(&input_of(&dust, None), &recipe, RenderTarget::Full).unwrap();
+        let fixed = render(&with_ir(&dust), &recipe, RenderTarget::Full).unwrap();
+        let (before, after) = (wrong(&without, &want), wrong(&fixed, &want));
+        assert!(before > 30, "the specks show");
+        assert!(
+            after * 4 < before,
+            "{after} samples wrong after, {before} before"
+        );
+    }
+
+    #[test]
+    fn the_dust_stage_is_skipped_when_disabled_and_without_a_plane() {
+        let dust = dusty(6);
+        let mut recipe = true_recipe(&dust);
+        let plain = render(&input_of(&dust, None), &recipe, RenderTarget::Full).unwrap();
+        recipe.dust.enabled = false;
+        let off = render(&with_ir(&dust), &recipe, RenderTarget::Full).unwrap();
+        assert_eq!(off, plain);
+        // A scan with no dust is unchanged by the stage.
+        let clean = dusty(0);
+        let recipe = true_recipe(&clean);
+        let plain = render(&input_of(&clean, None), &recipe, RenderTarget::Full).unwrap();
+        let plane = ImageF32::new(800, 600, 1, vec![1.0; 800 * 600]).unwrap();
+        let input = PipelineInput {
+            ir: Some(Arc::new(plane)),
+            ..input_of(&clean, None)
+        };
+        assert_eq!(render(&input, &recipe, RenderTarget::Full).unwrap(), plain);
+    }
+
+    #[test]
+    fn a_preview_resizes_the_infrared_plane_to_the_scaled_scan() {
+        let dust = dusty(6);
+        let recipe = true_recipe(&dust);
+        let small = render(
+            &with_ir(&dust),
+            &recipe,
+            RenderTarget::Preview { max_edge: 100 },
+        );
+        let small = small.unwrap();
+        assert!(small.width > 0 && small.height > 0);
+        assert!(small.data.iter().all(|v| v.is_finite()));
+    }
     #[test]
     fn one_stop_of_exposure_doubles_the_rendered_positive() {
         let s = scan(&Params {

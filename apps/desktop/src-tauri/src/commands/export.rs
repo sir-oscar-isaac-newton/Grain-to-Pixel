@@ -30,9 +30,10 @@ pub fn export_start(
     // Fail now, not inside the job, on options that cannot work.
     options.validate()?;
 
+    let dust_removal = ctx.settings().get().flags.dust_removal;
     let count = frame_ids.len();
     let id = jobs.spawn(JobKind::Export, move |job| {
-        let result = export_frames(&library, &frame_ids, &options, job)?;
+        let result = export_frames(&library, &frame_ids, &options, dust_removal, job)?;
         tracing::info!(
             exported = result.files.len(),
             failed = result.failed.len(),

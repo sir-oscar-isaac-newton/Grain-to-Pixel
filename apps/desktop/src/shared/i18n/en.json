@@ -159,7 +159,7 @@
     "exportFailed_other": "{{count}} frames could not be exported",
     "exportCancelled": "files already written stay",
     "verify": "Verify library",
-    "verifyClean": "nothing found",
+    "verifyClean": "no problems found",
     "verifyProblems_one": "{{count}} problem found",
     "verifyProblems_other": "{{count}} problems found",
     "failedFrames": "Frames that could not be exported",

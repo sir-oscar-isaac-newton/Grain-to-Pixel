@@ -678,9 +678,9 @@ mod tests {
     fn dust_is_removed_from_the_file_only_when_the_flag_is_on_and_the_frame_has_a_plane() {
         let t = Fixture::new("export-dust");
         let params = Params {
-            width: 200,
-            height: 140,
-            rebate: [14; 4],
+            width: 400,
+            height: 300,
+            rebate: [28; 4],
             dust_specks: 6,
             with_ir: true,
             ..Params::default()
@@ -708,9 +708,9 @@ mod tests {
     fn a_missing_infrared_file_does_not_stop_the_export() {
         let t = Fixture::new("export-dust-missing");
         let params = Params {
-            width: 200,
-            height: 140,
-            rebate: [14; 4],
+            width: 400,
+            height: 300,
+            rebate: [28; 4],
             dust_specks: 6,
             with_ir: true,
             ..Params::default()

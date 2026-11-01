@@ -16,6 +16,7 @@ pub use color::{
 pub use curve::{Curve, LUT_SIZE};
 pub use dust::{
     remove_dust, DustReport, DIAGONAL_WEIGHT, DUST_CLEAR_PERCENTILE, MAX_MASKED_FRACTION,
+    MAX_SPOT_FRACTION,
 };
 pub use geometry::{apply_geometry, output_size};
 pub use sharpen::{apply_sharpen, KERNEL_SIGMAS, SHARPEN_GAMMA};

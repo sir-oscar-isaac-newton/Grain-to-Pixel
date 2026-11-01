@@ -166,9 +166,9 @@ mod tests {
 
     fn dusty(specks: u32) -> Synthetic {
         scan(&Params {
-            width: 200,
-            height: 150,
-            rebate: [16, 10, 24, 12],
+            width: 800,
+            height: 600,
+            rebate: [60, 40, 90, 50],
             dust_specks: specks,
             with_ir: specks > 0,
             ..Params::default()
@@ -218,7 +218,7 @@ mod tests {
         let clean = dusty(0);
         let recipe = true_recipe(&clean);
         let plain = render(&input_of(&clean, None), &recipe, RenderTarget::Full).unwrap();
-        let plane = ImageF32::new(200, 150, 1, vec![1.0; 200 * 150]).unwrap();
+        let plane = ImageF32::new(800, 600, 1, vec![1.0; 800 * 600]).unwrap();
         let input = PipelineInput {
             ir: Some(Arc::new(plane)),
             ..input_of(&clean, None)

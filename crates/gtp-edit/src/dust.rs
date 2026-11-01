@@ -5,6 +5,7 @@
 //! ```text
 //! clear  = the DUST_CLEAR_PERCENTILE of the infrared plane (what a clean pixel reads)
 //! mask   = ir < clear * (1 - threshold)
+//! mask   = mask without the spots larger than MAX_SPOT_FRACTION of the picture
 //! mask   = mask dilated by grow_px (a square of side 2 * grow_px + 1)
 //! fill   = masked pixels, from the outside in, each the weighted mean of its known neighbours
 //! ```
@@ -15,6 +16,11 @@
 //! passes: in each, every masked pixel that has a known neighbour (8-neighbourhood, the four
 //! straight ones weighing 1 and the diagonal ones [`DIAGONAL_WEIGHT`]) becomes their mean, and then
 //! counts as known for the next pass, so the fill closes in from the edge of a spot to its centre.
+//!
+//! A dark area bigger than a speck is not dust: the film holder or the rim of the frame shows in the
+//! plane as a wide dark band, and filling it would smear streaks over the picture's edge. Spots (8-connected
+//! runs of masked pixels) larger than [`MAX_SPOT_FRACTION`] of the picture are left out of the mask, so a
+//! hair or a fibre is still removed and a band is not.
 //!
 //! An infrared plane that masks more than [`MAX_MASKED_FRACTION`] of the picture is not showing
 //! dust (a plane of the wrong kind, a scan of a dark film) and is ignored, so a bad plane cannot
@@ -33,6 +39,9 @@ pub const DUST_CLEAR_PERCENTILE: f32 = 0.9;
 pub const DIAGONAL_WEIGHT: f32 = std::f32::consts::FRAC_1_SQRT_2;
 /// A plane that masks more than this share of the picture is ignored.
 pub const MAX_MASKED_FRACTION: f32 = 0.25;
+/// A spot (before it is grown) covering more than this share of the picture is not dust: about
+/// 11,000 pixels in a 21 MP scan, a disc 120 pixels across.
+pub const MAX_SPOT_FRACTION: f32 = 0.0005;
 /// Steps of the histogram the clear level is read from.
 const BINS: usize = 4096;
 /// Below this the plane is dark everywhere and says nothing about dust.
@@ -65,6 +74,40 @@ fn clear_level(plane: &[f32]) -> f32 {
     1.0
 }
 
+/// Clears the spots of `mask` that have more than `limit` pixels (8-connected runs).
+fn drop_large_spots(mask: &mut [bool], width: usize, limit: usize) {
+    let height = mask.len() / width;
+    // 0: not masked, 1: masked and not seen, 2: masked and seen.
+    let mut state: Vec<u8> = mask.iter().map(|&m| u8::from(m)).collect();
+    let mut spot: Vec<usize> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    for start in 0..state.len() {
+        if state[start] != 1 {
+            continue;
+        }
+        spot.clear();
+        state[start] = 2;
+        stack.push(start);
+        while let Some(index) = stack.pop() {
+            spot.push(index);
+            let (x, y) = (index % width, index / width);
+            for ny in y.saturating_sub(1)..=(y + 1).min(height - 1) {
+                for nx in x.saturating_sub(1)..=(x + 1).min(width - 1) {
+                    let at = ny * width + nx;
+                    if state[at] == 1 {
+                        state[at] = 2;
+                        stack.push(at);
+                    }
+                }
+            }
+        }
+        if spot.len() > limit {
+            for &index in &spot {
+                mask[index] = false;
+            }
+        }
+    }
+}
 /// `mask` with every flagged pixel widened by `grow` pixels in each direction.
 fn dilate(mask: &[bool], width: usize, grow: usize) -> Vec<bool> {
     if grow == 0 {
@@ -194,23 +237,26 @@ pub fn remove_dust(
     }
     let threshold = dust.threshold.clamp(0.0, 1.0);
     let cutoff = clear * (1.0 - threshold);
-    let mask: Vec<bool> = ir
+    let mut mask: Vec<bool> = ir
         .data
         .par_iter()
         .map(|&v| v.is_finite() && v < cutoff)
         .collect();
+    let dark = mask.iter().filter(|&&m| m).count();
+    if dark as f32 > MAX_MASKED_FRACTION * mask.len() as f32 {
+        return Ok(DustReport {
+            masked: dark,
+            applied: false,
+        });
+    }
+    let limit = (MAX_SPOT_FRACTION * mask.len() as f32) as usize;
+    drop_large_spots(&mut mask, image.width as usize, limit.max(1));
     let grown = dilate(&mask, image.width as usize, dust.grow_px as usize);
     let masked = grown.iter().filter(|&&m| m).count();
     if masked == 0 {
         return Ok(DustReport {
             masked,
             applied: true,
-        });
-    }
-    if masked as f32 > MAX_MASKED_FRACTION * grown.len() as f32 {
-        return Ok(DustReport {
-            masked,
-            applied: false,
         });
     }
     for v in &mut image.data {
@@ -386,31 +432,67 @@ mod tests {
         assert_eq!(image, dusty.image);
     }
 
+    /// A `side` x `side` plane of grey 0.4 and a clear infrared plane, to mark spots in.
+    fn grey(side: usize) -> (ImageF32, Vec<f32>) {
+        let image = ImageF32::new(side as u32, side as u32, 3, vec![0.4; side * side * 3]).unwrap();
+        (image, vec![1.0; side * side])
+    }
+
+    fn darken(image: &mut ImageF32, ir: &mut [f32], width: usize, x: usize, y: usize) {
+        ir[y * width + x] = 0.0;
+        image.data[(y * width + x) * 3..(y * width + x) * 3 + 3].fill(0.0);
+    }
+
     #[test]
-    fn a_spot_at_the_corner_and_a_large_spot_are_filled() {
-        let mut data = vec![1.0f32; 40 * 40];
+    fn a_spot_at_the_corner_and_one_in_the_middle_are_filled() {
+        let side = 400;
+        let (mut image, mut plane) = grey(side);
         for y in 0..3 {
             for x in 0..3 {
-                data[y * 40 + x] = 0.0;
+                darken(&mut image, &mut plane, side, x, y);
             }
         }
-        for y in 15..25 {
-            for x in 15..25 {
-                data[y * 40 + x] = 0.0;
+        for y in 150..157 {
+            for x in 150..157 {
+                darken(&mut image, &mut plane, side, x, y);
             }
         }
-        let ir = ImageF32::new(40, 40, 1, data).unwrap();
-        let mut image = ImageF32::new(40, 40, 3, vec![0.4; 40 * 40 * 3]).unwrap();
-        for y in 15..25 {
-            for x in 15..25 {
-                image.data[(y * 40 + x) * 3..(y * 40 + x) * 3 + 3].fill(0.0);
-            }
-        }
-        image.data[..3].fill(0.0);
-        remove_dust(&mut image, &ir, &dust(0.5, 1)).unwrap();
+        let ir = ImageF32::new(side as u32, side as u32, 1, plane).unwrap();
+        let report = remove_dust(&mut image, &ir, &dust(0.5, 1)).unwrap();
+        assert!(report.applied && report.masked > 58);
         assert!(image.data.iter().all(|&v| (v - 0.4).abs() < 1e-5));
     }
 
+    #[test]
+    fn a_wide_band_is_left_alone_and_a_hair_is_removed() {
+        let side = 1000;
+        let (mut image, mut plane) = grey(side);
+        // The edge of the film holder: a band 40 pixels wide down the whole picture.
+        for y in 0..side {
+            for x in 960..side {
+                darken(&mut image, &mut plane, side, x, y);
+            }
+        }
+        // A hair: 2 pixels wide and 200 long.
+        for y in 300..500 {
+            for x in 400..402 {
+                darken(&mut image, &mut plane, side, x, y);
+            }
+        }
+        let ir = ImageF32::new(side as u32, side as u32, 1, plane).unwrap();
+        let report = remove_dust(&mut image, &ir, &dust(0.5, 2)).unwrap();
+        assert!(report.applied);
+        for y in 0..side {
+            for x in 0..side {
+                let value = image.data[(y * side + x) * 3];
+                if x >= 960 {
+                    assert_eq!(value, 0.0, "the band at ({x}, {y}) is not touched");
+                } else {
+                    assert!((value - 0.4).abs() < 1e-5, "({x}, {y}) is {value}");
+                }
+            }
+        }
+    }
     #[test]
     fn a_plane_of_the_wrong_shape_is_refused() {
         let mut image = ImageF32::new(8, 8, 3, vec![0.5; 192]).unwrap();

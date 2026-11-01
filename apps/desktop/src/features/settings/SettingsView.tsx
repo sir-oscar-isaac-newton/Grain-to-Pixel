@@ -11,6 +11,7 @@ import {
 } from '../../shared/ipc';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import { FLAG_NAMES, flagsOf, type FlagName, type FlagValues } from './flags';
+import { KeyboardSettings } from './KeyboardSettings';
 import styles from './settings.module.css';
 
 /**
@@ -25,6 +26,8 @@ export function SettingsView() {
   const [library, setLibrary] = useState<LibraryDetails | null>(opened);
   const [flags, setFlags] = useState<FlagValues | null>(null);
   const [defaults, setDefaults] = useState<FlagValues | null>(null);
+  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [savingKeys, setSavingKeys] = useState(false);
   const [saving, setSaving] = useState<ReadonlySet<FlagName>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +38,7 @@ export function SettingsView() {
         if (!alive) return;
         setFlags(flagsOf(current));
         setDefaults(flagsOf(initial));
+        setKeys(current.keys ?? {});
       },
       (e: unknown) => {
         if (alive) setError(t('settings.loadFailed', { message: messageOf(e) }));
@@ -68,6 +72,20 @@ export function SettingsView() {
       setError(t('settings.saveFailed', { message: messageOf(e) }));
     } finally {
       setSaving((s) => new Set([...s].filter((n) => !names.includes(n))));
+    }
+  };
+
+  /** Stores the keys the user changed (all of them: the app replaces the whole map). */
+  const saveKeys = async (next: Record<string, string>) => {
+    setError(null);
+    setSavingKeys(true);
+    try {
+      const saved = await settingsSet({ keys: next });
+      setKeys(saved.keys ?? {});
+    } catch (e) {
+      setError(t('settings.saveFailed', { message: messageOf(e) }));
+    } finally {
+      setSavingKeys(false);
     }
   };
 
@@ -163,6 +181,8 @@ export function SettingsView() {
         </div>
         {error && <p role="alert">{error}</p>}
       </section>
+
+      {flags && <KeyboardSettings overrides={keys} onSave={saveKeys} busy={savingKeys} />}
     </section>
   );
 }

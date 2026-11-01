@@ -1541,6 +1541,7 @@ tech:
 FILES: apps/desktop/src/shared/keymap/{defaults.ts, useShortcuts.ts}; apps/desktop/src/features/settings/KeyboardSection.tsx; develop panels call the shared hook.
 ROUTES used: settings_get, settings_set.
 TESTS: default bindings step 10 and Shift 1, rebinding persists via mocked ipc, conflict rejected, no firing in inputs, axe.
+DELIVERY (decided when U-13 was approved): a key is one printable character (not space), or the default Escape, which cannot be picked again because Escape cancels the picking; combinations with Ctrl or Alt are not offered, as they clash with the browser's and the system's own. All fourteen actions are rebindable: the eight of the Develop view and the six colour keys, so clashes between them are caught. The app stores only the keys the user changed (`Settings.keys`) and checks their shape and that no two actions share a key; the list of actions and their defaults belong to the UI (`shared/keymap.ts`), where a stored choice that clashes or is not a valid key is ignored and the action keeps its default. The Develop view also ignores every shortcut while a dialog is open (Escape in a dialog no longer also leaves the view), a held colour key draws a lighter preview and the sharp one on release, and the keys are read when the view opens, so a change in Settings applies the next time Develop opens.
 
 
 ## P-14

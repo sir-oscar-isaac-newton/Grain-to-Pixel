@@ -1131,6 +1131,8 @@ export type SettingsPatch_Deserialize = {
 	window?: WindowSize | null,
 	theme?: Theme | null,
 	flags?: FlagsPatch_Deserialize | null,
+	/**  Replaces all the key bindings (an empty map goes back to the defaults). */
+	keys?: { [key in string]: string } | null,
 };
 
 /**  Settings to change; fields left out keep their value. The last library is set by opening one. */
@@ -1138,6 +1140,8 @@ export type SettingsPatch_Serialize = {
 	window: WindowSize | null,
 	theme: Theme | null,
 	flags: FlagsPatch_Serialize | null,
+	/**  Replaces all the key bindings (an empty map goes back to the defaults). */
+	keys: { [key in string]: string } | null,
 };
 
 export type Settings_Deserialize = {
@@ -1146,6 +1150,11 @@ export type Settings_Deserialize = {
 	window?: WindowSize | null,
 	theme?: Theme,
 	flags?: Flags_Deserialize,
+	/**
+	 *  The keyboard shortcuts the user changed, action name to key (`Q`, `[`, `Escape`). An action
+	 *  that is not here has its default key, which the UI knows; the app only keeps the shape.
+	 */
+	keys?: { [key in string]: string },
 };
 
 export type Settings_Serialize = {
@@ -1154,6 +1163,11 @@ export type Settings_Serialize = {
 	window: WindowSize | null,
 	theme: Theme,
 	flags: Flags_Serialize,
+	/**
+	 *  The keyboard shortcuts the user changed, action name to key (`Q`, `[`, `Escape`). An action
+	 *  that is not here has its default key, which the UI knows; the app only keeps the shape.
+	 */
+	keys: { [key in string]: string },
 };
 
 /**  Why a file was not imported. */

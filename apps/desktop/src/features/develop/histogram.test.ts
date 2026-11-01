@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { DEVELOP_KEYS, actionForKey } from './develop-keys';
 import { clipping, computeHistogram } from './histogram';
 
 /** RGBA pixels from [r, g, b] triples, alpha 255. */
@@ -35,29 +34,5 @@ describe('histogram', () => {
     const bins = computeHistogram(new Uint8ClampedArray(0));
     expect(bins.pixels).toBe(0);
     expect(clipping(bins)).toEqual({ black: 0, white: 0 });
-  });
-});
-
-describe('develop keys', () => {
-  it('maps the keys the spec names to their actions', () => {
-    expect(actionForKey('\\')).toBe('toggleBefore');
-    expect(actionForKey('[')).toBe('previousFrame');
-    expect(actionForKey(']')).toBe('nextFrame');
-    expect(actionForKey('Escape')).toBe('backToLibrary');
-  });
-
-  it('accepts = for + so Shift is not needed, and ignores other keys', () => {
-    expect(actionForKey('+')).toBe('zoomIn');
-    expect(actionForKey('=')).toBe('zoomIn');
-    expect(actionForKey('-')).toBe('zoomOut');
-    expect(actionForKey('0')).toBe('fit');
-    expect(actionForKey('1')).toBe('actualSize');
-    expect(actionForKey('a')).toBeNull();
-    expect(actionForKey('Enter')).toBeNull();
-  });
-
-  it('gives every action its own key', () => {
-    const keys = Object.values(DEVELOP_KEYS);
-    expect(new Set(keys).size).toBe(keys.length);
   });
 });

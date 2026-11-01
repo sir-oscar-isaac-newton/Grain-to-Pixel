@@ -113,6 +113,12 @@ export function makePreview(recipe: Recipe, maxEdge: number, seq: number): Previ
   return { seq, width, height, rgba };
 }
 
+/** What the fake accepts of a settings patch. */
+interface SettingsPatchShape {
+  flags?: Partial<typeof DEFAULT_FLAGS>;
+  keys?: Record<string, string>;
+}
+
 /** The feature flags before anyone changes them (spec section 10). */
 export const DEFAULT_FLAGS = {
   dust_removal: true,
@@ -165,7 +171,9 @@ export const state = {
   applyRefused: null as string | null,
   /** The feature flags now, and the settings changes asked for, in order. */
   flags: { ...DEFAULT_FLAGS },
-  settingsPatches: [] as Array<{ flags?: Partial<typeof DEFAULT_FLAGS> }>,
+  settingsPatches: [] as SettingsPatchShape[],
+  /** The keyboard shortcuts the user changed (action name to key). */
+  keys: {} as Record<string, string>,
   /** Reading the settings fails with this message when set. */
   settingsUnreadable: null as string | null,
   /** Saving settings is refused with this message when set. */
@@ -279,16 +287,17 @@ export const ipc = {
     if (state.settingsUnreadable) {
       throw new IpcError({ code: 'Io', message: state.settingsUnreadable });
     }
-    return { last_library: state.lastLibrary, flags: { ...state.flags } };
+    return { last_library: state.lastLibrary, flags: { ...state.flags }, keys: { ...state.keys } };
   }),
   settingsDefaults: vi.fn(async () => ({ last_library: null, flags: { ...DEFAULT_FLAGS } })),
-  settingsSet: vi.fn(async (patch: { flags?: Partial<typeof DEFAULT_FLAGS> }) => {
+  settingsSet: vi.fn(async (patch: SettingsPatchShape) => {
     state.settingsPatches.push(patch);
     if (state.settingsRefused) {
       throw new IpcError({ code: 'Io', message: state.settingsRefused });
     }
     state.flags = { ...state.flags, ...patch.flags };
-    return { last_library: state.lastLibrary, flags: { ...state.flags } };
+    if (patch.keys) state.keys = { ...patch.keys };
+    return { last_library: state.lastLibrary, flags: { ...state.flags }, keys: { ...state.keys } };
   }),
   folderCheck: vi.fn(async (path: string): Promise<FolderCheck> => ({
     path,
@@ -477,6 +486,7 @@ export function resetFake() {
   state.exportRefused = null;
   state.exports = [];
   state.flags = { ...DEFAULT_FLAGS };
+  state.keys = {};
   state.settingsPatches = [];
   state.settingsUnreadable = null;
   state.settingsRefused = null;

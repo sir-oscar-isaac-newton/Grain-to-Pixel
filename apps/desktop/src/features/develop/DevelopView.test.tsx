@@ -16,7 +16,7 @@ import { resetLibraryStore, useLibraryStore } from '../library/library-store';
 import { resetThumbnails } from '../library/thumbnails';
 import { DevelopView } from './DevelopView';
 import { baseOf, levelsOf } from './recipe-parts';
-import { SAVE_DELAY_MS, WHOLE_SCAN_GEOMETRY } from './use-develop';
+import { RELEASE_EDGE, SAVE_DELAY_MS, WHOLE_SCAN_GEOMETRY } from './use-develop';
 
 vi.mock('../../shared/ipc', async () => (await import('../library/fake-ipc')).ipc);
 
@@ -397,6 +397,167 @@ describe('DevelopView', () => {
       expect(screen.getByRole('button', { name: 'Before' })).toHaveAttribute(
         'aria-pressed',
         'false',
+      );
+    });
+  });
+
+  describe('the colour keys', () => {
+    const colourOf = (recipe: unknown) => (recipe as { color: Record<string, number> }).color;
+    const lastRender = () => ipc.developRender.mock.calls.at(-1)?.[1];
+    const savedRecipe = () => state.saved[state.saved.length - 1]?.recipe;
+
+    async function openFrame() {
+      const user = userEvent.setup();
+      openLibrary();
+      open(1);
+      render(<DevelopView />);
+      await canvas();
+      // The settings, with the keys the user changed, have been read.
+      await waitFor(() => expect(ipc.settingsGet).toHaveBeenCalled());
+      return user;
+    }
+
+    it.each([
+      ['q', 'red_cyan', 10],
+      ['a', 'red_cyan', -10],
+      ['w', 'green_magenta', 10],
+      ['s', 'green_magenta', -10],
+      ['e', 'blue_yellow', 10],
+      ['d', 'blue_yellow', -10],
+    ])('%s moves %s by %i steps, previews it and saves it', async (key, axis, amount) => {
+      const user = await openFrame();
+      ipc.developRender.mockClear();
+      await user.keyboard(key);
+      await waitFor(() => expect(ipc.developRender).toHaveBeenCalled());
+      expect(colourOf(lastRender())[axis]).toBe(amount);
+      await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+        timeout: SAVE_DELAY_MS * 4,
+      });
+      expect(colourOf(savedRecipe())[axis]).toBe(amount);
+    });
+
+    it('moves the slider you can see, and builds on the press before', async () => {
+      const user = await openFrame();
+      await user.keyboard('qq');
+      await waitFor(() =>
+        expect(screen.getByRole('slider', { name: 'Cyan / red' })).toHaveAttribute(
+          'aria-valuenow',
+          '20',
+        ),
+      );
+      await user.keyboard('a');
+      await waitFor(() =>
+        expect(screen.getByRole('slider', { name: 'Cyan / red' })).toHaveAttribute(
+          'aria-valuenow',
+          '10',
+        ),
+      );
+    });
+
+    it('moves it by one step with Shift', async () => {
+      const user = await openFrame();
+      await user.keyboard('{Shift>}q{/Shift}');
+      await waitFor(() => expect(colourOf(lastRender()).red_cyan).toBe(1));
+      await user.keyboard('{Shift>}D{/Shift}');
+      await waitFor(() => expect(colourOf(lastRender()).blue_yellow).toBe(-1));
+    });
+
+    it('stops at the end of the slider', async () => {
+      const user = await openFrame();
+      for (let i = 0; i < 12; i += 1) await user.keyboard('q');
+      await waitFor(() => expect(colourOf(lastRender()).red_cyan).toBe(100));
+      ipc.developRender.mockClear();
+      await user.keyboard('q');
+      expect(ipc.developRender).not.toHaveBeenCalled();
+      await user.keyboard('a');
+      await waitFor(() => expect(colourOf(lastRender()).red_cyan).toBe(90));
+    });
+
+    it('draws a lighter preview while a key is held, and the sharp one when it is let go', async () => {
+      await openFrame();
+      ipc.developRender.mockClear();
+      fireEvent.keyDown(window, { key: 'q', repeat: false });
+      fireEvent.keyDown(window, { key: 'q', repeat: true });
+      fireEvent.keyDown(window, { key: 'q', repeat: true });
+      await waitFor(() => expect(colourOf(lastRender()).red_cyan).toBe(30));
+      ipc.developRender.mockClear();
+      fireEvent.keyUp(window, { key: 'q' });
+      await waitFor(() => expect(ipc.developRender).toHaveBeenCalledTimes(1));
+      expect(ipc.developRender.mock.calls[0]?.[2]).toBe(RELEASE_EDGE);
+      expect(colourOf(ipc.developRender.mock.calls[0]?.[1]).red_cyan).toBe(30);
+      // Letting go of a key that was not held does nothing more.
+      ipc.developRender.mockClear();
+      fireEvent.keyUp(window, { key: 'q' });
+      expect(ipc.developRender).not.toHaveBeenCalled();
+    });
+
+    it('uses the keys the user chose in place of the defaults', async () => {
+      state.keys = { 'colour.red': 'r', 'develop.fit': 'f' };
+      const user = await openFrame();
+      await waitFor(() => expect(ipc.settingsGet).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await user.keyboard('q');
+      expect(ipc.recipeSave).not.toHaveBeenCalled();
+      await user.keyboard('r');
+      await waitFor(() => expect(colourOf(lastRender()).red_cyan).toBe(10));
+    });
+
+    it('does nothing with Ctrl, Alt or Command, or in a field, or in a dialog', async () => {
+      const user = await openFrame();
+      ipc.developRender.mockClear();
+      await user.keyboard('{Control>}q{/Control}{Alt>}q{/Alt}{Meta>}q{/Meta}');
+      const field = document.createElement('input');
+      document.body.append(field);
+      field.focus();
+      await user.keyboard('qaw');
+      field.remove();
+      await user.click(screen.getByRole('button', { name: 'Export…' }));
+      await screen.findByRole('dialog', { name: 'Export' });
+      await user.keyboard('q');
+      expect(ipc.developRender).not.toHaveBeenCalled();
+      expect(ipc.recipeSave).not.toHaveBeenCalled();
+    });
+
+    it('lets Escape close a dialog without also leaving the view', async () => {
+      const user = await openFrame();
+      await user.click(screen.getByRole('button', { name: 'Export…' }));
+      await screen.findByRole('dialog', { name: 'Export' });
+      await user.keyboard('{Escape}');
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Export' })).not.toBeInTheDocument(),
+      );
+      expect(useUiStore.getState().view).toBe('develop');
+      await user.keyboard('{Escape}');
+      expect(useUiStore.getState().view).toBe('library');
+    });
+
+    it('does nothing while something is being picked, or in a library that cannot be changed', async () => {
+      const user = await openFrame();
+      await user.click(screen.getByRole('button', { name: 'Pick film base' }));
+      await screen.findByText(/Click the clear film edge/);
+      ipc.developRender.mockClear();
+      await user.keyboard('q');
+      expect(ipc.developRender).not.toHaveBeenCalled();
+    });
+
+    it('does nothing in a library that cannot be changed', async () => {
+      const user = userEvent.setup();
+      openLibrary({ read_only: true });
+      open(1);
+      render(<DevelopView />);
+      await canvas();
+      ipc.developRender.mockClear();
+      await user.keyboard('q');
+      expect(ipc.developRender).not.toHaveBeenCalled();
+      expect(ipc.recipeSave).not.toHaveBeenCalled();
+    });
+
+    it('still has the other keys: before and after, and fit', async () => {
+      const user = await openFrame();
+      await user.keyboard('\\');
+      expect(screen.getByRole('button', { name: 'Before' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
       );
     });
   });

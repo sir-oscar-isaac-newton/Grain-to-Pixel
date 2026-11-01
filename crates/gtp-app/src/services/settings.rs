@@ -4,6 +4,7 @@
 //! A file that cannot be read never stops the app: it is kept as `settings.json.bad` and the
 //! defaults are used. Saving writes a temporary file and renames it over the old one.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
@@ -12,6 +13,10 @@ use serde::{Deserialize, Serialize};
 
 /// Window sizes accepted, in logical pixels.
 pub const WINDOW_SIDE: std::ops::RangeInclusive<u32> = 200..=16_384;
+/// Most key bindings kept, longest action name and longest key name, in characters.
+pub const MAX_KEYS: usize = 64;
+pub const MAX_ACTION_CHARS: usize = 64;
+pub const MAX_KEY_CHARS: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -64,6 +69,9 @@ pub struct Settings {
     pub window: Option<WindowSize>,
     pub theme: Theme,
     pub flags: Flags,
+    /// The keyboard shortcuts the user changed, action name to key (`Q`, `[`, `Escape`). An action
+    /// that is not here has its default key, which the UI knows; the app only keeps the shape.
+    pub keys: BTreeMap<String, String>,
 }
 
 /// Flags to change; the others keep their value.
@@ -86,6 +94,49 @@ pub struct SettingsPatch {
     pub window: Option<WindowSize>,
     pub theme: Option<Theme>,
     pub flags: Option<FlagsPatch>,
+    /// Replaces all the key bindings (an empty map goes back to the defaults).
+    pub keys: Option<BTreeMap<String, String>>,
+}
+
+/// Key bindings must be few, with names of a sensible length, and no two actions may share a key
+/// (compared without case, since Shift does not change which action a key stands for).
+fn check_keys(keys: &BTreeMap<String, String>) -> Result<(), AppError> {
+    let invalid = |message: &str, details: String| {
+        AppError::new(ErrorCode::InvalidInput, message).with_details(details)
+    };
+    if keys.len() > MAX_KEYS {
+        return Err(invalid(
+            "There are too many key bindings.",
+            format!("{} of at most {MAX_KEYS}", keys.len()),
+        ));
+    }
+    let mut used: BTreeMap<String, &str> = BTreeMap::new();
+    for (action, key) in keys {
+        let action_ok = !action.is_empty()
+            && action.chars().count() <= MAX_ACTION_CHARS
+            && action
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+        if !action_ok {
+            return Err(invalid("That action name is not valid.", action.clone()));
+        }
+        let key_ok = !key.is_empty()
+            && key.chars().count() <= MAX_KEY_CHARS
+            && !key.chars().any(char::is_control);
+        if !key_ok {
+            return Err(invalid(
+                "That key is not valid.",
+                format!("{action}: {key:?}"),
+            ));
+        }
+        if let Some(other) = used.insert(key.to_lowercase(), action) {
+            return Err(invalid(
+                "Two actions cannot share a key.",
+                format!("{other} and {action}: {key:?}"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl Settings {
@@ -102,6 +153,10 @@ impl Settings {
         }
         if let Some(theme) = patch.theme {
             self.theme = theme;
+        }
+        if let Some(keys) = &patch.keys {
+            check_keys(keys)?;
+            self.keys = keys.clone();
         }
         if let Some(f) = patch.flags {
             let flags = &mut self.flags;
@@ -315,5 +370,117 @@ mod tests {
         assert_eq!(s.theme, Theme::Light);
         assert!(s.flags.dev_overlay && s.flags.dust_removal);
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    fn keys(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(action, key)| ((*action).to_owned(), (*key).to_owned()))
+            .collect()
+    }
+
+    fn with_keys(map: BTreeMap<String, String>) -> SettingsPatch {
+        SettingsPatch {
+            keys: Some(map),
+            ..SettingsPatch::default()
+        }
+    }
+
+    #[test]
+    fn there_are_no_changed_keys_until_the_user_changes_one() {
+        assert!(Settings::default().keys.is_empty());
+        // A file from before the key map has none either.
+        let path = temp_file("no-keys");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert!(store.get().keys.is_empty());
+    }
+
+    #[test]
+    fn key_bindings_are_saved_replaced_as_a_whole_and_reset_with_an_empty_map() {
+        let path = temp_file("keys");
+        let (store, _) = SettingsStore::load(&path);
+        let first = keys(&[("colour.red.up", "r"), ("develop.fit", "0"), ("space", " ")]);
+        let saved = store.update(&with_keys(first.clone())).unwrap();
+        assert_eq!(saved.keys, first);
+        // Another patch leaves them alone.
+        let themed = store
+            .update(&SettingsPatch {
+                theme: Some(Theme::Light),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        assert_eq!(themed.keys, first);
+        // They survive a restart.
+        let (again, _) = SettingsStore::load(&path);
+        assert_eq!(again.get().keys, first);
+
+        let second = keys(&[("develop.fit", "f")]);
+        assert_eq!(
+            store.update(&with_keys(second.clone())).unwrap().keys,
+            second
+        );
+        assert!(store
+            .update(&with_keys(BTreeMap::new()))
+            .unwrap()
+            .keys
+            .is_empty());
+    }
+
+    #[test]
+    fn invalid_key_bindings_are_refused_and_change_nothing() {
+        let path = temp_file("bad-keys");
+        let (store, _) = SettingsStore::load(&path);
+        let kept = keys(&[("develop.fit", "f")]);
+        store.update(&with_keys(kept.clone())).unwrap();
+
+        let too_many: BTreeMap<String, String> = (0..=MAX_KEYS)
+            .map(|i| {
+                (
+                    format!("action{i}"),
+                    format!("{}", char::from_u32(0x100 + i as u32).unwrap()),
+                )
+            })
+            .collect();
+        let bad: Vec<BTreeMap<String, String>> = vec![
+            too_many,
+            keys(&[("", "a")]),
+            keys(&[("has space", "a")]),
+            keys(&[("path/like", "a")]),
+            keys(&[(&"x".repeat(MAX_ACTION_CHARS + 1), "a")]),
+            keys(&[("a", "")]),
+            keys(&[("a", &"k".repeat(MAX_KEY_CHARS + 1))]),
+            keys(&[("a", "\n")]),
+            keys(&[("a", "\u{7f}")]),
+            // Two actions on one key, also when only the case differs.
+            keys(&[("a", "q"), ("b", "q")]),
+            keys(&[("a", "q"), ("b", "Q")]),
+        ];
+        for map in bad {
+            let err = store.update(&with_keys(map.clone())).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{map:?}");
+        }
+        assert_eq!(store.get().keys, kept, "a refused patch changes nothing");
+        let (again, _) = SettingsStore::load(&path);
+        assert_eq!(again.get().keys, kept);
+    }
+
+    #[test]
+    fn a_full_map_of_sensible_names_and_every_kind_of_key_is_accepted() {
+        let path = temp_file("full-keys");
+        let (store, _) = SettingsStore::load(&path);
+        let full: BTreeMap<String, String> = (0..MAX_KEYS)
+            .map(|i| {
+                (
+                    format!("develop.action-{i}"),
+                    format!("{}", char::from_u32(0x4e00 + i as u32).unwrap()),
+                )
+            })
+            .collect();
+        assert_eq!(store.update(&with_keys(full.clone())).unwrap().keys, full);
+        let named = keys(&[("a.b", "Escape"), ("c_d", "["), ("e-f", "\\"), ("g", "é")]);
+        assert_eq!(store.update(&with_keys(named.clone())).unwrap().keys, named);
     }
 }

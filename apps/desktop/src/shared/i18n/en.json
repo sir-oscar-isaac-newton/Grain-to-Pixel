@@ -185,6 +185,43 @@
       "none": "No library is open.",
       "toLibrary": "Open the Library view"
     },
+    "keys": {
+      "heading": "Keyboard",
+      "intro": "The keys for the Develop view. Change one by choosing Change and pressing the new key; Escape cancels. A key can belong to one action only. A change is saved at once and applies the next time the Develop view opens.",
+      "group": {
+        "develop": "Develop view",
+        "colour": "Colour"
+      },
+      "colourNote": "A press moves a colour slider by 10 steps, Shift and the key by 1. Shift never changes which action a key means.",
+      "change": "Change",
+      "changeFor": "Change the key for {{action}}",
+      "changed": "(not the default)",
+      "press": "Press the new key for “{{action}}”. Escape cancels.",
+      "taken": "{{key}} is already used for “{{action}}”. Choose another key, or change that one first.",
+      "invalid": "{{key}} cannot be a shortcut. Use a letter, a digit or a punctuation mark.",
+      "modified": "Press the key on its own, without Ctrl, Alt or Command.",
+      "reset": "Reset keyboard to defaults",
+      "action": {
+        "develop": {
+          "toggleBefore": "Show before and after",
+          "previousFrame": "Previous frame",
+          "nextFrame": "Next frame",
+          "backToLibrary": "Back to the Library (first stops picking)",
+          "fit": "Fit to the window",
+          "actualSize": "Actual size",
+          "zoomIn": "Zoom in",
+          "zoomOut": "Zoom out"
+        },
+        "colour": {
+          "red": "Add red",
+          "cyan": "Add cyan",
+          "green": "Add green",
+          "magenta": "Add magenta",
+          "blue": "Add blue",
+          "yellow": "Add yellow"
+        }
+      }
+    },
     "flags": {
       "heading": "Feature flags",
       "intro": "Switches for features that can be turned off if they misbehave. A change is saved at once. A flag takes effect where its feature is used, as that feature arrives.",

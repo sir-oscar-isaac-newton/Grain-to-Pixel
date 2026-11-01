@@ -12,6 +12,13 @@ import {
   type FrameSummary,
   type LevelsPoint,
 } from '../../shared/ipc';
+import {
+  COLOUR_ACTIONS,
+  COLOUR_FINE_STEP,
+  COLOUR_STEP,
+  actionForKey,
+  type ColourAxis,
+} from '../../shared/keymap';
 import { useLibraryStore } from '../library/library-store';
 import { useFrames } from '../library/use-frames';
 import { ApplySettingsDialog } from '../library/ApplySettingsDialog';
@@ -20,7 +27,6 @@ import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
 import { Canvas, pictureStyle } from './Canvas';
 import { CropOverlay } from './CropOverlay';
-import { actionForKey } from './develop-keys';
 import styles from './develop.module.css';
 import { Filmstrip } from './Filmstrip';
 import { clipping, computeHistogram } from './histogram';
@@ -31,6 +37,7 @@ import { TonePanel } from './panels/TonePanel';
 import type { Fractions } from './picker';
 import {
   baseOf,
+  colourOf,
   levelsIn,
   levelsOf,
   triple,
@@ -41,6 +48,7 @@ import {
   withLevels,
 } from './recipe-parts';
 import { useDevelop } from './use-develop';
+import { useKeyMap } from './use-keymap';
 import { usePicker } from './use-picker';
 import { useViewport } from './use-viewport';
 
@@ -265,52 +273,99 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     [frame.index, total, load, open],
   );
 
-  // The keys of the view. Typing in a field is left alone.
+  // The keys of the view (the user's own, from the settings). Typing in a field is left alone, and
+  // so is anything while a dialog is open: its keys are the dialog's.
+  const keyMap = useKeyMap();
+  const newest = useRef(recipe);
+  newest.current = recipe;
+  const repeating = useRef(false);
   useEffect(() => {
+    /** A colour key moves its slider; holding it repeats with a lighter preview. */
+    const nudgeColour = (move: { axis: ColourAxis; sign: 1 | -1 }, event: KeyboardEvent) => {
+      const current = newest.current;
+      if (!current || readOnly || working || pick !== null) return;
+      const value = colourOf(current)[move.axis];
+      const step = event.shiftKey ? COLOUR_FINE_STEP : COLOUR_STEP;
+      const next = Math.min(100, Math.max(-100, value + step * move.sign));
+      if (next === value) return;
+      if (event.repeat) repeating.current = true;
+      const changed = withColour(current, { [move.axis]: next });
+      newest.current = changed;
+      setRecipe(changed, { dragging: event.repeat });
+    };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
       const target = event.target;
       if (
         target instanceof Element &&
         target.closest('input, textarea, select, [contenteditable="true"]')
       )
         return;
-      const action = actionForKey(event.key);
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      const action = actionForKey(keyMap, event.key);
       if (!action) return;
       event.preventDefault();
+      const colour = COLOUR_ACTIONS[action];
+      if (colour) {
+        nudgeColour(colour, event);
+        return;
+      }
       switch (action) {
-        case 'toggleBefore':
+        case 'develop.toggleBefore':
           toggleBefore();
           break;
-        case 'previousFrame':
+        case 'develop.previousFrame':
           void step(-1);
           break;
-        case 'nextFrame':
+        case 'develop.nextFrame':
           void step(1);
           break;
-        case 'backToLibrary':
+        case 'develop.backToLibrary':
           // Escape first cancels picking; only then does it leave the view.
           if (pick) setPick(null);
           else setView('library');
           break;
-        case 'fit':
+        case 'develop.fit':
           fit();
           break;
-        case 'actualSize':
+        case 'develop.actualSize':
           actual();
           break;
-        case 'zoomIn':
+        case 'develop.zoomIn':
           zoomIn();
           break;
-        case 'zoomOut':
+        case 'develop.zoomOut':
           zoomOut();
           break;
       }
     };
+    // A held colour key drew rough previews; the sharp one is drawn when it is let go.
+    const onKeyUp = () => {
+      if (!repeating.current) return;
+      repeating.current = false;
+      rerender();
+    };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [toggleBefore, step, setView, fit, actual, zoomIn, zoomOut, pick]);
-
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [
+    keyMap,
+    toggleBefore,
+    step,
+    setView,
+    fit,
+    actual,
+    zoomIn,
+    zoomOut,
+    pick,
+    readOnly,
+    working,
+    setRecipe,
+    rerender,
+  ]);
   const bins = useMemo(() => (preview ? computeHistogram(preview.rgba) : null), [preview]);
   const lost = bins ? clipping(bins) : null;
   const zoomText = percent(i18n.language, viewport.view.zoom);

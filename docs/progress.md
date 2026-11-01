@@ -362,6 +362,15 @@
       "number": 45,
       "title": "Settings view and feature flags",
       "branch": "feat/issue-45-settings-view",
+      "status": "completed",
+      "pr": 146,
+      "commit": "c5c9ea1"
+    },
+    {
+      "id": "U-13",
+      "number": 90,
+      "title": "Customizable keyboard shortcuts",
+      "branch": "feat/issue-90-keyboard-shortcuts",
       "status": "in_progress",
       "pr": null,
       "commit": null

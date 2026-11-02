@@ -1,6 +1,6 @@
 # 0006. The e2e test reaches WebView2 through a debugging port set in the window config
 
-- Status: Accepted (approved by the author with T-07 / GitHub #69, 2026-11-01)
+- Status: Accepted (approved by the author with T-07 / GitHub #85, 2026-11-01)
 - Date: 2026-11-01
 
 ## Context

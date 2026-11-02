@@ -6,7 +6,7 @@ publish = false
 
 [features]
 # Derives specta::Type on the types that cross the IPC boundary (enabled by the Tauri shell).
-specta = ["dep:specta"]
+specta = ["dep:specta", "gtp-core/specta"]
 # A tiny TIFF with EXIF for tests of the crates that group files. Off in every app build.
 testing = []
 

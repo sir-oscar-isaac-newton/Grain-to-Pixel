@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 use crate::ids::{FrameId, RollId};
-use crate::model::SourceRole;
+use crate::model::{SourceRole, TripletChannel};
 
 /// The result of a job that finished without error.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -31,6 +31,35 @@ pub struct ImportResult {
     pub skipped: Vec<SkippedFile>,
     /// Milliseconds each imported frame took (budget: 8,000 per frame, spec section 11).
     pub frame_ms: Vec<u32>,
+    /// Things worth knowing about imported frames that still were imported (RGB triplets).
+    pub warnings: Vec<ImportWarning>,
+}
+
+/// Something to know about an imported frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ImportWarning {
+    pub frame_id: FrameId,
+    pub kind: ImportWarningKind,
+}
+
+/// What an import warns about. Not errors: the frame was imported.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ImportWarningKind {
+    /// The three exposures of a triplet used different shutter times.
+    ExposureTimeMismatch,
+    /// ... different ISO values.
+    IsoMismatch,
+    /// ... different apertures.
+    ApertureMismatch,
+    /// More of the lit channel than expected is at full scale: `per_mille` of its samples (parts
+    /// per thousand).
+    Clipped {
+        channel: TripletChannel,
+        per_mille: u32,
+    },
 }
 
 /// A picked file that was not imported.

@@ -1,11 +1,13 @@
 //! Library entities (docs/specification.md section 4). Plain data: no I/O, no database types.
 
+mod channel;
 mod frame;
 mod roll;
 mod search;
 mod source;
 mod tag;
 
+pub use channel::TripletChannel;
 pub use frame::{Frame, FrameKind};
 pub use roll::{
     check_iso, check_shot_range, partial_date_span, FilmFormat, Roll, FILM_BASE_MIN_CONFIDENCE,

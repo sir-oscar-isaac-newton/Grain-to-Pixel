@@ -13,7 +13,6 @@ use std::fs;
 use std::path::Path;
 
 use jpeg_decoder::{Decoder, PixelFormat};
-use serde::Serialize;
 
 /// A brightest mean colour (of 255) below this is a dark frame: nothing can be told.
 pub const MIN_LEVEL: f64 = 2.0;
@@ -22,32 +21,7 @@ pub const MIN_RATIO: f64 = 3.0;
 /// Embedded JPEGs with fewer pixels than this are thumbnails, not the preview.
 const MIN_PREVIEW_PIXELS: u64 = 250_000;
 
-/// The light an exposure was taken in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(rename_all = "snake_case")]
-pub enum TripletChannel {
-    Red,
-    Green,
-    Blue,
-}
-
-impl TripletChannel {
-    pub const ALL: [TripletChannel; 3] = [
-        TripletChannel::Red,
-        TripletChannel::Green,
-        TripletChannel::Blue,
-    ];
-
-    /// 0 for red, 1 for green, 2 for blue: the position in a triplet.
-    pub fn index(self) -> usize {
-        match self {
-            TripletChannel::Red => 0,
-            TripletChannel::Green => 1,
-            TripletChannel::Blue => 2,
-        }
-    }
-}
+pub use gtp_core::TripletChannel;
 
 /// What the colour of a picture says.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -240,10 +214,5 @@ mod tests {
         assert_eq!(dominant_channel(&path).channel, Some(TripletChannel::Green));
         assert_eq!(dominant_channel(&dir.join("missing.NEF")).channel, None);
         std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn channels_know_their_place_in_a_triplet() {
-        assert_eq!(TripletChannel::ALL.map(TripletChannel::index), [0, 1, 2]);
     }
 }

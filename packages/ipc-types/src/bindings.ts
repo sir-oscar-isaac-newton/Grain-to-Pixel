@@ -727,7 +727,7 @@ export type HistogramData = {
 export type ImportKind = 
 /**  16-bit scans, with infrared embedded or as `*_ir.tif`. */
 "TiffScan" | 
-/**  R, G and B exposures from a camera (H-06; not available yet). */
+/**  R, G and B exposures from a camera: NEF files, three to a frame, in channel order (H-06). */
 "RgbTriplet";
 
 /**  What a file import did. */
@@ -741,6 +741,8 @@ export type ImportResult_Deserialize = {
 	skipped: SkippedFile_Deserialize[],
 	/**  Milliseconds each imported frame took (budget: 8,000 per frame, spec section 11). */
 	frame_ms: number[],
+	/**  Things worth knowing about imported frames that still were imported (RGB triplets). */
+	warnings: ImportWarning[],
 };
 
 /**  What a file import did. */
@@ -751,7 +753,29 @@ export type ImportResult_Serialize = {
 	skipped: SkippedFile_Serialize[],
 	/**  Milliseconds each imported frame took (budget: 8,000 per frame, spec section 11). */
 	frame_ms: number[],
+	/**  Things worth knowing about imported frames that still were imported (RGB triplets). */
+	warnings: ImportWarning[],
 };
+
+/**  Something to know about an imported frame. */
+export type ImportWarning = {
+	frame_id: FrameId,
+	kind: ImportWarningKind,
+};
+
+/**  What an import warns about. Not errors: the frame was imported. */
+export type ImportWarningKind = 
+/**  The three exposures of a triplet used different shutter times. */
+{ kind: "exposure_time_mismatch" } | 
+/**  ... different ISO values. */
+{ kind: "iso_mismatch" } | 
+/**  ... different apertures. */
+{ kind: "aperture_mismatch" } | 
+/**
+ *  More of the lit channel than expected is at full scale: `per_mille` of its samples (parts
+ *  per thousand).
+ */
+{ kind: "clipped"; channel: TripletChannel; per_mille: number };
 
 /**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
 export type Invert = Invert_Serialize | Invert_Deserialize;

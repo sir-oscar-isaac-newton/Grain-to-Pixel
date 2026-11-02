@@ -518,6 +518,15 @@
       "status": "completed",
       "pr": 176,
       "commit": "6be1caa"
+    },
+    {
+      "id": "H-06",
+      "number": 54,
+      "title": "Triplet import job",
+      "branch": "feat/issue-54-triplet-import",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

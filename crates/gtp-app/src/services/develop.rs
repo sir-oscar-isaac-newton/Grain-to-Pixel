@@ -266,15 +266,55 @@ fn superseded() -> AppError {
     )
 }
 
-/// Decodes a frame's RGB original at full size (linear f32).
+/// Decodes a frame's picture at full size (linear f32, 3 channels): its RGB scan, or for a camera
+/// triplet the red, green and blue originals, each a single-channel plane, put together.
 pub(crate) fn read_scan(library: &Library, sources: &[SourceFile]) -> Result<ImageF32, AppError> {
-    let scan = sources
-        .iter()
-        .find(|s| s.role == SourceRole::Rgb)
-        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "This frame has no scan file."))?;
+    let Some(scan) = sources.iter().find(|s| s.role == SourceRole::Rgb) else {
+        return read_triplet(library, sources);
+    };
     let path = library.resolve(Path::new(&scan.rel_path))?;
     let tiff = read_tiff16(&path, &Limits::default())?;
     to_f32_linear(&tiff)
+}
+
+/// The red, green and blue originals of a camera triplet as one 3-channel picture.
+fn read_triplet(library: &Library, sources: &[SourceFile]) -> Result<ImageF32, AppError> {
+    let plane = |role: SourceRole| -> Result<ImageF32, AppError> {
+        let source = sources
+            .iter()
+            .find(|s| s.role == role)
+            .ok_or_else(|| AppError::new(ErrorCode::NotFound, "This frame has no scan file."))?;
+        let path = library.resolve(Path::new(&source.rel_path))?;
+        let plane = to_f32_linear(&read_tiff16(&path, &Limits::default())?)?;
+        if plane.channels != 1 {
+            return Err(AppError::new(
+                ErrorCode::InvalidInput,
+                "A triplet original must be a single channel.",
+            )
+            .with_details(format!("{} channels", plane.channels)));
+        }
+        Ok(plane)
+    };
+    let (r, g, b) = (
+        plane(SourceRole::R)?,
+        plane(SourceRole::G)?,
+        plane(SourceRole::B)?,
+    );
+    let same = |p: &ImageF32| (p.width, p.height) == (r.width, r.height);
+    if !same(&g) || !same(&b) {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "The three originals of this frame are not the same size.",
+        )
+        .with_details(format!(
+            "{}x{}, {}x{}, {}x{}",
+            r.width, r.height, g.width, g.height, b.width, b.height
+        )));
+    }
+    let data = (0..r.data.len())
+        .flat_map(|i| [r.data[i], g.data[i], b.data[i]])
+        .collect();
+    ImageF32::new(r.width, r.height, 3, data)
 }
 
 /// Decodes a frame's infrared plane at full size (linear f32, 1 channel), which must be as big as

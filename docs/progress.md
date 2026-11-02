@@ -479,9 +479,9 @@
       "number": 52,
       "title": "Triplet grouping",
       "branch": "feat/issue-52-triplet-grouping",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 166,
+      "commit": "53f31eb"
     }
   ]
 }

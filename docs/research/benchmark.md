@@ -69,6 +69,76 @@ The pairs are private, so this is not a CI gate; the harness is for the author t
 change to the automatic conversion. `--maps` writes ours, the reference and the ΔE (white at 20)
 side by side for each frame.
 
+## The Frontier-style look, fitted to Trichroma Lab (P-20)
+
+Trichroma Lab imitates the Fuji Frontier SP-3000, so matching its renders means matching a look,
+not the scene. The Frontier look ([ADR 0009](../../decisions/0009-frontier-look.md)) is four
+numbers: the slope and pivot of a sigmoid tone curve, a gamma after it, and a saturation, written
+into the automatic recipe as the master curve and `color.saturation`. They are found by
+`benchmark fit`: every candidate is rendered through the real pipeline on a small copy of each
+frame, laid over the part the reference covers, and judged by the mean CIEDE2000 (each pixel capped
+at 40) plus the size of our mean chroma minus the reference's, so that the saturation cannot be
+used to hide a colour error. The search is Nelder-Mead. Ten frames (1, 2, 4, 5, 7, 8, 10, 11, 13
+and 14) are fitted and five (3, 6, 9, 12 and 15) are held out and judged afterwards.
+
+```text
+benchmark fit --manifest manifest.json [--holdout 3] [--percentiles 0.5,99.5]...
+benchmark report --manifest manifest.json --look frontier
+```
+
+**The levels.** The automatic black and white points are the 0.5 and 99.5 percentiles of the
+density. Four settings were fitted (median of the frames' medians, held-out frames):
+
+| Levels | Neutral | Frontier, fitted frames | Frontier, held out |
+|---|---|---|---|
+| 0.1 / 99.9 | 18.7 | 9.2 | 11.9 |
+| 0.5 / 99.5 (today's) | 18.3 | 8.9 | 11.5 |
+| 1 / 99 | 17.3 | 9.2 | 11.0 |
+| 2 / 98 | 17.6 | 9.5 | 11.6 |
+
+They are within a unit of each other, which is about the difference between two runs of the search,
+so no setting clearly wins and **the levels stay at 0.5 / 99.5**.
+
+**The look kept** (levels 0.5 / 99.5, saturation range widened to 0.2 to 1.8 after the first runs
+put it at the old lower bound): slope 4.918, pivot 0.525, gamma 1.069, saturation 0.465. The low
+saturation is not a desaturated look: the master curve works on each channel, so adding contrast
+also adds chroma, and the saturation takes that back. The net effect is that our mean chroma
+matches the reference's (within 3 on the held-out frames).
+
+Result, per frame, with `benchmark report` (median ΔE2000; **held out** frames in bold):
+
+| Frame | Neutral | Frontier | | Frame | Neutral | Frontier |
+|---|---|---|---|---|---|---|
+| 01 | 11.8 | 11.0 | | 09 | **19.1** | **11.5** |
+| 02 | 13.5 | 10.0 | | 10 | 15.7 | 7.9 |
+| 03 | **16.7** | **13.4** | | 11 | 14.5 | 7.1 |
+| 04 | 18.1 | 8.7 | | 12 | **18.2** | **10.1** |
+| 05 | 10.1 | 8.0 | | 13 | 34.9 | 8.5 |
+| 06 | **15.8** | **13.2** | | 14 | 31.1 | 9.3 |
+| 07 | 14.2 | 12.4 | | 15 | **28.3** | **19.6** |
+| 08 | 27.7 | 9.3 | | | | |
+
+All pixels of the 15 frames: **median ΔE 10.0 (17.2 neutral), p95 22.0 (44.8)**. On the fitted ten
+the median of the frames' medians is 9.0; on the five held out it is **13.2** (neutral 18.2). The
+registration also improves (0.90 to 0.99 against 0.84 to 0.96), as it should when the two pictures
+look more alike.
+
+**The target of 6 is missed.** The held-out median is 13.2, more than twice the target, and the
+fitted frames reach 9.0. What is left:
+
+- **Frame 15 stays far off** (19.6): a dusk sky with a strong colour gradient, where a global curve
+  cannot follow the lab's rendition (its a\* and b\* are about 7 and 2 off in the mean, and the
+  gradient is the error).
+- **Frames 3, 6, 9 and 12** (the other held-out ones) are 10 to 13: brightness is close after the
+  fit (mean L\* within 12), but their colour casts stay (frame 3's b\* is 11 off).
+- **The held-out result moves by about a unit between runs of the search** (11.0 to 13.2 across the
+  runs of the fit above), so differences of a unit between settings or between runs mean little.
+  With ten fitted frames of one film, four numbers cannot capture what a lab's colour rendition
+  does per hue and per density; a richer tone curve would lower the fitted number and the
+  held-out one less.
+- **The next step the numbers point to is colour**, not tone: an automatic colour balance
+  (Q-09 found the same on the LS-50 scans).
+
 ## Quality: LS-50 scans against Nikon Scan 4 (Q-09)
 
 The author's LS-50 scans (16-bit RGB plus infrared, 3944 x 5952) have Nikon Scan 4's own positives

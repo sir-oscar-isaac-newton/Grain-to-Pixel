@@ -126,9 +126,16 @@ export const FILM_LOG_CURVE: Array<[number, number]> = [
   [1, 0.31],
 ];
 
+/** The master curve the fake gives for the Frontier look. */
+export const FRONTIER_CURVE: Array<[number, number]> = [
+  [0, 0],
+  [0.5, 0.18],
+  [1, 1],
+];
+
 /** What the fake accepts of a settings patch. */
 interface SettingsPatchShape {
-  starting_look?: 'neutral' | 'film_log';
+  starting_look?: 'neutral' | 'film_log' | 'frontier';
   flags?: Partial<typeof DEFAULT_FLAGS>;
   keys?: Record<string, string>;
 }
@@ -190,7 +197,7 @@ export const state = {
   flags: { ...DEFAULT_FLAGS },
   settingsPatches: [] as SettingsPatchShape[],
   /** The Starting look setting now. */
-  startingLook: 'neutral' as 'neutral' | 'film_log',
+  startingLook: 'neutral' as 'neutral' | 'film_log' | 'frontier',
   /** The keyboard shortcuts the user changed (action name to key). */
   keys: {} as Record<string, string>,
   /** Reading the settings fails with this message when set. */
@@ -456,6 +463,10 @@ export const ipc = {
           // A look writes its master curve; Neutral leaves the plain line.
           ...((look ?? state.startingLook) === 'film_log'
             ? { tone: { curve: { master: FILM_LOG_CURVE } } }
+            : {}),
+          // Frontier writes a curve and a saturation.
+          ...((look ?? state.startingLook) === 'frontier'
+            ? { tone: { curve: { master: FRONTIER_CURVE } }, color: { saturation: 1.1 } }
             : {}),
         }),
       };

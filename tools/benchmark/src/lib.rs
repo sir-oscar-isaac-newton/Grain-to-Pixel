@@ -3,6 +3,7 @@
 
 pub mod delta_e;
 pub mod diff;
+pub mod fit;
 pub mod fixture;
 pub mod golden;
 pub mod manifest;

@@ -15,6 +15,9 @@ pub enum Look {
     Neutral,
     /// A flat, wide-latitude start encoded with the Blackmagic Film Gen 5 log curve, for editing.
     FilmLog,
+    /// A contrasty, saturated lab-print rendition in the style of the Fuji Frontier SP-3000, fitted
+    /// to Trichroma Lab's renders.
+    Frontier,
 }
 
 #[cfg(test)]
@@ -32,6 +35,10 @@ mod tests {
             serde_json::from_str::<Look>("\"neutral\"").unwrap(),
             Look::Neutral
         );
-        assert!(serde_json::from_str::<Look>("\"frontier\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<Look>("\"frontier\"").unwrap(),
+            Look::Frontier
+        );
+        assert!(serde_json::from_str::<Look>("\"sepia\"").is_err());
     }
 }

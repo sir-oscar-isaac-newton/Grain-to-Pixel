@@ -1036,7 +1036,12 @@ export type Look =
  */
 "neutral" | 
 /**  A flat, wide-latitude start encoded with the Blackmagic Film Gen 5 log curve, for editing. */
-"film_log";
+"film_log" | 
+/**
+ *  A contrasty, saturated lab-print rendition in the style of the Fuji Frontier SP-3000, fitted
+ *  to Trichroma Lab's renders.
+ */
+"frontier";
 
 /**
  *  Black-and-white conversion. When enabled, every pixel becomes `mix[0]*R + mix[1]*G + mix[2]*B`

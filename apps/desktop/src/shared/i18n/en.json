@@ -292,6 +292,7 @@
       "label": "Starting look",
       "neutral": "Neutral (the conversion as it is)",
       "film_log": "Film log (Blackmagic Film Gen 5): a flat, wide-latitude start for editing",
+      "frontier": "Frontier style: a contrasty, saturated lab-print look, fitted to Trichroma Lab",
       "saveFailed": "The starting look could not be saved: {{message}}"
     },
     "flags": {

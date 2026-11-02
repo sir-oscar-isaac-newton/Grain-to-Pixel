@@ -12,14 +12,16 @@ pub mod pipeline;
 pub mod services;
 
 pub use context::{AppContext, ThumbnailRequester};
+pub use gtp_edit::{frontier_curve, FrontierParams};
 pub use gtp_ingest::{merge_triplet, TripletCandidate, TripletFile, TripletProblem};
 pub use gtp_io::RawlerDecoder;
 pub use gtp_negative::{BaseEstimate, FrameHint};
 pub use hardware::Hardware;
 pub use jobs::{JobCtx, JobErrorEntry, JobKind, JobManager, JobSink, LibraryEvents, PROGRESS_STEP};
 pub use pipeline::{
-    analyze, analyze_with, analyze_with_look, build_proxy, histogram, render, to_rgba8_srgb,
-    Analysis, Histogram, PipelineInput, RenderTarget, Stage, PREVIEW_EDGE, PROXY_EDGE, STAGE_ORDER,
+    analyze, analyze_with, analyze_with_levels, analyze_with_look, build_proxy, histogram, render,
+    to_rgba8_srgb, Analysis, Histogram, LevelsPercentiles, PipelineInput, RenderTarget, Stage,
+    PREVIEW_EDGE, PROXY_EDGE, STAGE_ORDER,
 };
 pub use services::counters::Counters;
 pub use services::library::{Library, LibraryDetails};

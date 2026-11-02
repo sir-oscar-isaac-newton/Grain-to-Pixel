@@ -33,6 +33,12 @@ export const commands = {
 	 *  background (a frame with a base picked by hand does not change).
 	 */
 	rollSetFilmBase: (id: RollId, base: [(number | null), (number | null), (number | null)] | null) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_set_film_base", { id, base })),
+	/**
+	 *  Sets the size of one frame on the roll's captures by hand (width and height as fractions of the
+	 *  image), or clears it with `null` so it is measured again. Frames that were never edited get a new
+	 *  automatic crop, so their thumbnails are regenerated in the background.
+	 */
+	rollSetFrameSize: (id: RollId, size: [(number | null), (number | null)] | null) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_set_frame_size", { id, size })),
 	/**  Deletes a roll with its frames, then their files. */
 	rollDelete: (id: RollId) => typedError<DeleteReport, AppError_Serialize>(__TAURI_INVOKE("roll_delete", { id })),
 	/**  One page of frames of a roll, or of the whole library. */
@@ -487,8 +493,8 @@ export type FailedExport_Serialize = {
 	details: string | null,
 };
 
-/**  Film format of a roll. Only 35 mm is supported in the MVP. */
-export type FilmFormat = "35mm";
+/**  Film format of a roll: 35 mm, or a medium-format frame on 120 film. */
+export type FilmFormat = "35mm" | "645" | "6x6" | "6x7" | "6x9";
 
 /**
  *  Runtime feature flags with their defaults (spec section 10). Each flag is deleted after one
@@ -628,6 +634,40 @@ export type FrameQuery_Serialize = {
 	roll_id: RollId | null,
 	page: number,
 	page_size: number,
+};
+
+/**
+ *  The size of one frame of a roll on its captures, as fractions of the image. It places the window
+ *  that frame detection slides over a capture; each frame still finds its own position.
+ */
+export type FrameSize = FrameSize_Serialize | FrameSize_Deserialize;
+
+/**
+ *  The size of one frame of a roll on its captures, as fractions of the image. It places the window
+ *  that frame detection slides over a capture; each frame still finds its own position.
+ */
+export type FrameSize_Deserialize = {
+	w: number | null,
+	h: number | null,
+	/**
+	 *  How many measured frames this size averages; 0 when set by hand (a hand-set size is never
+	 *  replaced by a measurement).
+	 */
+	samples?: number,
+};
+
+/**
+ *  The size of one frame of a roll on its captures, as fractions of the image. It places the window
+ *  that frame detection slides over a capture; each frame still finds its own position.
+ */
+export type FrameSize_Serialize = {
+	w: number | null,
+	h: number | null,
+	/**
+	 *  How many measured frames this size averages; 0 when set by hand (a hand-set size is never
+	 *  replaced by a measurement).
+	 */
+	samples: number,
 };
 
 /**  What the grid needs of a frame. */
@@ -1054,6 +1094,7 @@ export type RollInput = RollInput_Serialize | RollInput_Deserialize;
  */
 export type RollInput_Deserialize = {
 	name?: string,
+	format?: FilmFormat,
 	film_stock?: string | null,
 	camera?: string | null,
 	iso_box?: number | null,
@@ -1069,6 +1110,7 @@ export type RollInput_Deserialize = {
  */
 export type RollInput_Serialize = {
 	name: string,
+	format: FilmFormat,
 	film_stock: string | null,
 	camera: string | null,
 	iso_box: number | null,
@@ -1107,6 +1149,11 @@ export type Roll_Deserialize = {
 	 *  set by hand, or there is no base yet.
 	 */
 	film_base_confidence?: number | null,
+	/**
+	 *  The size of one frame on this roll's captures, for frame detection. `None` until measured
+	 *  or set; the format's aspect ratio stands in for it.
+	 */
+	frame_size?: FrameSize_Deserialize | null,
 	/**  RFC 3339 timestamp. */
 	created_at: string,
 };
@@ -1140,6 +1187,11 @@ export type Roll_Serialize = {
 	 *  set by hand, or there is no base yet.
 	 */
 	film_base_confidence: number | null,
+	/**
+	 *  The size of one frame on this roll's captures, for frame detection. `None` until measured
+	 *  or set; the format's aspect ratio stands in for it.
+	 */
+	frame_size: FrameSize_Serialize | null,
 	/**  RFC 3339 timestamp. */
 	created_at: string,
 };

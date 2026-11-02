@@ -11,6 +11,7 @@ import {
   type CrashNote,
   type ExportedFile,
   type FailedExport,
+  type FilmFormat,
   type ImportResult,
   type ImportWarning,
   type LibraryDetails,
@@ -37,6 +38,7 @@ export type {
   CrashNote,
   ExportedFile,
   FailedExport,
+  FilmFormat,
   ImportResult,
   ImportWarning,
   LibraryDetails,
@@ -154,6 +156,11 @@ export async function rollList(): Promise<Roll[]> {
 /** Sets the roll's film base, or clears it with `null`. */
 export async function rollSetFilmBase(...args: Args<'rollSetFilmBase'>): Promise<Roll> {
   return unwrap(await commands.rollSetFilmBase(...args));
+}
+
+/** Sets the size of one frame on the roll's captures by hand, or clears it with null. */
+export async function rollSetFrameSize(...args: Args<'rollSetFrameSize'>): Promise<Roll> {
+  return unwrap(await commands.rollSetFrameSize(...args));
 }
 
 /** Deletes a roll and its frames; `files_left` lists files that could not be removed. */

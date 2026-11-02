@@ -3,13 +3,93 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, ErrorCode};
 use crate::ids::RollId;
 
-/// Film format of a roll. Only 35 mm is supported in the MVP.
+/// Film format of a roll: 35 mm, or a medium-format frame on 120 film.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum FilmFormat {
     #[default]
     #[serde(rename = "35mm")]
     Mm35,
+    #[serde(rename = "645")]
+    Mf645,
+    #[serde(rename = "6x6")]
+    Mf6x6,
+    #[serde(rename = "6x7")]
+    Mf6x7,
+    #[serde(rename = "6x9")]
+    Mf6x9,
+}
+
+impl FilmFormat {
+    /// The text stored in the catalog and written to the UI.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Mm35 => "35mm",
+            Self::Mf645 => "645",
+            Self::Mf6x6 => "6x6",
+            Self::Mf6x7 => "6x7",
+            Self::Mf6x9 => "6x9",
+        }
+    }
+
+    /// The format of stored text; `None` for text no version of the app wrote.
+    pub fn parse(text: &str) -> Option<Self> {
+        [
+            Self::Mm35,
+            Self::Mf645,
+            Self::Mf6x6,
+            Self::Mf6x7,
+            Self::Mf6x9,
+        ]
+        .into_iter()
+        .find(|f| f.as_str() == text)
+    }
+
+    /// Long side over short side of one frame, from its nominal size in millimetres.
+    pub fn aspect(self) -> f32 {
+        match self {
+            Self::Mm35 => 36.0 / 24.0,
+            Self::Mf645 => 56.0 / 41.5,
+            Self::Mf6x6 => 1.0,
+            Self::Mf6x7 => 70.0 / 56.0,
+            Self::Mf6x9 => 84.0 / 56.0,
+        }
+    }
+}
+
+/// The size of one frame of a roll on its captures, as fractions of the image. It places the window
+/// that frame detection slides over a capture; each frame still finds its own position.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct FrameSize {
+    pub w: f32,
+    pub h: f32,
+    /// How many measured frames this size averages; 0 when set by hand (a hand-set size is never
+    /// replaced by a measurement).
+    #[serde(default)]
+    pub samples: u32,
+}
+
+impl FrameSize {
+    /// A size is two fractions above 0 and at most 1.
+    pub fn is_valid(&self) -> bool {
+        [self.w, self.h]
+            .iter()
+            .all(|v| v.is_finite() && *v > 0.0 && *v <= 1.0)
+    }
+
+    /// The size averaged with one more measured frame; a hand-set size stays as it is.
+    pub fn with_measurement(self, [w, h]: [f32; 2]) -> Self {
+        if self.samples == 0 {
+            return self;
+        }
+        let n = self.samples as f32;
+        Self {
+            w: (self.w * n + w) / (n + 1.0),
+            h: (self.h * n + h) / (n + 1.0),
+            samples: self.samples.saturating_add(1),
+        }
+    }
 }
 
 /// Highest ISO accepted for a roll (box or shot); beyond any film made.
@@ -48,6 +128,10 @@ pub struct Roll {
     /// set by hand, or there is no base yet.
     #[serde(default)]
     pub film_base_confidence: Option<f32>,
+    /// The size of one frame on this roll's captures, for frame detection. `None` until measured
+    /// or set; the format's aspect ratio stands in for it.
+    #[serde(default)]
+    pub frame_size: Option<FrameSize>,
     /// RFC 3339 timestamp.
     pub created_at: String,
 }
@@ -180,6 +264,51 @@ mod tests {
             serde_json::to_string(&FilmFormat::Mm35).unwrap(),
             "\"35mm\""
         );
+    }
+
+    #[test]
+    fn every_format_has_its_text_and_aspect() {
+        for (format, text, aspect) in [
+            (FilmFormat::Mm35, "35mm", 1.5),
+            (FilmFormat::Mf645, "645", 1.35),
+            (FilmFormat::Mf6x6, "6x6", 1.0),
+            (FilmFormat::Mf6x7, "6x7", 1.25),
+            (FilmFormat::Mf6x9, "6x9", 1.5),
+        ] {
+            assert_eq!(format.as_str(), text);
+            assert_eq!(FilmFormat::parse(text), Some(format));
+            assert_eq!(
+                serde_json::to_string(&format).unwrap(),
+                format!("\"{text}\"")
+            );
+            assert!((format.aspect() - aspect).abs() < 0.02, "{text}");
+        }
+        assert_eq!(FilmFormat::parse("8x10"), None);
+    }
+
+    #[test]
+    fn a_measured_frame_size_averages_and_a_hand_set_one_stays() {
+        let size = FrameSize {
+            w: 0.5,
+            h: 0.8,
+            samples: 1,
+        };
+        let next = size.with_measurement([0.52, 0.78]);
+        assert_eq!(next.samples, 2);
+        assert!((next.w - 0.51).abs() < 1e-6 && (next.h - 0.79).abs() < 1e-6);
+
+        let by_hand = FrameSize { samples: 0, ..size };
+        assert_eq!(by_hand.with_measurement([0.1, 0.1]), by_hand);
+
+        assert!(size.is_valid());
+        for bad in [(0.0, 0.5), (0.5, 1.2), (f32::NAN, 0.5), (-0.1, 0.5)] {
+            let s = FrameSize {
+                w: bad.0,
+                h: bad.1,
+                samples: 0,
+            };
+            assert!(!s.is_valid(), "{bad:?}");
+        }
     }
 
     #[test]

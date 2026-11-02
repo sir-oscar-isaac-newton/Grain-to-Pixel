@@ -26,11 +26,12 @@ use gtp_io::{read_tiff16, to_f32_linear, Limits};
 use gtp_negative::{levels_from_sample, sample_film_base, LevelPoint, Rect};
 
 use crate::pipeline::{
-    analyze, build_plane_proxy, build_proxy, inverted_frame, normalized_frame, to_rgba8_srgb,
+    analyze_with, build_plane_proxy, build_proxy, inverted_frame, normalized_frame, to_rgba8_srgb,
     Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
 };
 use crate::services::counters;
 use crate::services::library::Library;
+use crate::services::roll_frame::{hint_for_frame, record_frame_measurement};
 
 /// Frames whose proxy is kept in memory (about 34 MB each).
 pub const CACHE_FRAMES: usize = 4;
@@ -500,7 +501,11 @@ impl DevelopService {
             check_base(base)?;
             input.film_base = Some(base);
         }
-        let analysis = analyze(&input)?;
+        let (roll, hint) = hint_for_frame(library, id)?;
+        let analysis = analyze_with(&input, hint)?;
+        if let Some(size) = analysis.frame.measured_size.filter(|_| hint.is_some()) {
+            record_frame_measurement(library, roll, size)?;
+        }
         Ok(DevelopAnalysis {
             frame_rect: analysis.frame.rect,
             frame_confidence: analysis.frame.confidence,

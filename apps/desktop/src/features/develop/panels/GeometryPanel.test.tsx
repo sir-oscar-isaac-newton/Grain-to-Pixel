@@ -16,6 +16,7 @@ const detected = { rect: { x: 0.05, y: 0.1, w: 0.9, h: 0.8 }, confidence: 0.9 };
 function setup(over: Partial<Props> = {}) {
   const mocks = {
     onCroppingChange: vi.fn(),
+    onUseAsRollFrameSize: vi.fn(),
     onGuideChange: vi.fn(),
     onRatioChange: vi.fn(),
     onChange: vi.fn(),
@@ -175,6 +176,15 @@ describe('GeometryPanel', () => {
       expect(screen.getByText(/Drag the frame or its sides/)).toBeInTheDocument();
       await user.click(button('Edit crop'));
       expect(mocks.onCroppingChange).toHaveBeenLastCalledWith(false);
+    });
+
+    it('offers the crop as the size of the roll’s frames, unless the library is read-only', async () => {
+      const user = userEvent.setup();
+      const { props, mocks, rerender } = setup();
+      await user.click(button('Use this crop as the roll’s frame size'));
+      expect(mocks.onUseAsRollFrameSize).toHaveBeenCalledTimes(1);
+      rerender(<GeometryPanel {...props} readOnly />);
+      expect(button('Use this crop as the roll’s frame size')).toBeDisabled();
     });
 
     it('goes back to the detected frame, once it differs from the crop', async () => {

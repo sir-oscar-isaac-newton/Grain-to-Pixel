@@ -536,6 +536,15 @@
       "status": "completed",
       "pr": 179,
       "commit": "c636d6b"
+    },
+    {
+      "id": "P-18",
+      "number": 180,
+      "title": "Frame detection for camera triplets",
+      "branch": "feat/issue-180-frame-detection-triplets",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

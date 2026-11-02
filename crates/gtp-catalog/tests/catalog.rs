@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use gtp_catalog::{backup_path, Catalog, SCHEMA_VERSION};
 use gtp_core::{
-    ErrorCode, FilmFormat, Frame, FrameId, FrameKind, Recipe, Roll, RollId, SearchQuery,
+    ErrorCode, FilmFormat, Frame, FrameId, FrameKind, FrameSize, Recipe, Roll, RollId, SearchQuery,
     SourceFile, SourceRole,
 };
 use rusqlite::Connection;
@@ -65,6 +65,7 @@ fn roll(name: &str) -> Roll {
         notes: "  pushed one stop ".into(),
         film_base_rgb: None,
         film_base_confidence: None,
+        frame_size: None,
         created_at: String::new(),
     }
 }
@@ -132,7 +133,7 @@ fn an_older_library_is_backed_up_before_it_is_migrated() {
 }
 
 #[test]
-fn a_v3_library_upgrades_to_v4_with_a_backup_and_keeps_its_rolls() {
+fn a_v3_library_upgrades_with_a_backup_and_keeps_its_rolls() {
     let dir = TempDir::new("upgrade-v3");
     let id = RollId::new();
     {
@@ -160,10 +161,12 @@ fn a_v3_library_upgrades_to_v4_with_a_backup_and_keeps_its_rolls() {
         "an existing base has no confidence"
     );
     assert!(!old.film_base_uncertain());
+    assert_eq!(old.frame_size, None, "an existing roll has no frame size");
+    assert_eq!(old.format, FilmFormat::Mm35);
     drop(cat);
 
-    assert_eq!(SCHEMA_VERSION, 4);
-    assert_eq!(user_version(&dir.db()), 4);
+    assert_eq!(SCHEMA_VERSION, 5);
+    assert_eq!(user_version(&dir.db()), 5);
     let backup = backup_path(&dir.db(), 3);
     assert!(backup.exists());
     assert_eq!(user_version(&backup), 3, "the backup is the old schema");
@@ -174,6 +177,66 @@ fn a_v3_library_upgrades_to_v4_with_a_backup_and_keeps_its_rolls() {
     };
     assert!(!has_column(&backed_up));
     assert!(has_column(&Connection::open(dir.db()).unwrap()));
+}
+
+#[test]
+fn the_format_and_frame_size_of_a_roll_are_stored_and_measurements_average_in() {
+    let dir = TempDir::new("frame-size");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let mut input = roll("R");
+    input.format = FilmFormat::Mf645;
+    let r = cat.insert_roll(&input).unwrap();
+    assert_eq!(r.format, FilmFormat::Mf645);
+    assert_eq!(r.frame_size, None);
+
+    let one = cat.record_frame_measurement(r.id, [0.5, 0.8]).unwrap();
+    assert_eq!(
+        one.frame_size,
+        Some(FrameSize {
+            w: 0.5,
+            h: 0.8,
+            samples: 1
+        })
+    );
+    let two = cat.record_frame_measurement(r.id, [0.52, 0.78]).unwrap();
+    let size = two.frame_size.unwrap();
+    assert_eq!(size.samples, 2);
+    assert!((size.w - 0.51).abs() < 1e-6 && (size.h - 0.79).abs() < 1e-6);
+
+    // Set by hand (0 samples), it stays; the format and the size survive an update.
+    let mut by_hand = cat.get_roll(r.id).unwrap();
+    by_hand.format = FilmFormat::Mf6x7;
+    by_hand.frame_size = Some(FrameSize {
+        w: 0.4,
+        h: 0.9,
+        samples: 0,
+    });
+    cat.update_roll(&by_hand).unwrap();
+    let kept = cat.record_frame_measurement(r.id, [0.1, 0.1]).unwrap();
+    assert_eq!(kept.frame_size, by_hand.frame_size);
+    assert_eq!(kept.format, FilmFormat::Mf6x7);
+
+    for bad in [[0.0, 0.5], [0.5, 1.5], [f32::NAN, 0.5]] {
+        assert_eq!(
+            cat.record_frame_measurement(r.id, bad).unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
+    }
+    assert_eq!(
+        cat.record_frame_measurement(RollId::new(), [0.5, 0.5])
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+    by_hand.frame_size = Some(FrameSize {
+        w: 2.0,
+        h: 0.5,
+        samples: 0,
+    });
+    assert_eq!(
+        cat.update_roll(&by_hand).unwrap_err().code,
+        ErrorCode::InvalidInput
+    );
 }
 
 #[test]

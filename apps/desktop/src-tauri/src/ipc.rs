@@ -23,6 +23,7 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::roll::roll_update,
             commands::roll::roll_list,
             commands::roll::roll_set_film_base,
+            commands::roll::roll_set_frame_size,
             commands::roll::roll_delete,
             commands::frame::frame_list,
             commands::frame::frame_get,

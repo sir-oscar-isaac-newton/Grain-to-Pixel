@@ -21,7 +21,7 @@ use gtp_io::encode_jpeg;
 
 use crate::jobs::LibraryEvents;
 use crate::library_fs::thumb_rel;
-use crate::pipeline::{analyze, render, RenderTarget};
+use crate::pipeline::{analyze_with, render, RenderTarget};
 use crate::services::develop::DevelopService;
 use crate::services::import::{THUMB_EDGE, THUMB_QUALITY};
 use crate::services::library::Library;
@@ -161,7 +161,9 @@ impl ThumbnailService {
         let input = develop.thumbnail_input(library, frame)?;
         let recipe = match library.read(|c| c.load_recipe(frame))? {
             Some(recipe) => recipe,
-            None => analyze(&input)?.auto_recipe,
+            None => {
+                analyze_with(&input, roll_frame::hint_for_frame(library, frame)?.1)?.auto_recipe
+            }
         };
         let image = render(
             &input,

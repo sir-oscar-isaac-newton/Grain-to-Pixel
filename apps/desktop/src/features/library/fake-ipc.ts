@@ -58,6 +58,7 @@ export function makeRoll(over: Partial<Roll> = {}): Roll {
     notes: '',
     film_base_rgb: null,
     film_base_confidence: null,
+    frame_size: null,
     created_at: '2026-10-30T10:00:00Z',
     ...over,
   };
@@ -483,6 +484,12 @@ export const ipc = {
     state.rollBases.push({ id, base });
     state.rollBase = base;
     state.rolls = state.rolls.map((r) => (r.id === id ? { ...r, film_base_rgb: base } : r));
+    return state.rolls.find((r) => r.id === id) as Roll;
+  }),
+  rollSetFrameSize: vi.fn(async (id: string, size: [number, number] | null) => {
+    state.rolls = state.rolls.map((r) =>
+      r.id === id ? { ...r, frame_size: size && { w: size[0], h: size[1], samples: 0 } } : r,
+    );
     return state.rolls.find((r) => r.id === id) as Roll;
   }),
   logClientEvent: vi.fn(async () => undefined),

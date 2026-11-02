@@ -188,6 +188,12 @@ describe('LibraryView', () => {
       await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), '  Autumn walk ');
       await user.type(within(dialog).getByRole('combobox', { name: 'Film' }), 'Ektar 100');
       await user.type(within(dialog).getByRole('combobox', { name: 'Camera' }), 'Nikon F3');
+      // 35 mm until another format is chosen.
+      expect(within(dialog).getByRole('combobox', { name: 'Film format' })).toHaveValue('35mm');
+      await user.selectOptions(
+        within(dialog).getByRole('combobox', { name: 'Film format' }),
+        '645 (6 × 4.5 cm)',
+      );
       await user.type(within(dialog).getByRole('textbox', { name: 'Box ISO' }), '100');
       await user.type(within(dialog).getByRole('textbox', { name: 'Shot at ISO' }), '200');
       await user.type(within(dialog).getByRole('textbox', { name: 'Shot from' }), '2026-09');
@@ -200,6 +206,7 @@ describe('LibraryView', () => {
         name: 'Autumn walk',
         film_stock: 'Ektar 100',
         camera: 'Nikon F3',
+        format: '645',
         iso_box: 100,
         iso_shot: 200,
         shot_from: '2026-09',

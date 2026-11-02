@@ -7,6 +7,7 @@ import {
   rollTags,
   rollUpdate,
   tagApplyRoll,
+  type FilmFormat,
   type Roll,
   type RollInput,
 } from '../../shared/ipc';
@@ -59,6 +60,8 @@ function Field({
     </div>
   );
 }
+
+const FORMATS: readonly FilmFormat[] = ['35mm', '645', '6x6', '6x7', '6x9'];
 
 const text = (value: string): string | null => value.trim() || null;
 
@@ -123,6 +126,7 @@ function RollForm({ roll, onDone }: { roll: Roll | null; onDone: () => void }) {
   const [name, setName] = useState(roll?.name ?? '');
   const [film, setFilm] = useState(roll?.film_stock ?? '');
   const [camera, setCamera] = useState(roll?.camera ?? '');
+  const [format, setFormat] = useState<FilmFormat>(roll?.format ?? '35mm');
   const [isoBox, setIsoBox] = useState(roll?.iso_box?.toString() ?? '');
   const [isoShot, setIsoShot] = useState(roll?.iso_shot?.toString() ?? '');
   const [from, setFrom] = useState(roll?.shot_from ?? '');
@@ -153,6 +157,7 @@ function RollForm({ roll, onDone }: { roll: Roll | null; onDone: () => void }) {
       name: name.trim(),
       film_stock: text(film),
       camera: text(camera),
+      format,
       iso_box: box ?? null,
       iso_shot: shot ?? null,
       shot_from: text(from),
@@ -231,6 +236,21 @@ function RollForm({ roll, onDone }: { roll: Roll | null; onDone: () => void }) {
                 ))}
               </datalist>
             </>
+          )}
+        </Field>
+        <Field label={t('rollEditor.format')}>
+          {(props) => (
+            <select
+              {...props}
+              value={format}
+              onChange={(e) => setFormat(e.target.value as FilmFormat)}
+            >
+              {FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {t(`rollEditor.formats.${f}`)}
+                </option>
+              ))}
+            </select>
           )}
         </Field>
         <div className={styles.pair}>

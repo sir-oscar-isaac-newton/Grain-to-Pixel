@@ -3,10 +3,10 @@
 use std::sync::Arc;
 
 use gtp_core::recipe::Geometry;
-use gtp_core::{AppError, Recipe};
+use gtp_core::{AppError, FilmFormat, Recipe, Roll};
 use gtp_negative::{
-    auto_film_base, auto_levels, detect_frame, normalize, BaseEstimate, FrameDetection,
-    DEFAULT_HIGH_PERCENTILE, DEFAULT_LOW_PERCENTILE,
+    auto_film_base, auto_levels, detect_frame_with, normalize, BaseEstimate, FrameDetection,
+    FrameHint, DEFAULT_HIGH_PERCENTILE, DEFAULT_LOW_PERCENTILE,
 };
 
 use super::{build_proxy, histogram, render, to_rgba8_srgb, Histogram, PipelineInput};
@@ -31,6 +31,21 @@ pub struct Analysis {
 /// detection on the base-normalized scan, auto levels on the cropped frame, then a render of the
 /// resulting recipe for the histogram.
 pub fn analyze(input: &PipelineInput) -> Result<Analysis, AppError> {
+    analyze_with(input, None)
+}
+
+/// What frame detection may assume about a roll's frames: its format's aspect ratio and, once known,
+/// the size of its frames. `None` for a 35 mm roll without a frame size, which is detected by its
+/// rebate alone, as scans are.
+pub fn frame_hint(roll: &Roll) -> Option<FrameHint> {
+    (roll.format != FilmFormat::Mm35 || roll.frame_size.is_some()).then(|| FrameHint {
+        aspect: roll.format.aspect(),
+        size: roll.frame_size.map(|s| [s.w, s.h]),
+    })
+}
+
+/// [`analyze`] with what the roll says about its frames (see [`frame_hint`]).
+pub fn analyze_with(input: &PipelineInput, hint: Option<FrameHint>) -> Result<Analysis, AppError> {
     let proxy = build_proxy(&input.rgb, PREVIEW_EDGE)?;
     let (base, base_from_roll) = match input.film_base {
         Some(rgb) => (
@@ -45,7 +60,7 @@ pub fn analyze(input: &PipelineInput) -> Result<Analysis, AppError> {
 
     let mut normalized = proxy.clone();
     normalize(&mut normalized, base.rgb)?;
-    let frame = detect_frame(&normalized)?;
+    let frame = detect_frame_with(&normalized, hint)?;
     let crop_only = Geometry {
         crop: frame.rect,
         ..Geometry::default()
@@ -120,6 +135,82 @@ mod tests {
         for (g, w) in got.iter().zip(want) {
             assert!((g - w).abs() <= 0.005, "frame edge {g} vs {w}");
         }
+    }
+
+    /// A 300 x 200 capture of a 645 frame between opaque black margins: unexposed film from
+    /// column 40 to 111, the picture from 111 to 260, black beyond.
+    fn camera_capture(base: [f32; 3]) -> ImageF32 {
+        let mut data = Vec::new();
+        for y in 0..200usize {
+            for x in 0..300usize {
+                let v = if !(40..260).contains(&x) {
+                    0.003
+                } else if x >= 111 {
+                    0.3 + 0.4 * ((x * 7 + y * 3) % 10) as f32 / 10.0
+                } else {
+                    1.0
+                };
+                data.extend(base.map(|b| v * b));
+            }
+        }
+        ImageF32::new(300, 200, 3, data).unwrap()
+    }
+
+    #[test]
+    fn a_roll_gives_a_hint_unless_it_is_35mm_without_a_frame_size() {
+        use gtp_core::FrameSize;
+        let mut roll = Roll {
+            id: gtp_core::RollId::new(),
+            name: "R".into(),
+            film_stock: None,
+            format: FilmFormat::Mm35,
+            camera: None,
+            iso_box: None,
+            iso_shot: None,
+            shot_from: None,
+            shot_to: None,
+            notes: String::new(),
+            film_base_rgb: None,
+            film_base_confidence: None,
+            frame_size: None,
+            created_at: String::new(),
+        };
+        assert_eq!(frame_hint(&roll), None);
+        roll.format = FilmFormat::Mf645;
+        let hint = frame_hint(&roll).unwrap();
+        assert!((hint.aspect - 1.35).abs() < 0.02 && hint.size.is_none());
+        roll.frame_size = Some(FrameSize {
+            w: 0.5,
+            h: 1.0,
+            samples: 3,
+        });
+        assert_eq!(frame_hint(&roll).unwrap().size, Some([0.5, 1.0]));
+        roll.format = FilmFormat::Mm35;
+        assert!(frame_hint(&roll).is_some());
+    }
+
+    #[test]
+    fn a_medium_format_hint_crops_a_camera_capture_that_has_no_usable_rebate() {
+        let base = [0.8, 0.5, 0.3];
+        let input = PipelineInput {
+            rgb: Arc::new(camera_capture(base)),
+            ir: None,
+            film_base: Some(base),
+        };
+        let plain = analyze(&input).unwrap();
+        assert!(plain.frame.confidence < gtp_negative::MIN_CONFIDENCE);
+
+        let hint = FrameHint {
+            aspect: FilmFormat::Mf645.aspect(),
+            size: None,
+        };
+        let a = analyze_with(&input, Some(hint)).unwrap();
+        assert!(a.frame.confidence >= gtp_negative::MIN_CONFIDENCE);
+        let r = a.frame.rect;
+        assert!((r.x - 111.0 / 300.0).abs() < 0.02, "{r:?}");
+        assert!(a.frame.measured_size.is_none());
+        // The levels now come from the picture, so its darkest and brightest values are used.
+        assert!(a.auto_recipe.geometry.crop == a.frame.rect);
     }
 
     #[test]

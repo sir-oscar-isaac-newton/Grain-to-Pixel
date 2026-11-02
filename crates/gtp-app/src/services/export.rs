@@ -23,7 +23,7 @@ use gtp_io::{encode_jpeg, encode_tiff16, JPEG_QUALITY};
 
 use crate::jobs::JobCtx;
 use crate::paths::{canonical_dir, display_path};
-use crate::pipeline::{analyze, build_proxy, render, PipelineInput, RenderTarget, PROXY_EDGE};
+use crate::pipeline::{analyze_with, build_proxy, render, PipelineInput, RenderTarget, PROXY_EDGE};
 use crate::services::counters;
 use crate::services::develop::{read_ir_or_skip, read_scan};
 use crate::services::library::Library;
@@ -293,7 +293,7 @@ fn export_one(
                 ir: None,
                 film_base: roll.film_base_rgb,
             };
-            analyze(&proxy)?.auto_recipe
+            analyze_with(&proxy, crate::pipeline::frame_hint(&roll))?.auto_recipe
         }
     };
     let input = PipelineInput {

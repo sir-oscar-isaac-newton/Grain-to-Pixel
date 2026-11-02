@@ -3,14 +3,15 @@
 use rusqlite::{params, OptionalExtension, Row};
 
 use gtp_core::model::{check_iso, check_shot_range};
-use gtp_core::{AppError, FilmFormat, Roll, RollId};
+use gtp_core::{AppError, FilmFormat, FrameSize, Roll, RollId};
 
 use super::{check_len, clean_name, clean_optional, not_found, parse_col, MAX_NOTE_CHARS, NOW};
 use crate::db::db_error;
 use crate::{fts, Catalog};
 
 const COLUMNS: &str = "id, name, film_stock, format, camera, iso_box, iso_shot, shot_from, shot_to,
-    notes, film_base_r, film_base_g, film_base_b, created_at, film_base_confidence";
+    notes, film_base_r, film_base_g, film_base_b, created_at, film_base_confidence,
+    frame_w, frame_h, frame_samples";
 
 fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
     let base: [Option<f32>; 3] = [row.get(10)?, row.get(11)?, row.get(12)?];
@@ -18,8 +19,7 @@ fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
         id: parse_col(row, 0)?,
         name: row.get(1)?,
         film_stock: row.get(2)?,
-        // Only 35 mm exists; the column is kept for later formats.
-        format: FilmFormat::Mm35,
+        format: FilmFormat::parse(&row.get::<_, String>(3)?).unwrap_or_default(),
         camera: row.get(4)?,
         iso_box: row.get(5)?,
         iso_shot: row.get(6)?,
@@ -31,6 +31,14 @@ fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
             _ => None,
         },
         film_base_confidence: row.get(14)?,
+        frame_size: match (row.get(15)?, row.get(16)?) {
+            (Some(w), Some(h)) => Some(FrameSize {
+                w,
+                h,
+                samples: row.get::<_, Option<u32>>(17)?.unwrap_or(0),
+            }),
+            _ => None,
+        },
         created_at: row.get(13)?,
     })
 }
@@ -65,6 +73,12 @@ fn check_base(rgb: Option<[f32; 3]>, confidence: Option<f32>) -> Result<(), AppE
 /// The roll with its texts trimmed and every field checked.
 fn validated(roll: &Roll) -> Result<Roll, AppError> {
     check_base(roll.film_base_rgb, roll.film_base_confidence)?;
+    if roll.frame_size.is_some_and(|s| !s.is_valid()) {
+        return Err(AppError::new(
+            gtp_core::ErrorCode::InvalidInput,
+            "A frame size needs two fractions above 0 and at most 1.",
+        ));
+    }
     check_iso(roll.iso_box)?;
     check_iso(roll.iso_shot)?;
     let shot_from = clean_optional(roll.shot_from.as_deref(), "start date")?;
@@ -92,7 +106,7 @@ impl Catalog {
             .execute(
                 &format!(
                     "INSERT INTO roll({COLUMNS}) VALUES
-                     (?1, ?2, ?3, '35mm', ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, {NOW}, ?13)"
+                     (?1, ?2, ?3, ?14, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, {NOW}, ?13, ?15, ?16, ?17)"
                 ),
                 params![
                     r.id.to_string(),
@@ -107,7 +121,11 @@ impl Catalog {
                     base[0],
                     base[1],
                     base[2],
-                    r.film_base_confidence
+                    r.film_base_confidence,
+                    r.format.as_str(),
+                    r.frame_size.map(|s| s.w),
+                    r.frame_size.map(|s| s.h),
+                    r.frame_size.map(|s| s.samples)
                 ],
             )
             .map_err(db_error)?;
@@ -136,6 +154,49 @@ impl Catalog {
         Ok((self.get_roll(id)?, changed > 0))
     }
 
+    /// Teaches the roll's frame size one more measured frame (width and height as fractions of the
+    /// image): the first measurement sets the size, later ones average into it, and a size set by
+    /// hand is left alone. Returns the roll as stored.
+    pub fn record_frame_measurement(
+        &mut self,
+        id: RollId,
+        measured: [f32; 2],
+    ) -> Result<Roll, AppError> {
+        let first = FrameSize {
+            w: measured[0],
+            h: measured[1],
+            samples: 1,
+        };
+        if !first.is_valid() {
+            return Err(AppError::new(
+                gtp_core::ErrorCode::InvalidInput,
+                "A frame size needs two fractions above 0 and at most 1.",
+            ));
+        }
+        let tx = self.conn.transaction().map_err(db_error)?;
+        let current = tx
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM roll WHERE id = ?1"),
+                [id.to_string()],
+                read,
+            )
+            .optional()
+            .map_err(db_error)?
+            .ok_or_else(|| not_found("roll", id))?;
+        let size = current
+            .frame_size
+            .map_or(first, |s| s.with_measurement(measured));
+        if current.frame_size != Some(size) {
+            tx.execute(
+                "UPDATE roll SET frame_w = ?2, frame_h = ?3, frame_samples = ?4 WHERE id = ?1",
+                params![id.to_string(), size.w, size.h, size.samples],
+            )
+            .map_err(db_error)?;
+        }
+        tx.commit().map_err(db_error)?;
+        self.get_roll(id)
+    }
+
     /// Replaces the editable fields of a roll (everything but `id` and `created_at`).
     pub fn update_roll(&mut self, roll: &Roll) -> Result<Roll, AppError> {
         let r = validated(roll)?;
@@ -146,7 +207,8 @@ impl Catalog {
                 "UPDATE roll SET name = ?2, film_stock = ?3, camera = ?4, iso_box = ?5,
                  iso_shot = ?6, shot_from = ?7, shot_to = ?8, notes = ?9,
                  film_base_r = ?10, film_base_g = ?11, film_base_b = ?12,
-                 film_base_confidence = ?13 WHERE id = ?1",
+                 film_base_confidence = ?13, format = ?14, frame_w = ?15, frame_h = ?16,
+                 frame_samples = ?17 WHERE id = ?1",
                 params![
                     r.id.to_string(),
                     r.name,
@@ -160,7 +222,11 @@ impl Catalog {
                     base[0],
                     base[1],
                     base[2],
-                    r.film_base_confidence
+                    r.film_base_confidence,
+                    r.format.as_str(),
+                    r.frame_size.map(|s| s.w),
+                    r.frame_size.map(|s| s.h),
+                    r.frame_size.map(|s| s.samples)
                 ],
             )
             .map_err(db_error)?;

@@ -10,8 +10,8 @@ mod tag;
 pub use channel::TripletChannel;
 pub use frame::{Frame, FrameKind};
 pub use roll::{
-    check_iso, check_shot_range, partial_date_span, FilmFormat, Roll, FILM_BASE_MIN_CONFIDENCE,
-    MAX_ISO,
+    check_iso, check_shot_range, partial_date_span, FilmFormat, FrameSize, Roll,
+    FILM_BASE_MIN_CONFIDENCE, MAX_ISO,
 };
 pub use search::SearchQuery;
 pub use source::{SourceFile, SourceRole};

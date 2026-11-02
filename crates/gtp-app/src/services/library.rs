@@ -278,6 +278,7 @@ mod tests {
             notes: String::new(),
             film_base_rgb: None,
             film_base_confidence: None,
+            frame_size: None,
             created_at: String::new(),
         }
     }

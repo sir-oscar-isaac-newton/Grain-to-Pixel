@@ -13,6 +13,8 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use crate::channel::TripletChannel;
+
 /// A pause between two shots longer than this (milliseconds) starts a new triplet.
 pub const MAX_SHOT_GAP_MS: i64 = 5_000;
 
@@ -28,6 +30,8 @@ pub struct ExifFile {
     pub path: PathBuf,
     /// `None` when the file has no readable capture time.
     pub captured: Option<CaptureTime>,
+    /// The channel its colour says, if that was looked at and is clear.
+    pub channel: Option<TripletChannel>,
 }
 
 /// A file of a candidate, for display.
@@ -37,6 +41,8 @@ pub struct TripletFile {
     pub path: String,
     /// The capture time as `YYYY-MM-DDTHH:MM:SS.mmm` (no time zone), if the file has one.
     pub captured: Option<String>,
+    /// The channel the colour of the picture says, if that is clear.
+    pub channel: Option<TripletChannel>,
 }
 
 /// What is wrong with a candidate; a candidate without a problem is a complete triplet.
@@ -50,6 +56,9 @@ pub enum TripletProblem {
     ExtraShots { extra: u32 },
     /// The files have no capture time, so they could not be put in order or grouped.
     NoCaptureTime,
+    /// Two of the three files have the colour of the same channel, so they cannot be red, green
+    /// and blue; the files stay in capture order.
+    ChannelMismatch,
 }
 
 /// Files that probably belong together. With no `problem` there are exactly three, red first, then
@@ -86,6 +95,7 @@ fn describe(file: &ExifFile) -> TripletFile {
     TripletFile {
         path: file.path.display().to_string(),
         captured: file.captured.map(|time| format_time(time.0)),
+        channel: file.channel,
     }
 }
 
@@ -134,13 +144,38 @@ fn uneven(shots: usize) -> TripletProblem {
     }
 }
 
+/// The three files of a complete run in channel order. A file whose colour is clear goes to its
+/// own channel; the others fill what is left in capture order. Two files of one colour cannot be
+/// placed: the run is flagged and keeps its capture order.
+fn assign_channels<'a>(three: &[&'a ExifFile]) -> (Vec<&'a ExifFile>, Option<TripletProblem>) {
+    let mut slots: [Option<&ExifFile>; 3] = [None; 3];
+    for file in three {
+        if let Some(channel) = file.channel {
+            let slot = &mut slots[channel.index()];
+            if slot.is_some() {
+                return (three.to_vec(), Some(TripletProblem::ChannelMismatch));
+            }
+            *slot = Some(file);
+        }
+    }
+    let mut unclear = three.iter().copied().filter(|file| file.channel.is_none());
+    for slot in &mut slots {
+        if slot.is_none() {
+            *slot = unclear.next();
+        }
+    }
+    (slots.into_iter().flatten().collect(), None)
+}
+
 /// Groups `files` into triplet candidates, in the order of their first shot (files without a
 /// capture time last).
 ///
 /// A run of shots ends at a pause longer than [`MAX_SHOT_GAP_MS`]. A run whose length is a
 /// multiple of three is cut into triplets of three; any other run becomes one candidate flagged
 /// with [`TripletProblem::MissingShots`] or [`TripletProblem::ExtraShots`]. All files without a
-/// capture time form one candidate flagged [`TripletProblem::NoCaptureTime`].
+/// capture time form one candidate flagged [`TripletProblem::NoCaptureTime`]. In a triplet, files
+/// whose colour says their channel are put in red, green, blue order whatever the capture order;
+/// two of one colour are flagged [`TripletProblem::ChannelMismatch`].
 pub fn group_triplets(files: &[ExifFile]) -> Vec<TripletCandidate> {
     let mut timed: Vec<(&ExifFile, CaptureTime)> = files
         .iter()
@@ -156,7 +191,10 @@ pub fn group_triplets(files: &[ExifFile]) -> Vec<TripletCandidate> {
             return;
         }
         if run.len().is_multiple_of(3) {
-            candidates.extend(run.chunks(3).map(|three| candidate(three, None)));
+            for three in run.chunks(3) {
+                let (ordered, problem) = assign_channels(three);
+                candidates.push(candidate(&ordered, problem));
+            }
         } else {
             candidates.push(candidate(run, Some(uneven(run.len()))));
         }
@@ -188,6 +226,15 @@ mod tests {
         ExifFile {
             path: PathBuf::from(name),
             captured: Some(CaptureTime(1_000_000 + (seconds * 1000.0) as i64)),
+            channel: None,
+        }
+    }
+
+    /// A file shot at `seconds` whose colour says it is `channel`.
+    fn coloured(name: &str, seconds: f64, channel: Option<TripletChannel>) -> ExifFile {
+        ExifFile {
+            channel,
+            ..shot(name, seconds)
         }
     }
 
@@ -195,6 +242,7 @@ mod tests {
         ExifFile {
             path: PathBuf::from(name),
             captured: None,
+            channel: None,
         }
     }
 
@@ -404,5 +452,96 @@ mod tests {
             format_time(951_782_400_000 + 86_399_999),
             "2000-02-29T23:59:59.999"
         );
+    }
+    #[test]
+    fn a_triplet_whose_colours_are_in_another_order_is_put_in_red_green_blue_order() {
+        use TripletChannel::{Blue, Green, Red};
+        let files = [
+            coloured("first", 0.0, Some(Blue)),
+            coloured("second", 2.0, Some(Red)),
+            coloured("third", 4.0, Some(Green)),
+        ];
+        let candidate = group_triplets(&files).remove(0);
+        assert_eq!(candidate.problem, None);
+        assert_eq!(names(&candidate), ["second", "third", "first"]);
+        let channels: Vec<_> = candidate.files.iter().map(|f| f.channel).collect();
+        assert_eq!(channels, [Some(Red), Some(Green), Some(Blue)]);
+    }
+
+    #[test]
+    fn files_with_an_unclear_colour_fill_the_free_channels_in_capture_order() {
+        use TripletChannel::{Blue, Green, Red};
+        let order = |colours: [Option<TripletChannel>; 3]| {
+            let files: Vec<_> = colours
+                .iter()
+                .enumerate()
+                .map(|(i, c)| coloured(&format!("f{i}"), i as f64 * 2.0, *c))
+                .collect();
+            names(&group_triplets(&files)[0])
+                .iter()
+                .map(|n| (*n).to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            order([None, None, None]),
+            ["f0", "f1", "f2"],
+            "no colours, capture order"
+        );
+        assert_eq!(
+            order([None, Some(Red), None]),
+            ["f1", "f0", "f2"],
+            "red claims its place"
+        );
+        assert_eq!(order([Some(Green), None, Some(Blue)]), ["f1", "f0", "f2"]);
+        assert_eq!(order([Some(Blue), None, None]), ["f1", "f2", "f0"]);
+        assert_eq!(
+            order([Some(Red), Some(Green), Some(Blue)]),
+            ["f0", "f1", "f2"]
+        );
+    }
+
+    #[test]
+    fn two_files_of_one_colour_are_flagged_and_keep_their_capture_order() {
+        use TripletChannel::{Blue, Red};
+        let files = [
+            coloured("a", 0.0, Some(Red)),
+            coloured("b", 2.0, Some(Red)),
+            coloured("c", 4.0, Some(Blue)),
+        ];
+        let candidate = group_triplets(&files).remove(0);
+        assert_eq!(candidate.problem, Some(TripletProblem::ChannelMismatch));
+        assert_eq!(names(&candidate), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_run_with_a_missing_shot_is_not_rearranged_but_shows_the_colours() {
+        use TripletChannel::{Blue, Green};
+        let files = [
+            coloured("g", 0.0, Some(Green)),
+            coloured("b", 2.0, Some(Blue)),
+        ];
+        let candidate = group_triplets(&files).remove(0);
+        assert_eq!(
+            candidate.problem,
+            Some(TripletProblem::MissingShots { missing: 1 })
+        );
+        assert_eq!(names(&candidate), ["g", "b"]);
+        assert_eq!(candidate.files[0].channel, Some(Green));
+    }
+
+    #[test]
+    fn each_triplet_of_a_longer_run_is_put_in_order_on_its_own() {
+        use TripletChannel::{Blue, Green, Red};
+        let files = [
+            coloured("a1", 0.0, Some(Green)),
+            coloured("a2", 1.0, Some(Red)),
+            coloured("a3", 2.0, Some(Blue)),
+            coloured("b1", 3.0, Some(Red)),
+            coloured("b2", 4.0, Some(Green)),
+            coloured("b3", 5.0, Some(Blue)),
+        ];
+        let candidates = group_triplets(&files);
+        assert_eq!(names(&candidates[0]), ["a2", "a1", "a3"]);
+        assert_eq!(names(&candidates[1]), ["b1", "b2", "b3"]);
     }
 }

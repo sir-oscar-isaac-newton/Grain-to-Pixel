@@ -13,6 +13,9 @@ testing = []
 [dependencies]
 gtp-core = { version = "0.0.0", path = "../gtp-core" }
 gtp-io = { version = "0.0.0", path = "../gtp-io" }
+# The embedded JPEG preview of a camera file, decoded at a fraction of its size to tell the colour
+# of the light it was taken in. Without rayon: a mean colour does not need threads.
+jpeg-decoder = { version = "0.3", default-features = false }
 # Capture time (DateTimeOriginal) of the camera files; pure Rust, BSD-2-Clause.
 kamadak-exif = "0.6"
 serde = { version = "1", features = ["derive"] }

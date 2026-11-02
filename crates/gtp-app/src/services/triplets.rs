@@ -1,12 +1,14 @@
-//! Triplet grouping (specification section 6, `triplet_group`): reads the capture time of the
-//! chosen camera files and groups them into R/G/B candidates. It changes nothing on disk; importing
+//! Triplet grouping (specification section 6, `triplet_group`): reads the capture time and the
+//! colour of the preview of the chosen camera files and groups them into R/G/B candidates. It changes nothing on disk; importing
 //! a triplet is a separate job.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use rayon::prelude::*;
+
 use gtp_core::{AppError, ErrorCode};
-use gtp_ingest::{group_triplets, read_exif_file, TripletCandidate};
+use gtp_ingest::{group_triplets, read_camera_file, TripletCandidate};
 
 /// Most files one grouping may name.
 pub const MAX_FILES: usize = 10_000;
@@ -23,7 +25,7 @@ pub fn triplet_group(paths: &[PathBuf]) -> Result<Vec<TripletCandidate>, AppErro
         .with_details(format!("{} files", paths.len())));
     }
     let mut seen = HashSet::new();
-    let mut files = Vec::with_capacity(paths.len());
+    let mut unique = Vec::with_capacity(paths.len());
     for path in paths {
         if !path.is_file() {
             return Err(AppError::new(
@@ -33,17 +35,22 @@ pub fn triplet_group(paths: &[PathBuf]) -> Result<Vec<TripletCandidate>, AppErro
             .with_details(path.display().to_string()));
         }
         if seen.insert(path.clone()) {
-            files.push(read_exif_file(path));
+            unique.push(path);
         }
     }
+    // Finding the preview reads the whole file, so the files are read side by side.
+    let files: Vec<_> = unique
+        .par_iter()
+        .map(|path| read_camera_file(path))
+        .collect();
     Ok(group_triplets(&files))
 }
 
 #[cfg(test)]
 mod tests {
     use gtp_core::FrameId;
-    use gtp_ingest::testing::tiff_with_capture_time;
-    use gtp_ingest::TripletProblem;
+    use gtp_ingest::testing::{nef_with_preview, tiff_with_capture_time};
+    use gtp_ingest::{TripletChannel, TripletProblem};
 
     use super::*;
 
@@ -96,6 +103,58 @@ mod tests {
         assert_eq!(
             candidates[1].problem,
             Some(TripletProblem::MissingShots { missing: 1 })
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A camera file shot at `12:00:{seconds}` whose preview is lit in `rgb`.
+    fn lit(dir: &std::path::Path, name: &str, seconds: u32, rgb: [f32; 3]) -> PathBuf {
+        let path = dir.join(name);
+        let date = format!("2026:10:06 12:00:{seconds:02}");
+        std::fs::write(&path, nef_with_preview(&date, rgb)).unwrap();
+        path
+    }
+
+    #[test]
+    fn the_colour_of_each_preview_decides_which_file_is_red_green_and_blue() {
+        let dir = folder("colour");
+        let (red, green, blue) = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+        // Shot blue, red, green, but the colours say which is which.
+        let paths = [
+            lit(&dir, "a.NEF", 0, blue),
+            lit(&dir, "b.NEF", 2, red),
+            lit(&dir, "c.NEF", 4, green),
+        ];
+        let candidate = triplet_group(&paths).unwrap().remove(0);
+        assert_eq!(candidate.problem, None);
+        let files: Vec<_> = candidate
+            .files
+            .iter()
+            .map(|f| {
+                (
+                    f.path.rsplit(['\\', '/']).next().unwrap().to_owned(),
+                    f.channel,
+                )
+            })
+            .collect();
+        assert_eq!(
+            files,
+            [
+                ("b.NEF".to_owned(), Some(TripletChannel::Red)),
+                ("c.NEF".to_owned(), Some(TripletChannel::Green)),
+                ("a.NEF".to_owned(), Some(TripletChannel::Blue)),
+            ]
+        );
+
+        // Two reds: not a triplet.
+        let twice = [
+            lit(&dir, "d.NEF", 20, red),
+            lit(&dir, "e.NEF", 22, red),
+            lit(&dir, "f.NEF", 24, blue),
+        ];
+        assert_eq!(
+            triplet_group(&twice).unwrap()[0].problem,
+            Some(TripletProblem::ChannelMismatch)
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

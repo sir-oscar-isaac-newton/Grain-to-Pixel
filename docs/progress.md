@@ -491,6 +491,15 @@
       "status": "completed",
       "pr": 170,
       "commit": "789e66e"
+    },
+    {
+      "id": "H-11",
+      "number": 167,
+      "title": "Channel check from image colour",
+      "branch": "feat/issue-167-channel-check",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

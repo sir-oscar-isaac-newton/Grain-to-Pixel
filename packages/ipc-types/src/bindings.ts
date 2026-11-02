@@ -1400,6 +1400,9 @@ export type TripletCandidate_Serialize = {
 	problem: TripletProblem | null,
 };
 
+/**  The light an exposure was taken in. */
+export type TripletChannel = "red" | "green" | "blue";
+
 /**  A file of a candidate, for display. */
 export type TripletFile = TripletFile_Serialize | TripletFile_Deserialize;
 
@@ -1408,6 +1411,8 @@ export type TripletFile_Deserialize = {
 	path: string,
 	/**  The capture time as `YYYY-MM-DDTHH:MM:SS.mmm` (no time zone), if the file has one. */
 	captured?: string | null,
+	/**  The channel the colour of the picture says, if that is clear. */
+	channel?: TripletChannel | null,
 };
 
 /**  A file of a candidate, for display. */
@@ -1415,6 +1420,8 @@ export type TripletFile_Serialize = {
 	path: string,
 	/**  The capture time as `YYYY-MM-DDTHH:MM:SS.mmm` (no time zone), if the file has one. */
 	captured: string | null,
+	/**  The channel the colour of the picture says, if that is clear. */
+	channel: TripletChannel | null,
 };
 
 /**  What is wrong with a candidate; a candidate without a problem is a complete triplet. */
@@ -1424,7 +1431,12 @@ export type TripletProblem =
 /**  The run has more shots than a whole number of triplets: `extra` too many. */
 { kind: "extra_shots"; extra: number } | 
 /**  The files have no capture time, so they could not be put in order or grouped. */
-{ kind: "no_capture_time" };
+{ kind: "no_capture_time" } | 
+/**
+ *  Two of the three files have the colour of the same channel, so they cannot be red, green
+ *  and blue; the files stay in capture order.
+ */
+{ kind: "channel_mismatch" };
 
 /**  What the update check found. */
 export type UpdateOutcome = UpdateOutcome_Serialize | UpdateOutcome_Deserialize;

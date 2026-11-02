@@ -102,6 +102,17 @@ pub fn read_exif_file(path: &Path) -> ExifFile {
     ExifFile {
         path: path.to_path_buf(),
         captured: read_capture_time(path),
+        channel: None,
+    }
+}
+
+/// `path` with its capture time and the channel its colour says, ready for
+/// [`crate::group_triplets`]. Reads the whole file to find the preview, so it is slower than
+/// [`read_exif_file`].
+pub fn read_camera_file(path: &Path) -> ExifFile {
+    ExifFile {
+        channel: crate::channel::dominant_channel(path).channel,
+        ..read_exif_file(path)
     }
 }
 
@@ -148,6 +159,32 @@ pub mod testing {
         out.resize(out.len() + gap, 0);
         out.extend(tail);
         out
+    }
+    // A test aid: a failure here is a broken test, not an app error.
+    #[allow(clippy::expect_used)]
+    /// A camera-file lookalike: a TIFF with `date` as its capture time followed by a flat JPEG
+    /// preview of `rgb` (each 0 to 1, linear), 600 x 500 pixels.
+    pub fn nef_with_preview(date: &str, rgb: [f32; 3]) -> Vec<u8> {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        use gtp_core::recipe::OutputSpace;
+        use gtp_core::ImageF32;
+
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let (width, height) = (600u32, 500u32);
+        let data: Vec<f32> = (0..width * height).flat_map(|_| rgb).collect();
+        let image = ImageF32::new(width, height, 3, data).expect("a flat image");
+        let path = std::env::temp_dir().join(format!(
+            "gtp-preview-{}-{}.jpg",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        gtp_io::encode_jpeg(&image, OutputSpace::Srgb, 90, &path).expect("a JPEG");
+        let jpeg = std::fs::read(&path).expect("the JPEG");
+        let _ = std::fs::remove_file(&path);
+        let mut bytes = tiff_with_capture_time(Some(date), None, 0);
+        bytes.extend(jpeg);
+        bytes
     }
 }
 
@@ -252,11 +289,14 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// The private D600 session: 45 files in 15 triplets and one more triplet in a subfolder. Run
-    /// by hand with `cargo test -p gtp-ingest -- --ignored`; skips when the samples are missing.
+    /// The private D600 session: 45 files in 15 triplets and one more triplet in a subfolder. Every
+    /// file gets the channel its place in the triplet predicts, and putting the files in order by
+    /// colour gives the same order as the capture times. Run by hand with
+    /// `cargo test -p gtp-ingest -- --ignored --nocapture`; skips when the samples are missing.
     #[test]
     #[ignore = "reads the private D600 samples"]
-    fn the_real_d600_session_groups_into_clean_triplets() {
+    fn the_real_d600_session_groups_into_clean_triplets_with_the_right_colours() {
+        use crate::channel::TripletChannel;
         use crate::triplet::group_triplets;
 
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -273,24 +313,61 @@ mod tests {
                 .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("nef")))
                 .collect();
             files.sort();
-            files.iter().map(|p| read_exif_file(p)).collect()
+            files.iter().map(|p| read_camera_file(p)).collect()
         };
-        let started = std::time::Instant::now();
-        let session = nefs(&root);
-        eprintln!("read {} files in {:?}", session.len(), started.elapsed());
-        assert!(
-            session.iter().all(|f| f.captured.is_some()),
-            "every NEF has a time"
-        );
-        let candidates = group_triplets(&session);
-        assert_eq!(candidates.len(), session.len() / 3);
-        assert!(candidates
-            .iter()
-            .all(|c| c.problem.is_none() && c.files.len() == 3));
-
-        let barelight = nefs(&root.join("Barelight RGB Capture"));
-        let single = group_triplets(&barelight);
-        assert_eq!(single.len(), barelight.len() / 3);
-        assert!(single.iter().all(|c| c.problem.is_none()));
+        // `all_clear`: every preview must give a clear channel. The bare-light triplet is the
+        // exception, shot without film: its three previews are not clearly one colour each, so the
+        // guess must stay unknown or be right, never wrong, and the capture order still groups it.
+        let check = |dir: &Path, all_clear: bool| {
+            let started = std::time::Instant::now();
+            let session = nefs(dir);
+            eprintln!("read {} files in {:?}", session.len(), started.elapsed());
+            assert!(
+                session.iter().all(|f| f.captured.is_some()),
+                "every NEF has a time"
+            );
+            if all_clear {
+                let unclear: Vec<_> = session
+                    .iter()
+                    .filter(|f| f.channel.is_none())
+                    .map(|f| {
+                        (
+                            f.path.clone(),
+                            crate::channel::dominant_channel(&f.path).ratio,
+                        )
+                    })
+                    .collect();
+                assert!(unclear.is_empty(), "every preview is clear: {unclear:?}");
+            }
+            let candidates = group_triplets(&session);
+            assert_eq!(candidates.len(), session.len() / 3);
+            for candidate in &candidates {
+                assert_eq!(candidate.problem, None);
+                for (place, file) in candidate.files.iter().enumerate() {
+                    assert_eq!(
+                        file.channel.map(TripletChannel::index).unwrap_or(place),
+                        place,
+                        "{}",
+                        file.path
+                    );
+                }
+            }
+            // Without the colours the capture times alone give the same files in the same places.
+            let timed_only: Vec<_> = session
+                .iter()
+                .map(|f| ExifFile {
+                    channel: None,
+                    ..f.clone()
+                })
+                .collect();
+            let paths = |cs: &[crate::triplet::TripletCandidate]| -> Vec<Vec<String>> {
+                cs.iter()
+                    .map(|c| c.files.iter().map(|f| f.path.clone()).collect())
+                    .collect()
+            };
+            assert_eq!(paths(&candidates), paths(&group_triplets(&timed_only)));
+        };
+        check(&root, true);
+        check(&root.join("Barelight RGB Capture"), false);
     }
 }

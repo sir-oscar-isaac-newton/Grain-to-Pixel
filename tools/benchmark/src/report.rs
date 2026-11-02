@@ -8,13 +8,13 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use gtp_app::{analyze_with, render, PipelineInput, RenderTarget};
+use gtp_app::{
+    analyze_with, merge_triplet, render, BaseEstimate, FrameHint, PipelineInput, RenderTarget,
+};
 use gtp_core::model::FILM_BASE_MIN_CONFIDENCE;
 use gtp_core::recipe::{Crop, OutputSpace};
 use gtp_core::{AppError, ErrorCode, FilmFormat, ImageF32};
-use gtp_ingest::merge_triplet;
 use gtp_io::{encode_jpeg, read_tiff16, to_output, Limits, RawlerDecoder, Tiff16};
-use gtp_negative::{BaseEstimate, FrameHint};
 
 use crate::delta_e::{delta_e2000, rec2020_to_lab};
 use crate::manifest::{Manifest, Pair};

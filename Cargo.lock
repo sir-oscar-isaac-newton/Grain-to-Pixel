@@ -1664,9 +1664,7 @@ version = "0.0.0"
 dependencies = [
  "gtp-app",
  "gtp-core",
- "gtp-ingest",
  "gtp-io",
- "gtp-negative",
  "serde",
  "serde_json",
 ]

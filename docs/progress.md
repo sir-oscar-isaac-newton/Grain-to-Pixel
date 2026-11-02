@@ -533,9 +533,9 @@
       "number": 55,
       "title": "Triplet files import UI",
       "branch": "feat/issue-55-triplet-import-ui",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 179,
+      "commit": "c636d6b"
     }
   ]
 }

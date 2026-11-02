@@ -11,10 +11,15 @@ specta = ["dep:specta"]
 testing = []
 
 [dependencies]
+gtp-core = { version = "0.0.0", path = "../gtp-core" }
+gtp-io = { version = "0.0.0", path = "../gtp-io" }
 # Capture time (DateTimeOriginal) of the camera files; pure Rust, BSD-2-Clause.
 kamadak-exif = "0.6"
 serde = { version = "1", features = ["derive"] }
 specta = { version = "=2.0.0-rc.26", optional = true, features = ["derive"] }
+
+[dev-dependencies]
+gtp-core = { version = "0.0.0", path = "../gtp-core", features = ["testing"] }
 
 [lints]
 workspace = true

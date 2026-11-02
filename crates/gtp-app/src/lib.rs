@@ -4,6 +4,7 @@
 //! depend on Tauri.
 
 pub mod context;
+pub mod hardware;
 pub mod jobs;
 pub mod library_fs;
 pub mod paths;
@@ -12,6 +13,7 @@ pub mod services;
 
 pub use context::AppContext;
 pub use gtp_ingest::{TripletCandidate, TripletFile, TripletProblem};
+pub use hardware::Hardware;
 pub use jobs::{JobCtx, JobErrorEntry, JobKind, JobManager, JobSink, LibraryEvents, PROGRESS_STEP};
 pub use pipeline::{
     analyze, build_proxy, histogram, render, to_rgba8_srgb, Analysis, Histogram, PipelineInput,

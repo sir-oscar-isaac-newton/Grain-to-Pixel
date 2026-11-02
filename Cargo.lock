@@ -1606,6 +1606,8 @@ dependencies = [
 name = "gtp-ingest"
 version = "0.0.0"
 dependencies = [
+ "gtp-core",
+ "gtp-io",
  "kamadak-exif",
  "serde",
  "specta",

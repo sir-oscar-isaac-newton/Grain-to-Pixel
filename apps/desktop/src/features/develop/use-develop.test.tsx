@@ -48,7 +48,7 @@ describe('useDevelop', () => {
       expect(ipc.developRender).toHaveBeenCalledTimes(1);
       expect(ipc.developRender).toHaveBeenCalledWith('f1', makeRecipe('saved'), RELEASE_EDGE, 1);
       expect(result.current.preview).toMatchObject({ seq: 1, width: 128 });
-      await waitFor(() => expect(ipc.developAnalyze).toHaveBeenCalledWith('f1', null));
+      await waitFor(() => expect(ipc.developAnalyze).toHaveBeenCalledWith('f1', null, null));
     });
 
     it('says why a frame could not be opened', async () => {

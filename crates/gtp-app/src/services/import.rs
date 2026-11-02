@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gtp_core::{
-    AppError, ErrorCode, Frame, FrameId, FrameKind, ImportResult, Recipe, RollId, SkipReason,
+    AppError, ErrorCode, Frame, FrameId, FrameKind, ImportResult, Look, Recipe, RollId, SkipReason,
     SkippedFile, SourceFile, SourceRole,
 };
 use gtp_ingest::{scan_tiff_candidates, Rejected, TiffCandidate};
@@ -34,7 +34,7 @@ use gtp_io::{
 use crate::jobs::{JobCtx, LibraryEvents};
 use crate::library_fs::{originals_rel, thumb_rel};
 use crate::paths::display_path;
-use crate::pipeline::{analyze_with, frame_hint, render, PipelineInput, RenderTarget};
+use crate::pipeline::{analyze_with_look, frame_hint, render, PipelineInput, RenderTarget};
 use crate::services::counters;
 use crate::services::library::Library;
 use crate::services::roll_frame::{ensure_roll_base, record_frame_measurement, remove_tree};
@@ -181,6 +181,7 @@ pub(crate) fn analyse_for_import(
     library: &Library,
     roll: RollId,
     rgb: gtp_core::ImageF32,
+    look: Look,
 ) -> Result<(Recipe, PipelineInput), AppError> {
     // The roll as of now: an earlier frame of this import may have set its film base.
     let current = library.read(|c| c.get_roll(roll))?;
@@ -193,14 +194,14 @@ pub(crate) fn analyse_for_import(
         ir: None,
         film_base: current.film_base_rgb.filter(|_| !measure),
     };
-    let mut analysis = analyze_with(&input, hint)?;
+    let mut analysis = analyze_with_look(&input, hint, look)?;
     if measure {
         let ensured = ensure_roll_base(library, roll, analysis.base)?;
         input.film_base = Some(ensured.rgb);
         if !ensured.stored_now {
             // The roll keeps the base it has (another import stored one, or the guess stands):
             // this frame uses that one.
-            analysis = analyze_with(&input, hint)?;
+            analysis = analyze_with_look(&input, hint, look)?;
         }
     }
     if let Some(size) = analysis.frame.measured_size.filter(|_| hint.is_some()) {
@@ -251,6 +252,7 @@ fn import_one(
     candidate: &TiffCandidate,
     frame_id: FrameId,
     ctx: &JobCtx,
+    look: Look,
     progress: &dyn Fn(f32),
 ) -> Result<Frame, FrameError> {
     let (rgb, ir) = read_planes(candidate, &Limits::default())?;
@@ -283,7 +285,7 @@ fn import_one(
     progress(3.0);
     ctx.check_cancelled()?;
 
-    let (recipe, input) = analyse_for_import(library, roll, to_f32_linear(&rgb)?)?;
+    let (recipe, input) = analyse_for_import(library, roll, to_f32_linear(&rgb)?, look)?;
     progress(4.0);
     ctx.check_cancelled()?;
 
@@ -325,6 +327,18 @@ pub fn import_tiffs(
     ctx: &JobCtx,
     events: &dyn LibraryEvents,
 ) -> Result<ImportResult, AppError> {
+    import_tiffs_with_look(library, roll, paths, ctx, events, Look::Neutral)
+}
+
+/// [`import_tiffs`] whose automatic recipes start from `look` (the Starting look setting).
+pub fn import_tiffs_with_look(
+    library: &Library,
+    roll: RollId,
+    paths: &[PathBuf],
+    ctx: &JobCtx,
+    events: &dyn LibraryEvents,
+    look: Look,
+) -> Result<ImportResult, AppError> {
     let before = library.read(|c| c.get_roll(roll))?;
     let grouped = scan_tiff_candidates(paths);
     let mut result = ImportResult {
@@ -345,7 +359,7 @@ pub fn import_tiffs(
         let frame_id = FrameId::new();
         let progress = |step: f32| ctx.progress(STAGE, (i as f32 + step / STEPS) / total);
         progress(0.0);
-        match import_one(library, roll, candidate, frame_id, ctx, &progress) {
+        match import_one(library, roll, candidate, frame_id, ctx, look, &progress) {
             Ok(frame) => {
                 result.frames.push(frame.id);
                 counters::count_import(library);
@@ -714,6 +728,44 @@ mod tests {
             s.lib().read(|c| c.get_roll(s.roll)).unwrap().film_base_rgb,
             roll.film_base_rgb
         );
+    }
+
+    #[test]
+    fn the_starting_look_is_stored_in_the_recipe_of_a_new_frame() {
+        let s = Setup::new("look");
+        let (ctx, _) = JobCtx::standalone();
+        let neutral = import_tiffs(
+            s.lib(),
+            s.roll,
+            &[s.scan("a.tif", 1, false)],
+            &ctx,
+            &Events::default(),
+        )
+        .unwrap();
+        let looked = import_tiffs_with_look(
+            s.lib(),
+            s.roll,
+            &[s.scan("b.tif", 2, false)],
+            &ctx,
+            &Events::default(),
+            Look::FilmLog,
+        )
+        .unwrap();
+        let master = |id| {
+            s.lib()
+                .read(|c| c.load_recipe(id))
+                .unwrap()
+                .unwrap()
+                .tone
+                .curve
+                .master
+        };
+        assert_eq!(
+            master(neutral.frames[0]),
+            Recipe::default().tone.curve.master,
+            "Neutral is the default"
+        );
+        assert_eq!(master(looked.frames[0]).len(), 16);
     }
 
     #[test]

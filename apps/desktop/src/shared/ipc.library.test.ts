@@ -33,7 +33,8 @@ vi.mock('@gtp/ipc-types', () => {
       folderCheck: (path: string) => folderCheckMock(path),
       jobCancel: (id: string) => jobCancelMock(id),
       developOpen: (id: string) => developOpenMock(id),
-      developAnalyze: (id: string, base: unknown) => developAnalyzeMock(id, base),
+      developAnalyze: (id: string, base: unknown, look: unknown) =>
+        developAnalyzeMock(id, base, look),
       developSampleBase: (id: string, region: unknown) => developSampleBaseMock(id, region),
       developSampleLevels: (...args: unknown[]) => developSampleLevelsMock(...args),
       developSampleNeutral: (...args: unknown[]) => developSampleNeutralMock(...args),
@@ -263,13 +264,19 @@ describe('shared/ipc: library helpers', () => {
         status: 'error',
         error: { code: 'NotFound', message: 'This frame has no scan file.' },
       });
-      await expect(developAnalyze('f1', null)).rejects.toBeInstanceOf(IpcError);
-      expect(developAnalyzeMock).toHaveBeenCalledWith('f1', null);
+      await expect(developAnalyze('f1', null, null)).rejects.toBeInstanceOf(IpcError);
+      expect(developAnalyzeMock).toHaveBeenCalledWith('f1', null, null);
 
       // A base picked on the rebate is passed on, so the levels are fitted to it.
       developAnalyzeMock.mockResolvedValue({ status: 'ok', data: { base_given: true } });
-      await expect(developAnalyze('f1', [0.8, 0.5, 0.3])).resolves.toEqual({ base_given: true });
-      expect(developAnalyzeMock).toHaveBeenLastCalledWith('f1', [0.8, 0.5, 0.3]);
+      await expect(developAnalyze('f1', [0.8, 0.5, 0.3], null)).resolves.toEqual({
+        base_given: true,
+      });
+      expect(developAnalyzeMock).toHaveBeenLastCalledWith('f1', [0.8, 0.5, 0.3], null);
+
+      // A look is passed on, so the recipe it gives carries that look's curve.
+      await developAnalyze('f1', null, 'film_log');
+      expect(developAnalyzeMock).toHaveBeenLastCalledWith('f1', null, 'film_log');
     });
   });
 

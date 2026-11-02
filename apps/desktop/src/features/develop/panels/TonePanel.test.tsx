@@ -9,7 +9,7 @@ import { TonePanel } from './TonePanel';
 type Props = Parameters<typeof TonePanel>[0];
 
 function setup(over: Partial<Props> = {}) {
-  const mocks = { onChange: vi.fn() };
+  const mocks = { onChange: vi.fn(), onApplyStartingLook: vi.fn() };
   const props: Props = {
     recipe: makeRecipe('x', { tone: { exposure_ev: 0.5, contrast: -20 } }),
     readOnly: false,

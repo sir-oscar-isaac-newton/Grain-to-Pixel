@@ -5,7 +5,7 @@ use std::sync::Arc;
 use gtp_app::services::develop::{self, DevelopAnalysis, DevelopInfo, LevelsPoint};
 use gtp_app::AppContext;
 use gtp_core::recipe::{Color, Crop, Invert};
-use gtp_core::{FrameId, Recipe, RecipeField};
+use gtp_core::{FrameId, Look, Recipe, RecipeField};
 use tauri::State;
 
 use crate::error::CmdResult;
@@ -21,15 +21,19 @@ pub fn develop_open(ctx: State<'_, AppContext>, frame_id: FrameId) -> CmdResult<
 
 /// Finds the frame, film base and levels of a frame, and the recipe they make. With `base` (three
 /// linear scan values above 0, such as one picked on the rebate) the levels are fitted to that base
-/// instead of the roll's or a measured one.
+/// instead of the roll's or a measured one. The automatic recipe carries the tone curve of `look`,
+/// or of the Starting look setting when none is given.
 #[tauri::command(async)]
 #[specta::specta]
 pub fn develop_analyze(
     ctx: State<'_, AppContext>,
     frame_id: FrameId,
     base: Option<[f32; 3]>,
+    look: Option<Look>,
 ) -> CmdResult<DevelopAnalysis> {
-    ctx.develop().analyze(&*ctx.library()?, frame_id, base)
+    let look = look.unwrap_or(ctx.settings().get().starting_look);
+    ctx.develop()
+        .analyze_with_look(&*ctx.library()?, frame_id, base, look)
 }
 
 /// The film base from an area of the scan: the per-channel median, in linear scan values.
@@ -157,7 +161,7 @@ mod tests {
         };
 
         // No library open: a typed NotFound.
-        let err = develop_analyze(app.state(), FrameId::new(), None).unwrap_err();
+        let err = develop_analyze(app.state(), FrameId::new(), None, None).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
         let err = develop_sample_base(app.state(), FrameId::new(), region).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
@@ -166,7 +170,8 @@ mod tests {
         app.state::<AppContext>()
             .create_library(&dir.join("lib"), "Cmd")
             .unwrap();
-        let err = develop_analyze(app.state(), FrameId::new(), Some([0.8, 0.5, 0.3])).unwrap_err();
+        let err =
+            develop_analyze(app.state(), FrameId::new(), Some([0.8, 0.5, 0.3]), None).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
         let err = develop_sample_base(app.state(), FrameId::new(), region).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);

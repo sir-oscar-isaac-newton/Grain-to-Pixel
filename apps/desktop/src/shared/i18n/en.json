@@ -169,10 +169,20 @@
       "OrphanIr": "an infrared file without its scan",
       "Unreadable": "could not be read",
       "TooLarge": "larger than the app accepts",
-      "Unsupported": "not a TIFF layout the app imports",
+      "Unsupported": "not a file the app can import",
       "VerifyFailed": "did not read back identical"
     },
-    "skippedFile": "{{path}}: {{reason}}"
+    "skippedFile": "{{path}}: {{reason}}",
+    "warnings_one": "{{count}} warning",
+    "warnings_other": "{{count}} warnings",
+    "warningsList": "Warnings",
+    "warningLine": "Frame {{frame}}: {{what}}",
+    "warning": {
+      "exposure_time_mismatch": "the three shots used different shutter times",
+      "iso_mismatch": "the three shots used different ISO values",
+      "aperture_mismatch": "the three shots used different apertures",
+      "clipped": "the {{channel}}-lit shot is clipped in {{percent}} % of its picture"
+    }
   },
   "settings": {
     "title": "Settings",
@@ -608,7 +618,48 @@
   },
   "import": {
     "title": "Import",
-    "placeholder": "Scan a roll, capture RGB exposures, or import files here."
+    "needsLibrary": "Open or create a library in the Library view first.",
+    "channel": {
+      "red": "red",
+      "green": "green",
+      "blue": "blue"
+    },
+    "files": {
+      "heading": "Camera files (RGB triplets)",
+      "intro": "Choose the NEF files of a roll shot as red, green and blue exposures. They are grouped by capture time into triplets; check the order of each one, confirm the ones to import, and start.",
+      "roll": "Import into roll",
+      "noRolls": "This library has no roll yet. Create one in the Library view first.",
+      "choose": "Choose camera files…",
+      "choosing": "Reading the files…",
+      "readFailed": "The files could not be grouped: {{message}}",
+      "startFailed": "The import could not be started: {{message}}",
+      "summary_one": "{{count}} triplet ready to import",
+      "summary_other": "{{count}} triplets ready to import",
+      "needAttention_one": "{{count}} group needs attention and will not be imported",
+      "needAttention_other": "{{count}} groups need attention and will not be imported",
+      "candidates": "Triplets found",
+      "triplet": "Triplet {{n}}",
+      "group": "Group {{n}}",
+      "confirm": "Import triplet {{n}}",
+      "files": "Files of triplet {{n}}",
+      "shot": "Shot {{n}}",
+      "earlier": "Move {{name}} earlier",
+      "earlierShort": "Earlier",
+      "laterShort": "Later",
+      "later": "Move {{name}} later",
+      "noTime": "no capture time",
+      "import_one": "Import {{count}} triplet",
+      "import_other": "Import {{count}} triplets",
+      "started": "The import started. Its progress and result are below.",
+      "problem": {
+        "missing_shots_one": "{{count}} shot is missing, so these files are not a whole triplet.",
+        "missing_shots_other": "{{count}} shots are missing, so these files are not a whole triplet.",
+        "extra_shots_one": "{{count}} shot too many: these files do not make whole triplets.",
+        "extra_shots_other": "{{count}} shots too many: these files do not make whole triplets.",
+        "no_capture_time": "These files have no capture time, so they could not be grouped.",
+        "channel_mismatch": "Two of these files were lit in the same colour, so they cannot be red, green and blue."
+      }
+    }
   },
   "error": {
     "title": "Something went wrong",

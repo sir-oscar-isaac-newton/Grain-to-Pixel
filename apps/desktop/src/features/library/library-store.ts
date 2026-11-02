@@ -9,6 +9,7 @@ import {
   tagList,
   type LibraryDetails,
   type Roll,
+  type ImportWarning,
   type SkippedFile,
   type ExportedFile,
   type FailedExport,
@@ -34,6 +35,9 @@ export interface JobRow {
   state: JobState;
   imported?: number;
   skipped?: SkippedFile[];
+  /** An import of camera triplets: what the merges warned about, and the new frames in order. */
+  warnings?: ImportWarning[];
+  importedFrames?: string[];
   /** An export: the files written, and the frames that could not be exported. */
   exported?: ExportedFile[];
   failed?: FailedExport[];

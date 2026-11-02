@@ -551,6 +551,15 @@
       "number": 181,
       "title": "Film base status and guidance",
       "branch": "feat/issue-181-film-base-status",
+      "status": "completed",
+      "pr": 184,
+      "commit": "fa96677"
+    },
+    {
+      "id": "Q-02",
+      "number": 24,
+      "title": "Benchmarks against reference renders",
+      "branch": "test/issue-24-reference-benchmarks",
       "status": "in_progress",
       "pr": null,
       "commit": null

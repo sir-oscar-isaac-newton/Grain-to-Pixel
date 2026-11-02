@@ -4,6 +4,18 @@
 //! differs by more than the limit; `--maps` writes a ΔE map of each differing case. With
 //! `--bless`, rewrites the stored renders and prints how far each one moved, for the pull request.
 //!
+//! `benchmark report --manifest <file> [--maps <folder>]`
+//!
+//! Converts each camera triplet of the manifest the way the app does, registers the reference render
+//! of the same frame in it, and prints the CIEDE2000 difference per frame and for all of them
+//! (median and 95th percentile). `--maps` writes ours, the reference and the difference side by
+//! side for each frame. The pairs are the author's private samples (`samples/private/reference`).
+//!
+//! `benchmark manifest --triplets <folder> --references <folder> --out <file> [--format <f>]`
+//!
+//! Writes a manifest for a folder of camera files and a folder of reference renders: triplets in
+//! capture order matched to the references in file name order. Check the note it prints.
+//!
 //! `benchmark fixture --dir <folder> [--frames <n>] [--rolls <n>]`
 //!
 //! Builds a library of synthetic frames (5,000 in 100 rolls by default) to open in the app and
@@ -18,9 +30,13 @@ use std::time::Instant;
 
 use gtp_benchmark::fixture::{self, DEFAULT_FRAMES, DEFAULT_ROLLS};
 use gtp_benchmark::golden::default_dir;
+use gtp_benchmark::manifest;
+use gtp_benchmark::report::{self, Report, MIN_SCORE};
 use gtp_benchmark::{bless, check, Outcome, CASES, MAX_DELTA_E};
 
 const USAGE: &str = "usage: benchmark golden [--bless] [--dir <folder>] [--maps <folder>]\n       \
+                     benchmark report --manifest <file> [--maps <folder>]\n       \
+benchmark manifest --triplets <folder> --references <folder> --out <file> [--format <f>]\n       \
                      benchmark fixture --dir <folder> [--frames <n>] [--rolls <n>]";
 
 enum Command {
@@ -28,6 +44,16 @@ enum Command {
         bless: bool,
         dir: PathBuf,
         maps: Option<PathBuf>,
+    },
+    Report {
+        manifest: PathBuf,
+        maps: Option<PathBuf>,
+    },
+    Manifest {
+        triplets: PathBuf,
+        references: PathBuf,
+        out: PathBuf,
+        format: String,
     },
     Fixture {
         dir: PathBuf,
@@ -55,6 +81,42 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
                 }
             }
             Ok(Command::Golden { bless, dir, maps })
+        }
+        Some("report") => {
+            let (mut manifest, mut maps) = (None, None);
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--manifest" => manifest = Some(args.next().ok_or(USAGE)?.into()),
+                    "--maps" => maps = Some(args.next().ok_or(USAGE)?.into()),
+                    other => return Err(format!("unknown argument {other:?}\n{USAGE}")),
+                }
+            }
+            Ok(Command::Report {
+                manifest: manifest.ok_or_else(|| format!("--manifest is required\n{USAGE}"))?,
+                maps,
+            })
+        }
+        Some("manifest") => {
+            let (mut triplets, mut references, mut out) = (None, None, None);
+            let mut format = "645".to_string();
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--triplets" => triplets = Some(args.next().ok_or(USAGE)?.into()),
+                    "--references" => references = Some(args.next().ok_or(USAGE)?.into()),
+                    "--out" => out = Some(args.next().ok_or(USAGE)?.into()),
+                    "--format" => format = args.next().ok_or(USAGE)?,
+                    other => return Err(format!("unknown argument {other:?}\n{USAGE}")),
+                }
+            }
+            let need = |v: Option<PathBuf>, name: &str| {
+                v.ok_or_else(|| format!("--{name} is required\n{USAGE}"))
+            };
+            Ok(Command::Manifest {
+                triplets: need(triplets, "triplets")?,
+                references: need(references, "references")?,
+                out: need(out, "out")?,
+                format,
+            })
         }
         Some("fixture") => {
             let (mut dir, mut frames, mut rolls) = (None, DEFAULT_FRAMES, DEFAULT_ROLLS);
@@ -115,8 +177,76 @@ fn golden(bless_cases: bool, dir: PathBuf, maps: Option<PathBuf>) -> Result<bool
     Ok(bless_cases || outcomes.iter().all(Outcome::passed))
 }
 
+/// The report as the command prints it.
+fn print_report(report: &Report, out: &mut impl Write) -> std::io::Result<()> {
+    let [r, g, b] = report.film_base;
+    writeln!(
+        out,
+        "Film base {r:.3} {g:.3} {b:.3}; colour difference is CIEDE2000, sRGB."
+    )?;
+    writeln!(
+        out,
+        "{:<6} {:>6} {:>8} {:>6} {:>6}   {:>14}",
+        "frame", "match", "crop gap", "median", "p95", "cast L* a* b*"
+    )?;
+    for f in &report.frames {
+        let number = |v: Option<f32>, width: usize, precision: usize| {
+            v.map_or(format!("{:>width$}", "-"), |v| {
+                format!("{v:>width$.precision$}")
+            })
+        };
+        let cast = f.cast.map_or("-".to_string(), |c| {
+            format!("{:+.1} {:+.1} {:+.1}", c[0], c[1], c[2])
+        });
+        let note = match f.score {
+            None => "  (flat picture, not registered)",
+            Some(s) if s < MIN_SCORE => "  (poor match: not the same frame?)",
+            Some(_) => "",
+        };
+        writeln!(
+            out,
+            "{:<6} {} {} {} {}   {:>14}{note}",
+            f.name,
+            number(f.score, 6, 3),
+            number(f.crop_gap.map(|g| g * 100.0), 7, 1) + "%",
+            number(f.median, 6, 1),
+            number(f.p95, 6, 1),
+            cast
+        )?;
+    }
+    let counted = report.frames.iter().filter(|f| f.median.is_some()).count();
+    writeln!(
+        out,
+        "{counted} of {} frames compared. All pixels: median {:.1}, p95 {:.1}. Median of the frames' medians {:.1}.",
+        report.frames.len(),
+        report.pooled_median,
+        report.pooled_p95,
+        report.median_of_medians
+    )
+}
+
 fn run() -> Result<bool, Box<dyn Error>> {
     match parse(std::env::args().skip(1))? {
+        Command::Manifest {
+            triplets,
+            references,
+            out,
+            format,
+        } => {
+            let (text, note) = manifest::build(&triplets, &references, &format)?;
+            std::fs::write(&out, text)?;
+            writeln!(std::io::stdout().lock(), "{note}\nWrote {}", out.display())?;
+            Ok(true)
+        }
+        Command::Report { manifest, maps } => {
+            let manifest = manifest::read(&manifest)?;
+            let mut note = |line: &str| {
+                let _ = writeln!(std::io::stderr(), "{line}");
+            };
+            let report = report::run(&manifest, maps.as_deref(), &mut note)?;
+            print_report(&report, &mut std::io::stdout().lock())?;
+            Ok(true)
+        }
         Command::Golden { bless, dir, maps } => golden(bless, dir, maps),
         Command::Fixture { dir, frames, rolls } => {
             let started = Instant::now();
@@ -182,6 +312,33 @@ mod tests {
             unreachable!("fixture should parse");
         };
         assert_eq!((frames, rolls), (60, 3));
+    }
+
+    #[test]
+    fn parses_the_report_and_manifest_commands() {
+        let Ok(Command::Report { manifest, maps }) =
+            args(&["report", "--manifest", "m.json", "--maps", "out"])
+        else {
+            unreachable!("report should parse");
+        };
+        assert_eq!(
+            (manifest, maps),
+            (PathBuf::from("m.json"), Some(PathBuf::from("out")))
+        );
+        assert!(args(&["report"]).is_err(), "a manifest is required");
+        let Ok(Command::Manifest { format, out, .. }) = args(&[
+            "manifest",
+            "--triplets",
+            "t",
+            "--references",
+            "r",
+            "--out",
+            "m.json",
+        ]) else {
+            unreachable!("manifest should parse");
+        };
+        assert_eq!((format.as_str(), out), ("645", PathBuf::from("m.json")));
+        assert!(args(&["manifest", "--triplets", "t", "--out", "x"]).is_err());
     }
 
     #[test]

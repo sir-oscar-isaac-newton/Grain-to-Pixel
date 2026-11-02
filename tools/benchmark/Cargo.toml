@@ -1,6 +1,6 @@
 [package]
 name = "gtp-benchmark"
-description = "Quality harness: golden-image regression tests and the CIEDE2000 colour difference"
+description = "Quality harness: golden-image regression tests, the CIEDE2000 colour difference and the reference report"
 version.workspace = true
 edition.workspace = true
 publish = false
@@ -14,7 +14,11 @@ gtp-app = { version = "0.0.0", path = "../../crates/gtp-app" }
 # The golden cases are rendered from synthetic negatives, also by the `bless` command, so this
 # tool (never shipped) is the one crate that enables `testing` outside its dev-dependencies.
 gtp-core = { version = "0.0.0", path = "../../crates/gtp-core", features = ["testing"] }
+gtp-ingest = { version = "0.0.0", path = "../../crates/gtp-ingest" }
 gtp-io = { version = "0.0.0", path = "../../crates/gtp-io" }
+gtp-negative = { version = "0.0.0", path = "../../crates/gtp-negative" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [lints]
 workspace = true

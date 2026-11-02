@@ -1,0 +1,116 @@
+.view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  max-width: 50rem;
+  overflow-y: auto;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.heading {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.muted {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.summary {
+  margin: 0;
+}
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 4px);
+}
+
+.groupHead {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.problem {
+  margin: 0;
+}
+
+.files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.file {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto auto;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.channel {
+  font-weight: 600;
+}
+
+.name {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.time {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.moves {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.buttons {
+  display: flex;
+  gap: var(--space-2);
+}

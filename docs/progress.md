@@ -524,6 +524,15 @@
       "number": 54,
       "title": "Triplet import job",
       "branch": "feat/issue-54-triplet-import",
+      "status": "completed",
+      "pr": 178,
+      "commit": "82302bb"
+    },
+    {
+      "id": "U-09",
+      "number": 55,
+      "title": "Triplet files import UI",
+      "branch": "feat/issue-55-triplet-import-ui",
       "status": "in_progress",
       "pr": null,
       "commit": null

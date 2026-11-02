@@ -54,6 +54,8 @@ export function useLibraryEvents(enabled: boolean) {
                 fraction: 1,
                 imported: result.frames.length,
                 skipped: result.skipped,
+                warnings: result.warnings,
+                importedFrames: result.frames,
               }
             : result.kind === 'Exported'
               ? {

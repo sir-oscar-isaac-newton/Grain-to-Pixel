@@ -12,6 +12,7 @@ import {
   type ExportedFile,
   type FailedExport,
   type ImportResult,
+  type ImportWarning,
   type LibraryDetails,
   type LibraryInfo,
   type Recipe,
@@ -19,6 +20,10 @@ import {
   type SettingsPatch,
   type SkipReason,
   type SkippedFile,
+  type TripletCandidate,
+  type TripletChannel,
+  type TripletFile,
+  type TripletProblem,
   type UpdateOutcome,
   type VerifyProblem,
   type VerifyReason,
@@ -33,12 +38,17 @@ export type {
   ExportedFile,
   FailedExport,
   ImportResult,
+  ImportWarning,
   LibraryDetails,
   LibraryInfo,
   Settings,
   SettingsPatch,
   SkipReason,
   SkippedFile,
+  TripletCandidate,
+  TripletChannel,
+  TripletFile,
+  TripletProblem,
   UpdateOutcome,
   VerifyProblem,
   VerifyReason,
@@ -445,6 +455,22 @@ export async function pickDiagnosticsFile(): Promise<string | null> {
 export async function pickFolder(): Promise<string | null> {
   const chosen = await openDialog({ directory: true, multiple: false });
   return typeof chosen === 'string' ? chosen : null;
+}
+
+/** Groups camera files (NEF) into R/G/B triplet candidates by capture time. Reads EXIF only. */
+export async function tripletGroup(paths: string[]): Promise<TripletCandidate[]> {
+  return unwrap(await commands.tripletGroup(paths));
+}
+
+/** Opens the system file picker for camera files (NEF); an empty list when cancelled. */
+export async function pickCameraFiles(): Promise<string[]> {
+  const chosen = await openDialog({
+    multiple: true,
+    directory: false,
+    filters: [{ name: 'Nikon NEF', extensions: ['nef'] }],
+  });
+  if (chosen === null) return [];
+  return Array.isArray(chosen) ? chosen : [chosen];
 }
 
 /** Opens the system file picker for TIFF scans; an empty list when cancelled. */

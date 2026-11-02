@@ -11,6 +11,11 @@ vi.mock('./features/library/LibraryView', async () => {
   return { LibraryView: () => createElement('h2', null, 'Library') };
 });
 
+vi.mock('./features/import/ImportView', async () => {
+  const { createElement } = await import('react');
+  return { ImportView: () => createElement('h2', null, 'Import') };
+});
+
 vi.mock('./features/settings/SettingsView', async () => {
   const { createElement } = await import('react');
   return { SettingsView: () => createElement('h2', null, 'Settings') };

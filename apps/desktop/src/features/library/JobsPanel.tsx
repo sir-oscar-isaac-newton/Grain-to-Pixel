@@ -1,10 +1,75 @@
 import { ProgressList, type ProgressItem } from '@gtp/ui';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { jobCancel } from '../../shared/ipc';
+import { jobCancel, type ImportWarning } from '../../shared/ipc';
 import styles from './library.module.css';
 import { useLibraryStore, type JobRow } from './library-store';
 
+/** A frame number for a warning: where the frame came in the import, counted from 1. */
+function frameNumber(job: JobRow, frameId: string): number {
+  return (job.importedFrames?.indexOf(frameId) ?? -1) + 1;
+}
+
+/** One warning of a triplet import, in words. */
+function warningText(job: JobRow, warning: ImportWarning, t: TFunction): string {
+  const frame = frameNumber(job, warning.frame_id);
+  const kind = warning.kind;
+  const what =
+    kind.kind === 'clipped'
+      ? t('jobs.warning.clipped', {
+          channel: t(`import.channel.${kind.channel}`),
+          percent: (kind.per_mille / 10).toLocaleString(undefined, { maximumFractionDigits: 1 }),
+        })
+      : t(`jobs.warning.${kind.kind}`);
+  return t('jobs.warningLine', { frame, what });
+}
+
+/** What came of a job beyond one line: the skipped files, the failed frames, the warnings. */
+function JobDetails({ job, t }: { job: JobRow; t: TFunction }) {
+  const skipped = job.skipped ?? [];
+  const failed = job.failed ?? [];
+  const warnings = job.warnings ?? [];
+  if (skipped.length === 0 && failed.length === 0 && warnings.length === 0) return undefined;
+  return (
+    <>
+      {skipped.length > 0 && (
+        <details className={styles.skipped}>
+          <summary>{t('jobs.skippedFiles')}</summary>
+          <ul>
+            {skipped.map((file) => (
+              <li key={`${file.path}-${file.reason}`}>
+                {t('jobs.skippedFile', {
+                  path: file.path,
+                  reason: t(`jobs.skip.${file.reason}`),
+                })}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {failed.length > 0 && (
+        <details className={styles.skipped}>
+          <summary>{t('jobs.failedFrames')}</summary>
+          <ul>
+            {failed.map((failure) => (
+              <li key={failure.frame_id}>{failure.message}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {warnings.length > 0 && (
+        <details className={styles.skipped}>
+          <summary>{t('jobs.warningsList')}</summary>
+          <ul>
+            {warnings.map((warning, i) => (
+              <li key={`${warning.frame_id}-${i}`}>{warningText(job, warning, t)}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </>
+  );
+}
 /** A job as the progress list shows it: what it is, how far it got, and what came of it. */
 export function describeJob(job: JobRow, t: TFunction, language: string): ProgressItem {
   const parts: string[] = [];
@@ -13,6 +78,9 @@ export function describeJob(job: JobRow, t: TFunction, language: string): Progre
   }
   if (job.skipped && job.skipped.length > 0) {
     parts.push(t('jobs.skipped', { count: job.skipped.length }));
+  }
+  if (job.warnings && job.warnings.length > 0) {
+    parts.push(t('jobs.warnings', { count: job.warnings.length }));
   }
   if (job.state === 'done' && job.exported !== undefined) {
     parts.push(t('jobs.exported', { count: job.exported.length }));
@@ -46,31 +114,7 @@ export function describeJob(job: JobRow, t: TFunction, language: string): Progre
       parts.length > 0
         ? new Intl.ListFormat(language, { style: 'narrow', type: 'conjunction' }).format(parts)
         : undefined,
-    extra:
-      job.skipped && job.skipped.length > 0 ? (
-        <details className={styles.skipped}>
-          <summary>{t('jobs.skippedFiles')}</summary>
-          <ul>
-            {job.skipped.map((file) => (
-              <li key={`${file.path}-${file.reason}`}>
-                {t('jobs.skippedFile', {
-                  path: file.path,
-                  reason: t(`jobs.skip.${file.reason}`),
-                })}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : job.failed && job.failed.length > 0 ? (
-        <details className={styles.skipped}>
-          <summary>{t('jobs.failedFrames')}</summary>
-          <ul>
-            {job.failed.map((failure) => (
-              <li key={failure.frame_id}>{failure.message}</li>
-            ))}
-          </ul>
-        </details>
-      ) : undefined,
+    extra: <JobDetails job={job} t={t} />,
   };
 }
 

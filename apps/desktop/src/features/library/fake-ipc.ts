@@ -14,6 +14,7 @@ import type {
   Roll,
   SearchQuery,
   Tag,
+  TripletCandidate,
   UpdateOutcome,
   VerifyResult,
 } from '../../shared/ipc';
@@ -218,6 +219,11 @@ export const state = {
   /** Tag names put on a roll, by roll id. */
   rollTags: {} as Record<string, string[]>,
   picked: '/films/Library' as string | null,
+  /** What the camera-file picker returns (the files the user chose). */
+  pickedCamera: [] as string[],
+  /** What 	riplet_group answers. */
+  triplets: [] as TripletCandidate[],
+  tripletsFail: null as string | null,
 };
 
 export const listeners = {
@@ -347,6 +353,12 @@ export const ipc = {
   })),
   pickFolder: vi.fn(async () => state.picked),
   pickTiffFiles: vi.fn(async (): Promise<string[]> => []),
+  pickCameraFiles: vi.fn(async (): Promise<string[]> => [...state.pickedCamera]),
+  tripletGroup: vi.fn(async (paths: string[]): Promise<TripletCandidate[]> => {
+    void paths;
+    if (state.tripletsFail) throw new IpcError({ code: 'Io', message: state.tripletsFail });
+    return state.triplets;
+  }),
   rollList: vi.fn(async () => [...state.rolls]),
   rollCreate: vi.fn(async (input: Partial<Roll>) => {
     const created = makeRoll(input);
@@ -481,7 +493,10 @@ export const ipc = {
     if (state.noThumb.has(id)) throw new IpcError({ code: 'NotFound', message: 'no thumbnail' });
     return new Uint8Array([0xff, 0xd8, 1, 2, 3]).buffer;
   }),
-  importFiles: vi.fn(async () => 'job-1'),
+  importFiles: vi.fn(async (paths: string[], roll: string, kind: string) => {
+    void [paths, roll, kind];
+    return 'job-1';
+  }),
   recipeApplyTo: vi.fn(async (frameIds: string[], source: string, fields: string[]) => {
     state.applies.push({ frameIds, source, fields });
     if (state.applyRefused) {
@@ -558,6 +573,9 @@ export function resetFake() {
   state.frameTags = {};
   state.rollTags = {};
   state.picked = '/films/Library';
+  state.pickedCamera = [];
+  state.triplets = [];
+  state.tripletsFail = null;
   listeners.changed.length = 0;
   listeners.progress.length = 0;
   listeners.done.length = 0;

@@ -9,6 +9,9 @@ gtp-core = { version = "0.0.0", path = "../gtp-core" }
 jpeg-encoder = "0.7.1"
 # Little CMS, built from its bundled C source (`static`) so no system library is needed.
 lcms2 = { version = "6.2.0", features = ["static"] }
+# NEF decoding for RGB triplets (ADR 0007). LGPL-2.1: exception in deny.toml, notice in
+# docs/third-party-notices.md. Pinned: a new version is a deliberate update.
+rawler = "=0.8.0"
 rayon = "1.12.0"
 sha2 = "0.11.1"
 # Scanners write uncompressed, LZW or Deflate TIFFs; JPEG and fax decoders stay off to keep the

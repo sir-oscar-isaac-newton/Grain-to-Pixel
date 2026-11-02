@@ -42,6 +42,14 @@ unused-allowed-license = "allow"
 crate = "jpeg-encoder"
 allow = ["IJG"]
 
+# rawler decodes the D600's NEF files (R-05, ADR 0007, H-05). It is LGPL-2.1, the only crate of its
+# dependency tree that is not permissive. The obligations (notice, source of the pinned version, the
+# means to rebuild with a modified rawler, an app licence that allows it) are listed in the ADR and
+# met in docs/third-party-notices.md and Q-08. Allowed for this crate only.
+[[licenses.exceptions]]
+crate = "rawler"
+allow = ["LGPL-2.1"]
+
 [licenses.private]
 # Workspace crates are `publish = false` and carry no public licence.
 ignore = true

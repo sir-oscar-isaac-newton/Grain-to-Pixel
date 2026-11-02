@@ -506,6 +506,15 @@
       "number": 12,
       "title": "Spike - NEF decode with rawler",
       "branch": "feat/issue-12-nef-decode-spike",
+      "status": "completed",
+      "pr": 173,
+      "commit": "cdd5bc5"
+    },
+    {
+      "id": "H-05",
+      "number": 53,
+      "title": "NEF decode and RGB channel merge",
+      "branch": "feat/issue-53-nef-decode-merge",
       "status": "in_progress",
       "pr": null,
       "commit": null

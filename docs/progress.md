@@ -473,6 +473,15 @@
       "status": "completed",
       "pr": 164,
       "commit": "848b639"
+    },
+    {
+      "id": "H-04",
+      "number": 52,
+      "title": "Triplet grouping",
+      "branch": "feat/issue-52-triplet-grouping",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

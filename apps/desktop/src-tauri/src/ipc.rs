@@ -29,6 +29,7 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::frame::frame_set_note,
             commands::frame::frame_delete,
             commands::ingest::import_files,
+            commands::ingest::triplet_group,
             commands::export::export_start,
             commands::develop::develop_open,
             commands::develop::develop_analyze,
@@ -144,6 +145,7 @@ mod tests {
             "frameSetNote",
             "frameDelete",
             "importFiles",
+            "tripletGroup",
             "exportStart",
             "tagList",
             "rollTags",
@@ -189,6 +191,8 @@ mod tests {
             "DevelopAnalysis",
             "RecipeField",
             "Counters",
+            "TripletCandidate",
+            "TripletProblem",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }

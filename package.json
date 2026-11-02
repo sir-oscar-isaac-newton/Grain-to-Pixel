@@ -17,6 +17,7 @@
     "check:bundle": "node tools/scripts/check-bundle/check-bundle.mjs config",
     "build:app": "pnpm --filter @gtp/desktop exec tauri build --no-bundle",
     "smoke": "node tools/scripts/smoke/smoke.mjs --binary target/release/grain-to-pixel-desktop",
+    "build:e2e": "pnpm --filter @gtp/desktop exec tauri build --no-bundle --config src-tauri/tauri.e2e.conf.json",
     "test:e2e": "node --test apps/desktop/tests/e2e/window.e2e.mjs",
     "gen:ipc": "cargo run -q -p grain-to-pixel-desktop --example gen_ipc -- packages/ipc-types/src/bindings.ts",
     "check:ipc": "node tools/scripts/check-ipc/check-ipc.mjs",

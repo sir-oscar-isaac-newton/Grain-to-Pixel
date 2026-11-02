@@ -464,6 +464,15 @@
       "status": "completed",
       "pr": 162,
       "commit": "cd6b0a7"
+    },
+    {
+      "id": "T-07",
+      "number": 69,
+      "title": "Make the Windows WebDriver e2e run on CI runners",
+      "branch": "feat/issue-69-windows-e2e-on-ci",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

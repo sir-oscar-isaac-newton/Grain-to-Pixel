@@ -4,7 +4,7 @@
 // Usage: node tools/scripts/check-bundle/check-bundle.mjs config [--file <tauri.conf.json>]
 //        node tools/scripts/check-bundle/check-bundle.mjs size <installer> [--max-mb <n>] [--enforce]
 //        node tools/scripts/check-bundle/check-bundle.mjs release <tag>
-// `config` fails when the bundle or updater settings drift; `size` prints the size and fails over
+// `config` fails when the bundle or updater settings drift, or when a file a shipped build is made\n// from turns on the e2e debugging port (docs/convention.md section 8); `size` prints the size and fails over
 // the limit only with --enforce (the Windows installer), otherwise it only reports; `release`
 // fails unless the tag, the app version and the updater key are ready for a release.
 import { readFileSync, statSync } from 'node:fs';
@@ -16,6 +16,16 @@ const DEFAULT_CONF = path.join(root, 'apps/desktop/src-tauri/tauri.conf.json');
 const CARGO_TOML = path.join(root, 'Cargo.toml');
 /** What tauri.conf.json holds for the updater public key until the real key is put there. */
 export const PUBKEY_PLACEHOLDER = 'REPLACE_WITH_UPDATER_PUBLIC_KEY';
+/** What the e2e build adds (src-tauri/tauri.e2e.conf.json); no shipped build may switch it on. */
+const E2E_CONF_NAME = 'tauri.e2e.conf';
+const DEBUG_PORT_FLAG = /remote-debugging-port/;
+/** The files a shipped build is made from, relative to the repository root. */
+const SHIPPED_FILES = [
+  'apps/desktop/src-tauri/tauri.conf.json',
+  'apps/desktop/src-tauri/tauri.release.conf.json',
+  '.github/workflows/release.yml',
+  '.github/workflows/bundle.yml',
+];
 const TAG = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
 export const MAX_INSTALLER_MB = 40;
 
@@ -48,6 +58,16 @@ export function findConfigProblems(conf) {
     problems.push('plugins.updater.requireSignedVersion must be true (no forced downgrades)');
   }
   return problems;
+}
+
+/** Every shipped file (name to text) that turns on the e2e debugging port; empty when none does. */
+export function findDebugPortProblems(files) {
+  return Object.entries(files)
+    .filter(([, text]) => text.includes(E2E_CONF_NAME) || DEBUG_PORT_FLAG.test(text))
+    .map(
+      ([name]) =>
+        `${name} must not turn on the e2e debugging port (tauri.e2e.conf.json is for the e2e job only)`,
+    );
 }
 
 /** The version in the `[workspace.package]` table of a Cargo.toml, or null. */
@@ -94,6 +114,12 @@ function main(args) {
   if (mode === 'config') {
     const file = option(rest, '--file') ?? DEFAULT_CONF;
     const problems = findConfigProblems(JSON.parse(readFileSync(file, 'utf8')));
+    if (file === DEFAULT_CONF) {
+      const shipped = Object.fromEntries(
+        SHIPPED_FILES.map((name) => [name, readFileSync(path.join(root, name), 'utf8')]),
+      );
+      problems.push(...findDebugPortProblems(shipped));
+    }
     for (const problem of problems) console.error(`check-bundle: ${problem}`);
     return problems.length ? 1 : 0;
   }

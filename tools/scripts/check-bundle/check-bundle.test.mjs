@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import {
   findConfigProblems,
+  findDebugPortProblems,
   findReleaseProblems,
   PUBKEY_PLACEHOLDER,
   sizeReport,
@@ -89,6 +90,29 @@ test('each drifted updater setting is reported', () => {
   const downgrade = good();
   downgrade.plugins.updater.requireSignedVersion = false;
   assert.match(findConfigProblems(downgrade).join(), /requireSignedVersion/);
+});
+
+test('a shipped file that turns on the e2e debugging port is reported', () => {
+  assert.deepEqual(
+    findDebugPortProblems({
+      'tauri.conf.json': '{ "windows": [{ "label": "main" }] }',
+      'release.yml': 'run: pnpm tauri build --bundles nsis',
+    }),
+    [],
+  );
+  const viaConfig = findDebugPortProblems({
+    'release.yml': 'run: pnpm tauri build --config src-tauri/tauri.e2e.conf.json',
+  });
+  assert.equal(viaConfig.length, 1);
+  assert.match(viaConfig[0], /release\.yml must not turn on the e2e debugging port/);
+  const viaFlag = findDebugPortProblems({
+    'tauri.conf.json': '{ "additionalBrowserArgs": "--remote-debugging-port=9222" }',
+    'bundle.yml': 'ok',
+  });
+  assert.deepEqual(
+    viaFlag.map((p) => p.split(' ')[0]),
+    ['tauri.conf.json'],
+  );
 });
 
 test('the version is read from the workspace package table only', () => {

@@ -345,7 +345,7 @@ Neutral dark grey surround for colour judgement; no coloured chrome around the i
 | Ingest | `FixtureSource` | scan job progress, cancel, error paths without hardware |
 | Capture | `FakeLight` + `FakeCamera`; byte-exact packet tests built from the Scanlight interface doc | sequence order R, G, B; light-off on cancel/error/timeout; temperature abort; mismatched EXIF warning; clipping warning; the real `ScanlightV4` encoder/decoder against recorded packets |
 | UI components | Vitest + Testing Library + `vitest-axe` | panels, tag chips, search bar, a11y violations |
-| End-to-end | `tauri-driver` + WebDriver (Windows CI) | create library, import fixture, convert, tag, search, export |
+| End-to-end | WebDriver through msedgedriver on WebView2's debugging port (Windows CI, job `e2e-windows`; ADR 0006) | create library, import fixture, convert, tag, search, export |
 | macOS | build + launch smoke test in CI; manual checklist per release | WebKit has no WebDriver |
 | Hardware | manual checklist in `docs/research/nkscan.md` | LS-50 roll scan (several frames, IR on) on Windows and macOS before each release that touches ingest || Benchmarks | `criterion` in crates; `tools/benchmark` quality report | enforce §11 budgets; report ΔE vs reference renders |
 

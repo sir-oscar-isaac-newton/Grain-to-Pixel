@@ -1,6 +1,7 @@
 # tools
 
 - `benchmark/` (crate `gtp-benchmark`): quality harness. Today: CIEDE2000, image comparison and golden-image regression tests (Q-01). Later: comparison against reference renders from Nikon Scan 4 / Trichroma Lab (the project's success metric).
+- `spikes/`: one-off measurements kept for the record, outside the Cargo workspace so their heavy or unusual dependencies never reach a build or CI (`nef-probe`: NEF decoders for R-05).
 - `scripts/`: dev helpers (release packaging, fixture conversion). Prefer PowerShell + shell pairs, or Node scripts, so they run on Windows and macOS.
 
 ## Golden images

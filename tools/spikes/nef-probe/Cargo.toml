@@ -1,0 +1,19 @@
+# A one-off measurement for R-05 (docs/research/nef-decode.md). Outside the workspace on purpose:
+# it pulls in two LGPL/C++ decoders that must not become part of any build or CI run.
+[package]
+name = "nef-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Decodes D600 NEFs with rawler and with LibRaw and times a bilinear demosaic (R-05)"
+
+[workspace]
+
+[dependencies]
+rawler = "=0.8.0"
+libraw-rs-sys = "=0.0.4"
+# Only to time writing a plane as the library stores it (lossless 16-bit TIFF).
+gtp-io = { path = "../../../crates/gtp-io" }
+
+[profile.release]
+debug = false

@@ -59,7 +59,7 @@
 | UI primitives | Radix UI + plain CSS (variables, CSS modules) | accessible sliders, dialogs, menus |
 | IPC types | `tauri-specta` generating `packages/ipc-types` | single source of truth is Rust |
 | DB | SQLite via `rusqlite` (bundled, FTS5) + `rusqlite_migration` | one file per library |
-| Images | `tiff` (16-bit TIFF), `rawler` (NEF input for triplets; confirm D600 support in M5), `kamadak-exif` (capture time of camera files, BSD-2-Clause), `jpeg-decoder` (the colour of a NEF's embedded preview, MIT OR Apache-2.0), `lcms2` (ICC), `fast_image_resize`, `rayon` | pure f32 buffers, CPU only |
+| Images | `tiff` (16-bit TIFF), `rawler` (NEF input for triplets, LGPL-2.1: [ADR 0007](../decisions/0007-nef-decoder.md), [research](research/nef-decode.md)), `kamadak-exif` (capture time of camera files, BSD-2-Clause), `jpeg-decoder` (the colour of a NEF's embedded preview, MIT OR Apache-2.0), `lcms2` (ICC), `fast_image_resize`, `rayon` | pure f32 buffers, CPU only |
 | Scanner | `nkscan` crate (CLI fallback) | [ADR 0003](../decisions/0003-ls-50-via-nkscan.md) |
 | Scanlight control | `serialport` crate (USB CDC serial, binary protocol) | no driver needed on Windows 10+ or macOS; [ADR 0004](../decisions/0004-guided-rgb-capture.md) |
 | Camera tether | libgphoto2 via a Rust binding behind the `tether` Cargo feature (macOS builds); `notify` crate for the watched folder | libgphoto2 is LGPL, linked dynamically |

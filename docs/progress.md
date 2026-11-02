@@ -497,6 +497,15 @@
       "number": 167,
       "title": "Channel check from image colour",
       "branch": "feat/issue-167-channel-check",
+      "status": "completed",
+      "pr": 172,
+      "commit": "f0e0640"
+    },
+    {
+      "id": "R-05",
+      "number": 12,
+      "title": "Spike - NEF decode with rawler",
+      "branch": "feat/issue-12-nef-decode-spike",
       "status": "in_progress",
       "pr": null,
       "commit": null

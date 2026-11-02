@@ -1,7 +1,7 @@
-﻿[workspace]
+[workspace]
 resolver = "2"
 members = ["crates/*", "apps/desktop/src-tauri", "tools/benchmark"]
-exclude = ["tools/scripts/check-deps/tests/fixtures"]
+exclude = ["tools/scripts/check-deps/tests/fixtures", "tools/spikes/nef-probe"]
 
 [workspace.package]
 version = "0.0.0"

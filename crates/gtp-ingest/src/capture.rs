@@ -1,4 +1,5 @@
-//! Capture time of a camera file, from its EXIF (`DateTimeOriginal` and `SubSecTimeOriginal`).
+//! What the EXIF of a camera file says: when it was shot (`DateTimeOriginal` and
+//! `SubSecTimeOriginal`) and with which exposure, ISO and aperture.
 //!
 //! Only the start of a NEF is read: its EXIF sits in the first few kilobytes and the rest is
 //! previews and sensor data, 25 MB a file. A file whose time is not in the start is read whole.
@@ -75,26 +76,90 @@ fn capture_time(exif: &exif::Exif) -> Option<CaptureTime> {
 }
 
 /// The capture time in `bytes`, which are the start of a TIFF-based file.
+#[cfg(test)]
 fn capture_time_in(bytes: Vec<u8>) -> Option<CaptureTime> {
+    pick_in(bytes, &capture_time)
+}
+
+/// What `pick` takes from the EXIF in `bytes`, the start of a TIFF-based file.
+fn pick_in<T>(bytes: Vec<u8>, pick: &dyn Fn(&exif::Exif) -> Option<T>) -> Option<T> {
     let exif = Reader::new()
         .read_from_container(&mut Cursor::new(bytes))
         .ok()?;
-    capture_time(&exif)
+    pick(&exif)
 }
 
-/// The capture time of the file at `path`; `None` when it has none or cannot be read.
-pub fn read_capture_time(path: &Path) -> Option<CaptureTime> {
+/// What `pick` takes from the EXIF of the file at `path`: from the first megabyte, or from the
+/// whole file when the start does not have it.
+fn read_pick<T>(path: &Path, pick: &dyn Fn(&exif::Exif) -> Option<T>) -> Option<T> {
     let file = File::open(path).ok()?;
     let length = file.metadata().ok()?.len();
     let mut prefix = Vec::new();
     file.take(PREFIX_BYTES).read_to_end(&mut prefix).ok()?;
-    if let Some(time) = capture_time_in(prefix) {
-        return Some(time);
+    if let Some(found) = pick_in(prefix, pick) {
+        return Some(found);
     }
     if length <= PREFIX_BYTES {
         return None;
     }
-    capture_time_in(std::fs::read(path).ok()?)
+    pick_in(std::fs::read(path).ok()?, pick)
+}
+
+/// The capture time of the file at `path`; `None` when it has none or cannot be read.
+pub fn read_capture_time(path: &Path) -> Option<CaptureTime> {
+    read_pick(path, &capture_time)
+}
+
+/// A fraction from the EXIF, as the camera wrote it (an exposure of 1/60 s is 1 over 60).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ratio {
+    pub num: u32,
+    pub den: u32,
+}
+
+impl Ratio {
+    /// True when both are the same fraction (1/60 and 2/120 are).
+    pub fn same_as(self, other: Ratio) -> bool {
+        u64::from(self.num) * u64::from(other.den) == u64::from(other.num) * u64::from(self.den)
+    }
+}
+
+/// How an exposure was made, as far as the EXIF says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ExifInfo {
+    /// The shutter time in seconds.
+    pub exposure_time: Option<Ratio>,
+    pub iso: Option<u32>,
+    /// The aperture, as an f-number.
+    pub f_number: Option<Ratio>,
+}
+
+fn ratio(exif: &exif::Exif, tag: Tag) -> Option<Ratio> {
+    match &exif.get_field(tag, In::PRIMARY)?.value {
+        Value::Rational(values) => values.first().map(|v| Ratio {
+            num: v.num,
+            den: v.denom,
+        }),
+        _ => None,
+    }
+}
+
+fn exposure_info(exif: &exif::Exif) -> Option<ExifInfo> {
+    let iso = exif
+        .get_field(Tag::PhotographicSensitivity, In::PRIMARY)
+        .and_then(|field| field.value.get_uint(0));
+    let info = ExifInfo {
+        exposure_time: ratio(exif, Tag::ExposureTime),
+        iso,
+        f_number: ratio(exif, Tag::FNumber),
+    };
+    (info != ExifInfo::default()).then_some(info)
+}
+
+/// The exposure, ISO and aperture of the file at `path`; every field `None` when it has none or
+/// cannot be read.
+pub fn read_exposure_info(path: &Path) -> ExifInfo {
+    read_pick(path, &exposure_info).unwrap_or_default()
 }
 
 /// `path` with its capture time, ready for [`crate::group_triplets`].
@@ -158,6 +223,37 @@ pub mod testing {
         out.extend(0u32.to_le_bytes());
         out.resize(out.len() + gap, 0);
         out.extend(tail);
+        out
+    }
+    /// A little-endian TIFF whose Exif IFD holds an exposure time, an ISO and an f-number.
+    pub fn tiff_with_exposure(exposure: (u32, u32), iso: u16, f_number: (u32, u32)) -> Vec<u8> {
+        let exif_ifd = 26usize;
+        let data = exif_ifd + 2 + 3 * 12 + 4;
+        let mut out = b"II*\0".to_vec();
+        out.extend(8u32.to_le_bytes());
+        out.extend(1u16.to_le_bytes());
+        out.extend(0x8769u16.to_le_bytes());
+        out.extend(4u16.to_le_bytes());
+        out.extend(1u32.to_le_bytes());
+        out.extend((exif_ifd as u32).to_le_bytes());
+        out.extend(0u32.to_le_bytes());
+        out.extend(3u16.to_le_bytes());
+        for (tag, at) in [(0x829Au16, data), (0x829Du16, data + 8)] {
+            out.extend(tag.to_le_bytes());
+            out.extend(5u16.to_le_bytes());
+            out.extend(1u32.to_le_bytes());
+            out.extend((at as u32).to_le_bytes());
+        }
+        out.extend(0x8827u16.to_le_bytes());
+        out.extend(3u16.to_le_bytes());
+        out.extend(1u32.to_le_bytes());
+        out.extend(iso.to_le_bytes());
+        out.extend([0u8, 0]);
+        out.extend(0u32.to_le_bytes());
+        for (num, den) in [exposure, f_number] {
+            out.extend(num.to_le_bytes());
+            out.extend(den.to_le_bytes());
+        }
         out
     }
     // A test aid: a failure here is a broken test, not an app error.
@@ -228,6 +324,37 @@ mod tests {
                 - time_of(Some("2026:10:06 12:00:00"), Some("90")).unwrap(),
             100
         );
+    }
+
+    #[test]
+    fn the_exposure_iso_and_aperture_are_read_and_fractions_compare_by_value() {
+        use super::testing::tiff_with_exposure;
+
+        let dir = std::env::temp_dir().join(format!("gtp-exposure-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.NEF");
+        std::fs::write(&path, tiff_with_exposure((1, 60), 200, (56, 10))).unwrap();
+        let info = read_exposure_info(&path);
+        assert_eq!(info.exposure_time, Some(Ratio { num: 1, den: 60 }));
+        assert_eq!(info.iso, Some(200));
+        assert_eq!(info.f_number, Some(Ratio { num: 56, den: 10 }));
+
+        assert!(Ratio { num: 1, den: 60 }.same_as(Ratio { num: 2, den: 120 }));
+        assert!(!Ratio { num: 1, den: 60 }.same_as(Ratio { num: 1, den: 125 }));
+
+        // A file without EXIF, and one that is not there, say nothing.
+        let plain = dir.join("b.NEF");
+        std::fs::write(&plain, b"nothing").unwrap();
+        assert_eq!(read_exposure_info(&plain), ExifInfo::default());
+        assert_eq!(
+            read_exposure_info(&dir.join("missing.NEF")),
+            ExifInfo::default()
+        );
+        // A file with a capture time but no exposure tags says nothing about the exposure.
+        let dated = dir.join("c.NEF");
+        std::fs::write(&dated, tiff(Some("2026:10:06 12:00:00"), None, 0)).unwrap();
+        assert_eq!(read_exposure_info(&dated), ExifInfo::default());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

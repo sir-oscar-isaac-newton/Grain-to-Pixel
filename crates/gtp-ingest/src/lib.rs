@@ -4,17 +4,24 @@ pub mod capture;
 pub mod channel;
 pub mod files;
 pub mod fixture;
+pub mod merge;
 pub mod scanner;
 pub mod triplet;
 
 #[cfg(any(test, feature = "testing"))]
 pub use capture::testing;
-pub use capture::{read_camera_file, read_capture_time, read_exif_file};
+pub use capture::{
+    read_camera_file, read_capture_time, read_exif_file, read_exposure_info, ExifInfo, Ratio,
+};
 pub use channel::{
     dominant_channel, guess_from_means, ChannelGuess, TripletChannel, MIN_LEVEL, MIN_RATIO,
 };
 pub use files::{scan_tiff_candidates, Grouped, Rejected, TiffCandidate};
 pub use fixture::{FixtureSource, FIXTURE_DEVICE_ID};
+pub use merge::{
+    check_clipping, check_exif, merge_triplet, TripletMerge, TripletWarning, CLIP_FRACTION,
+    CLIP_LEVEL,
+};
 pub use scanner::{
     CancelToken, DeviceInfo, RawScan, ScanMeta, ScanParams, ScannerSource, DEFAULT_DPI, MAX_FRAMES,
     SAMPLE_COUNTS, SUPPORTED_DPI,

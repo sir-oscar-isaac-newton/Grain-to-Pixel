@@ -9,6 +9,7 @@ import type {
   FrameSummary,
   ImportResult,
   LibraryDetails,
+  Look,
   Preview,
   Recipe,
   Roll,
@@ -118,8 +119,16 @@ export function makePreview(recipe: Recipe, maxEdge: number, seq: number): Previ
   return { seq, width, height, rgba };
 }
 
+/** The master curve the fake gives for the Film log look (the shape matters, not the values). */
+export const FILM_LOG_CURVE: Array<[number, number]> = [
+  [0, 0.03],
+  [0.5, 0.2],
+  [1, 0.31],
+];
+
 /** What the fake accepts of a settings patch. */
 interface SettingsPatchShape {
+  starting_look?: 'neutral' | 'film_log';
   flags?: Partial<typeof DEFAULT_FLAGS>;
   keys?: Record<string, string>;
 }
@@ -180,6 +189,8 @@ export const state = {
   /** The feature flags now, and the settings changes asked for, in order. */
   flags: { ...DEFAULT_FLAGS },
   settingsPatches: [] as SettingsPatchShape[],
+  /** The Starting look setting now. */
+  startingLook: 'neutral' as 'neutral' | 'film_log',
   /** The keyboard shortcuts the user changed (action name to key). */
   keys: {} as Record<string, string>,
   /** Reading the settings fails with this message when set. */
@@ -319,7 +330,12 @@ export const ipc = {
     if (state.settingsUnreadable) {
       throw new IpcError({ code: 'Io', message: state.settingsUnreadable });
     }
-    return { last_library: state.lastLibrary, flags: { ...state.flags }, keys: { ...state.keys } };
+    return {
+      last_library: state.lastLibrary,
+      starting_look: state.startingLook,
+      flags: { ...state.flags },
+      keys: { ...state.keys },
+    };
   }),
   settingsDefaults: vi.fn(async () => ({ last_library: null, flags: { ...DEFAULT_FLAGS } })),
   settingsSet: vi.fn(async (patch: SettingsPatchShape) => {
@@ -329,7 +345,13 @@ export const ipc = {
     }
     state.flags = { ...state.flags, ...patch.flags };
     if (patch.keys) state.keys = { ...patch.keys };
-    return { last_library: state.lastLibrary, flags: { ...state.flags }, keys: { ...state.keys } };
+    if (patch.starting_look) state.startingLook = patch.starting_look;
+    return {
+      last_library: state.lastLibrary,
+      starting_look: state.startingLook,
+      flags: { ...state.flags },
+      keys: { ...state.keys },
+    };
   }),
   updateCheck: vi.fn<(manual: boolean) => Promise<UpdateOutcome>>(async () => {
     if (state.updateCheckFails) throw new IpcError({ code: 'Io', message: state.updateCheckFails });
@@ -417,22 +439,28 @@ export const ipc = {
       roll_base_confidence: state.rollBaseConfidence,
     };
   }),
-  developAnalyze: vi.fn(async (id: string, base: [number, number, number] | null) => {
-    if (state.noAnalysis.has(id)) {
-      throw new IpcError({ code: 'InvalidInput', message: 'The scan could not be analysed.' });
-    }
-    // The levels depend on the base that was given, as the real analysis's do.
-    return {
-      frame_rect: state.frameRect,
-      frame_confidence: state.frameConfidence,
-      auto_recipe: makeRecipe('auto', {
-        base: { source: 'roll', rgb: base ?? [1, 1, 1] },
-        invert: base
-          ? { black: [0.01, 0.02, 0.03], white: [0.5, 0.6, 0.7] }
-          : { black: [0.05, 0.06, 0.07], white: [0.95, 0.85, 0.75] },
-      }),
-    };
-  }),
+  developAnalyze: vi.fn(
+    async (id: string, base: [number, number, number] | null, look: Look | null = null) => {
+      if (state.noAnalysis.has(id)) {
+        throw new IpcError({ code: 'InvalidInput', message: 'The scan could not be analysed.' });
+      }
+      // The levels depend on the base that was given, as the real analysis's do.
+      return {
+        frame_rect: state.frameRect,
+        frame_confidence: state.frameConfidence,
+        auto_recipe: makeRecipe('auto', {
+          base: { source: 'roll', rgb: base ?? [1, 1, 1] },
+          invert: base
+            ? { black: [0.01, 0.02, 0.03], white: [0.5, 0.6, 0.7] }
+            : { black: [0.05, 0.06, 0.07], white: [0.95, 0.85, 0.75] },
+          // A look writes its master curve; Neutral leaves the plain line.
+          ...((look ?? state.startingLook) === 'film_log'
+            ? { tone: { curve: { master: FILM_LOG_CURVE } } }
+            : {}),
+        }),
+      };
+    },
+  ),
   developSampleBase: vi.fn(
     async (id: string, region: { x: number; y: number; w: number; h: number }) => {
       state.samples.push({ id, region });
@@ -565,6 +593,7 @@ export function resetFake() {
   state.flags = { ...DEFAULT_FLAGS };
   state.keys = {};
   state.settingsPatches = [];
+  state.startingLook = 'neutral';
   state.settingsUnreadable = null;
   state.settingsRefused = null;
   state.updateOutcome = { status: 'up_to_date' };

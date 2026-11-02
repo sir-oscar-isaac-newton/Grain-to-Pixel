@@ -286,6 +286,14 @@
         }
       }
     },
+    "look": {
+      "heading": "Starting look",
+      "intro": "What the automatic conversion of frames you import from now on starts from. Frames already imported keep their recipes; in Develop, Curves has a button to apply the look to one frame.",
+      "label": "Starting look",
+      "neutral": "Neutral (the conversion as it is)",
+      "film_log": "Film log (Blackmagic Film Gen 5): a flat, wide-latitude start for editing",
+      "saveFailed": "The starting look could not be saved: {{message}}"
+    },
     "flags": {
       "heading": "Feature flags",
       "intro": "Switches for features that can be turned off if they misbehave. A change is saved at once. A flag takes effect where its feature is used, as that feature arrives.",
@@ -604,6 +612,9 @@
     },
     "curve": {
       "heading": "Curves",
+      "startingLook": "Use the starting look’s curve",
+      "startingLookDone": "The master curve is now the one of the Starting look in Settings.",
+      "startingLookFailed": "The starting look could not be applied: {{message}}",
       "channels": "Curve to edit",
       "master": "Master",
       "red": "Red",

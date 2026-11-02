@@ -48,6 +48,7 @@ import { TonePanel } from './panels/TonePanel';
 import type { Fractions } from './picker';
 import {
   baseOf,
+  curvesOf,
   colourOf,
   levelsIn,
   levelsOf,
@@ -56,6 +57,7 @@ import {
   geometryOf,
   withColour,
   withGeometry,
+  withCurve,
   withLevels,
 } from './recipe-parts';
 import { useDevelop } from './use-develop';
@@ -262,13 +264,34 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
       base.source === 'manual' ? base.rgb : info?.roll_base ? triple(info.roll_base, 1) : null;
     setWorking(true);
     try {
-      const analysis = await developAnalyze(frame.id, given);
+      const analysis = await developAnalyze(frame.id, given, null);
       setRecipe(withLevels(recipe, levelsOf(analysis.auto_recipe)));
       setNotice({ tone: 'info', text: t('develop.levels.autoDone') });
     } catch (error) {
       setNotice({
         tone: 'error',
         text: t('develop.levels.autoFailed', { message: messageOf(error) }),
+      });
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  /** Sets the master curve to the one of the Starting look, found for this frame's levels. */
+  const applyStartingLook = async () => {
+    if (!recipe) return;
+    const base = baseOf(recipe);
+    const given =
+      base.source === 'manual' ? base.rgb : info?.roll_base ? triple(info.roll_base, 1) : null;
+    setWorking(true);
+    try {
+      const analysis = await developAnalyze(frame.id, given, null);
+      setRecipe(withCurve(recipe, 'master', curvesOf(analysis.auto_recipe).master));
+      setNotice({ tone: 'info', text: t('develop.curve.startingLookDone') });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text: t('develop.curve.startingLookFailed', { message: messageOf(error) }),
       });
     } finally {
       setWorking(false);
@@ -631,6 +654,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 readOnly={readOnly}
                 working={working}
                 onChange={(next, options) => setRecipe(next, options)}
+                onApplyStartingLook={() => void applyStartingLook()}
               />
               <SharpenPanel
                 recipe={recipe}

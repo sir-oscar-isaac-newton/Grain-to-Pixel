@@ -560,6 +560,15 @@
       "number": 24,
       "title": "Benchmarks against reference renders",
       "branch": "test/issue-24-reference-benchmarks",
+      "status": "completed",
+      "pr": 185,
+      "commit": "0c81f98"
+    },
+    {
+      "id": "P-19",
+      "number": 186,
+      "title": "Cinema log look (Blackmagic Film Gen 5) as a starting point for editing",
+      "branch": "feat/issue-186-film-log-look",
       "status": "in_progress",
       "pr": null,
       "commit": null

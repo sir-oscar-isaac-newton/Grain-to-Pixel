@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use gtp_core::recipe::Geometry;
-use gtp_core::{AppError, FilmFormat, Recipe, Roll};
+use gtp_core::{AppError, FilmFormat, Look, Recipe, Roll};
 use gtp_negative::{
     auto_film_base, auto_levels, detect_frame_with, normalize, BaseEstimate, FrameDetection,
     FrameHint, DEFAULT_HIGH_PERCENTILE, DEFAULT_LOW_PERCENTILE,
@@ -46,6 +46,17 @@ pub fn frame_hint(roll: &Roll) -> Option<FrameHint> {
 
 /// [`analyze`] with what the roll says about its frames (see [`frame_hint`]).
 pub fn analyze_with(input: &PipelineInput, hint: Option<FrameHint>) -> Result<Analysis, AppError> {
+    analyze_with_look(input, hint, Look::Neutral)
+}
+
+/// [`analyze_with`] that also writes the values of a [`Look`] into the automatic recipe (the master
+/// tone curve, computed from the automatic levels), so the histogram and the recipe both show it.
+/// [`Look::Neutral`] adds nothing.
+pub fn analyze_with_look(
+    input: &PipelineInput,
+    hint: Option<FrameHint>,
+    look: Look,
+) -> Result<Analysis, AppError> {
     let proxy = build_proxy(&input.rgb, PREVIEW_EDGE)?;
     let (base, base_from_roll) = match input.film_base {
         Some(rgb) => (
@@ -72,6 +83,9 @@ pub fn analyze_with(input: &PipelineInput, hint: Option<FrameHint>) -> Result<An
     auto_recipe.geometry.crop = frame.rect;
     auto_recipe.base.rgb = base.rgb;
     auto_recipe.invert = levels;
+    if let Some(curve) = gtp_edit::look_curve(look, &auto_recipe.invert) {
+        auto_recipe.tone.curve.master = curve;
+    }
     let auto_recipe = auto_recipe.clamped();
 
     let proxy_input = PipelineInput {
@@ -211,6 +225,47 @@ mod tests {
         assert!(a.frame.measured_size.is_none());
         // The levels now come from the picture, so its darkest and brightest values are used.
         assert!(a.auto_recipe.geometry.crop == a.frame.rect);
+    }
+
+    #[test]
+    fn the_film_log_look_adds_a_tone_curve_and_neutral_adds_nothing() {
+        let s = scan(400, 300, 20);
+        let input = input_of(&s, None);
+        let neutral = analyze_with_look(&input, None, Look::Neutral).unwrap();
+        let plain = analyze(&input).unwrap();
+        assert_eq!(
+            neutral.auto_recipe, plain.auto_recipe,
+            "Neutral changes nothing"
+        );
+        let default_master = Recipe::default().tone.curve.master;
+        assert_eq!(neutral.auto_recipe.tone.curve.master, default_master);
+
+        let looked = analyze_with_look(&input, None, Look::FilmLog).unwrap();
+        let curve = &looked.auto_recipe.tone.curve.master;
+        assert_eq!(curve.len(), gtp_core::recipe::CURVE_POINTS_MAX);
+        // Everything else the analysis found is the same: the crop, base and levels.
+        let mut without = looked.auto_recipe.clone();
+        without.tone.curve.master = default_master;
+        assert_eq!(without, plain.auto_recipe);
+        // The curve is the one `gtp-edit` gives for these levels, and survives the recipe's clamping.
+        assert_eq!(
+            Some(curve.clone()),
+            gtp_edit::look_curve(Look::FilmLog, &looked.auto_recipe.invert)
+        );
+        // A flat start: the blacks are lifted and the whites held down, so the display levels in use
+        // are a narrower band inside the full range.
+        let band = |h: &crate::pipeline::Histogram| {
+            let first = h.luma.iter().position(|n| *n > 0).unwrap_or(0);
+            let last = h.luma.iter().rposition(|n| *n > 0).unwrap_or(0);
+            (first, last)
+        };
+        let (log_first, log_last) = band(&looked.histogram);
+        let (plain_first, plain_last) = band(&plain.histogram);
+        assert!(
+            log_first > plain_first + 20,
+            "black {log_first} vs {plain_first}"
+        );
+        assert!(log_last < plain_last, "white {log_last} vs {plain_last}");
     }
 
     #[test]

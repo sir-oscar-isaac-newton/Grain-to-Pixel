@@ -7,6 +7,7 @@ mod color;
 mod curve;
 mod dust;
 mod geometry;
+mod look;
 mod sharpen;
 mod tone;
 
@@ -19,6 +20,11 @@ pub use dust::{
     MAX_SPOT_FRACTION,
 };
 pub use geometry::{apply_geometry, output_size};
+pub use look::{
+    film_log_code, film_log_curve, gen5_decode, gen5_encode, look_curve, range_stops, srgb_decode,
+    CURVE_TOLERANCE, FILM_GAMMA, GEN5_A, GEN5_B, GEN5_C, GEN5_D, GEN5_E, GEN5_LIN_CUT,
+    GEN5_LOG_CUT, HEADROOM_TOLERANCE, MAX_RANGE_STOPS, MID_GREY_SCENE, MIN_RANGE_STOPS,
+};
 pub use sharpen::{apply_sharpen, KERNEL_SIGMAS, SHARPEN_GAMMA};
 pub use tone::{
     apply_tone, BLACKS_RANGE, DEHAZE_ADD_VEIL, DEHAZE_SATURATION, DEHAZE_VEIL_PERCENTILE,

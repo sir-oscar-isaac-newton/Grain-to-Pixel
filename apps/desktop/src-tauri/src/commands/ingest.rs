@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use gtp_app::services::import::{import_tiffs, ImportKind};
-use gtp_app::services::import_triplets::import_triplets;
+use gtp_app::services::import::{import_tiffs_with_look, ImportKind};
+use gtp_app::services::import_triplets::import_triplets_with_look;
 use gtp_app::services::roll_frame;
 use gtp_app::services::triplets;
 use gtp_app::{AppContext, JobKind, JobManager, RawlerDecoder, TripletCandidate};
@@ -60,16 +60,20 @@ pub fn import_files(
     let events = Arc::clone(&events.0);
     let count = paths.len();
     let thumbnails = ctx.thumbnail_requester()?;
+    let look = ctx.settings().get().starting_look;
     let id = jobs.spawn(JobKind::Import, move |job| {
         let result = match kind {
-            ImportKind::TiffScan => import_tiffs(&library, roll_id, &paths, job, events.as_ref())?,
-            ImportKind::RgbTriplet => import_triplets(
+            ImportKind::TiffScan => {
+                import_tiffs_with_look(&library, roll_id, &paths, job, events.as_ref(), look)?
+            }
+            ImportKind::RgbTriplet => import_triplets_with_look(
                 &library,
                 roll_id,
                 &paths,
                 &RawlerDecoder,
                 job,
                 events.as_ref(),
+                look,
             )?,
         };
         // A better film base for the roll changes how its other frames look: refresh their thumbnails.

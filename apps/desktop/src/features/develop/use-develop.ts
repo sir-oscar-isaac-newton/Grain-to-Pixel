@@ -255,7 +255,7 @@ export function useDevelop(frameId: string | null): Develop {
         if (gen !== generation.current) return;
         setState((s) => ({ ...s, status: 'ready', info, recipe: info.recipe }));
         void send(frameId, info.recipe, RELEASE_EDGE, 'after', gen);
-        developAnalyze(frameId, null).then(
+        developAnalyze(frameId, null, null).then(
           (analysis) => {
             if (gen === generation.current) {
               setState((s) => ({
@@ -368,7 +368,7 @@ export function useDevelop(frameId: string | null): Develop {
       }));
       const recipe = latestRecipe.current ?? info.recipe;
       void send(id, recipe, RELEASE_EDGE, 'after', gen);
-      developAnalyze(id, null).then(
+      developAnalyze(id, null, null).then(
         (analysis) => {
           if (gen === generation.current) {
             setState((s) => ({

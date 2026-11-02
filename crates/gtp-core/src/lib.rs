@@ -5,6 +5,7 @@ pub mod error;
 pub mod ids;
 pub mod image;
 pub mod job;
+pub mod look;
 pub mod model;
 pub mod recipe;
 #[cfg(feature = "testing")]
@@ -17,6 +18,7 @@ pub use job::{
     ExportResult, ExportedFile, FailedExport, ImportResult, ImportWarning, ImportWarningKind,
     JobResult, SkipReason, SkippedFile, VerifyProblem, VerifyReason, VerifyResult,
 };
+pub use look::Look;
 pub use model::{
     BaseChange, FilmFormat, Frame, FrameKind, FrameSize, Roll, SearchQuery, SourceFile, SourceRole,
     Tag, TripletChannel,

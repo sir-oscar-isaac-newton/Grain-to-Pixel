@@ -140,6 +140,17 @@ pub struct Roll {
 /// (the same threshold frame detection uses).
 pub const FILM_BASE_MIN_CONFIDENCE: f32 = 0.5;
 
+/// What storing a measured film base did to a roll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaseChange {
+    /// The roll keeps the base it had.
+    Kept,
+    /// The roll had no base; this one is now its base.
+    Set,
+    /// The roll had a low-confidence automatic base; this better one replaced it.
+    Replaced,
+}
+
 impl Roll {
     /// True when the roll's film base was measured automatically with low confidence.
     pub fn film_base_uncertain(&self) -> bool {

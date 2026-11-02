@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Slider } from '@gtp/ui';
+import { baseStatus, baseStatusText } from '../../../shared/film-base-status';
 import type { LevelsPoint, Recipe } from '../../../shared/ipc';
 import styles from '../develop.module.css';
 import {
@@ -27,6 +28,8 @@ interface BaseInvertPanelProps {
   recipe: Recipe;
   /** The roll's film base, if it has one. */
   rollBase: Triple | null;
+  /** How sure the automatic measurement of the roll's base was; null when picked by hand. */
+  rollBaseConfidence: number | null;
   /** The library cannot be changed: everything is shown but nothing can be edited. */
   readOnly: boolean;
   /** What is being picked on the picture, if anything. */
@@ -50,6 +53,7 @@ interface BaseInvertPanelProps {
 export function BaseInvertPanel({
   recipe,
   rollBase,
+  rollBaseConfidence,
   readOnly,
   pick,
   pickReady,
@@ -83,6 +87,9 @@ export function BaseInvertPanel({
             : rollBase
               ? t('develop.base.fromRoll')
               : t('develop.base.fromRollNone')}
+        </p>
+        <p className={styles.panelText}>
+          {baseStatusText(baseStatus(rollBase !== null, rollBaseConfidence), t)}
         </p>
         <p className={styles.panelValues}>
           {t('develop.base.values', {

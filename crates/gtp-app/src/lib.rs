@@ -11,7 +11,7 @@ pub mod paths;
 pub mod pipeline;
 pub mod services;
 
-pub use context::AppContext;
+pub use context::{AppContext, ThumbnailRequester};
 pub use gtp_ingest::{TripletCandidate, TripletFile, TripletProblem};
 pub use gtp_io::RawlerDecoder;
 pub use hardware::Hardware;

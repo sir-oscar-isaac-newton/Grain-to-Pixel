@@ -15,7 +15,27 @@ pub struct AppContext {
     settings: SettingsStore,
     library: RwLock<Option<Arc<Library>>>,
     develop: Arc<DevelopService>,
-    thumbnails: ThumbnailService,
+    thumbnails: Arc<ThumbnailService>,
+}
+
+/// What a background job needs to queue thumbnail regeneration without holding the context.
+pub struct ThumbnailRequester {
+    service: Arc<ThumbnailService>,
+    library: Arc<Library>,
+    develop: Arc<DevelopService>,
+}
+
+impl ThumbnailRequester {
+    /// Queues the thumbnails of these frames for regeneration from their saved recipes and returns
+    /// at once; see [`AppContext::regenerate_thumbnails`].
+    pub fn request(&self, events: Arc<dyn LibraryEvents>, frames: Vec<FrameId>) {
+        self.service.request(
+            Arc::clone(&self.library),
+            Arc::clone(&self.develop),
+            events,
+            frames,
+        );
+    }
 }
 
 impl AppContext {
@@ -30,7 +50,7 @@ impl AppContext {
                 settings,
                 library: RwLock::new(None),
                 develop: Arc::new(develop),
-                thumbnails: ThumbnailService::default(),
+                thumbnails: Arc::new(ThumbnailService::default()),
             },
             note,
         )
@@ -56,6 +76,15 @@ impl AppContext {
         self.thumbnails
             .request(self.library()?, Arc::clone(&self.develop), events, frames);
         Ok(())
+    }
+
+    /// The means to queue thumbnail regeneration from a background job.
+    pub fn thumbnail_requester(&self) -> Result<ThumbnailRequester, AppError> {
+        Ok(ThumbnailRequester {
+            service: Arc::clone(&self.thumbnails),
+            library: self.library()?,
+            develop: Arc::clone(&self.develop),
+        })
     }
 
     /// A frame's thumbnail as bytes; a missing file is rebuilt from the saved recipe first.

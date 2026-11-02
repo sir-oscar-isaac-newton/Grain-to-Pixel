@@ -38,6 +38,9 @@ export interface JobRow {
   /** An import of camera triplets: what the merges warned about, and the new frames in order. */
   warnings?: ImportWarning[];
   importedFrames?: string[];
+  /** An import left the roll's film base a guess, or replaced a guess with a better measurement. */
+  baseIsGuess?: boolean;
+  baseReplaced?: boolean;
   /** An export: the files written, and the frames that could not be exported. */
   exported?: ExportedFile[];
   failed?: FailedExport[];

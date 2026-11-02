@@ -18,6 +18,7 @@ function setup(over: Partial<Props> = {}) {
   const props: Props = {
     recipe: makeRecipe('x'),
     rollBase: null,
+    rollBaseConfidence: null,
     readOnly: false,
     pick: null,
     pickReady: false,
@@ -42,6 +43,21 @@ describe('BaseInvertPanel', () => {
       setup({ rollBase: null });
       expect(screen.getByText(/The roll has no film base yet/)).toBeInTheDocument();
       expect(screen.getByText('Red 1.000, green 1.000, blue 1.000')).toBeInTheDocument();
+    });
+
+    it('says how the roll’s base was set: none, by hand, measured, or a guess to pick again', () => {
+      const { rerender, props } = setup({ rollBase: null });
+      expect(screen.getByText('The roll’s film base: not set yet.')).toBeInTheDocument();
+      rerender(<BaseInvertPanel {...props} rollBase={[0.9, 0.6, 0.4]} />);
+      expect(screen.getByText('The roll’s film base: picked by hand.')).toBeInTheDocument();
+      rerender(<BaseInvertPanel {...props} rollBase={[0.9, 0.6, 0.4]} rollBaseConfidence={0.64} />);
+      expect(
+        screen.getByText('The roll’s film base: measured automatically (64 % sure).'),
+      ).toBeInTheDocument();
+      rerender(<BaseInvertPanel {...props} rollBase={[0.9, 0.6, 0.4]} rollBaseConfidence={0.12} />);
+      expect(
+        screen.getByText('The roll’s film base: a guess (12 % sure). Pick it in Develop.'),
+      ).toBeInTheDocument();
     });
 
     it('says when it was picked on this frame, with the picked values', () => {

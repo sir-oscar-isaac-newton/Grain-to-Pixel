@@ -542,6 +542,15 @@
       "number": 180,
       "title": "Frame detection for camera triplets",
       "branch": "feat/issue-180-frame-detection-triplets",
+      "status": "completed",
+      "pr": 183,
+      "commit": "9e59c41"
+    },
+    {
+      "id": "U-17",
+      "number": 181,
+      "title": "Film base status and guidance",
+      "branch": "feat/issue-181-film-base-status",
       "status": "in_progress",
       "pr": null,
       "commit": null

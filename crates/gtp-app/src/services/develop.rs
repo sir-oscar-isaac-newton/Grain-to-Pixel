@@ -72,6 +72,9 @@ pub struct DevelopInfo {
     pub recipe: Recipe,
     /// The roll's measured film base, if it has one.
     pub roll_base: Option<[f32; 3]>,
+    /// How sure the automatic measurement of `roll_base` was (0 to 1); `None` when it was picked by
+    /// hand, or there is none. Below 0.5 the base is a guess.
+    pub roll_base_confidence: Option<f32>,
 }
 
 /// 256-bin histograms of the display values, one list of 256 counts per channel.
@@ -470,12 +473,13 @@ impl DevelopService {
     /// returns what the view needs. The roll's film base and the saved recipe are read fresh.
     pub fn open(&self, library: &Library, id: FrameId) -> Result<DevelopInfo, AppError> {
         let entry = self.ensure(library, id)?;
-        let (frame, recipe, base) = library.read(|c| {
+        let (frame, recipe, roll) = library.read(|c| {
             let frame = c.get_frame(id)?;
             let recipe = c.load_recipe(id)?;
-            let base = c.get_roll(frame.roll_id)?.film_base_rgb;
-            Ok((frame, recipe, base))
+            let roll = c.get_roll(frame.roll_id)?;
+            Ok((frame, recipe, roll))
         })?;
+        let base = roll.film_base_rgb;
         entry.set_base(base);
         Ok(DevelopInfo {
             width: frame.width,
@@ -483,6 +487,7 @@ impl DevelopService {
             has_ir: entry.has_ir,
             recipe: recipe.unwrap_or_default(),
             roll_base: base,
+            roll_base_confidence: roll.film_base_confidence,
         })
     }
 

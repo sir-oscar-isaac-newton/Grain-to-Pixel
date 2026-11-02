@@ -27,8 +27,8 @@ use gtp_ingest::{merge_triplet, TripletWarning};
 use gtp_io::{from_f32_linear, Limits, RawDecoder, Tiff16};
 
 use super::import::{
-    analyse_for_import, clean_up, skipped, store_original, write_thumbnail, FrameError, STAGE,
-    STEPS,
+    analyse_for_import, clean_up, report_roll_base, skipped, store_original, write_thumbnail,
+    FrameError, STAGE, STEPS,
 };
 use crate::jobs::{JobCtx, LibraryEvents};
 use crate::library_fs::originals_rel;
@@ -200,7 +200,7 @@ pub fn import_triplets(
     ctx: &JobCtx,
     events: &dyn LibraryEvents,
 ) -> Result<ImportResult, AppError> {
-    library.read(|c| c.get_roll(roll))?;
+    let before = library.read(|c| c.get_roll(roll))?;
     if paths.is_empty() || !paths.len().is_multiple_of(3) {
         return Err(AppError::new(
             ErrorCode::InvalidInput,
@@ -242,6 +242,7 @@ pub fn import_triplets(
         }
     }
     ctx.progress(STAGE, 1.0);
+    report_roll_base(library, &before, &mut result)?;
     Ok(result)
 }
 

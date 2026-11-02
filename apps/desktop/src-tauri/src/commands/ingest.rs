@@ -1,9 +1,11 @@
 //! Ingest commands: importing files as a background job, and grouping camera files into triplets.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use gtp_app::services::import::{import_tiffs, ImportKind};
 use gtp_app::services::import_triplets::import_triplets;
+use gtp_app::services::roll_frame;
 use gtp_app::services::triplets;
 use gtp_app::{AppContext, JobKind, JobManager, RawlerDecoder, TripletCandidate};
 use gtp_core::{AppError, ErrorCode, JobId, JobResult, RollId};
@@ -55,8 +57,9 @@ pub fn import_files(
     library.write(|_| Ok(()))?;
 
     let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
-    let events = std::sync::Arc::clone(&events.0);
+    let events = Arc::clone(&events.0);
     let count = paths.len();
+    let thumbnails = ctx.thumbnail_requester()?;
     let id = jobs.spawn(JobKind::Import, move |job| {
         let result = match kind {
             ImportKind::TiffScan => import_tiffs(&library, roll_id, &paths, job, events.as_ref())?,
@@ -69,6 +72,11 @@ pub fn import_files(
                 events.as_ref(),
             )?,
         };
+        // A better film base for the roll changes how its other frames look: refresh their thumbnails.
+        if result.base_replaced {
+            let following = roll_frame::frames_following_roll_base(&library, roll_id)?;
+            thumbnails.request(Arc::clone(&events), following);
+        }
         tracing::info!(
             imported = result.frames.len(),
             skipped = result.skipped.len(),

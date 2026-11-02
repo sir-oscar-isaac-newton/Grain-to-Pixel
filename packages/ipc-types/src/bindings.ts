@@ -382,6 +382,11 @@ export type DevelopInfo_Deserialize = {
 	recipe: Recipe_Deserialize,
 	/**  The roll's measured film base, if it has one. */
 	roll_base?: [(number | null), (number | null), (number | null)] | null,
+	/**
+	 *  How sure the automatic measurement of `roll_base` was (0 to 1); `None` when it was picked by
+	 *  hand, or there is none. Below 0.5 the base is a guess.
+	 */
+	roll_base_confidence?: number | null,
 };
 
 /**  What the Develop view needs to open a frame. */
@@ -394,6 +399,11 @@ export type DevelopInfo_Serialize = {
 	recipe: Recipe_Serialize,
 	/**  The roll's measured film base, if it has one. */
 	roll_base: [(number | null), (number | null), (number | null)] | null,
+	/**
+	 *  How sure the automatic measurement of `roll_base` was (0 to 1); `None` when it was picked by
+	 *  hand, or there is none. Below 0.5 the base is a guess.
+	 */
+	roll_base_confidence: number | null,
 };
 
 /**  Infrared dust removal. */
@@ -783,6 +793,16 @@ export type ImportResult_Deserialize = {
 	frame_ms: number[],
 	/**  Things worth knowing about imported frames that still were imported (RGB triplets). */
 	warnings: ImportWarning[],
+	/**
+	 *  The roll's film base is a low-confidence guess after this import: the UI points to the
+	 *  picker in Develop.
+	 */
+	base_is_guess: boolean,
+	/**
+	 *  This import replaced the roll's guessed film base with a better measured one, so the roll's
+	 *  other frames look different now.
+	 */
+	base_replaced: boolean,
 };
 
 /**  What a file import did. */
@@ -795,6 +815,16 @@ export type ImportResult_Serialize = {
 	frame_ms: number[],
 	/**  Things worth knowing about imported frames that still were imported (RGB triplets). */
 	warnings: ImportWarning[],
+	/**
+	 *  The roll's film base is a low-confidence guess after this import: the UI points to the
+	 *  picker in Develop.
+	 */
+	base_is_guess: boolean,
+	/**
+	 *  This import replaced the roll's guessed film base with a better measured one, so the roll's
+	 *  other frames look different now.
+	 */
+	base_replaced: boolean,
 };
 
 /**  Something to know about an imported frame. */

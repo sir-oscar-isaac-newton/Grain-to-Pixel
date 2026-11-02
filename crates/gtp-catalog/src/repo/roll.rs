@@ -2,8 +2,8 @@
 
 use rusqlite::{params, OptionalExtension, Row};
 
-use gtp_core::model::{check_iso, check_shot_range};
-use gtp_core::{AppError, FilmFormat, FrameSize, Roll, RollId};
+use gtp_core::model::{check_iso, check_shot_range, FILM_BASE_MIN_CONFIDENCE};
+use gtp_core::{AppError, BaseChange, FilmFormat, FrameSize, Roll, RollId};
 
 use super::{check_len, clean_name, clean_optional, not_found, parse_col, MAX_NOTE_CHARS, NOW};
 use crate::db::db_error;
@@ -132,26 +132,44 @@ impl Catalog {
         self.get_roll(r.id)
     }
 
-    /// Stores `rgb` as the roll's film base only if the roll has none yet, so a base set by hand or
-    /// by an earlier frame is never overwritten. Returns the roll as stored and whether this call
-    /// set the base. Safe against two imports racing: the check and the write are one statement.
-    pub fn set_roll_film_base_if_unset(
+    /// Stores `rgb` as the roll's film base when the roll has none yet, or when its base is an
+    /// automatic one of low confidence (below [`FILM_BASE_MIN_CONFIDENCE`]) and this one is not. A
+    /// base set by hand (no confidence) or a confident one is never overwritten. Returns the roll as
+    /// stored and what happened. Safe against two imports racing: the check and the write are one
+    /// statement.
+    pub fn improve_roll_film_base(
         &mut self,
         id: RollId,
         rgb: [f32; 3],
         confidence: Option<f32>,
-    ) -> Result<(Roll, bool), AppError> {
+    ) -> Result<(Roll, BaseChange), AppError> {
         check_base(Some(rgb), confidence)?;
+        let before = self.get_roll(id)?;
         let changed = self
             .conn
             .execute(
                 "UPDATE roll SET film_base_r = ?2, film_base_g = ?3, film_base_b = ?4,
                  film_base_confidence = ?5
-                 WHERE id = ?1 AND (film_base_r IS NULL OR film_base_g IS NULL OR film_base_b IS NULL)",
-                params![id.to_string(), rgb[0], rgb[1], rgb[2], confidence],
+                 WHERE id = ?1 AND (
+                   film_base_r IS NULL OR film_base_g IS NULL OR film_base_b IS NULL
+                   OR (film_base_confidence IS NOT NULL AND film_base_confidence < ?6
+                       AND ?5 IS NOT NULL AND ?5 >= ?6))",
+                params![
+                    id.to_string(),
+                    rgb[0],
+                    rgb[1],
+                    rgb[2],
+                    confidence,
+                    FILM_BASE_MIN_CONFIDENCE
+                ],
             )
             .map_err(db_error)?;
-        Ok((self.get_roll(id)?, changed > 0))
+        let change = match (changed > 0, before.film_base_rgb.is_some()) {
+            (false, _) => BaseChange::Kept,
+            (true, false) => BaseChange::Set,
+            (true, true) => BaseChange::Replaced,
+        };
+        Ok((self.get_roll(id)?, change))
     }
 
     /// Teaches the roll's frame size one more measured frame (width and height as fractions of the

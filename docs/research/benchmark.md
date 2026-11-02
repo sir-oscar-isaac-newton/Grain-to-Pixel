@@ -69,6 +69,60 @@ The pairs are private, so this is not a CI gate; the harness is for the author t
 change to the automatic conversion. `--maps` writes ours, the reference and the ΔE (white at 20)
 side by side for each frame.
 
+## Quality: LS-50 scans against Nikon Scan 4 (Q-09)
+
+The author's LS-50 scans (16-bit RGB plus infrared, 3944 x 5952) have Nikon Scan 4's own positives
+of the same frames (5959 x 3946, sRGB, embedded as "Nikon sRGB 4"). They lie a quarter turn
+against the scans, so the report tries the reference in all eight orientations (four turns, with
+and without a mirror) and uses the best; every pair matched at 90 degrees clockwise, none mirrored.
+
+```text
+benchmark manifest --scans <folder of scans> --references <folder of positives> --out manifest.json
+benchmark report --manifest manifest.json [--maps <folder>]
+```
+
+A scan is matched to the positive named "<stock> Positive <number>" for the scan "<stock> <number>",
+and the stock is its roll: the film base is measured per roll, as an import would, with the 35 mm
+frame detection by rebate (no frame window). A reference must be a 16-bit RGB TIFF; the 16-bit
+positives are single strips of 141 MB, which `read_tiff16_single_strip` reads.
+
+**Five of the twelve pairs are not in this table yet.** The positives of Vision3 250D (four) and
+Ektar 100 (one) were saved as 8-bit and the report refuses them; the author is rescanning them as
+16-bit. Seven pairs have 16-bit positives, six of them registered:
+
+| Frame | Match | Crop gap | Median ΔE | p95 ΔE | Cast L\* | a\* | b\* |
+|---|---|---|---|---|---|---|---|
+| Ektacolor160 C41 0001 | 0.915 | 3.6 % | 19.9 | 37.8 | +7.5 | -15.6 | -11.7 |
+| Ektacolor160 C41 0002 | 0.857 | 1.2 % | 24.0 | 42.9 | -1.4 | -24.2 | -13.2 |
+| Ektacolor400 C41 0001 | 0.910 | 2.3 % | 22.9 | 35.4 | +8.7 | -17.3 | -10.1 |
+| Ektacolor400 C41 0002 | 0.908 | 0.3 % | 22.6 | 34.0 | +9.4 | -17.0 | -10.1 |
+| Ektacolor400 C41 0003 | 0.902 | 2.7 % | 26.2 | 37.0 | +11.0 | -17.6 | -13.4 |
+| Vision3 500T 0001 | 0.885 | 2.8 % | 23.0 | 30.3 | +18.5 | -8.2 | +3.4 |
+| Vision3 500T 0002 | 0.781 | 2.4 % | not compared | | | | |
+
+Per stock, over all pixels of the compared frames: Ektacolor160 median 22.8 (p95 39.8), Ektacolor400
+median 23.8 (35.8), Vision3 500T median 23.0 (30.3, one frame). Over all six: **median ΔE 23.2, p95
+36.9**, against 17.2 and 44.8 for the camera triplets of Q-02.
+
+What the numbers say:
+
+- **Colour, not tone, is the main error here.** The brightness error is small (mean L\* -1 to +11,
+  against +7 to +36 for the triplets), but ours is far greener and bluer than Nikon Scan's on the
+  C41 frames (a\* about -17, b\* about -10 to -13). The automatic conversion applies no colour
+  balance of its own; Nikon Scan balances the scene. A white balance step in the automatic recipe
+  is what these numbers ask for first.
+- **The crop agrees with Nikon Scan's frame** to within 0.3 to 3.6 % of the capture (Nikon Scan's
+  positives cover nearly the whole scan, rebate included).
+- **Vision3 500T 0002 registered below the 0.8 limit** (0.781): it is left out, as the report does
+  for any pair it cannot be sure of. A low-contrast or differently cropped frame is the likely
+  cause; the pair was not checked by eye.
+- The ΔE is large for every stock, so no single film is the outlier.
+- **The Vision3 500T base looks wrong.** It measured `0.92 0.85 0.62`, nothing like the C41 stocks'
+  (`0.87 0.50 0.34` and `0.92 0.49 0.30`) or the 250D's (`0.99 0.38 0.23` in a separate check), and
+  the frame's base confidence was only 0.69. A base that is too light in green and blue would explain
+  the 500T frame's different cast (a\* -8, b\* +3). Pick the base of that roll by hand in Develop
+  and re-run before reading anything into its numbers.
+
 ## Speed: the criterion benches
 
 `cargo bench -p gtp-app` (21 MP frames are synthetic negatives of 6016 x 4016, a D600's size; the

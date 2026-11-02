@@ -1,0 +1,11 @@
+{
+  "format": "35mm",
+  "pairs": [
+    {
+      "name": "Vision3 250D ECN2 0001",
+      "roll": "Vision3 250D ECN2",
+      "scan": "scans/Vision3 250D ECN2 0001.tif",
+      "reference": "positives/Vision3 250D ECN2 Positive 0001.tif"
+    }
+  ]
+}

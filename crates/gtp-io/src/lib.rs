@@ -17,6 +17,6 @@ pub use raw::{
     MAX_RAW_FILE_BYTES,
 };
 pub use tiff::{
-    from_f32_linear, inspect_tiff, merge_rgbi, read_tiff16, split_rgbi, to_f32_linear,
-    write_tiff16, Compression, Tiff16, TiffLayout,
+    from_f32_linear, inspect_tiff, merge_rgbi, read_tiff16, read_tiff16_single_strip, split_rgbi,
+    to_f32_linear, write_tiff16, Compression, Tiff16, TiffLayout,
 };

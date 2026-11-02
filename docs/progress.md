@@ -569,6 +569,15 @@
       "number": 186,
       "title": "Cinema log look (Blackmagic Film Gen 5) as a starting point for editing",
       "branch": "feat/issue-186-film-log-look",
+      "status": "completed",
+      "pr": 189,
+      "commit": "331a308"
+    },
+    {
+      "id": "Q-09",
+      "number": 190,
+      "title": "Benchmark LS-50 scans against Nikon Scan positives",
+      "branch": "test/issue-190-ls50-benchmarks",
       "status": "in_progress",
       "pr": null,
       "commit": null

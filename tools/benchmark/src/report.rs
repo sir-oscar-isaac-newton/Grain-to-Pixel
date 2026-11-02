@@ -14,11 +14,14 @@ use gtp_app::{
 use gtp_core::model::FILM_BASE_MIN_CONFIDENCE;
 use gtp_core::recipe::{Crop, OutputSpace};
 use gtp_core::{AppError, ErrorCode, FilmFormat, ImageF32};
-use gtp_io::{encode_jpeg, read_tiff16, to_output, Limits, RawlerDecoder, Tiff16};
+use gtp_io::{
+    encode_jpeg, read_tiff16, read_tiff16_single_strip, split_rgbi, to_f32_linear, to_output,
+    Limits, RawlerDecoder, Tiff16,
+};
 
 use crate::delta_e::{delta_e2000, rec2020_to_lab};
-use crate::manifest::{Manifest, Pair};
-use crate::register::{crop_resample, luma, register, Plane, Window};
+use crate::manifest::{Manifest, Pair, Source};
+use crate::register::{crop_resample, luma, register_oriented, Orientation, Window};
 
 /// Columns of the pictures that are compared.
 pub const COMPARE_WIDTH: usize = 512;
@@ -33,9 +36,13 @@ const MAP_FULL_SCALE: f32 = 20.0;
 #[derive(Debug, Clone, PartialEq)]
 pub struct FrameReport {
     pub name: String,
+    /// The roll (or film stock) of the frame.
+    pub roll: String,
     /// The registration's correlation (0 to 1 for a match); `None` when the pair could not be
     /// registered at all (a flat picture).
     pub score: Option<f32>,
+    /// How the reference had to be turned or mirrored to lie as our render does.
+    pub orientation: Option<Orientation>,
     /// The part of our capture the reference covers, as fractions of it.
     pub registered: Option<Window>,
     /// How far the crop the app detected is from it: the largest difference of the four edges, as a
@@ -48,12 +55,26 @@ pub struct FrameReport {
     pub cast: Option<[f32; 3]>,
 }
 
+/// What was measured on one roll (one film stock).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RollReport {
+    pub roll: String,
+    /// The film base the roll was converted with.
+    pub film_base: [f32; 3],
+    /// Frames compared, of the frames the roll has.
+    pub compared: usize,
+    pub frames: usize,
+    /// Over the pixels of the roll's compared frames together.
+    pub median: f32,
+    pub p95: f32,
+}
+
 /// The whole report.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Report {
     pub frames: Vec<FrameReport>,
-    /// The film base the roll was converted with.
-    pub film_base: [f32; 3],
+    /// One entry for each roll, in the order the manifest first names them.
+    pub rolls: Vec<RollReport>,
     /// Over the pixels of all registered frames together.
     pub pooled_median: f32,
     pub pooled_p95: f32,
@@ -196,9 +217,54 @@ fn crop_gap(registered: Window, ours: Crop) -> f32 {
         .fold(0.0, f32::max)
 }
 
-fn merged(pair: &Pair) -> Result<ImageF32, AppError> {
-    let [r, g, b] = &pair.exposures;
-    Ok(merge_triplet(&RawlerDecoder, r, g, b, &Limits::default())?.image)
+/// The frame of a pair as linear RGB: the triplet merged, or the scan with its infrared plane (if it
+/// has one) set aside.
+fn load_frame(pair: &Pair) -> Result<ImageF32, AppError> {
+    match &pair.source {
+        Source::Triplet([r, g, b]) => {
+            Ok(merge_triplet(&RawlerDecoder, r, g, b, &Limits::default())?.image)
+        }
+        Source::Scan(path) => {
+            let tiff = read_tiff16(path, &Limits::default()).map_err(|err| {
+                AppError::new(err.code, "A scan could not be read.").with_details(format!(
+                    "{} ({}): {}",
+                    pair.name,
+                    path.display(),
+                    err.message
+                ))
+            })?;
+            let rgb = if tiff.channels == 4 {
+                split_rgbi(&tiff)?.0
+            } else {
+                tiff
+            };
+            to_f32_linear(&rgb)
+        }
+    }
+}
+
+/// The reference of a pair, shrunk to [`COMPARE_WIDTH`] columns. A file that cannot be read says
+/// which pair it belongs to, and that a reference must be a 16-bit RGB TIFF.
+fn load_reference(pair: &Pair) -> Result<ImageF32, AppError> {
+    let tiff = read_tiff16_single_strip(&pair.reference, &Limits::default()).map_err(|err| {
+        AppError::new(
+            err.code,
+            "A reference render could not be read; it must be a 16-bit RGB TIFF.",
+        )
+        .with_details(format!(
+            "{} ({}): {}",
+            pair.name,
+            pair.reference.display(),
+            err.message
+        ))
+    })?;
+    downscale_tiff(&tiff, COMPARE_WIDTH).map_err(|err| {
+        AppError::new(err.code, err.message).with_details(format!(
+            "{} ({})",
+            pair.name,
+            pair.reference.display()
+        ))
+    })
 }
 
 /// Writes ours, the reference and the ΔE (white at [`MAP_FULL_SCALE`]) side by side.
@@ -256,21 +322,32 @@ pub fn run(
         )
     };
 
-    // The roll's base: given, or what the app's import ends with after measuring every frame.
-    let film_base = match manifest.film_base {
-        Some(base) => base,
-        None => {
-            let mut estimates = Vec::new();
-            for pair in &manifest.pairs {
-                note(&format!("measuring the film base on {}", pair.name));
-                estimates.push(analyze(merged(pair)?, None)?.base);
-            }
-            roll_base(&estimates)
-                .ok_or_else(|| AppError::internal("no film base was measured"))?
-                .rgb
+    // The rolls, in the order the manifest first names them, each with its film base: given, or
+    // what the app's import ends with after measuring every frame of the roll.
+    let mut rolls: Vec<&str> = Vec::new();
+    for pair in &manifest.pairs {
+        if !rolls.contains(&pair.roll.as_str()) {
+            rolls.push(&pair.roll);
         }
-    };
-    note(&format!("film base {film_base:?}"));
+    }
+    let mut bases: Vec<[f32; 3]> = Vec::new();
+    for roll in &rolls {
+        let base = match manifest.film_base {
+            Some(base) => base,
+            None => {
+                let mut estimates = Vec::new();
+                for pair in manifest.pairs.iter().filter(|p| p.roll == *roll) {
+                    note(&format!("measuring the film base on {}", pair.name));
+                    estimates.push(analyze(load_frame(pair)?, None)?.base);
+                }
+                roll_base(&estimates)
+                    .ok_or_else(|| AppError::internal("no film base was measured"))?
+                    .rgb
+            }
+        };
+        note(&format!("{roll}: film base {base:?}"));
+        bases.push(base);
+    }
 
     if let Some(dir) = maps {
         std::fs::create_dir_all(dir).map_err(|err| {
@@ -280,10 +357,13 @@ pub fn run(
     }
 
     let mut frames = Vec::new();
-    let mut pooled = Vec::new();
+    let mut pooled_all = Vec::new();
+    let mut pooled_by_roll: Vec<Vec<f32>> = vec![Vec::new(); rolls.len()];
     for pair in &manifest.pairs {
         note(&format!("converting {}", pair.name));
-        let image = merged(pair)?;
+        let roll_index = rolls.iter().position(|r| *r == pair.roll).unwrap_or(0);
+        let film_base = bases[roll_index];
+        let image = load_frame(pair)?;
         let analysis = analyze(image.clone(), Some(film_base))?;
         // The automatic recipe, but over the whole capture, so the reference can be found in it.
         let mut recipe = analysis.auto_recipe.clone();
@@ -300,23 +380,27 @@ pub fn run(
                 max_edge: RENDER_EDGE,
             },
         )?)?;
-        let reference = downscale_tiff(
-            &read_tiff16(&pair.reference, &Limits::default())?,
-            COMPARE_WIDTH,
-        )?;
+        let stored = load_reference(pair)?;
 
-        let reference_luma: Plane = luma(&reference);
-        let found = register(&luma(&full), &reference_luma);
+        // The reference may be turned or mirrored against our render (the LS-50 scans lie on their
+        // side and Nikon Scan writes its positives upright): find how, then compare as it lies.
+        let found = register_oriented(&luma(&full), &luma(&stored));
+        let reference = match &found {
+            Some((_, orientation)) => orientation.apply_image(&stored)?,
+            None => stored,
+        };
         let mut report = FrameReport {
             name: pair.name.clone(),
-            score: found.map(|f| f.score),
-            registered: found.map(|f| f.window),
-            crop_gap: found.map(|f| crop_gap(f.window, analysis.frame.rect)),
+            roll: pair.roll.clone(),
+            score: found.map(|(f, _)| f.score),
+            orientation: found.map(|(_, o)| o),
+            registered: found.map(|(f, _)| f.window),
+            crop_gap: found.map(|(f, _)| crop_gap(f.window, analysis.frame.rect)),
             median: None,
             p95: None,
             cast: None,
         };
-        if let Some(found) = found.filter(|f| f.score >= MIN_SCORE) {
+        if let Some((found, _)) = found.filter(|(f, _)| f.score >= MIN_SCORE) {
             let ours = crop_resample(
                 &full,
                 found.window,
@@ -328,7 +412,8 @@ pub fn run(
             report.median = Some(percentile(&by_value, 0.5));
             report.p95 = Some(percentile(&by_value, 0.95));
             report.cast = Some(cast);
-            pooled.extend(des.iter().copied());
+            pooled_all.extend(des.iter().copied());
+            pooled_by_roll[roll_index].extend(des.iter().copied());
             if let Some(dir) = maps {
                 write_map(
                     &dir.join(format!("{}.jpg", pair.name)),
@@ -341,13 +426,30 @@ pub fn run(
         frames.push(report);
     }
 
-    let pooled = sorted(pooled);
+    let roll_reports = rolls
+        .iter()
+        .zip(&bases)
+        .zip(pooled_by_roll)
+        .map(|((roll, base), pooled)| {
+            let of_roll = || frames.iter().filter(|f| f.roll == *roll);
+            let pooled = sorted(pooled);
+            RollReport {
+                roll: (*roll).to_owned(),
+                film_base: *base,
+                compared: of_roll().filter(|f| f.median.is_some()).count(),
+                frames: of_roll().count(),
+                median: percentile(&pooled, 0.5),
+                p95: percentile(&pooled, 0.95),
+            }
+        })
+        .collect();
+    let pooled_all = sorted(pooled_all);
     let medians = sorted(frames.iter().filter_map(|f| f.median).collect());
     Ok(Report {
         frames,
-        film_base,
-        pooled_median: percentile(&pooled, 0.5),
-        pooled_p95: percentile(&pooled, 0.95),
+        rolls: roll_reports,
+        pooled_median: percentile(&pooled_all, 0.5),
+        pooled_p95: percentile(&pooled_all, 0.95),
         median_of_medians: percentile(&medians, 0.5),
     })
 }
@@ -446,6 +548,146 @@ mod tests {
         assert!(downscale_tiff(&gray, 2).is_err());
     }
 
+    /// A folder with a synthetic LS-50 scan and the reference made of our own render of it, turned a
+    /// quarter turn clockwise as Nikon Scan's positives lie against the scans.
+    fn scan_pair(label: &str) -> (std::path::PathBuf, Manifest, [f32; 3]) {
+        use gtp_core::testing::synthetic::{self, Params, Pattern};
+        use gtp_io::{from_f32_linear, write_tiff16, Compression};
+
+        let dir = std::env::temp_dir().join(format!("gtp-report-{label}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = synthetic::negative(
+            3,
+            &Params {
+                width: 300,
+                height: 200,
+                rebate: [12; 4],
+                pattern: Pattern::Blobs,
+                ..Params::default()
+            },
+        )
+        .unwrap();
+        write_tiff16(
+            &dir.join("scan.tif"),
+            &from_f32_linear(&s.image),
+            Compression::None,
+        )
+        .unwrap();
+
+        // Our render of the whole scan, as the report makes it, turned and stored as 16 bits.
+        let input = PipelineInput {
+            rgb: Arc::new(s.image.clone()),
+            ir: None,
+            film_base: Some(s.truth.base),
+        };
+        let analysis = analyze_with(&input, None).unwrap();
+        let mut recipe = analysis.auto_recipe;
+        recipe.geometry.crop = Crop::default();
+        let full = srgb_floats(
+            &render(
+                &input,
+                &recipe,
+                RenderTarget::Preview {
+                    max_edge: RENDER_EDGE,
+                },
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let turned = Orientation {
+            quarter_turns: 1,
+            mirrored: false,
+        }
+        .apply_image(&full)
+        .unwrap();
+        let reference = gtp_io::Tiff16 {
+            width: turned.width,
+            height: turned.height,
+            channels: 3,
+            data: turned
+                .data
+                .iter()
+                .map(|v| (v.clamp(0.0, 1.0) * 65_535.0).round() as u16)
+                .collect(),
+        };
+        write_tiff16(&dir.join("positive.tif"), &reference, Compression::None).unwrap();
+
+        let manifest = crate::manifest::parse(
+            r#"{"format":"35mm","pairs":[
+                {"name":"a","roll":"Stock A","scan":"scan.tif","reference":"positive.tif"}]}"#,
+            &dir,
+        )
+        .unwrap();
+        (dir, manifest, s.truth.base)
+    }
+
+    #[test]
+    fn a_scan_pair_is_converted_turned_back_registered_and_compared() {
+        let (dir, mut manifest, base) = scan_pair("scan");
+        manifest.film_base = Some(base);
+        let report = run(&manifest, None, &mut |_| {}).unwrap();
+        let frame = &report.frames[0];
+        assert_eq!(frame.roll, "Stock A");
+        // The reference was stored a quarter turn clockwise, so it is turned three more to match.
+        assert_eq!(
+            frame.orientation,
+            Some(Orientation {
+                quarter_turns: 3,
+                mirrored: false
+            })
+        );
+        assert!(frame.score.unwrap() > 0.97, "{:?}", frame.score);
+        // It is our own render, so the difference is only the resampling.
+        assert!(frame.median.unwrap() < 1.0, "median {:?}", frame.median);
+        assert_eq!(report.rolls.len(), 1);
+        assert_eq!(report.rolls[0].roll, "Stock A");
+        assert_eq!((report.rolls[0].compared, report.rolls[0].frames), (1, 1));
+        assert_eq!(report.rolls[0].film_base, base);
+        assert!(report.pooled_median < 1.0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_film_base_is_measured_per_roll_when_it_is_not_given() {
+        let (dir, manifest, _) = scan_pair("rolls");
+        // The same scan and reference under two rolls: each roll measures its own base.
+        let mut two = manifest.clone();
+        let mut second = manifest.pairs[0].clone();
+        second.name = "b".into();
+        second.roll = "Stock B".into();
+        two.pairs.push(second);
+        let report = run(&two, None, &mut |_| {}).unwrap();
+        let names: Vec<_> = report.rolls.iter().map(|r| r.roll.as_str()).collect();
+        assert_eq!(names, ["Stock A", "Stock B"]);
+        assert_eq!(report.rolls[0].film_base, report.rolls[1].film_base);
+        assert_eq!(report.frames.len(), 2);
+        assert!(report.frames.iter().all(|f| f.median.is_some()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_reference_that_is_not_an_rgb_picture_names_its_pair() {
+        use gtp_io::{write_tiff16, Compression, Tiff16};
+        let (dir, manifest, base) = scan_pair("badref");
+        let gray = Tiff16 {
+            width: 8,
+            height: 8,
+            channels: 1,
+            data: vec![1000; 64],
+        };
+        write_tiff16(&dir.join("positive.tif"), &gray, Compression::None).unwrap();
+        let mut manifest = manifest;
+        manifest.film_base = Some(base);
+        let err = run(&manifest, None, &mut |_| {}).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        let details = err.details.unwrap_or_default();
+        assert!(details.contains("a ("), "the pair is named: {details}");
+        assert!(
+            details.contains("positive.tif"),
+            "the file is named: {details}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     #[test]
     fn the_crop_gap_is_the_largest_edge_difference() {
         let registered = Window {

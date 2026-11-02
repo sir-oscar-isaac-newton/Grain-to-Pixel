@@ -1744,3 +1744,48 @@ ROUTES: none, unless the notices are read from a file the app ships.
 MIGRATIONS: none.
 TESTS: the notices check on a deliberately incomplete file, the section with mocked ipc, axe, `check-bundle release` without the source step.
 NOTES: asked for while R-05 was approved, so it is GitHub issue #174, not 79 (issue and pull request numbers share one sequence). Use 174 as its `number` in docs/progress.md. ADR 0007 makes rawler (LGPL-2.1) the NEF decoder and nothing yet covers the licence text or the notices. Needs from the human: the wording of the licence (this is not legal advice; have someone qualified read it before the app is shared widely). deny.toml gets its exception for the rawler crate in H-05, which adds the dependency.
+
+## P-18
+title: Frame detection for camera triplets
+milestone: M5
+type: feature
+size: M
+estimate: 1d
+deps: P-07, H-06
+adr: no
+spec: specification section 4.2 (frame detection) and section 5
+desc: Camera triplets on a 120 carrier (the author's Tone Photography carrier, 645 film) have opaque black margins, little rebate, and film that drifts, so the automatic frame detection finds no confident frame (0.00 to 0.46 on the author's 15 triplets) and the levels are measured over the margins, which washes the picture out. Add the medium-format film formats and detect the frame from what these triplets show: near-black pixels are outside the film, the frame has the format's aspect ratio, and its size in pixels is the same for the whole roll.
+ac:
+- `FilmFormat` gains 645, 6x6, 6x7 and 6x9 with their frame aspect ratios, and the roll editor offers them; formats are stored as text, existing rolls are unchanged
+- Detection treats near-black pixels as outside the film; given the roll's frame size (from the format, calibrated on the roll's confident frames) it places a window of that size where the edges fit best, so a frame with one rebate edge or none still gets a crop
+- The roll's frame size can be adjusted by hand once, by drawing the box on one frame in Develop, and applies to the roll; each frame still finds its own position
+- On the author's 15 triplets the detection confidence is at least 0.5 on at least 12 frames and the crop is close to the Trichroma Lab export's (measured by registering brightness profiles), and the author confirms the renders look right
+- Detection on scans is unchanged: the golden tests pass
+tech:
+FILES: crates/gtp-core/src/model/roll.rs (FilmFormat, the roll's frame size), crates/gtp-negative/src/frame_detect.rs, crates/gtp-app/src/pipeline/analyze.rs, the roll service and catalog (the frame size of a roll; a migration if it is a column), apps/desktop/src/features/develop (the crop section) and library/RollEditor.tsx (format list), en.json.
+ROUTES: roll_update gains the frame size; develop_analyze uses it.
+MIGRATIONS: possibly one for the roll's frame size.
+TESTS: synthetic frames with black margins, drift and no rebate (the window finds the frame), the format prior, calibration over a roll, the hand-set size, the golden tests unchanged, an ignored run on the real roll against the Trichroma Lab exports.
+NOTES: asked for while the film-base question was discussed, after measuring the real roll: the rebate is visible in only about 4 of 15 frames, the left and right of the captured image are opaque black, and cropping the margins by hand fixed most of the washed-out look. Trichroma Lab's exports are 5252 x 3908 and 5265 x 3956 (aspect about 1.34, as 645 is). The film base of the roll is U-17. GitHub issue: #180.
+
+## U-17
+title: Film base status and guidance
+milestone: M5
+type: feature
+size: S
+estimate: 0.5d
+deps: P-05, H-06
+adr: no
+spec: specification section 4.2 (film base) and section 7
+desc: With little rebate and drifting film the automatic film base is often a guess, and the picker in Develop (which sets the roll's base) is the right way to set it. The backend knows when a base is a low-confidence guess, but the UI never says so. Show how each roll's base was set, point to the picker when it is a guess, and let a confident later measurement replace an uncertain automatic base.
+ac:
+- Each roll shows how its film base was set (automatic with its confidence, picked by hand, or none) in the roll sidebar and the Develop base panel, and an uncertain automatic base is flagged
+- After a triplet import into a roll whose base is a guess, the job result says so and points to the picker in Develop
+- A confident automatic measurement from a later frame replaces an uncertain automatic base of the roll, never one picked by hand; the roll's frames are re-rendered with it
+- The automatic strip search ignores near-black pixels
+tech:
+FILES: crates/gtp-app/src/services/roll_frame.rs (ensure_roll_base), crates/gtp-negative/src/film_base.rs (black pixels), the import services (the hint in the result), apps/desktop/src/features/library/RollSidebar.tsx and develop (the base panel), en.json.
+ROUTES: none new; roll_list already carries the confidence.
+MIGRATIONS: none.
+TESTS: the rule (uncertain replaced by confident, a picked base never replaced), black pixels ignored, the status in the sidebar and the base panel, the hint after an import, axe.
+NOTES: asked for together with P-18, which is the frame detection for the same triplets (P-18, #180). On the real roll the base of frame 1 (confidence 0.64) was good, but a first frame without rebate would have fixed the whole roll with a bad base. GitHub issue: #181.

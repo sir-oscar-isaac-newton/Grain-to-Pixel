@@ -1,5 +1,23 @@
 # Checking a merged triplet (H-05)
 
+**Accepted by the author on 2026-11-02** after looking at the merged frames beside the Trichroma Lab
+exports (result below). The list further down stays as the way to repeat the check.
+
+## Result of the check on the whole roll (2026-11-02)
+
+All 15 triplets of `Mamiya 645 Kodak Gold 200 120 Trichrome RGB`, release build:
+
+- Merge time 0.39 to 0.42 s per triplet; no warnings on any (exposure time, ISO and aperture equal,
+  nothing clipped).
+- Every frame is the same picture as its `Trichroma Lab Export_NN.tif`, with the same orientation
+  and no channel swapped. For 13 frames the brightness profiles of rows and columns correlate best
+  unmirrored (rows 0.86 to 0.99, columns 0.69 to 0.99; mirrored columns at most 0.55). Frames 6 and
+  15 correlate almost as well mirrored, and were confirmed by eye (the boat, the skyline and the
+  buoy sit in the same places).
+- Ours show the cast and low contrast of the automatic recipe, and the rebate: the automatic film
+  base has confidence 0.00 on 14 of 15 frames and frame detection 0.00 to 0.46. Those belong to the
+  triplet import (the roll's film base) and to pipeline tuning on this data, not to the merge.
+
 Acceptance criterion 3 of H-05 is yours to tick: *a real D600 triplet converts to a plausible
 positive; the merge time is recorded against the 10 s budget.* This is what to run and what to
 look at. Nothing here is ticked for you.

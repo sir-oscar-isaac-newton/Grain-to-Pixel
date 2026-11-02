@@ -168,6 +168,10 @@ mod tests {
             .unwrap()
             .ends_with("a.NEF"));
         assert!(json[0]["files"][0]["captured"].is_null());
+        assert!(
+            json[0]["files"][0]["channel"].is_null(),
+            "no preview, so no colour"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

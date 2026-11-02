@@ -193,6 +193,7 @@ mod tests {
             "Counters",
             "TripletCandidate",
             "TripletProblem",
+            "TripletChannel",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }

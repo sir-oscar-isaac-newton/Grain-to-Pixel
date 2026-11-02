@@ -1720,3 +1720,27 @@ ROUTES: `triplet_group` (its result gains the guess of each file).
 MIGRATIONS: none.
 TESTS: dominant colour of synthetic previews (each colour, dark, ambiguous), grouping with guesses (in order, shuffled, two of one colour, unknown), the ignored test on the private D600 session.
 NOTES: asked for while H-04 was approved, so it is GitHub issue #167, not 78 (issue and pull request numbers share one sequence). Use 167 as its `number` in docs/progress.md. On the first 18 files of the private session the dominant colour of the preview cycled red, green, blue in capture order with at least 13 times the next channel (blue is the weakest). The preview is processed by the camera, so its numbers tell the channels apart but are not for judging exposure; raw colour planes need the NEF decode of H-05 and are not part of this issue. The guided capture (H-08) should call `dominant_channel` after each shot and stop with a clear error when the shot does not match the LED that was on. A JPEG decoder crate is added (check cargo deny).
+
+## Q-08
+title: Licence terms and third-party notices
+milestone: M7
+type: chore
+size: S
+estimate: 0.5d
+deps: H-05
+needs: human
+adr: no
+spec: decisions/0007-nef-decoder.md; docs/third-party-notices.md
+desc: Make the project meet the licences of what it ships, as ADR 0007 requires: the app's own licence, the third-party notices, and the means to rebuild with a modified rawler (LGPL-2.1).
+ac:
+- A `LICENSE` file in the author's words says what friends may do with the app: use it, modify it for their own use, reverse-engineer it to debug such changes, and no redistribution; the workspace `license` field matches it
+- `docs/third-party-notices.md` has rawler (copyright and the LGPL-2.1 text) and every other dependency that asks for a notice; a check, `pnpm check:notices`, fails when a dependency with a non-permissive licence is missing from the file
+- The app shows the notices (a Settings section or an About view) and says that it uses rawler under the LGPL-2.1
+- `docs/rebuild-with-rawler.md` explains how to rebuild the app with a modified rawler (a Cargo `[patch]` entry)
+- The release workflow attaches the pinned rawler source archive, and `check-bundle release` fails if that step is missing; if the repository is private by then, it also attaches an archive of the app's source
+tech:
+FILES: LICENSE, Cargo.toml (`license`), docs/third-party-notices.md, tools/scripts/check-notices/, apps/desktop/src/features/settings (the notices section), docs/rebuild-with-rawler.md, .github/workflows/release.yml, tools/scripts/check-bundle/.
+ROUTES: none, unless the notices are read from a file the app ships.
+MIGRATIONS: none.
+TESTS: the notices check on a deliberately incomplete file, the section with mocked ipc, axe, `check-bundle release` without the source step.
+NOTES: asked for while R-05 was approved, so it is GitHub issue #174, not 79 (issue and pull request numbers share one sequence). Use 174 as its `number` in docs/progress.md. ADR 0007 makes rawler (LGPL-2.1) the NEF decoder and nothing yet covers the licence text or the notices. Needs from the human: the wording of the licence (this is not legal advice; have someone qualified read it before the app is shared widely). deny.toml gets its exception for the rawler crate in H-05, which adds the dependency.

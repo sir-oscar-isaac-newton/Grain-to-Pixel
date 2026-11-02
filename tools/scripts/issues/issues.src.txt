@@ -1836,3 +1836,26 @@ ROUTES: none beyond the Settings choice of P-19.
 MIGRATIONS: none.
 TESTS: the fit recovers a known curve from synthetic pairs, the held-out split, the goldens unchanged, an ignored run on the author's 15 pairs.
 NOTES: asked for after Q-02. Trichroma Lab is a reference, not the truth, and 15 frames of one film are all the data there is, so the held-out check matters; a global tone curve cannot reproduce local adjustments the lab rendition may include. A look picker per roll, the Noritsu look and a log-encoded export are separate issues. GitHub issue: #187; the look mechanism is P-19 (#186).
+
+## Q-09
+title: Benchmark LS-50 scans against Nikon Scan positives
+milestone: M5
+type: test
+size: S
+estimate: 0.5d
+deps: Q-02
+adr: no
+spec: specification sections 1, 8, 11 and docs/research/benchmark.md
+desc: The Q-02 report compares camera triplets with Trichroma Lab renders. Extend it to LS-50 scans (RGB plus infrared TIFFs) paired with Nikon Scan 4's positives of the same frames, so there is a second reference look and film that has rebate and no camera. The author has 12 pairs: Vision3 250D (4), Vision3 500T (2), Ektacolor160 (2), Ektacolor400 (3) and Ektar100 (1).
+ac:
+- A manifest pair can be an LS-50 TIFF plus a reference TIFF, as well as an NEF triplet; all the pairs of a roll are of one kind
+- `benchmark report` converts an LS-50 pair the way the app does at import (rebate-based frame detection, the roll's film base), registers the reference in our render, and prints the same per-frame and overall ΔE2000 table; it reads 8-bit and 16-bit references
+- `benchmark manifest` builds the manifest for a folder of scans and a folder of positives, matching them by name (the Positive suffix)
+- The results for the 12 pairs are in `docs/research/benchmark.md`, per film stock, with the Q-02 table kept as it is
+- A pair that does not register is flagged and left out, as in Q-02
+tech:
+FILES: tools/benchmark (manifest.rs, report.rs, main.rs; register.rs is reused), docs/research/benchmark.md. No change in the app crates.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: manifest parsing for both kinds, matching by name, an 8-bit reference, a synthetic LS-50 pair through the report with a ΔE of about 0, and an ignored run on the author's 12 pairs.
+NOTES: asked for after the author pointed out that Nikon Scan positives exist for the LS-50 negatives in samples/private, beside the Trichroma Lab exports. It builds on the report of Q-02 and waits for that pull request to be merged. Whether the Film log look or a later look should be compared with Nikon Scan's rendition is for the author to judge from the report. GitHub issue: #190.

@@ -12,8 +12,9 @@ pub mod pipeline;
 pub mod services;
 
 pub use context::{AppContext, ThumbnailRequester};
-pub use gtp_ingest::{TripletCandidate, TripletFile, TripletProblem};
+pub use gtp_ingest::{merge_triplet, TripletCandidate, TripletFile, TripletProblem};
 pub use gtp_io::RawlerDecoder;
+pub use gtp_negative::{BaseEstimate, FrameHint};
 pub use hardware::Hardware;
 pub use jobs::{JobCtx, JobErrorEntry, JobKind, JobManager, JobSink, LibraryEvents, PROGRESS_STEP};
 pub use pipeline::{

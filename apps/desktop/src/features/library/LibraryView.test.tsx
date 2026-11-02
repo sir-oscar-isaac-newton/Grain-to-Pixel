@@ -360,6 +360,7 @@ describe('LibraryView', () => {
               kind: 'Imported',
               frames: ['x', 'y'],
               frame_ms: [900, 950],
+              warnings: [],
               skipped: [{ path: '/scans/notes.txt', reason: 'NotTiff', details: null }],
             },
           }),
@@ -394,7 +395,7 @@ describe('LibraryView', () => {
         listeners.done.forEach((cb) =>
           cb({
             id: 'fast',
-            result: { kind: 'Imported', frames: ['x'], frame_ms: [10], skipped: [] },
+            result: { kind: 'Imported', frames: ['x'], frame_ms: [10], skipped: [], warnings: [] },
           }),
         );
         return 'fast';

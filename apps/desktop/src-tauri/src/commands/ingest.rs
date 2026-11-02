@@ -3,8 +3,9 @@
 use std::path::PathBuf;
 
 use gtp_app::services::import::{import_tiffs, ImportKind};
+use gtp_app::services::import_triplets::import_triplets;
 use gtp_app::services::triplets;
-use gtp_app::{AppContext, JobKind, JobManager, TripletCandidate};
+use gtp_app::{AppContext, JobKind, JobManager, RawlerDecoder, TripletCandidate};
 use gtp_core::{AppError, ErrorCode, JobId, JobResult, RollId};
 use tauri::State;
 
@@ -27,10 +28,19 @@ pub fn import_files(
     kind: ImportKind,
 ) -> CmdResult<JobId> {
     if kind == ImportKind::RgbTriplet {
-        return Err(AppError::new(
-            ErrorCode::InvalidInput,
-            "Importing RGB triplets is not available yet.",
-        ));
+        if !ctx.settings().get().flags.triplet_import {
+            return Err(AppError::new(
+                ErrorCode::InvalidInput,
+                "Importing RGB triplets is switched off in Settings.",
+            ));
+        }
+        if !paths.len().is_multiple_of(3) {
+            return Err(AppError::new(
+                ErrorCode::InvalidInput,
+                "A triplet is three files: the red-, green- and blue-lit exposure.",
+            )
+            .with_details(format!("{} files", paths.len())));
+        }
     }
     if paths.is_empty() || paths.len() > MAX_FILES {
         return Err(AppError::new(
@@ -48,10 +58,21 @@ pub fn import_files(
     let events = std::sync::Arc::clone(&events.0);
     let count = paths.len();
     let id = jobs.spawn(JobKind::Import, move |job| {
-        let result = import_tiffs(&library, roll_id, &paths, job, events.as_ref())?;
+        let result = match kind {
+            ImportKind::TiffScan => import_tiffs(&library, roll_id, &paths, job, events.as_ref())?,
+            ImportKind::RgbTriplet => import_triplets(
+                &library,
+                roll_id,
+                &paths,
+                &RawlerDecoder,
+                job,
+                events.as_ref(),
+            )?,
+        };
         tracing::info!(
             imported = result.frames.len(),
             skipped = result.skipped.len(),
+            warnings = result.warnings.len(),
             frame_ms = ?result.frame_ms,
             "import finished"
         );
@@ -136,6 +157,38 @@ mod tests {
         assert_eq!(done["id"], id.to_string());
         assert_eq!(done["result"]["kind"], "Imported");
         assert_eq!(done["result"]["skipped"][0]["reason"], "NotTiff");
+
+        // A triplet import runs through the same job: files that are not camera files are skipped,
+        // all three of them, and there is nothing to warn about.
+        let nefs: Vec<String> = ["r.NEF", "g.NEF", "b.NEF"]
+            .iter()
+            .map(|name| {
+                let path = dir.join(name);
+                std::fs::write(&path, b"not a camera file").unwrap();
+                path.to_string_lossy().into_owned()
+            })
+            .collect();
+        let id = start(nefs.clone(), roll.id, ImportKind::RgbTriplet).unwrap();
+        let done = rx.recv_timeout(Duration::from_secs(20)).unwrap();
+        assert_eq!(done["id"], id.to_string());
+        assert_eq!(done["result"]["frames"].as_array().unwrap().len(), 0);
+        assert_eq!(done["result"]["skipped"].as_array().unwrap().len(), 3);
+        assert_eq!(done["result"]["skipped"][0]["reason"], "Unsupported");
+        assert_eq!(done["result"]["warnings"].as_array().unwrap().len(), 0);
+
+        // Switched off in Settings, it is refused.
+        ctx.settings()
+            .update(&gtp_app::SettingsPatch {
+                flags: Some(gtp_app::FlagsPatch {
+                    triplet_import: Some(false),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .unwrap();
+        let err = start(nefs, roll.id, ImportKind::RgbTriplet).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(err.message.contains("switched off"), "{}", err.message);
 
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);

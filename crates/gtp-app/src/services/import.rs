@@ -46,7 +46,7 @@ use gtp_core::recipe::OutputSpace;
 pub enum ImportKind {
     /// 16-bit scans, with infrared embedded or as `*_ir.tif`.
     TiffScan,
-    /// R, G and B exposures from a camera (H-06; not available yet).
+    /// R, G and B exposures from a camera: NEF files, three to a frame, in channel order (H-06).
     RgbTriplet,
 }
 
@@ -58,10 +58,10 @@ pub const THUMB_QUALITY: u8 = 85;
 pub const STAGE: &str = "importing";
 
 /// Steps of one frame, for progress within it.
-const STEPS: f32 = 6.0;
+pub(crate) const STEPS: f32 = 6.0;
 
 /// What a skipped file becomes in the result.
-fn skipped(path: &Path, reason: SkipReason, details: Option<String>) -> SkippedFile {
+pub(crate) fn skipped(path: &Path, reason: SkipReason, details: Option<String>) -> SkippedFile {
     SkippedFile {
         path: display_path(path),
         reason,
@@ -80,7 +80,7 @@ fn read_failure(path: &Path, err: &AppError) -> SkippedFile {
 }
 
 /// A frame that could not be imported: either skip it (and go on) or stop the job.
-enum FrameError {
+pub(crate) enum FrameError {
     Skip(SkippedFile),
     Stop(AppError),
 }
@@ -142,7 +142,7 @@ fn read_planes(
 }
 
 /// Writes one original, checks it reads back identical, hashes it and marks it read-only.
-fn store_original(
+pub(crate) fn store_original(
     library: &Library,
     rel: &Path,
     plane: &Tiff16,
@@ -174,6 +174,53 @@ fn store_original(
     })
 }
 
+/// The starting recipe of a new frame: analyzed on a proxy with the roll's film base. The first
+/// frame of a roll with no base also stores its measured base for the whole roll (L-10), so every
+/// later frame uses the same one. Returns the recipe and the pipeline input with that base.
+pub(crate) fn analyse_for_import(
+    library: &Library,
+    roll: RollId,
+    rgb: gtp_core::ImageF32,
+) -> Result<(Recipe, PipelineInput), AppError> {
+    // The roll's film base as of now: an earlier frame of this import may have set it.
+    let mut input = PipelineInput {
+        rgb: Arc::new(rgb),
+        ir: None,
+        film_base: library.read(|c| c.get_roll(roll))?.film_base_rgb,
+    };
+    let mut analysis = analyze(&input)?;
+    if input.film_base.is_none() {
+        let ensured = ensure_roll_base(library, roll, analysis.base)?;
+        input.film_base = Some(ensured.rgb);
+        if !ensured.stored_now {
+            // Another import stored a base in the meantime: this frame uses that one.
+            analysis = analyze(&input)?;
+        }
+    }
+    Ok((analysis.auto_recipe, input))
+}
+
+/// Renders the 512 px sRGB thumbnail of a new frame from its starting recipe.
+pub(crate) fn write_thumbnail(
+    library: &Library,
+    frame_id: FrameId,
+    input: &PipelineInput,
+    recipe: &Recipe,
+) -> Result<(), AppError> {
+    let thumb = render(
+        input,
+        recipe,
+        RenderTarget::Preview {
+            max_edge: THUMB_EDGE,
+        },
+    )?;
+    encode_jpeg(
+        &thumb,
+        OutputSpace::Srgb,
+        THUMB_QUALITY,
+        &library.resolve(&thumb_rel(frame_id))?,
+    )
+}
 /// Imports one candidate; on any failure the frame's files are removed by the caller.
 fn import_one(
     library: &Library,
@@ -213,39 +260,11 @@ fn import_one(
     progress(3.0);
     ctx.check_cancelled()?;
 
-    // The roll's film base as of now: an earlier frame of this import may have set it.
-    let mut input = PipelineInput {
-        rgb: Arc::new(to_f32_linear(&rgb)?),
-        ir: None,
-        film_base: library.read(|c| c.get_roll(roll))?.film_base_rgb,
-    };
-    let mut analysis = analyze(&input)?;
-    if input.film_base.is_none() {
-        // The first frame of a roll with no base measures it for the whole roll (L-10).
-        let ensured = ensure_roll_base(library, roll, analysis.base)?;
-        input.film_base = Some(ensured.rgb);
-        if !ensured.stored_now {
-            // Another import stored a base in the meantime: this frame uses that one.
-            analysis = analyze(&input)?;
-        }
-    }
-    let recipe: Recipe = analysis.auto_recipe;
+    let (recipe, input) = analyse_for_import(library, roll, to_f32_linear(&rgb)?)?;
     progress(4.0);
     ctx.check_cancelled()?;
 
-    let thumb = render(
-        &input,
-        &recipe,
-        RenderTarget::Preview {
-            max_edge: THUMB_EDGE,
-        },
-    )?;
-    encode_jpeg(
-        &thumb,
-        OutputSpace::Srgb,
-        THUMB_QUALITY,
-        &library.resolve(&thumb_rel(frame_id))?,
-    )?;
+    write_thumbnail(library, frame_id, &input, &recipe)?;
     progress(5.0);
     ctx.check_cancelled()?;
 
@@ -265,7 +284,7 @@ fn import_one(
 }
 
 /// Removes what a failed or cancelled frame left behind.
-fn clean_up(library: &Library, roll: RollId, frame: FrameId) {
+pub(crate) fn clean_up(library: &Library, roll: RollId, frame: FrameId) {
     let mut left = Vec::new();
     for rel in [originals_rel(roll, frame), thumb_rel(frame)] {
         if let Ok(path) = library.resolve(&rel) {

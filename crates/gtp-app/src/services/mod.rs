@@ -5,6 +5,7 @@ pub mod develop;
 pub mod diagnostics;
 pub mod export;
 pub mod import;
+pub mod import_triplets;
 pub mod library;
 pub mod roll_frame;
 pub mod settings;

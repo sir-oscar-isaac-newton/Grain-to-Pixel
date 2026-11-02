@@ -581,6 +581,15 @@
       "status": "in_progress",
       "pr": null,
       "commit": null
+    },
+    {
+      "id": "P-20",
+      "number": 187,
+      "title": "Frontier-style look calibrated against reference renders",
+      "branch": "feat/issue-187-frontier-look",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

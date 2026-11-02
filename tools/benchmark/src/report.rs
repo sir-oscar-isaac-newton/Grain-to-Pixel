@@ -9,11 +9,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use gtp_app::{
-    analyze_with, merge_triplet, render, BaseEstimate, FrameHint, PipelineInput, RenderTarget,
+    analyze_with, analyze_with_look, merge_triplet, render, BaseEstimate, FrameHint, PipelineInput,
+    RenderTarget,
 };
 use gtp_core::model::FILM_BASE_MIN_CONFIDENCE;
 use gtp_core::recipe::{Crop, OutputSpace};
-use gtp_core::{AppError, ErrorCode, FilmFormat, ImageF32};
+use gtp_core::{AppError, ErrorCode, FilmFormat, ImageF32, Look};
 use gtp_io::{
     encode_jpeg, read_tiff16, read_tiff16_single_strip, split_rgbi, to_f32_linear, to_output,
     Limits, RawlerDecoder, Tiff16,
@@ -53,6 +54,8 @@ pub struct FrameReport {
     pub p95: Option<f32>,
     /// Our mean minus the reference's, in L*, a* and b*: a tone and colour cast the ΔE hides.
     pub cast: Option<[f32; 3]>,
+    /// Our mean chroma minus the reference's: positive when ours is the more saturated.
+    pub chroma: Option<f32>,
 }
 
 /// What was measured on one roll (one film stock).
@@ -170,7 +173,7 @@ pub fn downscale_tiff(tiff: &Tiff16, out_w: usize) -> Result<ImageF32, AppError>
 }
 
 /// Our render of the whole capture, as sRGB-encoded floats from 0 to 1.
-fn srgb_floats(linear_rec2020: &ImageF32) -> Result<ImageF32, AppError> {
+pub(crate) fn srgb_floats(linear_rec2020: &ImageF32) -> Result<ImageF32, AppError> {
     let out = to_output(linear_rec2020, OutputSpace::Srgb)?;
     ImageF32::new(
         out.width,
@@ -207,6 +210,23 @@ pub fn compare(a: &ImageF32, b: &ImageF32) -> Result<(Vec<f32>, [f32; 3]), AppEr
     Ok((des, sum.map(|s| (s / n) as f32)))
 }
 
+/// Our mean chroma (C*) minus the reference's over two sRGB-encoded images of the same size: positive
+/// when ours is the more saturated. 0 for two empty images.
+pub fn mean_chroma_difference(a: &ImageF32, b: &ImageF32) -> f32 {
+    let chroma = |image: &ImageF32| -> f64 {
+        let (pixels, _) = image.data.as_chunks::<3>();
+        let sum: f64 = pixels
+            .iter()
+            .map(|p| {
+                let lab = rec2020_to_lab(srgb_to_linear_rec2020(*p));
+                f64::from(lab[1]).hypot(f64::from(lab[2]))
+            })
+            .sum();
+        sum / pixels.len().max(1) as f64
+    };
+    (chroma(a) - chroma(b)) as f32
+}
+
 fn crop_gap(registered: Window, ours: Crop) -> f32 {
     let edges = |x: f32, y: f32, w: f32, h: f32| [x, y, x + w, y + h];
     let a = edges(registered.x, registered.y, registered.w, registered.h);
@@ -219,7 +239,7 @@ fn crop_gap(registered: Window, ours: Crop) -> f32 {
 
 /// The frame of a pair as linear RGB: the triplet merged, or the scan with its infrared plane (if it
 /// has one) set aside.
-fn load_frame(pair: &Pair) -> Result<ImageF32, AppError> {
+pub(crate) fn load_frame(pair: &Pair) -> Result<ImageF32, AppError> {
     match &pair.source {
         Source::Triplet([r, g, b]) => {
             Ok(merge_triplet(&RawlerDecoder, r, g, b, &Limits::default())?.image)
@@ -243,9 +263,14 @@ fn load_frame(pair: &Pair) -> Result<ImageF32, AppError> {
     }
 }
 
-/// The reference of a pair, shrunk to [`COMPARE_WIDTH`] columns. A file that cannot be read says
-/// which pair it belongs to, and that a reference must be a 16-bit RGB TIFF.
+/// The reference of a pair, shrunk to [`COMPARE_WIDTH`] columns.
 fn load_reference(pair: &Pair) -> Result<ImageF32, AppError> {
+    load_reference_at(pair, COMPARE_WIDTH)
+}
+
+/// The reference of a pair shrunk to `width` columns. A file that cannot be read says which pair it
+/// belongs to, and that a reference must be a 16-bit RGB TIFF.
+pub(crate) fn load_reference_at(pair: &Pair, width: usize) -> Result<ImageF32, AppError> {
     let tiff = read_tiff16_single_strip(&pair.reference, &Limits::default()).map_err(|err| {
         AppError::new(
             err.code,
@@ -258,7 +283,7 @@ fn load_reference(pair: &Pair) -> Result<ImageF32, AppError> {
             err.message
         ))
     })?;
-    downscale_tiff(&tiff, COMPARE_WIDTH).map_err(|err| {
+    downscale_tiff(&tiff, width).map_err(|err| {
         AppError::new(err.code, err.message).with_details(format!(
             "{} ({})",
             pair.name,
@@ -299,11 +324,13 @@ fn write_map(
     encode_jpeg(&image, OutputSpace::Srgb, 85, path)
 }
 
-/// Runs the report over a manifest. `note` hears of each step (for the command line to print);
-/// `maps` is a folder to write a picture of each frame's difference to.
+/// Runs the report over a manifest, converting every frame with the starting `look`. `note` hears of
+/// each step (for the command line to print); `maps` is a folder to write a picture of each frame's
+/// difference to.
 pub fn run(
     manifest: &Manifest,
     maps: Option<&Path>,
+    look: Look,
     note: &mut dyn FnMut(&str),
 ) -> Result<Report, AppError> {
     let hint = Some(FrameHint {
@@ -364,7 +391,15 @@ pub fn run(
         let roll_index = rolls.iter().position(|r| *r == pair.roll).unwrap_or(0);
         let film_base = bases[roll_index];
         let image = load_frame(pair)?;
-        let analysis = analyze(image.clone(), Some(film_base))?;
+        let analysis = analyze_with_look(
+            &PipelineInput {
+                rgb: Arc::new(image.clone()),
+                ir: None,
+                film_base: Some(film_base),
+            },
+            hint,
+            look,
+        )?;
         // The automatic recipe, but over the whole capture, so the reference can be found in it.
         let mut recipe = analysis.auto_recipe.clone();
         recipe.geometry.crop = Crop::default();
@@ -399,6 +434,7 @@ pub fn run(
             median: None,
             p95: None,
             cast: None,
+            chroma: None,
         };
         if let Some((found, _)) = found.filter(|(f, _)| f.score >= MIN_SCORE) {
             let ours = crop_resample(
@@ -412,6 +448,7 @@ pub fn run(
             report.median = Some(percentile(&by_value, 0.5));
             report.p95 = Some(percentile(&by_value, 0.95));
             report.cast = Some(cast);
+            report.chroma = Some(mean_chroma_difference(&ours, &reference));
             pooled_all.extend(des.iter().copied());
             pooled_by_roll[roll_index].extend(des.iter().copied());
             if let Some(dir) = maps {
@@ -625,7 +662,7 @@ mod tests {
     fn a_scan_pair_is_converted_turned_back_registered_and_compared() {
         let (dir, mut manifest, base) = scan_pair("scan");
         manifest.film_base = Some(base);
-        let report = run(&manifest, None, &mut |_| {}).unwrap();
+        let report = run(&manifest, None, Look::Neutral, &mut |_| {}).unwrap();
         let frame = &report.frames[0];
         assert_eq!(frame.roll, "Stock A");
         // The reference was stored a quarter turn clockwise, so it is turned three more to match.
@@ -656,7 +693,7 @@ mod tests {
         second.name = "b".into();
         second.roll = "Stock B".into();
         two.pairs.push(second);
-        let report = run(&two, None, &mut |_| {}).unwrap();
+        let report = run(&two, None, Look::Neutral, &mut |_| {}).unwrap();
         let names: Vec<_> = report.rolls.iter().map(|r| r.roll.as_str()).collect();
         assert_eq!(names, ["Stock A", "Stock B"]);
         assert_eq!(report.rolls[0].film_base, report.rolls[1].film_base);
@@ -678,7 +715,7 @@ mod tests {
         write_tiff16(&dir.join("positive.tif"), &gray, Compression::None).unwrap();
         let mut manifest = manifest;
         manifest.film_base = Some(base);
-        let err = run(&manifest, None, &mut |_| {}).unwrap_err();
+        let err = run(&manifest, None, Look::Neutral, &mut |_| {}).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
         let details = err.details.unwrap_or_default();
         assert!(details.contains("a ("), "the pair is named: {details}");

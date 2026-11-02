@@ -7,6 +7,11 @@
 // (docs/convention.md section 8). The test starts that app itself and attaches msedgedriver to the
 // port.
 //
+// The app keeps its settings in the user's own folder, so which view it starts in depends on the
+// machine: a clean CI runner has no library and shows the first-run dialog, a developer machine that
+// opened a library before starts in the Library view. Each state has its own test; the other one is
+// skipped.
+//
 // Prerequisites: `pnpm build:e2e` and the msedgedriver that matches WebView2
 // (tools/scripts/e2e/install-edgedriver.ps1). Run: pnpm test:e2e
 import assert from 'node:assert/strict';
@@ -52,6 +57,8 @@ async function waitForDebugPort(app, timeoutMs) {
 describe('Grain to Pixel window', { skip: process.platform !== 'win32' }, () => {
   let app;
   let driver;
+  /** 'first-run' when the app asks for a library, 'library' when one is already open. */
+  let state;
 
   before(async () => {
     assert.ok(existsSync(application), `app binary not found: ${application}`);
@@ -67,6 +74,13 @@ describe('Grain to Pixel window', { skip: process.platform !== 'win32' }, () => 
       .setEdgeOptions(options)
       .setEdgeService(new edge.ServiceBuilder(edgeDriver))
       .build();
+
+    // The Library view first shows "loading", then either the dialog or the library.
+    state = await driver.wait(async () => {
+      if ((await driver.findElements(By.css('[role="dialog"]'))).length > 0) return 'first-run';
+      const text = await driver.findElement(By.css('body')).getText();
+      return text.includes('Library') && !text.includes('Opening your library') && 'library';
+    }, UI_TIMEOUT);
   });
 
   after(async () => {
@@ -90,7 +104,20 @@ describe('Grain to Pixel window', { skip: process.platform !== 'win32' }, () => 
     await driver.wait(until.elementTextContains(footer, `Version ${version}`), UI_TIMEOUT);
   });
 
-  it('switches to the Develop view', async () => {
+  it('asks for a library when there is none (clean profile)', async (t) => {
+    if (state !== 'first-run') return t.skip('a library is already open on this machine');
+    const dialog = await driver.findElement(By.css('[role="dialog"]'));
+    await driver.wait(until.elementTextContains(dialog, 'Set up your library'), UI_TIMEOUT);
+    assert.equal((await dialog.findElements(By.css('input[type="radio"]'))).length, 2);
+    // Nothing can be created before a folder is chosen (the folder picker is a native dialog).
+    const create = await dialog.findElement(
+      By.xpath(".//button[normalize-space()='Create library']"),
+    );
+    assert.equal(await create.isEnabled(), false);
+  });
+
+  it('switches to the Develop view', async (t) => {
+    if (state !== 'library') return t.skip('no library is open, so a dialog covers the tabs');
     const develop = await driver.findElement(By.xpath("//button[normalize-space()='Develop']"));
     await develop.click();
     const heading = await driver.findElement(By.css('h2'));

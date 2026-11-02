@@ -1665,6 +1665,8 @@ dependencies = [
  "gtp-app",
  "gtp-core",
  "gtp-io",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

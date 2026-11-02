@@ -1,0 +1,12 @@
+{
+  "format": "645",
+  "pairs": [
+    {
+      "name": "01",
+      "red": "triplets/DSC_4652.NEF",
+      "green": "triplets/DSC_4653.NEF",
+      "blue": "triplets/DSC_4654.NEF",
+      "reference": "references/Trichroma Lab Export_01.tif"
+    }
+  ]
+}

@@ -395,7 +395,7 @@ mod tests {
         let roll = Roll::new("refuse");
         let source = roll.source();
         let invalid = ScanParams {
-            dpi: 2000,
+            dpi: 3000,
             ..params(1..=3)
         };
         let out = run(&source, &invalid, &CancelToken::default());

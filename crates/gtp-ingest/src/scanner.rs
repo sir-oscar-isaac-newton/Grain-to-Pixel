@@ -13,8 +13,8 @@ use gtp_core::{AppError, ErrorCode};
 
 /// The most frames a roll can hold.
 pub const MAX_FRAMES: u32 = 40;
-/// The resolutions a scan may ask for: the LS-50's optical 4000 dpi, the only one used.
-pub const SUPPORTED_DPI: [u32; 1] = [4000];
+/// The resolutions a scan may ask for.
+pub const SUPPORTED_DPI: [u32; 3] = [1000, 2000, 4000];
 /// The resolution when none is chosen.
 pub const DEFAULT_DPI: u32 = 4000;
 /// How many reads of each pixel the scanner may average.
@@ -78,7 +78,7 @@ impl ScanParams {
         }
         if !SUPPORTED_DPI.contains(&self.dpi) {
             return invalid(
-                "That resolution is not supported; the scanner works at 4000 dpi.",
+                "That resolution is not supported; choose 1000, 2000 or 4000 dpi.",
                 format!("{} dpi", self.dpi),
             );
         }
@@ -195,8 +195,8 @@ mod tests {
     }
 
     #[test]
-    fn only_4000_dpi_is_supported() {
-        for dpi in [0, 1000, 2000, 3999, 4001, 8000] {
+    fn only_1000_2000_and_4000_dpi_are_supported() {
+        for dpi in [0, 500, 999, 3999, 4001, 8000] {
             let p = ScanParams { dpi, ..params() };
             assert_eq!(code(&p), Some(ErrorCode::InvalidInput), "{dpi}");
         }

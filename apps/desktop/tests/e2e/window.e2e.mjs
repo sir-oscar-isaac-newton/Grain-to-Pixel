@@ -78,8 +78,9 @@ describe('Grain to Pixel window', { skip: process.platform !== 'win32' }, () => 
     // The Library view first shows "loading", then either the dialog or the library.
     state = await driver.wait(async () => {
       if ((await driver.findElements(By.css('[role="dialog"]'))).length > 0) return 'first-run';
+      // Positive evidence only: the toolbar of an open library ("Library: <name>").
       const text = await driver.findElement(By.css('body')).getText();
-      return text.includes('Library') && !text.includes('Opening your library') && 'library';
+      return /Library: \S/.test(text) && 'library';
     }, UI_TIMEOUT);
   });
 

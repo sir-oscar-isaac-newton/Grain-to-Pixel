@@ -73,9 +73,10 @@ export const commands = {
 	/**
 	 *  Finds the frame, film base and levels of a frame, and the recipe they make. With `base` (three
 	 *  linear scan values above 0, such as one picked on the rebate) the levels are fitted to that base
-	 *  instead of the roll's or a measured one.
+	 *  instead of the roll's or a measured one. The automatic recipe carries the tone curve of `look`,
+	 *  or of the Starting look setting when none is given.
 	 */
-	developAnalyze: (frameId: FrameId, base: [(number | null), (number | null), (number | null)] | null) => typedError<DevelopAnalysis_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_analyze", { frameId, base })),
+	developAnalyze: (frameId: FrameId, base: [(number | null), (number | null), (number | null)] | null, look: Look | null) => typedError<DevelopAnalysis_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_analyze", { frameId, base, look })),
 	/**
 	 *  The film base from an area of the scan: the per-channel median, in linear scan values.
 	 *  `region` is in fractions of the whole scan (x, y, width, height, each 0 to 1), as a click on the
@@ -1027,6 +1028,16 @@ export type LibraryInfo_Serialize = {
 	library: LibraryDetails_Serialize | null,
 };
 
+/**  What the automatic conversion starts from. */
+export type Look = 
+/**
+ *  The conversion as it has always been: density mapped linearly between the black and white
+ *  points, no tone curve.
+ */
+"neutral" | 
+/**  A flat, wide-latitude start encoded with the Blackmagic Film Gen 5 log curve, for editing. */
+"film_log";
+
 /**
  *  Black-and-white conversion. When enabled, every pixel becomes `mix[0]*R + mix[1]*G + mix[2]*B`
  *  in all three channels, which acts like a coloured filter on black-and-white film. Weights run
@@ -1295,6 +1306,7 @@ export type SettingsPatch = SettingsPatch_Serialize | SettingsPatch_Deserialize;
 export type SettingsPatch_Deserialize = {
 	window?: WindowSize | null,
 	theme?: Theme | null,
+	starting_look?: Look | null,
 	flags?: FlagsPatch_Deserialize | null,
 	/**  Replaces all the key bindings (an empty map goes back to the defaults). */
 	keys?: { [key in string]: string } | null,
@@ -1304,6 +1316,7 @@ export type SettingsPatch_Deserialize = {
 export type SettingsPatch_Serialize = {
 	window: WindowSize | null,
 	theme: Theme | null,
+	starting_look: Look | null,
 	flags: FlagsPatch_Serialize | null,
 	/**  Replaces all the key bindings (an empty map goes back to the defaults). */
 	keys: { [key in string]: string } | null,
@@ -1314,6 +1327,8 @@ export type Settings_Deserialize = {
 	last_library?: string | null,
 	window?: WindowSize | null,
 	theme?: Theme,
+	/**  What the automatic conversion of frames imported from now on starts from. */
+	starting_look?: Look,
 	flags?: Flags_Deserialize,
 	/**
 	 *  The keyboard shortcuts the user changed, action name to key (`Q`, `[`, `Escape`). An action
@@ -1327,6 +1342,8 @@ export type Settings_Serialize = {
 	last_library: string | null,
 	window: WindowSize | null,
 	theme: Theme,
+	/**  What the automatic conversion of frames imported from now on starts from. */
+	starting_look: Look,
 	flags: Flags_Serialize,
 	/**
 	 *  The keyboard shortcuts the user changed, action name to key (`Q`, `[`, `Escape`). An action

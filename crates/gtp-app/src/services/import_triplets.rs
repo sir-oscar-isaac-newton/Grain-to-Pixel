@@ -21,7 +21,7 @@ use std::time::Instant;
 
 use gtp_core::{
     AppError, ErrorCode, Frame, FrameId, FrameKind, ImageF32, ImportResult, ImportWarning,
-    ImportWarningKind, RollId, SkipReason, SkippedFile, SourceFile, SourceRole,
+    ImportWarningKind, Look, RollId, SkipReason, SkippedFile, SourceFile, SourceRole,
 };
 use gtp_ingest::{merge_triplet, TripletWarning};
 use gtp_io::{from_f32_linear, Limits, RawDecoder, Tiff16};
@@ -103,16 +103,24 @@ fn plane(image: &ImageF32, channel: usize) -> Result<Tiff16, AppError> {
     )?))
 }
 
+/// Where an import puts its frames and what their automatic recipes start from.
+#[derive(Clone, Copy)]
+struct Target {
+    roll: RollId,
+    look: Look,
+}
+
 /// Imports one triplet; on any failure the frame's files are removed by the caller.
 fn import_one(
     library: &Library,
-    roll: RollId,
+    target: Target,
     files: &[PathBuf],
     frame_id: FrameId,
     decoder: &dyn RawDecoder,
     ctx: &JobCtx,
     progress: &dyn Fn(f32),
 ) -> Result<(Frame, Vec<ImportWarningKind>), TripletError> {
+    let Target { roll, look } = target;
     let merged = merge_triplet(decoder, &files[0], &files[1], &files[2], &Limits::default())
         .map_err(|err| merge_failure(files, &err))?;
     progress(1.0);
@@ -164,7 +172,7 @@ fn import_one(
     ctx.check_cancelled()?;
 
     let warnings: Vec<ImportWarningKind> = merged.warnings.iter().map(warning_kind).collect();
-    let (recipe, input) = analyse_for_import(library, roll, merged.image)?;
+    let (recipe, input) = analyse_for_import(library, roll, merged.image, look)?;
     progress(4.0);
     ctx.check_cancelled()?;
 
@@ -200,6 +208,19 @@ pub fn import_triplets(
     ctx: &JobCtx,
     events: &dyn LibraryEvents,
 ) -> Result<ImportResult, AppError> {
+    import_triplets_with_look(library, roll, paths, decoder, ctx, events, Look::Neutral)
+}
+
+/// [`import_triplets`] whose automatic recipes start from `look` (the Starting look setting).
+pub fn import_triplets_with_look(
+    library: &Library,
+    roll: RollId,
+    paths: &[PathBuf],
+    decoder: &dyn RawDecoder,
+    ctx: &JobCtx,
+    events: &dyn LibraryEvents,
+    look: Look,
+) -> Result<ImportResult, AppError> {
     let before = library.read(|c| c.get_roll(roll))?;
     if paths.is_empty() || !paths.len().is_multiple_of(3) {
         return Err(AppError::new(
@@ -216,7 +237,8 @@ pub fn import_triplets(
         let frame_id = FrameId::new();
         let progress = |step: f32| ctx.progress(STAGE, (i as f32 + step / STEPS) / total);
         progress(0.0);
-        match import_one(library, roll, files, frame_id, decoder, ctx, &progress) {
+        let target = Target { roll, look };
+        match import_one(library, target, files, frame_id, decoder, ctx, &progress) {
             Ok((frame, warnings)) => {
                 result.frames.push(frame.id);
                 result

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
-use gtp_core::{AppError, ErrorCode};
+use gtp_core::{AppError, ErrorCode, Look};
 use serde::{Deserialize, Serialize};
 
 /// Window sizes accepted, in logical pixels.
@@ -73,6 +73,8 @@ pub struct Settings {
     pub last_library: Option<String>,
     pub window: Option<WindowSize>,
     pub theme: Theme,
+    /// What the automatic conversion of frames imported from now on starts from.
+    pub starting_look: Look,
     pub flags: Flags,
     /// The keyboard shortcuts the user changed, action name to key (`Q`, `[`, `Escape`). An action
     /// that is not here has its default key, which the UI knows; the app only keeps the shape.
@@ -114,6 +116,7 @@ pub struct FlagsPatch {
 pub struct SettingsPatch {
     pub window: Option<WindowSize>,
     pub theme: Option<Theme>,
+    pub starting_look: Option<Look>,
     pub flags: Option<FlagsPatch>,
     /// Replaces all the key bindings (an empty map goes back to the defaults).
     pub keys: Option<BTreeMap<String, String>>,
@@ -174,6 +177,9 @@ impl Settings {
         }
         if let Some(theme) = patch.theme {
             self.theme = theme;
+        }
+        if let Some(look) = patch.starting_look {
+            self.starting_look = look;
         }
         if let Some(keys) = &patch.keys {
             check_keys(keys)?;
@@ -379,6 +385,34 @@ mod tests {
         let (reloaded, note) = SettingsStore::load(&path);
         assert!(note.is_none());
         assert_eq!(reloaded.get(), updated);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn the_starting_look_is_neutral_until_chosen_and_is_kept() {
+        let path = temp_file("look");
+        let (store, _) = SettingsStore::load(&path);
+        assert_eq!(store.get().starting_look, Look::Neutral);
+        let chosen = SettingsPatch {
+            starting_look: Some(Look::FilmLog),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(store.update(&chosen).unwrap().starting_look, Look::FilmLog);
+        // A patch that leaves it out keeps it, and a reload brings it back.
+        let theme_only = SettingsPatch {
+            theme: Some(Theme::Light),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(
+            store.update(&theme_only).unwrap().starting_look,
+            Look::FilmLog
+        );
+        let (reloaded, _) = SettingsStore::load(&path);
+        assert_eq!(reloaded.get().starting_look, Look::FilmLog);
+        // A file written before the look existed has none, which is Neutral.
+        std::fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
+        let (older, _) = SettingsStore::load(&path);
+        assert_eq!(older.get().starting_look, Look::Neutral);
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

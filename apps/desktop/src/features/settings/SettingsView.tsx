@@ -8,12 +8,14 @@ import {
   settingsGet,
   settingsSet,
   type LibraryDetails,
+  type Look,
 } from '../../shared/ipc';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import { useLibraryEvents } from '../library/use-library-events';
 import { DiagnosticsSection } from './DiagnosticsSection';
 import { FLAG_NAMES, flagsOf, type FlagName, type FlagValues } from './flags';
 import { KeyboardSettings } from './KeyboardSettings';
+import { StartingLookSection } from './StartingLookSection';
 import { UpdatesSection } from './UpdatesSection';
 import { VerifySection } from './VerifySection';
 import styles from './settings.module.css';
@@ -33,6 +35,8 @@ export function SettingsView() {
   const [flags, setFlags] = useState<FlagValues | null>(null);
   const [defaults, setDefaults] = useState<FlagValues | null>(null);
   const [keys, setKeys] = useState<Record<string, string>>({});
+  const [look, setLook] = useState<Look>('neutral');
+  const [savingLook, setSavingLook] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
   const [saving, setSaving] = useState<ReadonlySet<FlagName>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +49,7 @@ export function SettingsView() {
         setFlags(flagsOf(current));
         setDefaults(flagsOf(initial));
         setKeys(current.keys ?? {});
+        setLook(current.starting_look ?? 'neutral');
       },
       (e: unknown) => {
         if (alive) setError(t('settings.loadFailed', { message: messageOf(e) }));
@@ -104,6 +109,22 @@ export function SettingsView() {
       setError(t('settings.saveFailed', { message: messageOf(e) }));
     } finally {
       setSavingKeys(false);
+    }
+  };
+
+  /** Saves the Starting look the moment it is chosen; if saving fails it switches back. */
+  const saveLook = async (next: Look) => {
+    const before = look;
+    setError(null);
+    setSavingLook(true);
+    setLook(next);
+    try {
+      setLook((await settingsSet({ starting_look: next })).starting_look ?? next);
+    } catch (e) {
+      setLook(before);
+      setError(t('settings.look.saveFailed', { message: messageOf(e) }));
+    } finally {
+      setSavingLook(false);
     }
   };
 
@@ -172,6 +193,10 @@ export function SettingsView() {
       {library && <VerifySection onFinished={refreshLibrary} />}
 
       {flags && <UpdatesSection enabled={flags.update_check} />}
+
+      {flags && (
+        <StartingLookSection value={look} busy={savingLook} onChange={(l) => void saveLook(l)} />
+      )}
 
       <DiagnosticsSection />
 

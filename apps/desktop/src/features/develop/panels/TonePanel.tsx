@@ -23,13 +23,21 @@ interface TonePanelProps {
   working: boolean;
   /** The recipe changed; `dragging` while a slider's thumb or a curve point is being moved. */
   onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
+  /** Sets the master curve to the one of the Starting look (a flat start, or the plain line). */
+  onApplyStartingLook: () => void;
 }
 
 /**
  * The Tone panel: exposure in stops, contrast, highlights, shadows, whites, blacks and dehaze, and
  * the tone curves (master and one per colour channel).
  */
-export function TonePanel({ recipe, readOnly, working, onChange }: TonePanelProps) {
+export function TonePanel({
+  recipe,
+  readOnly,
+  working,
+  onChange,
+  onApplyStartingLook,
+}: TonePanelProps) {
   const { t, i18n } = useTranslation();
   const tone = toneOf(recipe);
   const locked = readOnly || working;
@@ -125,6 +133,11 @@ export function TonePanel({ recipe, readOnly, working, onChange }: TonePanelProp
             number: hundredths,
           }}
         />
+        <div className={styles.panelButtons}>
+          <button type="button" disabled={locked} onClick={onApplyStartingLook}>
+            {t('develop.curve.startingLook')}
+          </button>
+        </div>
       </section>
     </div>
   );

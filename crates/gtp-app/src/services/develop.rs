@@ -19,15 +19,16 @@ use serde::{Deserialize, Serialize};
 
 use gtp_core::recipe::{Color, Crop, Invert, BASE_MAX, BASE_MIN};
 use gtp_core::{
-    AppError, ErrorCode, Frame, FrameId, ImageF32, Recipe, RecipeField, SourceFile, SourceRole,
+    AppError, ErrorCode, Frame, FrameId, ImageF32, Look, Recipe, RecipeField, SourceFile,
+    SourceRole,
 };
 use gtp_edit::{neutral_balance, Area};
 use gtp_io::{read_tiff16, to_f32_linear, Limits};
 use gtp_negative::{levels_from_sample, sample_film_base, LevelPoint, Rect};
 
 use crate::pipeline::{
-    analyze_with, build_plane_proxy, build_proxy, inverted_frame, normalized_frame, to_rgba8_srgb,
-    Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
+    analyze_with_look, build_plane_proxy, build_proxy, inverted_frame, normalized_frame,
+    to_rgba8_srgb, Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
 };
 use crate::services::counters;
 use crate::services::library::Library;
@@ -500,6 +501,17 @@ impl DevelopService {
         id: FrameId,
         base: Option<[f32; 3]>,
     ) -> Result<DevelopAnalysis, AppError> {
+        self.analyze_with_look(library, id, base, Look::Neutral)
+    }
+
+    /// [`DevelopService::analyze`] whose automatic recipe also carries the values of `look`.
+    pub fn analyze_with_look(
+        &self,
+        library: &Library,
+        id: FrameId,
+        base: Option<[f32; 3]>,
+        look: Look,
+    ) -> Result<DevelopAnalysis, AppError> {
         let entry = self.ensure(library, id)?;
         let mut input = entry.input(self.dust_removal());
         if let Some(base) = base {
@@ -507,7 +519,7 @@ impl DevelopService {
             input.film_base = Some(base);
         }
         let (roll, hint) = hint_for_frame(library, id)?;
-        let analysis = analyze_with(&input, hint)?;
+        let analysis = analyze_with_look(&input, hint, look)?;
         if let Some(size) = analysis.frame.measured_size.filter(|_| hint.is_some()) {
             record_frame_measurement(library, roll, size)?;
         }
@@ -943,6 +955,30 @@ mod tests {
         roll_set_film_base(&t.library, t.roll, Some(found.base_rgb)).unwrap();
         t.service.open(&t.library, id).unwrap();
         assert!(t.service.analyze(&t.library, id, None).unwrap().base_given);
+    }
+
+    #[test]
+    fn analysis_with_a_look_carries_its_curve_and_the_rest_is_the_same() {
+        let t = Fixture::new("analyze-look");
+        let id = t.frame(1, 1000, 700);
+        let neutral = t.service.analyze(&t.library, id, None).unwrap();
+        let looked = t
+            .service
+            .analyze_with_look(&t.library, id, None, Look::FilmLog)
+            .unwrap();
+        let default_master = Recipe::default().tone.curve.master;
+        assert_eq!(neutral.auto_recipe.tone.curve.master, default_master);
+        assert_eq!(looked.auto_recipe.tone.curve.master.len(), 16);
+        let mut without = looked.auto_recipe.clone();
+        without.tone.curve.master = default_master;
+        assert_eq!(without, neutral.auto_recipe);
+        assert_eq!(looked.frame_rect, neutral.frame_rect);
+        assert_eq!(looked.base_rgb, neutral.base_rgb);
+        let none = t
+            .service
+            .analyze_with_look(&t.library, id, None, Look::Neutral)
+            .unwrap();
+        assert_eq!(none.auto_recipe, neutral.auto_recipe);
     }
 
     #[test]

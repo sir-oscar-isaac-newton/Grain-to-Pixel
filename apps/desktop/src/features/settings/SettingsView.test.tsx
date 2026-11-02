@@ -24,6 +24,38 @@ describe('SettingsView', () => {
     useUiStore.setState({ view: 'settings', developFrame: null });
   });
 
+  describe('the starting look', () => {
+    it('is Neutral until it is chosen, and is saved the moment it is', async () => {
+      const user = userEvent.setup();
+      render(<SettingsView />);
+      const select = await screen.findByRole('combobox', { name: 'Starting look' });
+      expect(select).toHaveValue('neutral');
+      await user.selectOptions(
+        select,
+        'Film log (Blackmagic Film Gen 5): a flat, wide-latitude start for editing',
+      );
+      await waitFor(() =>
+        expect(state.settingsPatches).toContainEqual({ starting_look: 'film_log' }),
+      );
+      expect(select).toHaveValue('film_log');
+      expect(state.startingLook).toBe('film_log');
+    });
+
+    it('starts from the saved look, and switches back when saving fails', async () => {
+      const user = userEvent.setup();
+      state.startingLook = 'film_log';
+      render(<SettingsView />);
+      const select = await screen.findByRole('combobox', { name: 'Starting look' });
+      expect(select).toHaveValue('film_log');
+      state.settingsRefused = 'The settings file is read-only.';
+      await user.selectOptions(select, 'Neutral (the conversion as it is)');
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'The starting look could not be saved: The settings file is read-only.',
+      );
+      expect(select).toHaveValue('film_log');
+    });
+  });
+
   describe('the library', () => {
     it('shows where it is and how much room is left', async () => {
       openLibrary();

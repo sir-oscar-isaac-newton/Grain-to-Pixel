@@ -14,9 +14,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use gtp_app::services::triplets::triplet_group;
-use gtp_app::{analyze, analyze_with, render, PipelineInput, RenderTarget};
+use gtp_app::{analyze, analyze_with_look, render, PipelineInput, RenderTarget};
 use gtp_core::recipe::OutputSpace;
-use gtp_core::FilmFormat;
+use gtp_core::{FilmFormat, Look};
 use gtp_ingest::merge_triplet;
 use gtp_io::{encode_jpeg, Limits, RawlerDecoder};
 use gtp_negative::FrameHint;
@@ -50,6 +50,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         aspect: FilmFormat::Mf645.aspect(),
         size: None,
     };
+    // GTP_LOOK=film_log renders with the Film log look.
+    let look = match std::env::var("GTP_LOOK").as_deref() {
+        Ok("film_log") => Look::FilmLog,
+        _ => Look::Neutral,
+    };
     let mut confident = 0;
     for (n, candidate) in candidates.iter().enumerate() {
         let [r, g, b] = candidate.files.as_slice() else {
@@ -69,7 +74,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             film_base: base,
         };
         let plain = analyze(&input)?;
-        let hinted = analyze_with(&input, Some(hint))?;
+        let hinted = analyze_with_look(&input, Some(hint), look)?;
         let c = hinted.frame.rect;
         if hinted.frame.confidence >= 0.5 {
             confident += 1;

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useUiStore } from '../../app/store';
 import { expectNoA11yViolations, mockLayout } from '../../test-support';
 import {
+  FILM_LOG_CURVE,
   PIXELS,
   ipc,
   libraryDetails,
@@ -1531,6 +1532,66 @@ describe('DevelopView', () => {
       });
     });
 
+    describe('the starting look', () => {
+      const savedRecipe = () => state.saved[state.saved.length - 1]?.recipe;
+
+      it('sets the master curve to the look’s and saves it', async () => {
+        state.startingLook = 'film_log';
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        await user.click(screen.getByRole('button', { name: 'Use the starting look’s curve' }));
+
+        expect(
+          await screen.findByText(
+            'The master curve is now the one of the Starting look in Settings.',
+          ),
+        ).toBeInTheDocument();
+        // The look is the one of the setting: the command is asked without one.
+        expect(ipc.developAnalyze).toHaveBeenLastCalledWith('summer-f00001', null, null);
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(
+          (savedRecipe() as { tone: { curve: { master: unknown } } }).tone.curve.master,
+        ).toEqual(FILM_LOG_CURVE);
+      });
+
+      it('goes back to the plain line when the setting is Neutral', async () => {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        await user.click(screen.getByRole('button', { name: 'Use the starting look’s curve' }));
+        await screen.findByText(/The master curve is now/);
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalledTimes(1), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        const master = (savedRecipe() as { tone: { curve: { master: number[][] } } }).tone.curve
+          .master;
+        expect(master).toEqual([
+          [0, 0],
+          [1, 1],
+        ]);
+      });
+
+      it('says when the look could not be found', async () => {
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        ipc.developAnalyze.mockRejectedValueOnce(new Error('The scan could not be analysed.'));
+        await user.click(screen.getByRole('button', { name: 'Use the starting look’s curve' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+          'The starting look could not be applied: The scan could not be analysed.',
+        );
+      });
+    });
+
     describe('the levels', () => {
       it('re-runs the automatic levels and saves them', async () => {
         const user = userEvent.setup();
@@ -1540,7 +1601,9 @@ describe('DevelopView', () => {
         await canvas();
         await user.click(screen.getByRole('button', { name: 'Re-run auto levels' }));
 
-        await waitFor(() => expect(ipc.developAnalyze).toHaveBeenCalledWith('summer-f00001', null));
+        await waitFor(() =>
+          expect(ipc.developAnalyze).toHaveBeenCalledWith('summer-f00001', null, null),
+        );
         expect(
           await screen.findByText('Levels set automatically for this film base.'),
         ).toBeInTheDocument();
@@ -1570,7 +1633,11 @@ describe('DevelopView', () => {
         await canvas();
         await user.click(screen.getByRole('button', { name: 'Re-run auto levels' }));
         await waitFor(() =>
-          expect(ipc.developAnalyze).toHaveBeenLastCalledWith('summer-f00001', [0.7, 0.5, 0.4]),
+          expect(ipc.developAnalyze).toHaveBeenLastCalledWith(
+            'summer-f00001',
+            [0.7, 0.5, 0.4],
+            null,
+          ),
         );
 
         // Once a base has been picked, that is the one the levels are fitted to.
@@ -1581,7 +1648,11 @@ describe('DevelopView', () => {
         await screen.findByText('Picked on this frame.');
         await user.click(screen.getByRole('button', { name: 'Re-run auto levels' }));
         await waitFor(() =>
-          expect(ipc.developAnalyze).toHaveBeenLastCalledWith('summer-f00001', [0.8, 0.5, 0.3]),
+          expect(ipc.developAnalyze).toHaveBeenLastCalledWith(
+            'summer-f00001',
+            [0.8, 0.5, 0.3],
+            null,
+          ),
         );
         expect(screen.getByRole('slider', { name: 'White point, red' })).toHaveAttribute(
           'aria-valuenow',

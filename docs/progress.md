@@ -488,9 +488,9 @@
       "number": 46,
       "title": "ScannerSource port and FixtureSource",
       "branch": "feat/issue-46-scanner-port-fixture",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 170,
+      "commit": "789e66e"
     }
   ]
 }

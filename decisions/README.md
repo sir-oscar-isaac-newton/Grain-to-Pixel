@@ -10,6 +10,6 @@ Architecture Decision Records (ADRs), numbered, immutable once accepted (superse
 | [0004](0004-guided-rgb-capture.md) | Guided RGB capture: Scanlight serial control and two camera backends | Proposed |
 | [0005](0005-application-layer.md) | Application layer crate (`gtp-app`) | Accepted |
 | [0006](0006-e2e-debugging-port.md) | The e2e test reaches WebView2 through a debugging port set in the window config | Accepted |
-| [0007](0007-nef-decoder.md) | Decoder for the D600's NEF files | Proposed |
+| [0007](0007-nef-decoder.md) | Decoder for the D600's NEF files (rawler, LGPL-2.1) | Accepted |
 
 New ADR: copy [0000-template.md](0000-template.md), take the next number, add a row above.

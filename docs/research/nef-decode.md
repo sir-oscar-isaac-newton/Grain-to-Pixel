@@ -106,16 +106,10 @@ relinked; and do not forbid modification for private use or reverse engineering 
 changes. The repository is public, so the source is available; the application's own licence
 (`LicenseRef-Private`) would need to allow those uses of the combined work.
 
-## Recommendation
+## Decision
 
-- Technically: **rawler**. It is more than twice as fast, pure Rust (no C++ toolchain or define on
-  Windows and macOS), current (0.8.0, edition 2024) and its raw output matches LibRaw's.
-- If the author accepts the LGPL-2.1 obligations above (notice file, source availability, a licence
-  for the app that allows modifying and relinking it for private use): use rawler, with an explicit
-  `deny.toml` exception for the crates under LGPL-2.1 and an entry in
-  `docs/third-party-notices.md`.
-- If not: **LibRaw under CDDL-1.0** through a wrapper, accepting the C++ build, the define on MSVC,
-  an old bundled LibRaw, and unsafe FFI in one small module of `gtp-ingest`.
-
-The decision is the author's; it is recorded as ADR 0007 once made. H-05 builds the decoder behind a
-trait either way (its acceptance criteria), so changing the choice later touches one module.
+**rawler**, chosen by the author on 2026-11-02 (ADR 0007). It is more than twice as fast as LibRaw,
+pure Rust (no C++ toolchain or define on Windows and macOS), current (0.8.0, edition 2024), and its
+raw output matches LibRaw's. The LGPL-2.1 obligations and how the project meets them are listed in
+the ADR. LibRaw under CDDL-1.0 remains the fallback: H-05 builds the decoder behind a trait, so
+changing the choice later touches one module.

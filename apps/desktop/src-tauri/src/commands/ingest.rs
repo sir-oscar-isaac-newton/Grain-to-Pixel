@@ -1,9 +1,10 @@
-//! Ingest commands: importing files as a background job.
+//! Ingest commands: importing files as a background job, and grouping camera files into triplets.
 
 use std::path::PathBuf;
 
 use gtp_app::services::import::{import_tiffs, ImportKind};
-use gtp_app::{AppContext, JobKind, JobManager};
+use gtp_app::services::triplets;
+use gtp_app::{AppContext, JobKind, JobManager, TripletCandidate};
 use gtp_core::{AppError, ErrorCode, JobId, JobResult, RollId};
 use tauri::State;
 
@@ -58,6 +59,16 @@ pub fn import_files(
     })?;
     tracing::info!(job = %id, roll = %roll_id, files = count, "import started");
     Ok(id)
+}
+
+/// Groups camera files (NEF) into R/G/B triplet candidates by capture time: each candidate lists
+/// its files red first, then green, then blue, and says when a shot is missing or extra. Reads the
+/// files' EXIF only and changes nothing.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn triplet_group(paths: Vec<String>) -> CmdResult<Vec<TripletCandidate>> {
+    let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    triplets::triplet_group(&paths)
 }
 
 #[cfg(test)]
@@ -127,6 +138,36 @@ mod tests {
         assert_eq!(done["result"]["skipped"][0]["reason"], "NotTiff");
 
         drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn triplet_group_checks_its_input_and_answers_in_the_shape_the_ui_reads() {
+        let empty = triplet_group(Vec::new()).unwrap_err();
+        assert_eq!(empty.code, ErrorCode::InvalidInput);
+        let missing = triplet_group(vec!["no-such-folder/a.NEF".into()]).unwrap_err();
+        assert_eq!(missing.code, ErrorCode::NotFound);
+
+        // Files without EXIF cannot be grouped: one flagged candidate, files by name.
+        let dir = std::env::temp_dir().join(format!("gtp-triplet-cmd-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let paths: Vec<String> = ["b.NEF", "a.NEF", "c.NEF"]
+            .iter()
+            .map(|name| {
+                let path = dir.join(name);
+                std::fs::write(&path, b"not a camera file").unwrap();
+                path.display().to_string()
+            })
+            .collect();
+        let candidates = triplet_group(paths).unwrap();
+        let json = serde_json::to_value(&candidates).unwrap();
+        assert_eq!(json[0]["problem"]["kind"], "no_capture_time");
+        assert_eq!(json[0]["files"].as_array().unwrap().len(), 3);
+        assert!(json[0]["files"][0]["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("a.NEF"));
+        assert!(json[0]["files"][0]["captured"].is_null());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

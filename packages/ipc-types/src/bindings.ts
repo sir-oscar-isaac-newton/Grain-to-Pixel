@@ -47,6 +47,12 @@ export const commands = {
 	 */
 	importFiles: (paths: string[], rollId: RollId, kind: ImportKind) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("import_files", { paths, rollId, kind })),
 	/**
+	 *  Groups camera files (NEF) into R/G/B triplet candidates by capture time: each candidate lists
+	 *  its files red first, then green, then blue, and says when a shot is missing or extra. Reads the
+	 *  files' EXIF only and changes nothing.
+	 */
+	tripletGroup: (paths: string[]) => typedError<TripletCandidate_Serialize[], AppError_Serialize>(__TAURI_INVOKE("triplet_group", { paths })),
+	/**
 	 *  Starts exporting the frames at full resolution, each with its saved recipe (the automatic one
 	 *  when it was never edited), as a job; progress and the result (the files written and the frames
 	 *  that failed) arrive as `job://*` events. An existing file is never overwritten: the name gets a
@@ -1366,6 +1372,59 @@ export type Tone_Serialize = {
 	dehaze: number | null,
 	curve: Curves_Serialize,
 };
+
+/**
+ *  Files that probably belong together. With no `problem` there are exactly three, red first, then
+ *  green, then blue. With a problem they are in capture order (by file name when the time is
+ *  missing) and the user decides which to use.
+ */
+export type TripletCandidate = TripletCandidate_Serialize | TripletCandidate_Deserialize;
+
+/**
+ *  Files that probably belong together. With no `problem` there are exactly three, red first, then
+ *  green, then blue. With a problem they are in capture order (by file name when the time is
+ *  missing) and the user decides which to use.
+ */
+export type TripletCandidate_Deserialize = {
+	files: TripletFile_Deserialize[],
+	problem?: TripletProblem | null,
+};
+
+/**
+ *  Files that probably belong together. With no `problem` there are exactly three, red first, then
+ *  green, then blue. With a problem they are in capture order (by file name when the time is
+ *  missing) and the user decides which to use.
+ */
+export type TripletCandidate_Serialize = {
+	files: TripletFile_Serialize[],
+	problem: TripletProblem | null,
+};
+
+/**  A file of a candidate, for display. */
+export type TripletFile = TripletFile_Serialize | TripletFile_Deserialize;
+
+/**  A file of a candidate, for display. */
+export type TripletFile_Deserialize = {
+	path: string,
+	/**  The capture time as `YYYY-MM-DDTHH:MM:SS.mmm` (no time zone), if the file has one. */
+	captured?: string | null,
+};
+
+/**  A file of a candidate, for display. */
+export type TripletFile_Serialize = {
+	path: string,
+	/**  The capture time as `YYYY-MM-DDTHH:MM:SS.mmm` (no time zone), if the file has one. */
+	captured: string | null,
+};
+
+/**  What is wrong with a candidate; a candidate without a problem is a complete triplet. */
+export type TripletProblem = 
+/**  The run has fewer shots than a whole number of triplets: `missing` more are needed. */
+{ kind: "missing_shots"; missing: number } | 
+/**  The run has more shots than a whole number of triplets: `extra` too many. */
+{ kind: "extra_shots"; extra: number } | 
+/**  The files have no capture time, so they could not be put in order or grouped. */
+{ kind: "no_capture_time" };
 
 /**  What the update check found. */
 export type UpdateOutcome = UpdateOutcome_Serialize | UpdateOutcome_Deserialize;

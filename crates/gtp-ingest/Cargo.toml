@@ -4,7 +4,17 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
+[features]
+# Derives specta::Type on the types that cross the IPC boundary (enabled by the Tauri shell).
+specta = ["dep:specta"]
+# A tiny TIFF with EXIF for tests of the crates that group files. Off in every app build.
+testing = []
+
 [dependencies]
+# Capture time (DateTimeOriginal) of the camera files; pure Rust, BSD-2-Clause.
+kamadak-exif = "0.6"
+serde = { version = "1", features = ["derive"] }
+specta = { version = "=2.0.0-rc.26", optional = true, features = ["derive"] }
 
 [lints]
 workspace = true

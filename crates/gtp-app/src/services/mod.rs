@@ -10,6 +10,7 @@ pub mod roll_frame;
 pub mod settings;
 pub mod tags_search;
 pub mod thumbnails;
+pub mod triplets;
 pub mod verify;
 
 #[cfg(test)]

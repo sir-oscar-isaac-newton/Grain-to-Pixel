@@ -58,6 +58,7 @@ pub fn run() -> tauri::Result<()> {
             app.manage(sink::EventsState(sink));
             app.manage(app_context(app));
             app.manage(update_state(app));
+            app.manage(hardware());
             Ok(())
         })
         .build(tauri::generate_context!())?
@@ -84,6 +85,15 @@ fn app_context(app: &tauri::App) -> AppContext {
         tracing::warn!(%note, "settings reset to defaults");
     }
     ctx
+}
+
+/// The devices, fixtures with `GTP_FAKE_HW=1`.
+fn hardware() -> gtp_app::Hardware {
+    let hardware = gtp_app::Hardware::from_env();
+    if let Some(dir) = hardware.fixture_dir() {
+        tracing::info!(folder = %dir.display(), "fake hardware is on: the fixture scanner replays this folder");
+    }
+    hardware
 }
 
 /// The updater, built from `tauri.conf.json`; a failure is logged and leaves the update commands

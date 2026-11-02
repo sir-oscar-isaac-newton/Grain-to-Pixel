@@ -482,6 +482,15 @@
       "status": "completed",
       "pr": 166,
       "commit": "53f31eb"
+    },
+    {
+      "id": "H-01",
+      "number": 46,
+      "title": "ScannerSource port and FixtureSource",
+      "branch": "feat/issue-46-scanner-port-fixture",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

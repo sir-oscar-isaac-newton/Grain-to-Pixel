@@ -270,13 +270,13 @@ pub trait ScannerSource {
     fn scan(&self, p: &ScanParams, on_frame: &mut dyn FnMut(u32, RawScan) -> Result<()>,
             progress: &dyn Fn(f32), cancel: &CancelToken) -> Result<()>;
 }
-// ScanParams: device_id, frames (first..=last), dpi (default 4000), samples (1/2/4/8/16), ir: bool, autofocus: bool
+// ScanParams: device_id, frames (first..=last, 1..=40), dpi (4000, the only supported value), samples (1/2/4/8/16), ir: bool, autofocus: bool
 // Roll scans take 40+ minutes: every finished frame is committed to the library at once, so cancel or error
 // keeps completed frames and the user can resume from the next frame number.
 // RawScan: rgb16 (w*h*3), ir16 (w*h, optional), dpi, metadata
 ```
 
-Implementations: `NkscanSource` (real), `FixtureSource` (replays TIFFs from `samples/`, used by tests and development without hardware).
+Implementations: `NkscanSource` (real), `FixtureSource` (replays TIFFs from `samples/`, used by tests and development without hardware). `ScanParams::validate` refuses (`InvalidInput`) an empty device id, frames outside 1 to 40 or last before first, any dpi but 4000, and sample counts other than 1, 2, 4, 8 and 16. `FixtureSource` plays the `n`-th TIFF of its folder (file-name order) as frame `n`, so a resumed scan gets the right file; a 4-channel RGBI file or a `<name>_IR.tif` beside the scan gives the infrared plane; asking for a frame the folder does not have fails with `ScanFailed` after the earlier frames were delivered; a cancel (`Cancelled`) is seen before each frame. `GTP_FAKE_HW=1` makes the app start with fixture devices (`gtp_app::Hardware`, logged at start): the fixture scanner replays the folder named by `GTP_FIXTURE_DIR`, by default `samples/private` of the repository the build was made in; without it a real scanner adapter is used, and one that does not exist yet is absent.
 
 ### 6.1 Guided RGB capture (`gtp-capture`)
 

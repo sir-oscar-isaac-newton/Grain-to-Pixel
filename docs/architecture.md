@@ -30,7 +30,7 @@ Windows 10/11 and macOS from one codebase; heavy 16-bit image maths on 20+ MP sc
 | Images | `tiff`, `lcms2`, `jpeg-encoder`, `fast_image_resize`, `rawler` (NEF) | pure CPU f32 pipeline; GPU only if budgets fail |
 | Hardware | `nkscan` (LS-50), `serialport` (Scanlight), `gphoto2` binding (macOS tether), `notify` (watched folder) | all behind traits with fakes |
 | Observability | `tracing` family | structured, rolling files, local only |
-| Tests | cargo test, `proptest`, `criterion`, Vitest + Testing Library + `vitest-axe`, `tauri-driver` | matches spec §8 |
+| Tests | cargo test, `proptest`, `criterion`, Vitest + Testing Library + `vitest-axe`, msedgedriver (WebDriver) | matches spec §8 |
 | Tooling | pnpm, GitHub Actions, `cargo-deny` | spec §8, §9 |
 
 Versions: use the latest stable release at implementation time and pin through lockfiles; record exceptions in an ADR.
@@ -363,7 +363,7 @@ FILES:
 - .github/workflows/pr-title.yml: Conventional Commit title check.
 - .github/pull_request_template.md: exactly the template in docs/workflow.md §5 Step 6.
 - .github/dependabot.yml: cargo, npm, github-actions weekly.
-- smoke tests: apps/desktop/tests/smoke/mac-launch.sh (build, start the app, wait for a "ready" log line, exit non-zero on crash); apps/desktop/tests/e2e/{wdio.conf.ts, window.e2e.ts} using tauri-driver on Windows: window title and library_info result.
+- smoke tests: apps/desktop/tests/smoke/mac-launch.sh (build, start the app, wait for a "ready" log line, exit non-zero on crash); apps/desktop/tests/e2e/window.e2e.mjs on Windows (msedgedriver attached to the debugging port of an e2e build, `tauri.e2e.conf.json`): window title, the Library view and the backend version.
 - docs: a "Branch protection" section in docs/convention.md §8 listing the exact settings for me to apply.
 INTERFACES/ROUTES/MIGRATIONS: none.
 TESTS: a throwaway PR with a clean change (all green) and one with a lint error (red).

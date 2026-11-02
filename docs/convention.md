@@ -109,7 +109,7 @@ Every PR must pass on Windows and macOS (arm64) `[CI]`, and `develop` (the defau
 4. `pnpm lint`, `pnpm typecheck`, `pnpm test`
 5. `cargo deny check` (licences, advisories, bans) and `pnpm audit --prod`
 6. `ipc-types` regenerated with no diff
-7. macOS: build and launch smoke test; Windows: `tauri-driver` end-to-end test (spec §8)
+7. macOS: build and launch smoke test; Windows: launch smoke test and WebDriver end-to-end test of the window (spec §8)
 
 Tag builds (`vX.Y.Z`) additionally run the release pipeline (spec §15). A budget miss from spec §11 blocks a release.
 
@@ -118,7 +118,7 @@ Tag builds (`vX.Y.Z`) additionally run the release pipeline (spec §15). A budge
 | Gate | Workflow / job |
 |---|---|
 | 1 to 6 | `.github/workflows/ci.yml`, job `ci` (checks `ci (windows-latest)` and `ci (macos-15)`) |
-| 7 (smoke / end-to-end) | `ci.yml`, jobs `smoke-macos` and `smoke-windows` (build, launch, wait for the ready file; `pnpm smoke`). Both must be added to the required checks of `develop` once they have run once. The WebDriver test of the window (`pnpm test:e2e`, Windows) is `e2e-windows.yml`, manual or weekly and not a gate: GitHub-hosted runners run elevated and WebView2 then ignores the flags msedgedriver passes. Run it locally before merging UI changes |
+| 7 (smoke / end-to-end) | `ci.yml`, jobs `smoke-macos` and `smoke-windows` (build, launch, wait for the ready file; `pnpm smoke`). Both must be added to the required checks of `develop` once they have run once. The WebDriver test of the window is job `e2e-windows` in `ci.yml` (`pnpm build:e2e`, then `pnpm test:e2e`; also a required check of `develop`). It builds the app with `src-tauri/tauri.e2e.conf.json`, which opens WebView2's debugging port 9222 from the window's own settings, and attaches msedgedriver to that port. `tauri-driver` is not used: it passes the port through `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`, which WebView2 ignores on a hosted runner (elevated session, High integrity); the window setting is honoured there (ADR 0006). `pnpm check:bundle` fails if a shipped build (`tauri.conf.json`, `tauri.release.conf.json`, `release.yml`, `bundle.yml`) turns the port on |
 | 8 (title) | `.github/workflows/pr-title.yml`, check `pr-title` |
 
 Run the same commands locally before pushing (see the README). Third-party actions are pinned by commit SHA, first-party ones by major version; Dependabot keeps them current.

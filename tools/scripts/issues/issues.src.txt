@@ -1525,6 +1525,7 @@ ac:
 tech:
 FILES: .github/workflows/ci.yml, .github/workflows/e2e-windows.yml, apps/desktop/tests/e2e/window.e2e.mjs, apps/desktop/src-tauri (only if the hook option is chosen).
 TESTS: the e2e run itself, green on CI. Evidence so far: runtime updated 155 to 156 and flags still ignored; runas /trustlevel does not lower integrity on the runner.
+DELIVERY: the hook is a build-time config file (src-tauri/tauri.e2e.conf.json, window additionalBrowserArgs), not a Cargo feature, so a normal build cannot carry it; see decisions/0006-e2e-debugging-port.md.
 
 ## U-13
 title: Customizable keyboard shortcuts

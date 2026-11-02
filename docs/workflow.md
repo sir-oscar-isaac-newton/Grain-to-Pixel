@@ -180,10 +180,10 @@ Authoritative list: [convention.md §8](convention.md). A PR is mergeable only w
 4. `pnpm lint`, `pnpm typecheck`, `pnpm test`
 5. `cargo deny check` and `pnpm audit --prod`
 6. `ipc-types` regenerated with no diff
-7. macOS build and launch smoke test; Windows `tauri-driver` end-to-end test
+7. macOS build and launch smoke test; Windows launch smoke test and WebDriver end-to-end test
 8. PR title is a Conventional Commit; branch is up to date with `develop`; no unresolved review comments
 
-Gates 1 to 8 run in GitHub Actions (`ci.yml`: jobs `ci`, `smoke-macos`, `smoke-windows`; `pr-title.yml`; `e2e-windows.yml` is manual or weekly). Run the same commands locally before pushing and paste the summary lines in the PR (the smoke and e2e tests need a release build: `pnpm build:app`, then `pnpm smoke` and, on Windows, `pnpm test:e2e`). Never merge by lowering a gate.
+Gates 1 to 8 run in GitHub Actions (`ci.yml`: jobs `ci`, `smoke-macos`, `smoke-windows`, `e2e-windows`; `pr-title.yml`). Run the same commands locally before pushing and paste the summary lines in the PR (the smoke test needs a release build: `pnpm build:app`, then `pnpm smoke`; on Windows the e2e test needs its own build, which replaces that binary: `pnpm build:e2e`, then `pnpm test:e2e`). Never merge by lowering a gate.
 
 **Human-verified tags:** the same rule applies to `[data]`, `[mac]` and `[human]` criteria defined in [issues.md](issues.md): the assistant prepares the steps, the human acts or supplies the data and reports, and the assistant records it.
 

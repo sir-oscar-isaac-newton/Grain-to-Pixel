@@ -515,9 +515,9 @@
       "number": 53,
       "title": "NEF decode and RGB channel merge",
       "branch": "feat/issue-53-nef-decode-merge",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 176,
+      "commit": "6be1caa"
     }
   ]
 }

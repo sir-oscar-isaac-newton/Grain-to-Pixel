@@ -1789,3 +1789,50 @@ ROUTES: none new; roll_list already carries the confidence.
 MIGRATIONS: none.
 TESTS: the rule (uncertain replaced by confident, a picked base never replaced), black pixels ignored, the status in the sidebar and the base panel, the hint after an import, axe.
 NOTES: asked for together with P-18, which is the frame detection for the same triplets (P-18, #180). On the real roll the base of frame 1 (confidence 0.64) was good, but a first frame without rebate would have fixed the whole roll with a bad base. GitHub issue: #181.
+
+## P-19
+title: Cinema log look (Blackmagic Film Gen 5) as a starting point for editing
+milestone: M5
+type: feature
+size: M
+estimate: 1d
+deps: P-05, P-08, P-18
+adr: yes
+spec: specification section 4.2 (tone) and rules/colour-pipeline.md
+desc: Add a named look to the automatic conversion. A look is a set of values that analyze writes into the recipe, so the recipe stays complete and editable and its schema does not change. The first look is a flat, wide-latitude starting point encoded with Blackmagic Film Gen 5 log, for editing in the app, mainly for Vision3 film developed in ECN-2, which is designed for scanning and has no lab-print look to match. The inversion is already linear in density, so today's washed-out picture is an unnamed log-like rendering shown as if it were display-ready; the look makes it deliberate, with a published transfer function, a documented film model and headroom at both ends.
+ac:
+- A look is a named set of values that the automatic recipe writes into the recipe; the recipe schema and version do not change
+- The Film log look maps density to scene light with a documented film model (one fixed gamma taken from published Vision3 sensitometry; the exposure slider covers stock and push differences) and applies the Blackmagic Film Gen 5 transfer function, with the black and white points leaving headroom at both ends
+- The transfer function matches Blackmagic's published values (black, middle grey, white, and the point where its linear segment ends) to 1e-4, and its constants are taken from the published whitepaper and named in `gtp-edit`
+- Settings gains a Starting look choice (Neutral or Film log); Neutral is today's behaviour and the default, and the golden tests do not change
+- With the look on, the tone and colour controls and the curves work from the flat start, and resetting the frame returns it to the neutral start
+- The author edits an ECN-2 Vision3 roll from this start and confirms it grades well
+tech:
+FILES: crates/gtp-core (the look definitions), crates/gtp-edit (the transfer function and film model as named constants), crates/gtp-app/src/pipeline/analyze.rs (apply the look), crates/gtp-app/src/services/settings.rs (default_look), the Settings view and en.json, decisions/ (the ADR for the film model and its limits).
+ROUTES: settings_update gains default_look.
+MIGRATIONS: none.
+TESTS: the transfer function against the published values, round trip of the encode and its inverse, the look writes a valid recipe, Neutral leaves analyze unchanged (goldens), reset returns to the neutral start, the Settings choice with mocked ipc, axe.
+NOTES: asked for after Q-02 showed the automatic render is washed out and a log start is wanted for editing; the author shoots much Vision3 in ECN-2. Out of scope and left for later issues: a look picker per roll (a field on the roll, a migration and an editor control, proposed once a second look exists, P-20), grading inside log space (a log working-space stage so the sliders act in log, which changes the stage order and needs a recipe version), log-encoded export as an output space, and the Noritsu look (needs the author's reference pairs). GitHub issue: #186; the Frontier look is P-20 (#187).
+
+## P-20
+title: Frontier-style look calibrated against reference renders
+milestone: M5
+type: feature
+size: M
+estimate: 1d
+deps: P-19, Q-02
+adr: yes
+spec: specification section 1 (quality measure) and docs/research/benchmark.md
+desc: The automatic conversion of the author's 15 camera triplets is far from Trichroma Lab's render of the same frames (median ΔE2000 17.2 against a target of 6, Q-02), mostly in tone: ours is brighter on every frame. Trichroma Lab imitates the look of the Fuji Frontier SP-3000 minilab, a contrasty lab-print rendition with raised saturation, so matching it means matching a look, not accuracy to the scene. Add a second look, Frontier-style, fitted to the reference pairs with the Q-02 report as the measure, on the look mechanism of P-19.
+ac:
+- A Frontier-style look (a tone curve of at most three parameters and a saturation step, found by fitting) is selectable as the Starting look in Settings and applied by the automatic recipe
+- The fit is checked on frames it was not fitted on: 10 frames fitted, 5 held out, and the report prints the fitted and the held-out ΔE separately
+- On the held-out frames the median ΔE2000 is at most 6; if it cannot be reached, the best result and the reason are recorded in `docs/research/benchmark.md`, and the author judges the renders by eye either way
+- The levels percentiles and the per-channel treatment of the automatic levels are re-examined and the choice is recorded with its ΔE; the report also prints the mean chroma difference so saturation shows
+- Neutral and Film log stay as they are and the golden tests do not change; the fit is a `benchmark fit` command that prints the parameters and its ΔE before and after
+tech:
+FILES: crates/gtp-negative/src/invert.rs (levels), crates/gtp-edit and crates/gtp-core (the look values), tools/benchmark (the fit command and the chroma line in the report), docs/research/benchmark.md, decisions/ (the ADR for the look and its limits).
+ROUTES: none beyond the Settings choice of P-19.
+MIGRATIONS: none.
+TESTS: the fit recovers a known curve from synthetic pairs, the held-out split, the goldens unchanged, an ignored run on the author's 15 pairs.
+NOTES: asked for after Q-02. Trichroma Lab is a reference, not the truth, and 15 frames of one film are all the data there is, so the held-out check matters; a global tone curve cannot reproduce local adjustments the lab rendition may include. A look picker per roll, the Noritsu look and a log-encoded export are separate issues. GitHub issue: #187; the look mechanism is P-19 (#186).

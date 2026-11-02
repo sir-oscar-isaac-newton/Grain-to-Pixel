@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use gtp_core::recipe::BaseSource;
 use gtp_core::{
-    AppError, ErrorCode, FilmFormat, Frame, FrameId, FrameKind, ImageF32, Roll, RollId,
+    AppError, ErrorCode, FilmFormat, Frame, FrameId, FrameKind, FrameSize, ImageF32, Roll, RollId,
 };
 use gtp_negative::{auto_film_base, BaseEstimate};
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,7 @@ pub const MAX_PAGE_SIZE: u32 = 500;
 #[serde(default)]
 pub struct RollInput {
     pub name: String,
+    pub format: FilmFormat,
     pub film_stock: Option<String>,
     pub camera: Option<String>,
     pub iso_box: Option<u32>,
@@ -44,13 +45,14 @@ impl RollInput {
         self,
         id: RollId,
         film_base: (Option<[f32; 3]>, Option<f32>),
+        frame_size: Option<FrameSize>,
         created_at: String,
     ) -> Roll {
         Roll {
             id,
             name: self.name,
             film_stock: self.film_stock,
-            format: FilmFormat::Mm35,
+            format: self.format,
             camera: self.camera,
             iso_box: self.iso_box,
             iso_shot: self.iso_shot,
@@ -59,6 +61,7 @@ impl RollInput {
             notes: self.notes,
             film_base_rgb: film_base.0,
             film_base_confidence: film_base.1,
+            frame_size,
             created_at,
         }
     }
@@ -109,17 +112,54 @@ pub struct DeleteReport {
 }
 
 pub fn roll_create(library: &Library, input: RollInput) -> Result<Roll, AppError> {
-    let roll = input.into_roll(RollId::new(), (None, None), String::new());
+    let roll = input.into_roll(RollId::new(), (None, None), None, String::new());
     library.write(|c| c.insert_roll(&roll))
 }
 
-/// Replaces a roll's editable fields; its film base (with its confidence) and creation time are kept.
+/// Replaces a roll's editable fields; its film base (with its confidence), frame size and creation
+/// time are kept.
 pub fn roll_update(library: &Library, id: RollId, input: RollInput) -> Result<Roll, AppError> {
     library.write(|c| {
         let current = c.get_roll(id)?;
         let base = (current.film_base_rgb, current.film_base_confidence);
-        c.update_roll(&input.into_roll(id, base, current.created_at))
+        c.update_roll(&input.into_roll(id, base, current.frame_size, current.created_at))
     })
+}
+
+/// Sets the size of one frame on the roll's captures by hand (fractions of the image, each above 0
+/// and at most 1), or with `None` clears it so it is measured again. A size set by hand is never
+/// replaced by a measurement.
+pub fn roll_set_frame_size(
+    library: &Library,
+    id: RollId,
+    size: Option<[f32; 2]>,
+) -> Result<Roll, AppError> {
+    library.write(|c| {
+        let mut roll = c.get_roll(id)?;
+        roll.frame_size = size.map(|[w, h]| FrameSize { w, h, samples: 0 });
+        c.update_roll(&roll)
+    })
+}
+
+/// What frame detection may assume about the roll of `frame`, and the roll's id.
+pub(crate) fn hint_for_frame(
+    library: &Library,
+    frame: FrameId,
+) -> Result<(RollId, Option<gtp_negative::FrameHint>), AppError> {
+    library.read(|c| {
+        let roll = c.get_roll(c.get_frame(frame)?.roll_id)?;
+        Ok((roll.id, crate::pipeline::frame_hint(&roll)))
+    })
+}
+
+/// Teaches the roll's frame size a frame that detection measured by its rebate on all four sides;
+/// see [`gtp_catalog::Catalog::record_frame_measurement`].
+pub fn record_frame_measurement(
+    library: &Library,
+    id: RollId,
+    measured: [f32; 2],
+) -> Result<Roll, AppError> {
+    library.write(|c| c.record_frame_measurement(id, measured))
 }
 
 pub fn roll_list(library: &Library) -> Result<Vec<Roll>, AppError> {
@@ -463,6 +503,53 @@ mod tests {
 
     fn estimate(rgb: [f32; 3], confidence: f32) -> BaseEstimate {
         BaseEstimate { rgb, confidence }
+    }
+
+    #[test]
+    fn a_rolls_format_and_frame_size_are_kept_by_updates_and_set_by_hand() {
+        let t = TempLib::new("frame-size");
+        let created = roll_create(
+            t.lib(),
+            RollInput {
+                format: FilmFormat::Mf645,
+                ..input("Mamiya")
+            },
+        )
+        .unwrap();
+        assert_eq!(created.format, FilmFormat::Mf645);
+        assert_eq!(created.frame_size, None);
+
+        // A measurement teaches the size; a rename keeps it and can change the format.
+        record_frame_measurement(t.lib(), created.id, [0.6, 0.9]).unwrap();
+        let renamed = roll_update(
+            t.lib(),
+            created.id,
+            RollInput {
+                format: FilmFormat::Mf6x6,
+                ..input("Renamed")
+            },
+        )
+        .unwrap();
+        assert_eq!(renamed.format, FilmFormat::Mf6x6);
+        assert_eq!(renamed.frame_size.map(|s| s.samples), Some(1));
+
+        // By hand it replaces the measured one and stays against later measurements.
+        let by_hand = roll_set_frame_size(t.lib(), created.id, Some([0.5, 1.0])).unwrap();
+        assert_eq!(
+            by_hand.frame_size.map(|s| (s.w, s.h, s.samples)),
+            Some((0.5, 1.0, 0))
+        );
+        let after = record_frame_measurement(t.lib(), created.id, [0.1, 0.1]).unwrap();
+        assert_eq!(after.frame_size, by_hand.frame_size);
+
+        for bad in [[0.0, 1.0], [0.5, 1.5], [f32::NAN, 1.0]] {
+            let err = roll_set_frame_size(t.lib(), created.id, Some(bad)).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
+        }
+        let cleared = roll_set_frame_size(t.lib(), created.id, None).unwrap();
+        assert_eq!(cleared.frame_size, None);
+        let err = roll_set_frame_size(t.lib(), RollId::new(), None).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
     }
 
     #[test]

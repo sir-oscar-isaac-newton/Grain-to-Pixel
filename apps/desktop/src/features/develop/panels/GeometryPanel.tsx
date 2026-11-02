@@ -44,6 +44,8 @@ interface GeometryPanelProps {
   /** The picture on screen is the whole scan, so the crop can be edited on it. */
   cropReady: boolean;
   onCroppingChange: (on: boolean) => void;
+  /** Makes the size of the crop the frame size of the roll (frame detection places that size). */
+  onUseAsRollFrameSize: () => void;
   /** The frame the analysis found; null until it is done. */
   detected: DetectedFrame | null;
   /** The straighten slider is in use, so a grid helps to judge a horizon. */
@@ -69,6 +71,7 @@ export function GeometryPanel({
   cropping,
   cropReady,
   onCroppingChange,
+  onUseAsRollFrameSize,
   detected,
   onGuideChange,
   ratio,
@@ -185,6 +188,9 @@ export function GeometryPanel({
             onClick={() => change({ crop: wholeCrop })}
           >
             {t('develop.crop.useWhole')}
+          </button>
+          <button type="button" disabled={locked} onClick={onUseAsRollFrameSize}>
+            {t('develop.crop.useAsRollFrame')}
           </button>
         </div>
         {cropping && (

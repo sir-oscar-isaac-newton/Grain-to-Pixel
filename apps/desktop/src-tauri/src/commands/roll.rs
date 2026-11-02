@@ -55,6 +55,24 @@ pub fn roll_set_film_base(
     Ok(roll)
 }
 
+/// Sets the size of one frame on the roll's captures by hand (width and height as fractions of the
+/// image), or clears it with `null` so it is measured again. Frames that were never edited get a new
+/// automatic crop, so their thumbnails are regenerated in the background.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn roll_set_frame_size(
+    ctx: State<'_, AppContext>,
+    events: State<'_, EventsState>,
+    id: RollId,
+    size: Option<[f32; 2]>,
+) -> CmdResult<Roll> {
+    let library = ctx.library()?;
+    let roll = roll_frame::roll_set_frame_size(&library, id, size)?;
+    let following = roll_frame::frames_following_roll_base(&library, id)?;
+    ctx.regenerate_thumbnails(Arc::clone(&events.0), following)?;
+    Ok(roll)
+}
+
 /// Deletes a roll with its frames, then their files.
 #[tauri::command(async)]
 #[specta::specta]
@@ -162,6 +180,23 @@ mod tests {
         assert_eq!(bad.unwrap_err().code, ErrorCode::InvalidInput);
         let cleared = roll_set_film_base(app.state(), app.state(), roll.id, None).unwrap();
         assert_eq!(cleared.film_base_rgb, None);
+
+        // The frame size is set by hand, checked, and cleared; an update keeps it.
+        let sized = roll_set_frame_size(app.state(), app.state(), roll.id, Some([0.6, 0.9]));
+        let sized = sized.unwrap().frame_size.unwrap();
+        assert_eq!((sized.w, sized.h, sized.samples), (0.6, 0.9, 0));
+        let bad = roll_set_frame_size(app.state(), app.state(), roll.id, Some([0.0, 0.9]));
+        assert_eq!(bad.unwrap_err().code, ErrorCode::InvalidInput);
+        let input = RollInput {
+            name: "Renamed".into(),
+            format: gtp_core::FilmFormat::Mf645,
+            ..RollInput::default()
+        };
+        let updated = roll_update(app.state(), roll.id, input).unwrap();
+        assert_eq!(updated.format, gtp_core::FilmFormat::Mf645);
+        assert!(updated.frame_size.is_some());
+        let cleared = roll_set_frame_size(app.state(), app.state(), roll.id, None).unwrap();
+        assert_eq!(cleared.frame_size, None);
 
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);

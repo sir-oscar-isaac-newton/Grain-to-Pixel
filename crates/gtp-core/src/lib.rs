@@ -18,6 +18,7 @@ pub use job::{
     JobResult, SkipReason, SkippedFile, VerifyProblem, VerifyReason, VerifyResult,
 };
 pub use model::{
-    FilmFormat, Frame, FrameKind, Roll, SearchQuery, SourceFile, SourceRole, Tag, TripletChannel,
+    FilmFormat, Frame, FrameKind, FrameSize, Roll, SearchQuery, SourceFile, SourceRole, Tag,
+    TripletChannel,
 };
 pub use recipe::{migrate, Recipe, RecipeField};

@@ -34,10 +34,10 @@ use gtp_io::{
 use crate::jobs::{JobCtx, LibraryEvents};
 use crate::library_fs::{originals_rel, thumb_rel};
 use crate::paths::display_path;
-use crate::pipeline::{analyze, render, PipelineInput, RenderTarget};
+use crate::pipeline::{analyze_with, frame_hint, render, PipelineInput, RenderTarget};
 use crate::services::counters;
 use crate::services::library::Library;
-use crate::services::roll_frame::{ensure_roll_base, remove_tree};
+use crate::services::roll_frame::{ensure_roll_base, record_frame_measurement, remove_tree};
 use gtp_core::recipe::OutputSpace;
 
 /// What kind of files an import brings in.
@@ -182,20 +182,25 @@ pub(crate) fn analyse_for_import(
     roll: RollId,
     rgb: gtp_core::ImageF32,
 ) -> Result<(Recipe, PipelineInput), AppError> {
-    // The roll's film base as of now: an earlier frame of this import may have set it.
+    // The roll as of now: an earlier frame of this import may have set its film base.
+    let current = library.read(|c| c.get_roll(roll))?;
+    let hint = frame_hint(&current);
     let mut input = PipelineInput {
         rgb: Arc::new(rgb),
         ir: None,
-        film_base: library.read(|c| c.get_roll(roll))?.film_base_rgb,
+        film_base: current.film_base_rgb,
     };
-    let mut analysis = analyze(&input)?;
+    let mut analysis = analyze_with(&input, hint)?;
     if input.film_base.is_none() {
         let ensured = ensure_roll_base(library, roll, analysis.base)?;
         input.film_base = Some(ensured.rgb);
         if !ensured.stored_now {
             // Another import stored a base in the meantime: this frame uses that one.
-            analysis = analyze(&input)?;
+            analysis = analyze_with(&input, hint)?;
         }
+    }
+    if let Some(size) = analysis.frame.measured_size.filter(|_| hint.is_some()) {
+        record_frame_measurement(library, roll, size)?;
     }
     Ok((analysis.auto_recipe, input))
 }

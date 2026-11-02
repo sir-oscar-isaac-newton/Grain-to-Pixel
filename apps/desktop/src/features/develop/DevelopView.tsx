@@ -9,6 +9,7 @@ import {
   developSampleNeutral,
   frameGet,
   rollSetFilmBase,
+  rollSetFrameSize,
   settingsGet,
   type FrameSummary,
   type LevelsPoint,
@@ -294,6 +295,26 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     }
   };
 
+  /** Makes the size of this frame's crop the roll's frame size, which detection uses for its frames. */
+  const makeRollFrameSize = async () => {
+    if (!recipe) return;
+    setWorking(true);
+    try {
+      const rollId =
+        summary?.id === frame.id ? summary.roll_id : (await frameGet(frame.id)).roll_id;
+      const { crop } = geometryOf(recipe);
+      await rollSetFrameSize(rollId, [crop.w, crop.h]);
+      setNotice({ tone: 'info', text: t('develop.crop.rollFrameSet') });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text: t('develop.crop.rollFrameFailed', { message: messageOf(error) }),
+      });
+    } finally {
+      setWorking(false);
+    }
+  };
+
   const open = useCallback(
     (next: FrameSummary, index: number) => openInDevelop(next.id, index),
     [openInDevelop],
@@ -564,6 +585,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 cropping={pick === 'crop'}
                 cropReady={develop.showingScan}
                 onCroppingChange={(on) => setPick(on ? 'crop' : null)}
+                onUseAsRollFrameSize={() => void makeRollFrameSize()}
                 detected={develop.detected}
                 onGuideChange={setGuide}
                 ratio={ratio}

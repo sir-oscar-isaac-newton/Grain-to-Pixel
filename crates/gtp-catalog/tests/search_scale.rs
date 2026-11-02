@@ -256,6 +256,7 @@ fn reading_goes_on_while_another_connection_writes() {
             notes: String::new(),
             film_base_rgb: None,
             film_base_confidence: None,
+            frame_size: None,
             created_at: String::new(),
         })
         .unwrap();

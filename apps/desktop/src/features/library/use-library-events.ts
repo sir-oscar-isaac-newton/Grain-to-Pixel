@@ -56,6 +56,8 @@ export function useLibraryEvents(enabled: boolean) {
                 skipped: result.skipped,
                 warnings: result.warnings,
                 importedFrames: result.frames,
+                baseIsGuess: result.base_is_guess,
+                baseReplaced: result.base_replaced,
               }
             : result.kind === 'Exported'
               ? {

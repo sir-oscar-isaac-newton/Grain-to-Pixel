@@ -146,6 +146,14 @@
     "working": "Working…",
     "lastFailed": "Your last library could not be opened: {{message}}"
   },
+  "filmBase": {
+    "status": {
+      "none": "The roll’s film base: not set yet.",
+      "hand": "The roll’s film base: picked by hand.",
+      "auto": "The roll’s film base: measured automatically ({{percent}} % sure).",
+      "guess": "The roll’s film base: a guess ({{percent}} % sure). Pick it in Develop."
+    }
+  },
   "jobs": {
     "label": "Background jobs",
     "cancel": "Cancel",
@@ -183,6 +191,8 @@
     "skippedFile": "{{path}}: {{reason}}",
     "warnings_one": "{{count}} warning",
     "warnings_other": "{{count}} warnings",
+    "baseGuess": "The film base of this roll is a guess. Pick it in Develop (Film base, Pick film base) for a better result.",
+    "baseReplaced": "A better film base was measured on this import and now replaces the guess. The roll’s other frames follow it.",
     "warningsList": "Warnings",
     "warningLine": "Frame {{frame}}: {{what}}",
     "warning": {

@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 
 use gtp_core::recipe::BaseSource;
 use gtp_core::{
-    AppError, ErrorCode, FilmFormat, Frame, FrameId, FrameKind, FrameSize, ImageF32, Roll, RollId,
+    AppError, BaseChange, ErrorCode, FilmFormat, Frame, FrameId, FrameKind, FrameSize, ImageF32,
+    Roll, RollId,
 };
 use gtp_negative::{auto_film_base, BaseEstimate};
 use serde::{Deserialize, Serialize};
@@ -218,14 +219,19 @@ pub struct EnsuredBase {
     pub rgb: [f32; 3],
     /// Confidence of the automatic measurement; `None` for a base set by hand.
     pub confidence: Option<f32>,
-    /// True when this call stored the base (the roll had none).
+    /// True when this call stored the base (the roll had none, or only a guess).
     pub stored_now: bool,
+    /// True when this call replaced a low-confidence automatic base with a better one; the frames
+    /// that follow the roll's base look different now.
+    pub replaced: bool,
 }
 
 /// Makes sure the roll has a film base. When it has none, `estimate` (measured on a frame of this
 /// roll) is stored with its confidence, so later frames share it; when it already has one, set by
-/// hand or by an earlier frame, that one is returned and never overwritten. A low-confidence
-/// estimate is stored too, and flagged by [`Roll::film_base_uncertain`] for the UI.
+/// hand or by an earlier frame, that one is returned and never overwritten, except that a
+/// low-confidence automatic base (a guess) is replaced by a confident `estimate`. A low-confidence
+/// estimate is stored too when there is none, and flagged by [`Roll::film_base_uncertain`] for the
+/// UI.
 ///
 /// This is the one function import, scan and capture call after analyzing a roll's frame.
 pub fn ensure_roll_base(
@@ -233,15 +239,16 @@ pub fn ensure_roll_base(
     roll: RollId,
     estimate: BaseEstimate,
 ) -> Result<EnsuredBase, AppError> {
-    let (stored, stored_now) = library
-        .write(|c| c.set_roll_film_base_if_unset(roll, estimate.rgb, Some(estimate.confidence)))?;
+    let (stored, change) = library
+        .write(|c| c.improve_roll_film_base(roll, estimate.rgb, Some(estimate.confidence)))?;
     let rgb = stored
         .film_base_rgb
         .ok_or_else(|| AppError::internal("the roll has no film base right after it was stored"))?;
     Ok(EnsuredBase {
         rgb,
         confidence: stored.film_base_confidence,
-        stored_now,
+        stored_now: change != BaseChange::Kept,
+        replaced: change == BaseChange::Replaced,
     })
 }
 
@@ -600,7 +607,8 @@ mod tests {
             EnsuredBase {
                 rgb: [0.8, 0.5, 0.3],
                 confidence: Some(0.9),
-                stored_now: true
+                stored_now: true,
+                replaced: false
             }
         );
         let second = ensure_roll_base(t.lib(), roll.id, estimate([0.1, 0.1, 0.1], 0.99)).unwrap();
@@ -651,6 +659,31 @@ mod tests {
         let stored = t.lib().read(|c| c.get_roll(roll.id)).unwrap();
         assert_eq!(stored.film_base_confidence, Some(0.2));
         assert!(stored.film_base_uncertain());
+    }
+
+    #[test]
+    fn a_guess_gives_way_to_a_confident_estimate_but_not_to_another_guess() {
+        let t = TempLib::new("ensure-replace");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        ensure_roll_base(t.lib(), roll.id, estimate([0.5, 0.4, 0.3], 0.2)).unwrap();
+
+        let still = ensure_roll_base(t.lib(), roll.id, estimate([0.6, 0.4, 0.3], 0.4)).unwrap();
+        assert_eq!(still.rgb, [0.5, 0.4, 0.3]);
+        assert!(!still.stored_now && !still.replaced);
+
+        let better = ensure_roll_base(t.lib(), roll.id, estimate([0.8, 0.5, 0.3], 0.7)).unwrap();
+        assert_eq!(better.rgb, [0.8, 0.5, 0.3]);
+        assert!(better.stored_now && better.replaced);
+        let stored = t.lib().read(|c| c.get_roll(roll.id)).unwrap();
+        assert!(!stored.film_base_uncertain());
+
+        let after = ensure_roll_base(t.lib(), roll.id, estimate([0.1, 0.1, 0.1], 0.99)).unwrap();
+        assert_eq!(
+            after.rgb,
+            [0.8, 0.5, 0.3],
+            "a confident base is never replaced"
+        );
+        assert!(!after.replaced);
     }
 
     #[test]

@@ -150,6 +150,8 @@ export const state = {
   noAnalysis: new Set<string>(),
   /** The roll's film base, as Develop opens a frame. */
   rollBase: null as [number, number, number] | null,
+  /** How sure that base was (null: picked by hand, or none). */
+  rollBaseConfidence: null as number | null,
   /** What picking the base on a frame gives (null: the area is refused). */
   sampledBase: [0.8, 0.5, 0.3] as [number, number, number] | null,
   /** The areas sampled for a film base, in order. */
@@ -412,6 +414,7 @@ export const ipc = {
       has_ir: state.hasIr,
       recipe: makeRecipe('saved'),
       roll_base: state.rollBase,
+      roll_base_confidence: state.rollBaseConfidence,
     };
   }),
   developAnalyze: vi.fn(async (id: string, base: [number, number, number] | null) => {
@@ -547,6 +550,7 @@ export function resetFake() {
   state.noAnalysis = new Set();
   state.sampledBase = [0.8, 0.5, 0.3];
   state.rollBase = null;
+  state.rollBaseConfidence = null;
   state.saved = [];
   state.samples = [];
   state.levelSamples = [];

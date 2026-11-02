@@ -75,8 +75,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             confident += 1;
         }
         println!(
-            "{n:02}: plain {:.2} | window {:.2} crop x {:.3} y {:.3} w {:.3} h {:.3}",
-            plain.frame.confidence, hinted.frame.confidence, c.x, c.y, c.w, c.h
+            "{n:02}: plain {:.2} | window {:.2} crop x {:.3} y {:.3} w {:.3} h {:.3} | base {:.3?} sure {:.2}",
+            plain.frame.confidence, hinted.frame.confidence, c.x, c.y, c.w, c.h, hinted.base.rgb, hinted.base.confidence
         );
         let positive = render(&input, &hinted.auto_recipe, RenderTarget::Full)?;
         encode_jpeg(

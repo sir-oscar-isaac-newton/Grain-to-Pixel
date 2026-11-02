@@ -29,9 +29,22 @@ function JobDetails({ job, t }: { job: JobRow; t: TFunction }) {
   const skipped = job.skipped ?? [];
   const failed = job.failed ?? [];
   const warnings = job.warnings ?? [];
-  if (skipped.length === 0 && failed.length === 0 && warnings.length === 0) return undefined;
+  const base = job.baseIsGuess === true || job.baseReplaced === true;
+  if (skipped.length === 0 && failed.length === 0 && warnings.length === 0 && !base) {
+    return undefined;
+  }
   return (
     <>
+      {job.baseIsGuess === true && (
+        <p className={styles.hint} role="note">
+          {t('jobs.baseGuess')}
+        </p>
+      )}
+      {job.baseReplaced === true && (
+        <p className={styles.hint} role="note">
+          {t('jobs.baseReplaced')}
+        </p>
+      )}
       {skipped.length > 0 && (
         <details className={styles.skipped}>
           <summary>{t('jobs.skippedFiles')}</summary>

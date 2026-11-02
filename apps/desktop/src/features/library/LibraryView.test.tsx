@@ -369,6 +369,8 @@ describe('LibraryView', () => {
               frame_ms: [900, 950],
               warnings: [],
               skipped: [{ path: '/scans/notes.txt', reason: 'NotTiff', details: null }],
+              base_is_guess: true,
+              base_replaced: false,
             },
           }),
         ),
@@ -377,9 +379,29 @@ describe('LibraryView', () => {
       expect(within(jobs).getByText('2 frames imported, 1 file skipped')).toBeInTheDocument();
       await user.click(within(jobs).getByText('Skipped files'));
       expect(within(jobs).getByText('/scans/notes.txt: not a TIFF file')).toBeInTheDocument();
+      // The roll's base is a guess, and the result says where to pick it.
+      expect(within(jobs).getByText(/film base of this roll is a guess/)).toBeInTheDocument();
 
       await user.click(within(jobs).getByRole('button', { name: 'Dismiss' }));
       expect(screen.queryByRole('list', { name: 'Background jobs' })).not.toBeInTheDocument();
+    });
+
+    it('shows how the selected roll’s film base was set', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      expect(screen.queryByText(/The roll’s film base/)).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      expect(screen.getByText('The roll’s film base: not set yet.')).toBeInTheDocument();
+      await act(async () => {
+        await ipc.rollSetFilmBase(
+          state.rolls.find((r) => r.name === 'Winter')?.id ?? '',
+          [0.8, 0.5, 0.3],
+        );
+        await useLibraryStore.getState().reloadRolls();
+      });
+      expect(screen.getByText('The roll’s film base: picked by hand.')).toBeInTheDocument();
     });
 
     it('does nothing when the file picker is cancelled', async () => {
@@ -402,7 +424,15 @@ describe('LibraryView', () => {
         listeners.done.forEach((cb) =>
           cb({
             id: 'fast',
-            result: { kind: 'Imported', frames: ['x'], frame_ms: [10], skipped: [], warnings: [] },
+            result: {
+              kind: 'Imported',
+              frames: ['x'],
+              frame_ms: [10],
+              skipped: [],
+              warnings: [],
+              base_is_guess: false,
+              base_replaced: true,
+            },
           }),
         );
         return 'fast';
@@ -413,6 +443,8 @@ describe('LibraryView', () => {
       await user.click(screen.getByRole('button', { name: 'Import TIFF files…' }));
       const jobs = await screen.findByRole('list', { name: 'Background jobs' });
       expect(within(jobs).getByText('1 frame imported')).toBeInTheDocument();
+      expect(within(jobs).getByText(/replaces the guess/)).toBeInTheDocument();
+      expect(within(jobs).queryByText(/is a guess/)).not.toBeInTheDocument();
 
       act(() => useLibraryStore.getState().dismissJob('fast'));
       act(() =>

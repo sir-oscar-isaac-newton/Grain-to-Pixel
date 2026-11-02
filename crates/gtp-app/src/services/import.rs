@@ -185,17 +185,21 @@ pub(crate) fn analyse_for_import(
     // The roll as of now: an earlier frame of this import may have set its film base.
     let current = library.read(|c| c.get_roll(roll))?;
     let hint = frame_hint(&current);
+    // A roll with no base, or only a guess, measures this frame's base: it is stored when it is
+    // the first, or better than the guess (see `ensure_roll_base`).
+    let measure = current.film_base_rgb.is_none() || current.film_base_uncertain();
     let mut input = PipelineInput {
         rgb: Arc::new(rgb),
         ir: None,
-        film_base: current.film_base_rgb,
+        film_base: current.film_base_rgb.filter(|_| !measure),
     };
     let mut analysis = analyze_with(&input, hint)?;
-    if input.film_base.is_none() {
+    if measure {
         let ensured = ensure_roll_base(library, roll, analysis.base)?;
         input.film_base = Some(ensured.rgb);
         if !ensured.stored_now {
-            // Another import stored a base in the meantime: this frame uses that one.
+            // The roll keeps the base it has (another import stored one, or the guess stands):
+            // this frame uses that one.
             analysis = analyze_with(&input, hint)?;
         }
     }
@@ -203,6 +207,20 @@ pub(crate) fn analyse_for_import(
         record_frame_measurement(library, roll, size)?;
     }
     Ok((analysis.auto_recipe, input))
+}
+
+/// Says in `result` what the import did to the roll's film base: whether it is a guess now, and
+/// whether a guess was replaced by a better measurement. `before` is the roll as the import found it.
+pub(crate) fn report_roll_base(
+    library: &Library,
+    before: &gtp_core::Roll,
+    result: &mut ImportResult,
+) -> Result<(), AppError> {
+    let after = library.read(|c| c.get_roll(before.id))?;
+    result.base_is_guess = after.film_base_uncertain();
+    result.base_replaced =
+        before.film_base_uncertain() && after.film_base_rgb != before.film_base_rgb;
+    Ok(())
 }
 
 /// Renders the 512 px sRGB thumbnail of a new frame from its starting recipe.
@@ -307,7 +325,7 @@ pub fn import_tiffs(
     ctx: &JobCtx,
     events: &dyn LibraryEvents,
 ) -> Result<ImportResult, AppError> {
-    library.read(|c| c.get_roll(roll))?;
+    let before = library.read(|c| c.get_roll(roll))?;
     let grouped = scan_tiff_candidates(paths);
     let mut result = ImportResult {
         skipped: grouped
@@ -347,6 +365,7 @@ pub fn import_tiffs(
         }
     }
     ctx.progress(STAGE, 1.0);
+    report_roll_base(library, &before, &mut result)?;
     Ok(result)
 }
 
@@ -649,6 +668,66 @@ mod tests {
             roll.film_base_uncertain(),
             "confidence {:?}",
             roll.film_base_confidence
+        );
+    }
+
+    #[test]
+    fn a_guessed_roll_base_is_reported_and_a_confident_frame_replaces_it() {
+        let s = Setup::new("guess-replaced");
+        let tight = synthetic::negative(
+            4,
+            &Params {
+                width: 200,
+                height: 140,
+                rebate: [0; 4],
+                pattern: Pattern::Gradient,
+                ..Params::default()
+            },
+        )
+        .unwrap();
+        let tight_path = s.incoming.join("tight.tif");
+        write_tiff16(
+            &tight_path,
+            &from_f32_linear(&tight.image),
+            Compression::None,
+        )
+        .unwrap();
+        let (ctx, _) = JobCtx::standalone();
+        let first = import_tiffs(s.lib(), s.roll, &[tight_path], &ctx, &Events::default()).unwrap();
+        assert!(first.base_is_guess, "the roll's base is a guess");
+        assert!(!first.base_replaced);
+        let guess = s.lib().read(|c| c.get_roll(s.roll)).unwrap().film_base_rgb;
+
+        // A frame with a clear rebate gives a confident base, which replaces the guess.
+        let good = s.scan("good.tif", 1, false);
+        let second = import_tiffs(s.lib(), s.roll, &[good], &ctx, &Events::default()).unwrap();
+        assert!(second.base_replaced && !second.base_is_guess);
+        let roll = s.lib().read(|c| c.get_roll(s.roll)).unwrap();
+        assert!(!roll.film_base_uncertain());
+        assert_ne!(roll.film_base_rgb, guess);
+
+        // From now on the roll's base stays, and a later import says nothing about it.
+        let more = s.scan("more.tif", 2, false);
+        let third = import_tiffs(s.lib(), s.roll, &[more], &ctx, &Events::default()).unwrap();
+        assert!(!third.base_replaced && !third.base_is_guess);
+        assert_eq!(
+            s.lib().read(|c| c.get_roll(s.roll)).unwrap().film_base_rgb,
+            roll.film_base_rgb
+        );
+    }
+
+    #[test]
+    fn a_base_picked_by_hand_is_never_called_a_guess() {
+        let s = Setup::new("hand-not-guess");
+        crate::services::roll_frame::roll_set_film_base(s.lib(), s.roll, Some([0.7, 0.4, 0.2]))
+            .unwrap();
+        let (ctx, _) = JobCtx::standalone();
+        let good = s.scan("good.tif", 1, false);
+        let result = import_tiffs(s.lib(), s.roll, &[good], &ctx, &Events::default()).unwrap();
+        assert!(!result.base_is_guess && !result.base_replaced);
+        assert_eq!(
+            s.lib().read(|c| c.get_roll(s.roll)).unwrap().film_base_rgb,
+            Some([0.7, 0.4, 0.2])
         );
     }
 

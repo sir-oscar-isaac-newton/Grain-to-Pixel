@@ -33,6 +33,12 @@ pub struct ImportResult {
     pub frame_ms: Vec<u32>,
     /// Things worth knowing about imported frames that still were imported (RGB triplets).
     pub warnings: Vec<ImportWarning>,
+    /// The roll's film base is a low-confidence guess after this import: the UI points to the
+    /// picker in Develop.
+    pub base_is_guess: bool,
+    /// This import replaced the roll's guessed film base with a better measured one, so the roll's
+    /// other frames look different now.
+    pub base_replaced: bool,
 }
 
 /// Something to know about an imported frame.

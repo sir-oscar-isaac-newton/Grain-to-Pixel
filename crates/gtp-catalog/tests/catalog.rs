@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use gtp_catalog::{backup_path, Catalog, SCHEMA_VERSION};
 use gtp_core::{
-    ErrorCode, FilmFormat, Frame, FrameId, FrameKind, FrameSize, Recipe, Roll, RollId, SearchQuery,
-    SourceFile, SourceRole,
+    BaseChange, ErrorCode, FilmFormat, Frame, FrameId, FrameKind, FrameSize, Recipe, Roll, RollId,
+    SearchQuery, SourceFile, SourceRole,
 };
 use rusqlite::Connection;
 
@@ -240,32 +240,78 @@ fn the_format_and_frame_size_of_a_roll_are_stored_and_measurements_average_in() 
 }
 
 #[test]
+fn a_guess_is_replaced_by_a_confident_base_and_nothing_else_is() {
+    let dir = TempDir::new("base-replace");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    let guess = [0.5, 0.4, 0.3];
+    let good = [0.8, 0.5, 0.3];
+    cat.improve_roll_film_base(r.id, guess, Some(0.2)).unwrap();
+
+    // Another guess, even a better one, does not replace a guess; a confident base does.
+    let (roll, change) = cat
+        .improve_roll_film_base(r.id, [0.6, 0.4, 0.3], Some(0.4))
+        .unwrap();
+    assert_eq!(
+        (change, roll.film_base_rgb),
+        (BaseChange::Kept, Some(guess))
+    );
+    let (roll, change) = cat.improve_roll_film_base(r.id, good, Some(0.6)).unwrap();
+    assert_eq!(change, BaseChange::Replaced);
+    assert_eq!(
+        (roll.film_base_rgb, roll.film_base_confidence),
+        (Some(good), Some(0.6))
+    );
+    assert!(!roll.film_base_uncertain());
+    // Now it is confident, nothing replaces it.
+    let (_, change) = cat.improve_roll_film_base(r.id, guess, Some(0.9)).unwrap();
+    assert_eq!(change, BaseChange::Kept);
+
+    // A base picked by hand (no confidence) is never replaced, whatever the confidence.
+    let mut by_hand = cat.get_roll(r.id).unwrap();
+    by_hand.film_base_rgb = Some([0.7, 0.7, 0.7]);
+    by_hand.film_base_confidence = None;
+    cat.update_roll(&by_hand).unwrap();
+    let (roll, change) = cat.improve_roll_film_base(r.id, good, Some(1.0)).unwrap();
+    assert_eq!(
+        (change, roll.film_base_rgb),
+        (BaseChange::Kept, Some([0.7, 0.7, 0.7]))
+    );
+
+    // A guess is not replaced by a measurement that is a guess too, or has no confidence.
+    by_hand.film_base_confidence = Some(0.1);
+    cat.update_roll(&by_hand).unwrap();
+    for confidence in [Some(0.3), None] {
+        let (_, change) = cat.improve_roll_film_base(r.id, good, confidence).unwrap();
+        assert_eq!(change, BaseChange::Kept, "{confidence:?}");
+    }
+}
+
+#[test]
 fn the_roll_base_is_stored_only_when_unset_and_checked() {
     let dir = TempDir::new("base-if-unset");
     let mut cat = Catalog::open(&dir.db()).unwrap();
     let r = cat.insert_roll(&roll("R")).unwrap();
-    let (stored, set) = cat
-        .set_roll_film_base_if_unset(r.id, [0.8, 0.5, 0.3], Some(0.7))
+    let (stored, change) = cat
+        .improve_roll_film_base(r.id, [0.8, 0.5, 0.3], Some(0.7))
         .unwrap();
-    assert!(set);
+    assert_eq!(change, BaseChange::Set);
     assert_eq!(stored.film_base_confidence, Some(0.7));
-    let (again, set) = cat
-        .set_roll_film_base_if_unset(r.id, [0.1, 0.1, 0.1], Some(0.99))
+    let (again, change) = cat
+        .improve_roll_film_base(r.id, [0.1, 0.1, 0.1], Some(0.99))
         .unwrap();
-    assert!(!set);
+    assert_eq!(change, BaseChange::Kept, "a confident base stays");
     assert_eq!(again.film_base_rgb, Some([0.8, 0.5, 0.3]));
     for bad in [
         ([0.0, 0.5, 0.3], Some(0.5)),
         ([0.8, 0.5, 0.3], Some(1.2)),
         ([0.8, 0.5, 0.3], Some(f32::NAN)),
     ] {
-        let err = cat
-            .set_roll_film_base_if_unset(r.id, bad.0, bad.1)
-            .unwrap_err();
+        let err = cat.improve_roll_film_base(r.id, bad.0, bad.1).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
     }
     let err = cat
-        .set_roll_film_base_if_unset(RollId::new(), [0.8, 0.5, 0.3], None)
+        .improve_roll_film_base(RollId::new(), [0.8, 0.5, 0.3], None)
         .unwrap_err();
     assert_eq!(err.code, ErrorCode::NotFound);
     // A confidence without a base is refused when a roll is saved.

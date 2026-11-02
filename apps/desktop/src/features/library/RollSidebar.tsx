@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { baseStatus, baseStatusText } from '../../shared/film-base-status';
 import { importFiles, pickTiffFiles, type Roll } from '../../shared/ipc';
 import { DeleteRollDialog } from './DeleteRollDialog';
 import styles from './library.module.css';
@@ -84,6 +85,14 @@ export function RollSidebar() {
             {t('library.rolls.import')}
           </button>
         </div>
+      )}
+      {current && (
+        <p className={styles.hint}>
+          {baseStatusText(
+            baseStatus(current.film_base_rgb !== null, current.film_base_confidence ?? null),
+            t,
+          )}
+        </p>
       )}
 
       <RollEditor

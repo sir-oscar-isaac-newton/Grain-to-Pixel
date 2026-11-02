@@ -16,6 +16,9 @@ const MAX_INTERIOR_SAMPLES: u64 = 100_000;
 const SPREAD_LIMIT: f32 = 0.25;
 /// A border this much brighter than the interior counts as fully separated from the picture.
 const FULL_SEPARATION: f32 = 0.5;
+/// A pixel whose brightest channel is below this fraction of the image's bright end (its 99th
+/// percentile) is the black of a carrier, not film, and is left out of the automatic measurement.
+const BLACK_FRACTION: f32 = 0.02;
 
 /// A rectangle of pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +119,66 @@ fn medians_and_spread(mut samples: [Vec<f32>; 3]) -> Option<([f32; 3], [f32; 3])
     Some((medians, spreads))
 }
 
+/// [`channel_samples`] without the pixels whose brightest channel is at or below `cutoff`.
+fn lit_samples(image: &ImageF32, rect: Rect, step: u32, cutoff: f32) -> [Vec<f32>; 3] {
+    let mut samples: [Vec<f32>; 3] = Default::default();
+    let width = image.width as usize;
+    let step = step.max(1) as usize;
+    for y in (rect.y..rect.y + rect.h).step_by(step) {
+        for x in (rect.x..rect.x + rect.w).step_by(step) {
+            let at = (y as usize * width + x as usize) * 3;
+            if let Some(&[r, g, b]) = image
+                .data
+                .get(at..at + 3)
+                .and_then(|s| <&[f32; 3]>::try_from(s).ok())
+            {
+                if r.max(g).max(b) <= cutoff {
+                    continue;
+                }
+                for (channel, value) in samples.iter_mut().zip([r, g, b]) {
+                    if value.is_finite() {
+                        channel.push(value);
+                    }
+                }
+            }
+        }
+    }
+    samples
+}
+
+/// The level at or below which a pixel counts as carrier black: [`BLACK_FRACTION`] of the 99th
+/// percentile of the brightest channel, over a grid of at most about [`MAX_INTERIOR_SAMPLES`]
+/// pixels. 0 when the image has nothing bright to compare with.
+fn black_cutoff(image: &ImageF32) -> f32 {
+    let step = ((f64::from(image.width) * f64::from(image.height) / MAX_INTERIOR_SAMPLES as f64)
+        .sqrt()
+        .ceil() as usize)
+        .max(1);
+    let width = image.width as usize;
+    let mut brightest: Vec<f32> = Vec::new();
+    for y in (0..image.height as usize).step_by(step) {
+        for x in (0..width).step_by(step) {
+            let at = (y * width + x) * 3;
+            if let Some(px) = image.data.get(at..at + 3) {
+                let top = px.iter().copied().fold(f32::MIN, f32::max);
+                if top.is_finite() {
+                    brightest.push(top);
+                }
+            }
+        }
+    }
+    if brightest.is_empty() {
+        return 0.0;
+    }
+    brightest.sort_unstable_by(f32::total_cmp);
+    let p99 = brightest[(brightest.len() - 1) * 99 / 100];
+    if p99 > 0.0 {
+        p99 * BLACK_FRACTION
+    } else {
+        0.0
+    }
+}
+
 fn is_usable_base(rgb: [f32; 3]) -> bool {
     rgb.iter().all(|v| v.is_finite() && *v > 0.0)
 }
@@ -145,12 +208,15 @@ pub fn sample_film_base(image: &ImageF32, region: Rect) -> Result<[f32; 3], AppE
 /// Takes a thin strip along each of the four edges, computes its per-channel median and keeps the
 /// brightest strip, because unexposed film is brighter than any picture content. The confidence
 /// combines how uniform that strip is with how much brighter it is than the interior of the
-/// picture. A scan cropped so tightly that it has no rebate gets a low confidence.
+/// picture. A scan cropped so tightly that it has no rebate gets a low confidence. Carrier black
+/// (see [BLACK_FRACTION]) is not film and is ignored, so opaque margins of a camera capture cannot
+/// win a strip or pull its spread up.
 pub fn auto_film_base(image: &ImageF32) -> Result<BaseEstimate, AppError> {
     require_rgb(image)?;
     let (width, height) = (image.width, image.height);
     let shorter = width.min(height);
     let strip = ((shorter as f32 * STRIP_FRACTION).round() as u32).clamp(1, shorter);
+    let cutoff = black_cutoff(image);
 
     let strips = [
         Rect {
@@ -180,7 +246,7 @@ pub fn auto_film_base(image: &ImageF32) -> Result<BaseEstimate, AppError> {
     ];
     let best = strips
         .into_iter()
-        .filter_map(|rect| medians_and_spread(channel_samples(image, rect, 1)))
+        .filter_map(|rect| medians_and_spread(lit_samples(image, rect, 1, cutoff)))
         .filter(|(rgb, _)| is_usable_base(*rgb))
         .max_by(|a, b| mean(a.0).total_cmp(&mean(b.0)))
         .ok_or_else(|| {
@@ -206,7 +272,7 @@ pub fn auto_film_base(image: &ImageF32) -> Result<BaseEstimate, AppError> {
             w,
             h,
         };
-        medians_and_spread(channel_samples(image, rect, step)).map(|(m, _)| mean(m))
+        medians_and_spread(lit_samples(image, rect, step, cutoff)).map(|(m, _)| mean(m))
     } else {
         None
     };
@@ -305,6 +371,50 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The scan with an opaque black margin of `pad` columns on its left and right.
+    fn with_black_margins(s: &Synthetic, pad: usize) -> ImageF32 {
+        let (w, h) = (s.image.width as usize, s.image.height as usize);
+        let mut data = Vec::with_capacity((w + 2 * pad) * h * 3);
+        for y in 0..h {
+            data.extend(std::iter::repeat_n(0.0005, pad * 3));
+            data.extend_from_slice(&s.image.data[y * w * 3..(y + 1) * w * 3]);
+            data.extend(std::iter::repeat_n(0.0005, pad * 3));
+        }
+        ImageF32::new((w + 2 * pad) as u32, h as u32, 3, data).unwrap()
+    }
+
+    #[test]
+    fn carrier_black_is_ignored_by_the_automatic_search() {
+        let s = scan(
+            12,
+            &Params {
+                width: 200,
+                height: 150,
+                rebate: [16; 4],
+                ..Params::default()
+            },
+        );
+        let plain = auto_film_base(&s.image).unwrap();
+        // Margins so wide that black is most of every border strip, and of the interior.
+        let padded = auto_film_base(&with_black_margins(&s, 300)).unwrap();
+        assert_within(padded.rgb, s.truth.base, 0.01);
+        assert!(
+            (padded.confidence - plain.confidence).abs() <= 0.1,
+            "{} vs {}",
+            padded.confidence,
+            plain.confidence
+        );
+    }
+
+    #[test]
+    fn there_is_no_cutoff_without_anything_bright_to_compare_with() {
+        let flat = ImageF32::new(20, 20, 3, vec![0.0; 20 * 20 * 3]).unwrap();
+        assert_eq!(black_cutoff(&flat), 0.0);
+        let s = scan(13, &Params::default());
+        let brightest = s.image.data.iter().copied().fold(0.0, f32::max);
+        assert!(black_cutoff(&s.image) < brightest * 0.05);
     }
 
     #[test]

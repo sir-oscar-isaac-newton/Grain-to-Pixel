@@ -598,6 +598,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               <BaseInvertPanel
                 recipe={recipe}
                 rollBase={info?.roll_base ? triple(info.roll_base, 1) : null}
+                rollBaseConfidence={info?.roll_base_confidence ?? null}
                 readOnly={readOnly}
                 pick={pick === 'neutral' || pick === 'crop' ? null : pick}
                 pickReady={pick === 'base' ? develop.showingScan : develop.showingFrame}

@@ -1699,3 +1699,24 @@ MIGRATIONS: none.
 TESTS: the panel with mocked ipc (values, ranges, keyboard steps, reset, disabled in a read-only library), the recipe helpers, the Apply settings group, axe.
 NOTES: asked for while P-15 was approved, since sharpening has no control in the UI, so it is GitHub issue #152, not 77 (issue and pull request numbers share one sequence). Use 152 as its `number` in docs/progress.md. The Output group copies the whole output block (colour space as well as sharpening); the export dialog still chooses the colour space of an export.
 DELIVERY (decided when U-16 was approved): the Apply settings dialog's new group copies the whole output block (`RecipeField::Output`), so the colour space the recipe carries comes with the sharpening; it has no effect on export, where the export dialog chooses the space, and splitting the group would have meant a backend change in a UI issue. The group is unticked at first, like most. The sliders ask for no preview, since sharpening is applied only at export, and the panel says so; the effect can only be judged on an exported file for now.
+
+## H-11
+title: Channel check from image colour
+milestone: M5
+type: feature
+size: S
+estimate: 0.5d
+deps: H-04
+adr: no
+spec: specification section 6 (triplet_group) and section 6.1
+desc: Tell which of the exposures of a triplet is red, green or blue from the image itself, since each is lit by one LED colour. Read the dominant colour of the full-size JPEG preview embedded in each NEF; use it to assign the channels of a triplet candidate and to flag a mismatch with the capture order. The same function is what the guided capture (H-08) calls to check that a shot was lit by the LED that was on.
+ac:
+- A function returns the dominant channel (red, green, blue or unknown) of a camera file and how clear it is, from the embedded JPEG preview; a dark or ambiguous frame is unknown
+- `triplet_group` carries the guess of each file; a candidate whose three guesses are red, green and blue in another order is returned in that order, and a candidate with two files of the same colour is flagged; files with an unknown guess keep the order of their capture times
+- Checked on the private D600 session by an ignored local test: every file of the 15 triplets and of the Barelight triplet gets the channel that its place in the triplet predicts
+tech:
+FILES: crates/gtp-ingest/src/channel.rs (`dominant_channel(path) -> ChannelGuess`, the preview found by scanning a NEF for its largest embedded JPEG and decoded at reduced size), triplet.rs (the guess on each file, the reordering and the new `ChannelMismatch` problem), src-tauri/src/commands/ingest.rs only if the types change.
+ROUTES: `triplet_group` (its result gains the guess of each file).
+MIGRATIONS: none.
+TESTS: dominant colour of synthetic previews (each colour, dark, ambiguous), grouping with guesses (in order, shuffled, two of one colour, unknown), the ignored test on the private D600 session.
+NOTES: asked for while H-04 was approved, so it is GitHub issue #167, not 78 (issue and pull request numbers share one sequence). Use 167 as its `number` in docs/progress.md. On the first 18 files of the private session the dominant colour of the preview cycled red, green, blue in capture order with at least 13 times the next channel (blue is the weakest). The preview is processed by the camera, so its numbers tell the channels apart but are not for judging exposure; raw colour planes need the NEF decode of H-05 and are not part of this issue. The guided capture (H-08) should call `dominant_channel` after each shot and stop with a clear error when the shot does not match the LED that was on. A JPEG decoder crate is added (check cargo deny).

@@ -1859,3 +1859,27 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: manifest parsing for both kinds, matching by name, an 8-bit reference, a synthetic LS-50 pair through the report with a ΔE of about 0, and an ignored run on the author's 12 pairs.
 NOTES: asked for after the author pointed out that Nikon Scan positives exist for the LS-50 negatives in samples/private, beside the Trichroma Lab exports. It builds on the report of Q-02 and waits for that pull request to be merged. Whether the Film log look or a later look should be compared with Nikon Scan's rendition is for the author to judge from the report. GitHub issue: #190.
+
+## P-21
+title: Flat-field correction for camera triplets
+milestone: M5
+type: feature
+size: M
+estimate: 1d
+deps: H-06, U-09
+adr: yes
+spec: specification section 4.2 (load) and rules/colour-pipeline.md
+desc: Each exposure of a camera triplet is lit by a different LED colour, and the light is uneven across the frame, differently for each colour. On the author's roll the flat field (bare light, the same settings) falls to 0.38 to 0.61 of the centre at the edges, and red falls off most, which gives a red cast along the edges of every frame. A scratch test that divided each channel by the flat field removed most of it. Add the correction as a step of its own: a flat-field triplet is imported for a roll, and every triplet frame of that roll is divided by it when the frame is loaded.
+ac:
+- A flat-field triplet (three NEF files, red, green and blue, with the same settings as the frames and no film) can be imported for a roll; the three exposures are merged like a frame, reduced to a smooth per-channel gain grid and normalized by the centre, with the gain floored so the extreme edges stay finite
+- Every triplet frame of that roll is divided by the gain when it is loaded, which covers Develop, export, thumbnails and the analysis at import; the stored originals are not changed; a flat field of another size than the frame is refused with a message
+- A roll without a flat field behaves exactly as today, and the golden tests do not change
+- Attaching or replacing a flat field regenerates the thumbnails of the roll's frames and measures an automatic film base again from the corrected frame; a base picked by hand stays
+- On the author's 15 triplets with the bare-light capture the mean red-minus-green edge excess falls by at least half, and the median ΔE of the benchmark report does not get worse
+- The Frontier look (P-20) is fitted again on the corrected frames, and the new numbers and the ΔE are recorded in docs/research/benchmark.md
+tech:
+FILES: crates/gtp-core (the flat field type), crates/gtp-catalog (a flat_field table and roll.flat_field_id), crates/gtp-app (building and applying the gain; the load path of triplet frames that Develop, export and import share; a service and a command to import and attach one), apps/desktop/src/features/import and library (a Flat field step and the roll status), en.json, decisions/ (the ADR).
+ROUTES: flat_field_import(paths, roll_id), flat_field_clear(roll_id); roll_list carries whether the roll has one.
+MIGRATIONS: one, for the flat_field table (the smoothed gain grid and the names of the source files) and a nullable roll.flat_field_id.
+TESTS: a uniform flat field changes nothing, a synthetic vignette is removed, a size mismatch is refused, the migration keeps existing rolls, attaching measures an automatic base again and leaves a hand-picked one, the UI step with mocked ipc, the goldens unchanged, and an ignored run on the real roll with the benchmark report.
+NOTES: asked for after the red edge cast showed in the renders of the Frontier look (P-20); the flat-field capture in samples/private (DSC_4602 to DSC_4604) has the same settings as the frames. Stored as a small gain grid in the catalog, not as copies of the NEF files, and attached to one roll; a named flat field shared by several rolls would be a later issue, and so would one estimated from the picture without a capture. Frames loaded without the correction stay as they were until the roll's flat field is attached. GitHub issue: #194.

@@ -28,7 +28,7 @@ git push origin v0.1.0
 ```
 
 3. Wait for the `Release` workflow. Its `check the tag` job fails at once if the tag, the two versions or the public key do not agree.
-4. Open the draft release on GitHub. It should hold the Windows `-setup.exe` with its `.sig`, the macOS `.dmg`, the `.app.tar.gz` with its `.sig`, and `latest.json`. Read the notes the app will show, and install the draft's installers once on each system.
+4. Open the draft release on GitHub. It should hold the Windows `-setup.exe` with its `.sig`, the macOS `.dmg`, the `.app.tar.gz` with its `.sig`, and `latest.json`, and the source archive of the pinned rawler (`rawler-<version>.crate`, attached by the last job of the workflow: the LGPL-2.1 asks for it, see `docs/rebuild-with-rawler.md`). Read the notes the app will show, and install the draft's installers once on each system.
 5. Publish the draft. A tag with a hyphen (`v0.1.0-rc.1`) is published as a prerelease, which the updater does not offer.
 
 ## Dry run on a prerelease tag

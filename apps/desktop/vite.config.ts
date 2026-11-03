@@ -6,7 +6,8 @@ export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   server: { port: 1420, strictPort: true, host: '127.0.0.1' },
-  build: { target: 'es2022', outDir: 'dist', emptyOutDir: true },
+  // The licence texts of the components (About and licences) are one 2 MB chunk loaded on demand.
+  build: { target: 'es2022', outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 2200 },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],

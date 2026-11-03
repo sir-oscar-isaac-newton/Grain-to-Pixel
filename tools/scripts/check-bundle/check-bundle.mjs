@@ -98,6 +98,30 @@ export function findReleaseProblems(conf, cargoToml, tag) {
   return problems;
 }
 
+/**
+ * Every reason the release workflow would not attach the source of the pinned rawler (LGPL-2.1,
+ * ADR 0007, Q-08): it must run the script that fetches it and upload the result to the release, and
+ * Cargo.lock must carry the checksum the script verifies the archive against.
+ */
+export function findSourceArchiveProblems(workflow, cargoLock) {
+  const problems = [];
+  if (!workflow.includes('tools/scripts/release/rawler-source.mjs')) {
+    problems.push(
+      'release.yml does not fetch the source of rawler (tools/scripts/release/rawler-source.mjs)',
+    );
+  }
+  if (!/uploads\.github\.com\/repos\/[^\s"]*\/assets\?name=/.test(workflow)) {
+    problems.push('release.yml does not attach the rawler source archive to the release');
+  }
+  const block =
+    /\[\[package\]\]\s*name = "rawler"\s*version = "[^"]+"[^[]*?checksum = "[0-9a-f]{64}"/.test(
+      cargoLock,
+    );
+  if (!block)
+    problems.push('Cargo.lock has no rawler with a checksum to verify its source against');
+  return problems;
+}
+
 /** The size line for an installer, and whether it is within the limit. */
 export function sizeReport(bytes, maxMb = MAX_INSTALLER_MB) {
   const mb = bytes / (1024 * 1024);
@@ -126,6 +150,12 @@ function main(args) {
   if (mode === 'release' && rest[0]) {
     const conf = JSON.parse(readFileSync(DEFAULT_CONF, 'utf8'));
     const problems = findReleaseProblems(conf, readFileSync(CARGO_TOML, 'utf8'), rest[0]);
+    problems.push(
+      ...findSourceArchiveProblems(
+        readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8'),
+        readFileSync(path.join(root, 'Cargo.lock'), 'utf8'),
+      ),
+    );
     for (const problem of problems) console.error(`check-bundle: ${problem}`);
     return problems.length ? 1 : 0;
   }

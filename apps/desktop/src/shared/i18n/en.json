@@ -336,6 +336,14 @@
       "off": "The update check is switched off. Switch on “Check for updates” in the feature flags below to use this button.",
       "failed": "Could not check for updates: {{message}}"
     },
+    "about": {
+      "heading": "About and licences",
+      "rawler": "Grain to Pixel uses rawler to read camera NEF files, under the GNU Lesser General Public License, version 2.1. You can rebuild the app with a modified rawler: see docs/rebuild-with-rawler.md in the source.",
+      "licence": "The licence of Grain to Pixel",
+      "notices": "Credits and notices",
+      "components": "The licence text of every component",
+      "componentsFailed": "The licence texts could not be loaded: {{message}}"
+    },
     "diagnostics": {
       "heading": "Diagnostics",
       "intro": "If something goes wrong, you can save a zip with the logs, the versions, your feature flags, the counters below and the last job errors. It holds no pictures and no folder names, and nothing is sent anywhere: you decide whether to share it.",

@@ -6,7 +6,8 @@ exclude = ["tools/scripts/check-deps/tests/fixtures", "tools/spikes/nef-probe"]
 [workspace.package]
 version = "0.0.0"
 edition = "2021"
-license = "LicenseRef-Private"
+license = "LicenseRef-GrainToPixel"
+license-file = "LICENSE"
 
 # Convention section 1: no unsafe, no panicking shortcuts, no printing, in committed code.
 # Tests are exempt through clippy.toml. Every crate opts in with `[lints] workspace = true`.

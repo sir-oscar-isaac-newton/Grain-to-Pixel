@@ -114,3 +114,35 @@
   display: flex;
   gap: var(--space-2);
 }
+
+.preview {
+  margin: var(--space-3) 0;
+}
+
+.previewScroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border, #8884);
+  border-radius: 4px;
+}
+
+/* The strip at its own size, with a line where each frame starts if the frames are evenly spaced. */
+.previewStrip {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.previewStrip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(var(--pitch) - 1px),
+    rgb(255 255 255 / 70%) calc(var(--pitch) - 1px),
+    rgb(255 255 255 / 70%) var(--pitch)
+  );
+}

@@ -153,7 +153,9 @@ describe('ImportView: camera files', () => {
       'Two of these files were lit in the same colour, so they cannot be red, green and blue.',
     ]);
     // No confirm box or move buttons on them, and the files are numbered, not named by channel.
-    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    // (The scanner section above has its own checkbox, for the infrared.)
+    const found = within(screen.getByRole('list', { name: 'Triplets found' }));
+    expect(found.getAllByRole('checkbox')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: /Move DSC_0004/ })).not.toBeInTheDocument();
     expect(
       within(screen.getByRole('list', { name: 'Files of triplet 2' })).getAllByRole('listitem')[0],

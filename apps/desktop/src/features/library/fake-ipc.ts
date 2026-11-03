@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 import type {
   AppError,
   Counters,
+  DeviceInfo,
   FolderCheck,
   FramePage,
   FrameSummary,
@@ -13,6 +14,8 @@ import type {
   Preview,
   Recipe,
   Roll,
+  RollPreviewImage,
+  ScanRequest,
   SearchQuery,
   Tag,
   TripletCandidate,
@@ -235,6 +238,16 @@ export const state = {
   picked: '/films/Library' as string | null,
   /** What the camera-file picker returns (the files the user chose). */
   pickedCamera: [] as string[],
+  /** What scanner_list answers, or the message it fails with. */
+  devices: [{ id: 'usb:1', name: 'Nikon LS-50 ED' }] as DeviceInfo[],
+  devicesFail: null as string | null,
+  /** What scan_resume_point answers. */
+  resume: 1,
+  /** What scan_start fails with, if it does. */
+  scanFail: null as string | null,
+  /** What scan_preview answers, or the message it fails with. */
+  previewImage: null as RollPreviewImage | null,
+  previewFail: null as string | null,
   /** What 	riplet_group answers. */
   triplets: [] as TripletCandidate[],
   tripletsFail: null as string | null,
@@ -555,6 +568,35 @@ export const ipc = {
     }
     return 'job-verify-1';
   }),
+  scannerList: vi.fn(async (): Promise<DeviceInfo[]> => {
+    if (state.devicesFail) {
+      throw new IpcError({ code: 'ScannerUnavailable', message: state.devicesFail });
+    }
+    return [...state.devices];
+  }),
+  scanResumePoint: vi.fn(async (roll: string) => {
+    void roll;
+    return state.resume;
+  }),
+  scanStart: vi.fn(async (roll: string, request: ScanRequest) => {
+    void [roll, request];
+    if (state.scanFail) throw new IpcError({ code: 'ScannerUnavailable', message: state.scanFail });
+    return 'job-scan';
+  }),
+  scanPreview: vi.fn(async (device: string): Promise<RollPreviewImage> => {
+    void device;
+    if (state.previewFail) throw new IpcError({ code: 'ScanFailed', message: state.previewFail });
+    return (
+      state.previewImage ?? {
+        frame_count: 4,
+        pitch: 100,
+        strip_width: 400,
+        strip_height: 96,
+        strip_jpeg: [0xff, 0xd8, 0xff, 0xd9],
+      }
+    );
+  }),
+  scanPreviewCancel: vi.fn(async () => true),
   jobCancel: vi.fn(async () => true),
   onLibraryChanged: vi.fn((cb: (roll: string | null, frameIds: string[]) => void) =>
     subscribe(listeners.changed, cb),
@@ -614,6 +656,12 @@ export function resetFake() {
   state.rollTags = {};
   state.picked = '/films/Library';
   state.pickedCamera = [];
+  state.devices = [{ id: 'usb:1', name: 'Nikon LS-50 ED' }];
+  state.devicesFail = null;
+  state.resume = 1;
+  state.scanFail = null;
+  state.previewImage = null;
+  state.previewFail = null;
   state.triplets = [];
   state.tripletsFail = null;
   listeners.changed.length = 0;

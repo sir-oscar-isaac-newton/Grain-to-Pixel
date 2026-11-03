@@ -569,6 +569,15 @@
       "number": 186,
       "title": "Cinema log look (Blackmagic Film Gen 5) as a starting point for editing",
       "branch": "feat/issue-186-film-log-look",
+      "status": "completed",
+      "pr": 189,
+      "commit": "331a308"
+    },
+    {
+      "id": "H-02",
+      "number": 47,
+      "title": "NkscanSource adapter",
+      "branch": "feat/issue-47-nkscan-source",
       "status": "in_progress",
       "pr": null,
       "commit": null

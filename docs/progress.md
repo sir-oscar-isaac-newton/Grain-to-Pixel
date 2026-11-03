@@ -605,9 +605,9 @@
       "number": 174,
       "title": "Licence terms and third-party notices",
       "branch": "chore/issue-174-licence-notices",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 206,
+      "commit": "d7eb915"
     }
   ]
 }

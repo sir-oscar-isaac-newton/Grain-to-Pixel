@@ -1894,17 +1894,17 @@ deps: H-02
 needs: hw
 adr: no
 spec: specification section 6; ADR 0003; docs/research/nkscan.md
-desc: Show the whole roll before it is scanned. nkscan writes one framing thumbnail per scan run, a strip of about 5150 x 96 pixels with every frame of the roll side by side, about a minute after the film is loaded and before any frame is focused or metered, together with the number of frames it detected. Add a preview to the scanner port that returns that strip and the frame count without scanning the frames, and cut the strip into frames at an even pitch as the detected positions.
+desc: Show the whole roll before it is scanned. nkscan writes one framing thumbnail per scan run, a strip of about 5150 x 96 pixels with every frame of the roll side by side, about a minute after the film is loaded and before any frame is focused or metered, together with the number of frames it detected. Add a preview to the scanner port that returns that strip and the frame count without scanning the frames, and give the strip back whole with the pitch of evenly spaced frames as the detected positions.
 ac:
 - ScannerSource gets a preview method that returns the 16-bit strip and the detected frame count; FixtureSource implements it from a fixture strip so everything is tested without the scanner
 - NkscanSource previews by running a scan with --thumbnail and --frames 1, waits for the thumbnail file, and then stops the process without ejecting the film; a cancel stops it at once; a scanner that writes no thumbnail gives a clear error
-- The strip is turned into a positive with a quick film-base estimate and cut into one picture per frame at an even pitch (strip width divided by the frame count); the pictures and the frame count come back from a scan_preview command
-- Tests cover the cutting, the inversion, cancel, the missing thumbnail and the fixture; the hardware check on the author's LS-50 on Windows (and macOS) is recorded in docs/research/nkscan.md
+- The strip is turned into a positive with the pipeline's automatic film base and levels and comes back whole, with the frame count and the pitch of evenly spaced frames (strip width divided by the frame count), from a scan_preview command; it is not cut into frames, so the contact sheet (H-13) can move a grid over it
+- Tests cover the pitch, the inversion, cancel, the missing thumbnail and the fixture; the hardware check on the author's LS-50 on Windows (and macOS) is recorded in docs/research/nkscan.md
 tech:
 FILES: crates/gtp-ingest/src/scanner.rs (the port), fixture.rs and nkscan.rs (the two implementations); crates/gtp-app/src/services (the preview service); apps/desktop/src-tauri/src/commands/ingest.rs; docs/research/nkscan.md.
-ROUTES: scan_preview(device_id) -> RollPreview { frame_count, frames: frame pictures }.
+ROUTES: scan_preview(device_id) -> RollPreviewImage { frame_count, pitch, strip_width, strip_height, strip_jpeg }; scan_preview_cancel().
 MIGRATIONS: none.
-TESTS: cutting at an even pitch, the inversion, cancel while waiting, no thumbnail written, the fixture preview, and the fake nkscan (examples/fake_nkscan.rs gets a thumbnail mode); a hardware checklist for the human.
+TESTS: the pitch, the inversion, cancel while waiting, no thumbnail written, the fixture preview, and the fake nkscan (examples/fake_nkscan.rs gets a thumbnail mode); a hardware checklist for the human.
 NOTES: measured on the author's roll (2026-11-02): 36 frames, a 5149 x 96 strip of the uninverted negatives, 3 MB, written about 59 s after the start. The strip is too small to judge sharpness; it shows which frames are exposed and how they lie. Frame positions that are not evenly spaced are adjusted in H-13. nkscan always writes the thumbnail as <basename>_1_thumbnail.tiff. GitHub issue: #198.
 
 ## R-06

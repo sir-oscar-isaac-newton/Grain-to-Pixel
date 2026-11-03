@@ -1883,3 +1883,71 @@ ROUTES: flat_field_import(paths, roll_id), flat_field_clear(roll_id); roll_list 
 MIGRATIONS: one, for the flat_field table (the smoothed gain grid and the names of the source files) and a nullable roll.flat_field_id.
 TESTS: a uniform flat field changes nothing, a synthetic vignette is removed, a size mismatch is refused, the migration keeps existing rolls, attaching measures an automatic base again and leaves a hand-picked one, the UI step with mocked ipc, the goldens unchanged, and an ignored run on the real roll with the benchmark report.
 NOTES: asked for after the red edge cast showed in the renders of the Frontier look (P-20); the flat-field capture in samples/private (DSC_4602 to DSC_4604) has the same settings as the frames. Stored as a small gain grid in the catalog, not as copies of the NEF files, and attached to one roll; a named flat field shared by several rolls would be a later issue, and so would one estimated from the picture without a capture. Frames loaded without the correction stay as they were until the roll's flat field is attached. GitHub issue: #194.
+
+## H-12
+title: Roll preview from the scanner's framing thumbnail
+milestone: M4
+type: feature
+size: M
+estimate: 1d
+deps: H-02
+needs: hw
+adr: no
+spec: specification section 6; ADR 0003; docs/research/nkscan.md
+desc: Show the whole roll before it is scanned. nkscan writes one framing thumbnail per scan run, a strip of about 5150 x 96 pixels with every frame of the roll side by side, about a minute after the film is loaded and before any frame is focused or metered, together with the number of frames it detected. Add a preview to the scanner port that returns that strip and the frame count without scanning the frames, and give the strip back whole with the pitch of evenly spaced frames as the detected positions.
+ac:
+- ScannerSource gets a preview method that returns the 16-bit strip and the detected frame count; FixtureSource implements it from a fixture strip so everything is tested without the scanner
+- NkscanSource previews by running a scan with --thumbnail and --frames 1, waits for the thumbnail file, and then stops the process without ejecting the film; a cancel stops it at once; a scanner that writes no thumbnail gives a clear error
+- The strip is turned into a positive with the pipeline's automatic film base and levels and comes back whole, with the frame count and the pitch of evenly spaced frames (strip width divided by the frame count), from a scan_preview command; it is not cut into frames, so the contact sheet (H-13) can move a grid over it
+- Tests cover the pitch, the inversion, cancel, the missing thumbnail and the fixture; the hardware check on the author's LS-50 on Windows (and macOS) is recorded in docs/research/nkscan.md
+tech:
+FILES: crates/gtp-ingest/src/scanner.rs (the port), fixture.rs and nkscan.rs (the two implementations); crates/gtp-app/src/services (the preview service); apps/desktop/src-tauri/src/commands/ingest.rs; docs/research/nkscan.md.
+ROUTES: scan_preview(device_id) -> RollPreviewImage { frame_count, pitch, strip_width, strip_height, strip_jpeg }; scan_preview_cancel().
+MIGRATIONS: none.
+TESTS: the pitch, the inversion, cancel while waiting, no thumbnail written, the fixture preview, and the fake nkscan (examples/fake_nkscan.rs gets a thumbnail mode); a hardware checklist for the human.
+NOTES: measured on the author's roll (2026-11-02): 36 frames, a 5149 x 96 strip of the uninverted negatives, 3 MB, written about 59 s after the start. The strip is too small to judge sharpness; it shows which frames are exposed and how they lie. Frame positions that are not evenly spaced are adjusted in H-13. nkscan always writes the thumbnail as <basename>_1_thumbnail.tiff. GitHub issue: #198.
+
+## R-06
+title: Spike - scan at a custom frame position with nkscan
+milestone: M4
+type: spike
+size: S
+estimate: 0.5d
+deps: H-02
+needs: hw
+adr: yes
+labels: spike
+spec: specification section 6; ADR 0003; docs/research/nkscan.md
+desc: Frame detection on a roll can be off (frames cut at the wrong place, uneven spacing), and the author wants to move the frame grid. The nkscan README describes no way to set where a frame sits: --frames only picks frames, and --format sets a frame length on the LS-8000 and LS-9000 only. Find out whether the LS-50 on the SA-30 roll adapter can be told to scan a frame at another position or pitch, and how.
+ac:
+- The nkscan library API (PYTHON.md and the crate sources of the pinned release) is read for anything that sets a frame position, pitch or offset, and the finding is recorded
+- If something exists, a probe scans one frame at a shifted position on the author's LS-50 and the shift is measured against the default frame (human reports)
+- If nothing exists, the options are written down with a recommendation: a contribution to nkscan, a patched fork, or the grid only selecting frames and the app cropping from a wider scan
+- docs/research/nkscan.md is updated and an ADR records the decision if it changes how the adapter talks to nkscan
+tech:
+SCOPE: reading and a throwaway probe; no change to NkscanSource unless the decision says so.
+NOTES: asked for together with the roll preview (H-12). H-13 applies the frame grid as far as this spike allows. The scanner reports the frame length in lines (5959 at 4000 dpi on 35 mm) and 36 detected frames on the author's roll. GitHub issue: #199.
+
+## H-13
+title: Roll contact sheet with frame spacing adjustment
+milestone: M4
+type: feature
+size: M
+estimate: 1d
+deps: H-12, H-03, R-06
+adr: no
+spec: specification section 6
+desc: Before a roll is scanned, show the preview of the whole roll as a contact sheet, let the user move the frame grid when the detected frames are off, and choose which frames to scan. The grid is kept with the roll so that a resumed scan uses the same one.
+ac:
+- The roll preview (H-12) is shown as a strip with a frame grid over it and one picture per frame; blank frames are easy to see
+- The grid can be moved as a whole, its pitch changed, and a single frame nudged, with the result shown at once; a reset returns to the detected positions
+- Frames can be ticked or unticked, and the scan job (H-03) gets the chosen frames and the adjusted positions
+- The adjusted grid is stored with the roll and used again when the scan is resumed
+- The grid reaches the scanner as far as the outcome of R-06 allows; where it cannot, the grid selects frames and the app crops, and the screen says so
+- Tests cover the grid maths (move, pitch, nudge, reset), the stored grid, the frame selection and the screen with mocked ipc and a fixture strip
+tech:
+FILES: apps/desktop/src/features/scan (the contact sheet view and the grid editor), crates/gtp-catalog (the grid stored per roll), crates/gtp-app (the chosen frames and positions in the scan job), en.json.
+ROUTES: scan_start carries the chosen frames and positions; roll_set_frame_grid(roll_id, grid) and the grid in roll_list.
+MIGRATIONS: one, for the grid stored per roll.
+TESTS: grid maths, the migration, the screen with mocked ipc, the scan job with FixtureSource and a grid.
+NOTES: asked for after the roll preview (H-12): the frame detection can be off on some rolls. How far the grid can steer the scanner is decided by the spike R-06; write the proposal for this issue after R-06 is done. GitHub issue: #200.

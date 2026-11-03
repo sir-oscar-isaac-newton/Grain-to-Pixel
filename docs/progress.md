@@ -601,6 +601,15 @@
       "commit": "f0ec92b"
     },
     {
+      "id": "U-08",
+      "number": 51,
+      "title": "Scanner import UI",
+      "branch": "feat/issue-51-scanner-ui",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
       "id": "Q-08",
       "number": 174,
       "title": "Licence terms and third-party notices",

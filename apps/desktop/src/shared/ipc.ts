@@ -9,6 +9,7 @@ import {
   type ClientLogLevel,
   type Counters,
   type CrashNote,
+  type DeviceInfo,
   type ExportedFile,
   type FailedExport,
   type FilmFormat,
@@ -18,6 +19,8 @@ import {
   type LibraryInfo,
   type Look,
   type Recipe,
+  type RollPreviewImage,
+  type ScanRequest,
   type Settings,
   type SettingsPatch,
   type SkipReason,
@@ -37,6 +40,7 @@ export type {
   ClientLogLevel,
   Counters,
   CrashNote,
+  DeviceInfo,
   ExportedFile,
   FailedExport,
   FilmFormat,
@@ -45,6 +49,8 @@ export type {
   LibraryDetails,
   LibraryInfo,
   Look,
+  RollPreviewImage,
+  ScanRequest,
   Settings,
   SettingsPatch,
   SkipReason,
@@ -279,6 +285,31 @@ export type FrameSummary = FramePage['items'][number];
 /** What the first-run dialog shows about a folder. Nothing is created. */
 export async function folderCheck(path: string): Promise<FolderCheck> {
   return unwrap(await commands.folderCheck(path));
+}
+
+/** The scanners that can be used now; fails with the reason (not connected, wrong driver ...) when none. */
+export async function scannerList(): Promise<DeviceInfo[]> {
+  return unwrap(await commands.scannerList());
+}
+
+/** The frame number a scan of the roll should continue at: one after the last scanned (1 when none). */
+export async function scanResumePoint(roll: string): Promise<number> {
+  return unwrap(await commands.scanResumePoint(roll));
+}
+
+/** Scans the requested frames into the roll as a job; each frame is stored as soon as it is done. */
+export async function scanStart(roll: string, request: ScanRequest): Promise<string> {
+  return unwrap(await commands.scanStart(roll, request));
+}
+
+/** The whole roll as the scanner's thumbnail (a positive strip) with the frame count and pitch. */
+export async function scanPreview(device: string): Promise<RollPreviewImage> {
+  return unwrap(await commands.scanPreview(device));
+}
+
+/** Stops a running roll preview; false when none is running. */
+export async function scanPreviewCancel(): Promise<boolean> {
+  return commands.scanPreviewCancel();
 }
 
 /** Stops a running job; false when it is not running (already finished), which is harmless. */

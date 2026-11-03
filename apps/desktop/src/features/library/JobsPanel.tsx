@@ -87,7 +87,7 @@ function JobDetails({ job, t }: { job: JobRow; t: TFunction }) {
 export function describeJob(job: JobRow, t: TFunction, language: string): ProgressItem {
   const parts: string[] = [];
   if (job.state === 'done' && job.imported !== undefined) {
-    parts.push(t('jobs.imported', { count: job.imported }));
+    parts.push(t(job.kind === 'scan' ? 'jobs.scanned' : 'jobs.imported', { count: job.imported }));
   }
   if (job.skipped && job.skipped.length > 0) {
     parts.push(t('jobs.skipped', { count: job.skipped.length }));
@@ -119,7 +119,9 @@ export function describeJob(job: JobRow, t: TFunction, language: string): Progre
         ? t('jobs.export', { count: job.frames ?? 0 })
         : job.kind === 'verify'
           ? t('jobs.verify')
-          : t('jobs.import', { roll: job.rollName }),
+          : job.kind === 'scan'
+            ? t('jobs.scan', { roll: job.rollName })
+            : t('jobs.import', { roll: job.rollName }),
     fraction: job.fraction,
     state: job.state,
     stateLabel: t(`jobs.${job.state}`),

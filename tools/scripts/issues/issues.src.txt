@@ -1951,3 +1951,27 @@ ROUTES: scan_start carries the chosen frames and positions; roll_set_frame_grid(
 MIGRATIONS: one, for the grid stored per roll.
 TESTS: grid maths, the migration, the screen with mocked ipc, the scan job with FixtureSource and a grid.
 NOTES: asked for after the roll preview (H-12): the frame detection can be off on some rolls. How far the grid can steer the scanner is decided by the spike R-06; write the proposal for this issue after R-06 is done. GitHub issue: #200.
+
+## P-22
+title: Automatic colour balance
+milestone: M5
+type: feature
+size: M
+estimate: 1d
+deps: P-20, P-21, Q-09
+adr: yes
+spec: specification section 4.2 (colour) and rules/colour-pipeline.md
+desc: The automatic recipe sets no colour balance, so the remaining error against the reference renders is colour. On the author's 15 triplets (flat-field corrected, Frontier look) the casts change from frame to frame (b* up to 12 off on frame 3, 6 to 7 off on frames 4, 9, 14 and 15, a* 5 to 7 off on frames 8, 13 and 14), and the LS-50 scans against Nikon Scan are off by a steady a* -17 and b* -10 to -13, which is a calibration and not a scene effect. Add an automatic step that finds the neutral of a frame or a roll and writes it into the existing colour axes of the automatic recipe, chosen by measuring several estimators on the benchmark.
+ac:
+- Three estimators are implemented and measured with the benchmark report: the mean colour of mid-tone pixels, the mean of the least saturated mid-tone pixels, and one correction per roll from the median over its frames, stored like the film base
+- With the split of P-20 (ten triplets fitted, five held out), the chosen estimator lowers the mean colour cast (the size of our mean a* and b* minus the reference's) on the held-out frames by at least half, and does not raise it on any LS-50 stock
+- The median ΔE of the benchmark report does not get worse for the Neutral and Frontier looks
+- A frame with no usable neutral (a mostly saturated picture) gets no correction, and says so, instead of a wild one
+- The correction is written into the existing colour axes (red-cyan, green-magenta, blue-yellow) of the automatic recipe, so Develop shows it and the user can change or undo it; the recipe schema does not change
+- The golden tests are unchanged, or are re-blessed with the reason written down; the numbers, the estimators compared and the choice are recorded in an ADR and docs/research/benchmark.md
+tech:
+FILES: crates/gtp-edit (the estimators, next to neutral_balance), crates/gtp-app (analyze writes the result; the per-roll correction if chosen), tools/benchmark (a cast column per estimator), decisions/ (the ADR), docs/research/benchmark.md.
+ROUTES: none new; develop_analyze returns the recipe with the correction.
+MIGRATIONS: none, unless the per-roll correction is chosen: then a nullable column on the roll like the film base.
+TESTS: a synthetic frame with a known cast is balanced to neutral, a colourful frame is left alone, the roll median ignores one odd frame, balancing a balanced frame changes nothing, the goldens, and an ignored run of the benchmark on the real sets.
+NOTES: the steady LS-50 offset is measured separately; if it survives the balance it becomes its own per-source calibration issue. Written to wait for PR 192 (P-20, P-21 and Q-09, held for the author's rescans of five 8-bit positives): the numbers are judged against Q-09. Methods that learn from the user's edits, per-hue grading and a calibrated scanner profile are not part of it. GitHub issue: #204.

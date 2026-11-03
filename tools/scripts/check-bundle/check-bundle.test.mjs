@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import {
   findConfigProblems,
   findDebugPortProblems,
   findReleaseProblems,
+  findSourceArchiveProblems,
   PUBKEY_PLACEHOLDER,
   sizeReport,
   workspaceVersion,
@@ -16,6 +17,7 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, 'check-bundle.mjs');
+const root = path.resolve(here, '../../..');
 
 const good = () => ({
   version: '0.1.0',
@@ -146,6 +148,32 @@ test('release mode reads the real files and rejects a tag of another version', (
   assert.equal(run(['release']).status, 2);
 });
 
+test('a release must attach the rawler source and be able to check it', () => {
+  const workflow = `run: node tools/scripts/release/rawler-source.mjs "$RUNNER_TEMP/rawler"
+run: gh api --method POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/1/assets?name=x"`;
+  const lock = `[[package]]
+name = "rawler"
+version = "0.8.0"
+source = "registry"
+checksum = "${'a'.repeat(64)}"
+`;
+  assert.deepEqual(findSourceArchiveProblems(workflow, lock), []);
+
+  assert.match(findSourceArchiveProblems('', lock).join(), /does not fetch the source of rawler/);
+  const fetchOnly = 'run: node tools/scripts/release/rawler-source.mjs x';
+  assert.match(findSourceArchiveProblems(fetchOnly, lock).join(), /does not attach/);
+  assert.match(findSourceArchiveProblems(workflow, '').join(), /no rawler with a checksum/);
+  assert.match(
+    findSourceArchiveProblems(workflow, '[[package]]\nname = "rawler"\nversion = "0.8.0"\n').join(),
+    /no rawler with a checksum/,
+  );
+});
+
+test('the real release workflow attaches the rawler source', () => {
+  const workflow = readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8');
+  const lock = readFileSync(path.join(root, 'Cargo.lock'), 'utf8');
+  assert.deepEqual(findSourceArchiveProblems(workflow, lock), []);
+});
 test('the size is in megabytes and the limit is inclusive', () => {
   const mb = 1024 * 1024;
   assert.equal(sizeReport(40 * mb).ok, true);

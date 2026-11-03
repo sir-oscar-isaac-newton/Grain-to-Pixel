@@ -86,6 +86,9 @@ jobs:
       - name: Progress record is valid
         run: pnpm check:progress
 
+      - name: Third-party notices are complete and current
+        run: pnpm check:notices
+
       - name: Installer settings
         run: pnpm check:bundle
 

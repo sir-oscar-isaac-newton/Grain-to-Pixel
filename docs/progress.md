@@ -599,6 +599,15 @@
       "status": "completed",
       "pr": 203,
       "commit": "f0ec92b"
+    },
+    {
+      "id": "Q-08",
+      "number": 174,
+      "title": "Licence terms and third-party notices",
+      "branch": "chore/issue-174-licence-notices",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

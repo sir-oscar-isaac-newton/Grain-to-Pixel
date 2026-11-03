@@ -43,6 +43,19 @@
   user-select: text;
 }
 
+.licenceText {
+  max-height: 24rem;
+  overflow: auto;
+  margin: 0.5rem 0 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border, #8884);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .muted {
   margin: 0;
   color: var(--text-muted);

@@ -1,0 +1,14 @@
+Grain to Pixel
+
+Copyright (c) 2026 sir-oscar-isaac-newton
+
+You may use this software, modify it for your own use, and reverse-engineer it to the extent needed
+to debug your modifications. You may not distribute the software, or a modified version of it, to
+anyone else.
+
+The software is provided as it is, without any warranty of any kind.
+
+Third-party components keep their own licences, which are listed in docs/third-party-notices.md and
+docs/third-party-licenses.txt, and shown in the app under Settings. In particular, the NEF decoder
+rawler is used under the GNU Lesser General Public License, version 2.1; the instructions for
+rebuilding the app with a modified rawler are in docs/rebuild-with-rawler.md.

@@ -12,6 +12,7 @@ import {
 } from '../../shared/ipc';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import { useLibraryEvents } from '../library/use-library-events';
+import { AboutSection } from './AboutSection';
 import { DiagnosticsSection } from './DiagnosticsSection';
 import { FLAG_NAMES, flagsOf, type FlagName, type FlagValues } from './flags';
 import { KeyboardSettings } from './KeyboardSettings';
@@ -249,6 +250,8 @@ export function SettingsView() {
       </section>
 
       {flags && <KeyboardSettings overrides={keys} onSave={saveKeys} busy={savingKeys} />}
+
+      <AboutSection />
     </section>
   );
 }

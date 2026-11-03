@@ -88,3 +88,32 @@ jobs:
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           updaterJsonPreferNsis: true
+
+  # The LGPL-2.1 asks for the source of the rawler version the app is linked with (Q-08, ADR 0007):
+  # it is fetched from crates.io, checked against Cargo.lock and attached to the draft release.
+  source:
+    name: attach the rawler source
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Fetch the source archive of the pinned rawler
+        id: archive
+        run: echo "file=$(node tools/scripts/release/rawler-source.mjs "$RUNNER_TEMP/rawler")" >> "$GITHUB_OUTPUT"
+
+      # A draft release is not found by its tag, so its id is looked up in the list of releases.
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FILE: ${{ steps.archive.outputs.file }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | .id")
+          gh api --method POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$id/assets?name=$(basename "$FILE")" -H "Content-Type: application/octet-stream" --input "$FILE"

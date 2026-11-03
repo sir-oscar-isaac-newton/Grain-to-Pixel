@@ -24,6 +24,7 @@ pub use pipeline::{
     PREVIEW_EDGE, PROXY_EDGE, STAGE_ORDER,
 };
 pub use services::counters::Counters;
+pub use services::flat_field::{apply_flat_field, flat_field_from_exposures};
 pub use services::library::{Library, LibraryDetails};
 pub use services::settings::{
     Flags, FlagsPatch, Settings, SettingsPatch, SettingsStore, Theme, WindowSize,

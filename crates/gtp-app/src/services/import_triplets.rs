@@ -33,6 +33,7 @@ use super::import::{
 use crate::jobs::{JobCtx, LibraryEvents};
 use crate::library_fs::originals_rel;
 use crate::services::counters;
+use crate::services::flat_field::apply_flat_field;
 use crate::services::library::Library;
 
 /// A triplet that was not imported, or a failure that stops the whole job.
@@ -171,8 +172,16 @@ fn import_one(
     progress(3.0);
     ctx.check_cancelled()?;
 
-    let warnings: Vec<ImportWarningKind> = merged.warnings.iter().map(warning_kind).collect();
-    let (recipe, input) = analyse_for_import(library, roll, merged.image, look)?;
+    let mut warnings: Vec<ImportWarningKind> = merged.warnings.iter().map(warning_kind).collect();
+    // The roll's flat field takes the unevenness of the light out of the picture the analysis and the
+    // thumbnail are made from; the originals stored above are the raw planes.
+    let mut image = merged.image;
+    if let Some(flat) = library.read(|c| c.get_flat_field(roll))? {
+        if !apply_flat_field(&mut image, &flat)? {
+            warnings.push(ImportWarningKind::FlatFieldSkipped);
+        }
+    }
+    let (recipe, input) = analyse_for_import(library, roll, image, look)?;
     progress(4.0);
     ctx.check_cancelled()?;
 
@@ -419,6 +428,146 @@ mod tests {
         import_triplets(s.lib(), s.roll, paths, &s.fake, &ctx, &Events::default())
     }
 
+    /// A bare-light picture of `w` x `h`: the light falls off towards the left and right edges, red
+    /// most, green less, blue not at all.
+    fn bare_light(w: u32, h: u32) -> ImageF32 {
+        let mut data = Vec::new();
+        for _y in 0..h {
+            for x in 0..w {
+                let u = (x as f32 + 0.5) / w as f32 * 2.0 - 1.0;
+                let edge = u * u;
+                data.extend([1.0 - 0.6 * edge, 1.0 - 0.3 * edge, 1.0]);
+            }
+        }
+        ImageF32::new(w, h, 3, data).unwrap()
+    }
+
+    /// Puts the three exposures of a bare-light capture into the fake decoder under `name`.
+    fn add_bare_light(s: &mut Setup, name: &str, light: &ImageF32) -> [PathBuf; 3] {
+        let paths = ["r", "g", "b"].map(|c| s.dir.join(format!("flat/{name}{c}.NEF")));
+        for (lit, path) in paths.iter().enumerate() {
+            s.fake.0.insert(path.clone(), Ok(exposure(light, lit)));
+        }
+        paths
+    }
+
+    fn attach(
+        s: &Setup,
+        paths: &[PathBuf; 3],
+    ) -> Result<crate::services::flat_field::FlatFieldInfo, AppError> {
+        crate::services::flat_field::flat_field_attach(
+            s.lib(),
+            s.roll,
+            [&paths[0], &paths[1], &paths[2]],
+            &s.fake,
+        )
+    }
+
+    #[test]
+    fn a_roll_with_a_flat_field_loads_its_triplet_frames_corrected_and_keeps_the_originals() {
+        let mut s = Setup::new("flat-load", 1);
+        let flat_paths = add_bare_light(&mut s, "a", &bare_light(W, H));
+        let info = attach(&s, &flat_paths).unwrap();
+        assert_eq!((info.frame_width, info.frame_height), (W, H));
+        assert_eq!(
+            info.sources,
+            ["flat/ar.NEF", "flat/ag.NEF", "flat/ab.NEF"].map(|n| n
+                .rsplit('/')
+                .next()
+                .unwrap()
+                .to_owned())
+        );
+        assert!(s.lib().read(|c| c.get_roll(s.roll)).unwrap().has_flat_field);
+
+        let result = run(&s, &s.files).unwrap();
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        let id = result.frames[0];
+        let sources = s.lib().read(|c| c.sources_of(id)).unwrap();
+        let flat = s.lib().read(|c| c.get_flat_field(s.roll)).unwrap().unwrap();
+
+        // The stored originals are the raw planes; loading with the flat field divides them.
+        let raw = read_scan(s.lib(), &sources, None).unwrap();
+        let corrected = read_scan(s.lib(), &sources, Some(&flat)).unwrap();
+        let at = |image: &ImageF32, x: usize, y: usize, ch: usize| {
+            image.data[(y * W as usize + x) * 3 + ch]
+        };
+        let (y, edge, centre) = (H as usize / 2, 3usize, W as usize / 2);
+        // At the centre nothing changes; at the left edge red is lifted most, blue not at all.
+        for ch in 0..3 {
+            let ratio = at(&corrected, centre, y, ch) / at(&raw, centre, y, ch);
+            assert!((ratio - 1.0).abs() < 0.03, "centre, channel {ch}: {ratio}");
+        }
+        let lift = |ch: usize| at(&corrected, edge, y, ch) / at(&raw, edge, y, ch);
+        assert!(
+            lift(0) > lift(1) && lift(1) > lift(2),
+            "{} {} {}",
+            lift(0),
+            lift(1),
+            lift(2)
+        );
+        assert!(
+            (lift(2) - 1.0).abs() < 0.05 && lift(0) > 1.5,
+            "{} {}",
+            lift(0),
+            lift(2)
+        );
+
+        // Develop opens the frame corrected too (its proxy is built from the corrected picture).
+        let develop = DevelopService::default();
+        let info = develop.open(s.lib(), id).unwrap();
+        assert_eq!((info.width, info.height), (W, H));
+
+        // Without the flat field the same frame loads as the raw picture.
+        s.lib().write(|c| c.clear_flat_field(s.roll)).unwrap();
+        let plain = read_scan(s.lib(), &sources, None).unwrap();
+        assert_eq!(plain, raw);
+    }
+
+    #[test]
+    fn a_flat_field_of_another_size_is_refused_when_frames_exist_and_skipped_for_a_later_frame() {
+        let mut s = Setup::new("flat-size", 1);
+        run(&s, &s.files).unwrap();
+        let small = add_bare_light(&mut s, "small", &bare_light(100, 70));
+        let err = attach(&s, &small).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(!s.lib().read(|c| c.get_roll(s.roll)).unwrap().has_flat_field);
+
+        // On a roll with no frames it is accepted; a frame of another size then imports without it.
+        let mut empty = Setup::new("flat-skip", 1);
+        let small = add_bare_light(&mut empty, "small", &bare_light(100, 70));
+        attach(&empty, &small).unwrap();
+        let result = run(&empty, &empty.files).unwrap();
+        assert_eq!(result.frames.len(), 1, "the frame is still imported");
+        assert_eq!(
+            result.warnings.iter().map(|w| w.kind).collect::<Vec<_>>(),
+            [ImportWarningKind::FlatFieldSkipped]
+        );
+    }
+
+    #[test]
+    fn attaching_a_flat_field_measures_an_automatic_base_again_and_leaves_one_picked_by_hand() {
+        let mut s = Setup::new("flat-base", 2);
+        run(&s, &s.files).unwrap();
+        let before = s.lib().read(|c| c.get_roll(s.roll)).unwrap();
+        assert!(before.film_base_confidence.is_some(), "an automatic base");
+        let flat_paths = add_bare_light(&mut s, "a", &bare_light(W, H));
+        attach(&s, &flat_paths).unwrap();
+        assert!(crate::services::flat_field::remeasure_roll_base(s.lib(), s.roll).unwrap());
+        let after = s.lib().read(|c| c.get_roll(s.roll)).unwrap();
+        assert!(after.film_base_rgb.is_some() && after.film_base_confidence.is_some());
+        assert_ne!(
+            after.film_base_rgb, before.film_base_rgb,
+            "measured on the corrected frame"
+        );
+
+        // A base picked by hand is not touched.
+        crate::services::roll_frame::roll_set_film_base(s.lib(), s.roll, Some([0.7, 0.5, 0.3]))
+            .unwrap();
+        assert!(!crate::services::flat_field::remeasure_roll_base(s.lib(), s.roll).unwrap());
+        let kept = s.lib().read(|c| c.get_roll(s.roll)).unwrap();
+        assert_eq!(kept.film_base_rgb, Some([0.7, 0.5, 0.3]));
+        assert_eq!(kept.film_base_confidence, None);
+    }
     #[test]
     fn three_triplets_become_three_frames_with_three_single_channel_originals_each() {
         let s = Setup::new("three", 3);
@@ -469,7 +618,7 @@ mod tests {
         let result = run(&s, &s.files).unwrap();
         let id = result.frames[0];
         let sources = s.lib().read(|c| c.sources_of(id)).unwrap();
-        let image = read_scan(s.lib(), &sources).unwrap();
+        let image = read_scan(s.lib(), &sources, None).unwrap();
         assert_eq!((image.width, image.height, image.channels), (W, H, 3));
         for channel in 0..3 {
             let exposure = s.fake.0[&s.files[channel]].as_ref().unwrap();
@@ -700,7 +849,7 @@ mod tests {
         );
         for id in &result.frames {
             let sources = s.lib().read(|c| c.sources_of(*id)).unwrap();
-            let image = read_scan(s.lib(), &sources).unwrap();
+            let image = read_scan(s.lib(), &sources, None).unwrap();
             assert_eq!((image.width, image.height, image.channels), (6016, 4016, 3));
         }
     }

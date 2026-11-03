@@ -19,10 +19,10 @@ use gtp_core::recipe::{CurvePoint, CURVE_POINTS_MAX};
 use crate::srgb_decode;
 
 /// The fitted values: the sigmoid's slope and pivot, the gamma after it, and the saturation.
-pub const FRONTIER_SLOPE: f64 = 4.918;
-pub const FRONTIER_PIVOT: f64 = 0.525;
-pub const FRONTIER_GAMMA: f64 = 1.069;
-pub const FRONTIER_SATURATION: f64 = 0.465;
+pub const FRONTIER_SLOPE: f64 = 5.719;
+pub const FRONTIER_PIVOT: f64 = 0.495;
+pub const FRONTIER_GAMMA: f64 = 1.284;
+pub const FRONTIER_SATURATION: f64 = 0.562;
 
 /// What the fit may choose between: the curve and the saturation stay inside these.
 pub const SLOPE_RANGE: (f64, f64) = (0.5, 14.0);

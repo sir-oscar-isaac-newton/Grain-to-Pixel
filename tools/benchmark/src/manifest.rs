@@ -5,7 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
-use gtp_core::{AppError, ErrorCode, FilmFormat};
+use gtp_app::{flat_field_from_exposures, RawlerDecoder};
+use gtp_core::{AppError, ErrorCode, FilmFormat, FlatField};
 use serde::Deserialize;
 
 /// The roll the pairs belong to when the manifest names none.
@@ -50,7 +51,21 @@ pub struct Manifest {
     /// The film base when it is known (for every roll); measured on the frames of each roll the way
     /// the app does when not.
     pub film_base: Option<[f32; 3]>,
+    /// The three bare-light exposures (red, green, blue) the camera frames are divided by, as the
+    /// app does with a roll's flat field (P-21).
+    pub flat_field: Option<[PathBuf; 3]>,
     pub pairs: Vec<Pair>,
+}
+
+impl Manifest {
+    /// The flat field made of the manifest's exposures, with the app's own code; none when it names
+    /// none. Decodes three raw files, so make it once.
+    pub fn load_flat_field(&self) -> Result<Option<FlatField>, AppError> {
+        let Some([r, g, b]) = &self.flat_field else {
+            return Ok(None);
+        };
+        flat_field_from_exposures([r, g, b], &RawlerDecoder).map(Some)
+    }
 }
 
 #[derive(Deserialize)]
@@ -75,6 +90,8 @@ struct RawManifest {
     format: Option<String>,
     #[serde(default)]
     film_base: Option<[f32; 3]>,
+    #[serde(default)]
+    flat_field: Option<[String; 3]>,
     pairs: Vec<RawPair>,
 }
 
@@ -170,9 +187,20 @@ pub fn parse(text: &str, folder: &Path) -> Result<Manifest, AppError> {
         }
         pairs.push(entry);
     }
+    let flat_field = raw.flat_field.map(|f| f.map(|p| resolve(&p)));
+    if let Some(files) = &flat_field {
+        if let Some(missing) = files.iter().find(|f| !f.is_file()) {
+            return Err(AppError::new(
+                ErrorCode::NotFound,
+                "A flat field file of the manifest does not exist.",
+            )
+            .with_details(missing.display().to_string()));
+        }
+    }
     Ok(Manifest {
         format,
         film_base: raw.film_base,
+        flat_field,
         pairs,
     })
 }
@@ -364,6 +392,25 @@ mod tests {
         // Without a format the roll is 645, and without a base it is measured.
         let plain = parse(&format!(r#"{{"pairs":[{}]}}"#, pair("01")), &dir).unwrap();
         assert_eq!((plain.format, plain.film_base), (FilmFormat::Mf645, None));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_flat_field_is_three_files_that_exist() {
+        let dir = folder("flat");
+        let with = |flat: &str| format!(r#"{{"flat_field":{flat},"pairs":[{}]}}"#, pair("01"));
+        let ok = parse(&with(r#"["r.nef","g.nef","b.nef"]"#), &dir).unwrap();
+        assert_eq!(
+            ok.flat_field,
+            Some([dir.join("r.nef"), dir.join("g.nef"), dir.join("b.nef")])
+        );
+        let none = parse(&format!(r#"{{"pairs":[{}]}}"#, pair("01")), &dir).unwrap();
+        assert_eq!(none.flat_field, None);
+        assert_eq!(none.load_flat_field().unwrap(), None);
+
+        assert!(parse(&with(r#"["r.nef","g.nef"]"#), &dir).is_err());
+        let err = parse(&with(r#"["r.nef","g.nef","gone.nef"]"#), &dir).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

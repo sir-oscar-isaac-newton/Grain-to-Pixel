@@ -331,6 +331,51 @@ describe('LibraryView', () => {
     });
   });
 
+  describe('the flat field', () => {
+    it('is set from three picked files, shown, and removed again', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      state.pickedCamera = ['/f/r.NEF', '/f/g.NEF', '/f/b.NEF'];
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      expect(screen.getByText('No flat field.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Remove flat field' })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Set flat field…' }));
+      await waitFor(() =>
+        expect(ipc.flatFieldImport).toHaveBeenCalledWith('winter', [
+          '/f/r.NEF',
+          '/f/g.NEF',
+          '/f/b.NEF',
+        ]),
+      );
+      expect(await screen.findByText(/^Flat field set/)).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Remove flat field' }));
+      expect(await screen.findByText('No flat field.')).toBeInTheDocument();
+      expect(ipc.flatFieldClear).toHaveBeenCalledWith('winter');
+    });
+
+    it('does nothing when the picker is cancelled, and says why when it fails', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      state.pickedCamera = [];
+      await user.click(screen.getByRole('button', { name: 'Set flat field…' }));
+      expect(ipc.flatFieldImport).not.toHaveBeenCalled();
+
+      state.pickedCamera = ['/f/a.NEF'];
+      ipc.flatFieldImport.mockRejectedValueOnce(new Error('Three files are needed.'));
+      await user.click(screen.getByRole('button', { name: 'Set flat field…' }));
+      expect(
+        await screen.findByText('The flat field could not be changed: Three files are needed.'),
+      ).toBeInTheDocument();
+    });
+  });
+
   describe('importing', () => {
     it('imports the picked scans into the roll and follows the job to its result', async () => {
       const user = userEvent.setup();

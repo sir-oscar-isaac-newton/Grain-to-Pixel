@@ -13,6 +13,13 @@ const COLUMNS: &str = "id, name, film_stock, format, camera, iso_box, iso_shot, 
     notes, film_base_r, film_base_g, film_base_b, created_at, film_base_confidence,
     frame_w, frame_h, frame_samples";
 
+/// [`COLUMNS`] and whether the roll has a flat field, for reading a roll (not for writing one).
+const SELECT_COLUMNS: &str =
+    "id, name, film_stock, format, camera, iso_box, iso_shot, shot_from, shot_to,
+    notes, film_base_r, film_base_g, film_base_b, created_at, film_base_confidence,
+    frame_w, frame_h, frame_samples,
+    EXISTS(SELECT 1 FROM flat_field WHERE flat_field.roll_id = roll.id)";
+
 fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
     let base: [Option<f32>; 3] = [row.get(10)?, row.get(11)?, row.get(12)?];
     Ok(Roll {
@@ -39,6 +46,7 @@ fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
             }),
             _ => None,
         },
+        has_flat_field: row.get::<_, i64>(18)? != 0,
         created_at: row.get(13)?,
     })
 }
@@ -194,7 +202,7 @@ impl Catalog {
         let tx = self.conn.transaction().map_err(db_error)?;
         let current = tx
             .query_row(
-                &format!("SELECT {COLUMNS} FROM roll WHERE id = ?1"),
+                &format!("SELECT {SELECT_COLUMNS} FROM roll WHERE id = ?1"),
                 [id.to_string()],
                 read,
             )
@@ -259,7 +267,7 @@ impl Catalog {
     pub fn get_roll(&self, id: RollId) -> Result<Roll, AppError> {
         self.conn
             .query_row(
-                &format!("SELECT {COLUMNS} FROM roll WHERE id = ?1"),
+                &format!("SELECT {SELECT_COLUMNS} FROM roll WHERE id = ?1"),
                 [id.to_string()],
                 read,
             )
@@ -273,7 +281,7 @@ impl Catalog {
         let mut stmt = self
             .conn
             .prepare(&format!(
-                "SELECT {COLUMNS} FROM roll ORDER BY created_at DESC, rowid DESC"
+                "SELECT {SELECT_COLUMNS} FROM roll ORDER BY created_at DESC, rowid DESC"
             ))
             .map_err(db_error)?;
         let rolls = stmt

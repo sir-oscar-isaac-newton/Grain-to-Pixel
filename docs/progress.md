@@ -590,6 +590,15 @@
       "status": "in_progress",
       "pr": null,
       "commit": null
+    },
+    {
+      "id": "P-21",
+      "number": 194,
+      "title": "Flat-field correction for camera triplets",
+      "branch": "feat/issue-194-flat-field",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 
 use gtp_core::recipe::{Color, Crop, Invert, BASE_MAX, BASE_MIN};
 use gtp_core::{
-    AppError, ErrorCode, Frame, FrameId, ImageF32, Look, Recipe, RecipeField, SourceFile,
-    SourceRole,
+    AppError, ErrorCode, FlatField, Frame, FrameId, ImageF32, Look, Recipe, RecipeField,
+    SourceFile, SourceRole,
 };
 use gtp_edit::{neutral_balance, Area};
 use gtp_io::{read_tiff16, to_f32_linear, Limits};
@@ -31,6 +31,7 @@ use crate::pipeline::{
     to_rgba8_srgb, Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
 };
 use crate::services::counters;
+use crate::services::flat_field::apply_flat_field;
 use crate::services::library::Library;
 use crate::services::roll_frame::{hint_for_frame, record_frame_measurement};
 
@@ -272,10 +273,21 @@ fn superseded() -> AppError {
 }
 
 /// Decodes a frame's picture at full size (linear f32, 3 channels): its RGB scan, or for a camera
-/// triplet the red, green and blue originals, each a single-channel plane, put together.
-pub(crate) fn read_scan(library: &Library, sources: &[SourceFile]) -> Result<ImageF32, AppError> {
+/// triplet the red, green and blue originals, each a single-channel plane, put together and divided
+/// by the roll's flat field when it has one.
+pub(crate) fn read_scan(
+    library: &Library,
+    sources: &[SourceFile],
+    flat: Option<&FlatField>,
+) -> Result<ImageF32, AppError> {
     let Some(scan) = sources.iter().find(|s| s.role == SourceRole::Rgb) else {
-        return read_triplet(library, sources);
+        // Only camera triplets are corrected: the light they were made in is uneven. A flat field
+        // of another size than the frame is skipped; the import says so (see `flat_field`).
+        let mut image = read_triplet(library, sources)?;
+        if let Some(flat) = flat {
+            apply_flat_field(&mut image, flat)?;
+        }
+        return Ok(image);
     };
     let path = library.resolve(Path::new(&scan.rel_path))?;
     let tiff = read_tiff16(&path, &Limits::default())?;
@@ -370,7 +382,8 @@ pub(crate) fn read_ir_or_skip(
 
 /// Decodes a frame's original and builds its proxy (and that of its infrared plane).
 fn load(library: &Library, sources: &[SourceFile], frame: &Frame) -> Result<Entry, AppError> {
-    let full = read_scan(library, sources)?;
+    let flat = library.read(|c| c.get_flat_field(frame.roll_id))?;
+    let full = read_scan(library, sources, flat.as_ref())?;
     let proxy = build_proxy(&full, PROXY_EDGE)?;
     let ir = read_ir_or_skip(library, sources, frame, (full.width, full.height))
         .map(|plane| build_plane_proxy(&plane, PROXY_EDGE))

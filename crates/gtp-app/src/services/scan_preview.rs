@@ -113,6 +113,14 @@ impl ScanPreviewService {
         result
     }
 
+    /// True while a preview runs.
+    pub fn is_running(&self) -> bool {
+        self.running
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
+    }
+
     /// Stops the running preview; false when none is running.
     pub fn cancel(&self) -> bool {
         match &*self.running.lock().unwrap_or_else(PoisonError::into_inner) {

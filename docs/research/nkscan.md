@@ -143,3 +143,21 @@ nkscan, the next preview found "load a film strip" (the scanner reported no film
 until the timeout; the film had to be put back by hand. A scan started straight after a kill is not
 affected (above). If the film is gone after a longer pause, the preview now times out with that
 message in its details instead of hanging.
+
+## The roll-scan job (H-03)
+
+`scan_start(roll_id, request)` runs `ScannerSource::scan` as a `Scan` job (`gtp-app::services::scan`).
+Each frame the scanner finishes is stored before the next is scanned, by the same code as a TIFF
+import (`store_frame`: originals with read-back check and hash, starting recipe with the Starting
+look, thumbnail, catalog row), so a cancel or an error on frame k keeps frames 1 to k-1 and leaves
+nothing of frame k on disk. A failed scan is counted (`scans_failed`); a cancel is not. The first
+scanned frame of a roll sets its film base (L-10). The result is an `ImportResult`, so the UI reads
+it as it reads an import's.
+
+The scanner's frame number is kept with the frame (`frame.scan_number`, with `scan_info`: device,
+dpi, samples, autofocus, infrared), because `index_in_roll` is the order of storing, not the frame
+of the roll: scanning frames 5 to 9 alone gives indexes 1 to 5. `scan_resume_point(roll_id)` is the
+highest scanner number plus one (1 for a roll with none); frames imported from files have no
+number. One scan at a time, and no roll preview while a scan runs and no scan while one runs.
+
+Tested end to end with the fixture scanner. **Not yet run on the LS-50 through the job.**

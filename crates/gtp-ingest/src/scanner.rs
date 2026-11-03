@@ -21,7 +21,8 @@ pub const DEFAULT_DPI: u32 = 4000;
 pub const SAMPLE_COUNTS: [u8; 5] = [1, 2, 4, 8, 16];
 
 /// A scanner the app can use.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct DeviceInfo {
     pub id: String,
     pub name: String,

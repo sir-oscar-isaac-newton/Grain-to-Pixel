@@ -20,6 +20,44 @@ impl Catalog {
         sources: &[SourceFile],
         recipe: &Recipe,
     ) -> Result<Frame, AppError> {
+        self.store_new_frame(frame, sources, recipe, None)
+    }
+
+    /// [`Catalog::insert_imported_frame`] for a frame the scanner made: it also records the frame
+    /// number on the roll as the scanner counts it, and how the frame was scanned (`info`, JSON), in
+    /// the same transaction.
+    pub fn insert_scanned_frame(
+        &mut self,
+        frame: &Frame,
+        sources: &[SourceFile],
+        recipe: &Recipe,
+        scan_number: u32,
+        info: &str,
+    ) -> Result<Frame, AppError> {
+        self.store_new_frame(frame, sources, recipe, Some((scan_number, info)))
+    }
+
+    /// The highest scanner frame number among the roll's scanned frames; `None` when none of its
+    /// frames was scanned (imported frames have none).
+    pub fn last_scan_number(&self, roll: gtp_core::RollId) -> Result<Option<u32>, AppError> {
+        let last: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT max(scan_number) FROM frame WHERE roll_id = ?1",
+                params![roll.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(db_error)?;
+        Ok(last.and_then(|n| u32::try_from(n).ok()))
+    }
+
+    fn store_new_frame(
+        &mut self,
+        frame: &Frame,
+        sources: &[SourceFile],
+        recipe: &Recipe,
+        scan: Option<(u32, &str)>,
+    ) -> Result<Frame, AppError> {
         check_len(frame.note.trim(), MAX_NOTE_CHARS, "note")?;
         if sources.iter().any(|s| s.frame_id != frame.id) {
             return Err(AppError::internal("a source file belongs to another frame"));
@@ -34,8 +72,9 @@ impl Catalog {
         tx.execute(
             &format!(
                 "INSERT INTO frame(id, roll_id, index_in_roll, kind, width, height, has_ir, note,
-                                   created_at, edited_at)
-                 SELECT ?1, ?2, coalesce(max(index_in_roll), 0) + 1, ?3, ?4, ?5, ?6, ?7, {NOW}, NULL
+                                   created_at, edited_at, scan_number, scan_info)
+                 SELECT ?1, ?2, coalesce(max(index_in_roll), 0) + 1, ?3, ?4, ?5, ?6, ?7, {NOW}, NULL,
+                        ?8, ?9
                  FROM frame WHERE roll_id = ?2"
             ),
             params![
@@ -45,7 +84,9 @@ impl Catalog {
                 frame.width,
                 frame.height,
                 frame.has_ir,
-                frame.note.trim()
+                frame.note.trim(),
+                scan.map(|(number, _)| number),
+                scan.map(|(_, info)| info)
             ],
         )
         .map_err(|err| match err.sqlite_error_code() {

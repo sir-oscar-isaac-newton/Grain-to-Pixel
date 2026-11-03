@@ -6,9 +6,13 @@ use std::sync::Arc;
 use gtp_app::services::import::{import_tiffs_with_look, ImportKind};
 use gtp_app::services::import_triplets::import_triplets_with_look;
 use gtp_app::services::roll_frame;
+use gtp_app::services::scan::{self, ScanRequest};
 use gtp_app::services::scan_preview::{RollPreviewImage, ScanPreviewService};
 use gtp_app::services::triplets;
-use gtp_app::{AppContext, Hardware, JobKind, JobManager, RawlerDecoder, TripletCandidate};
+use gtp_app::{
+    AppContext, DeviceInfo, Hardware, JobKind, JobManager, RawlerDecoder, ScannerSource,
+    TripletCandidate,
+};
 use gtp_core::{AppError, ErrorCode, JobId, JobResult, RollId};
 use tauri::State;
 
@@ -105,6 +109,96 @@ pub fn triplet_group(paths: Vec<String>) -> CmdResult<Vec<TripletCandidate>> {
     triplets::triplet_group(&paths)
 }
 
+/// The scanner of the app (nkscan, or the fixture one with `GTP_FAKE_HW=1`).
+fn scanner(hardware: &Hardware) -> Result<Arc<dyn ScannerSource>, AppError> {
+    hardware
+        .scanner
+        .clone()
+        .ok_or_else(|| AppError::new(ErrorCode::ScannerUnavailable, "No scanner is set up."))
+}
+
+/// The scanners that can be used right now; `ScannerUnavailable` (with the reason in its message:
+/// not connected, wrong driver, nkscan missing) when there is none.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn scanner_list(hardware: State<'_, Hardware>) -> CmdResult<Vec<DeviceInfo>> {
+    scanner(&hardware)?.list_devices()
+}
+
+/// The frame number a scan of the roll should resume at: one after the last frame scanned into it,
+/// or 1 when none was (above 40 the roll is done).
+#[tauri::command(async)]
+#[specta::specta]
+pub fn scan_resume_point(ctx: State<'_, AppContext>, roll_id: RollId) -> CmdResult<u32> {
+    scan::scan_resume_point(&*ctx.library()?, roll_id)
+}
+
+/// Starts scanning the requested frames into the roll as a job. Each frame is stored as soon as the
+/// scanner finishes it, so a cancel or an error keeps the frames before it; progress and the
+/// result (frames stored, like an import's) arrive as `job://*` events, each new frame as
+/// `library://changed`. One scan, and no roll preview, at a time. Returns the job id at once.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn scan_start(
+    ctx: State<'_, AppContext>,
+    jobs: State<'_, JobManager>,
+    events: State<'_, EventsState>,
+    hardware: State<'_, Hardware>,
+    preview: State<'_, ScanPreviewService>,
+    roll_id: RollId,
+    request: ScanRequest,
+) -> CmdResult<JobId> {
+    let params = request.params()?;
+    let scanner = scanner(&hardware)?;
+    let library = ctx.library()?;
+    // Fail now, not inside the job, when the roll is gone or the library is read-only.
+    library.read(|c| c.get_roll(roll_id))?;
+    library.write(|_| Ok(()))?;
+    if jobs
+        .running()
+        .iter()
+        .any(|(_, kind)| *kind == JobKind::Scan)
+        || preview.is_running()
+    {
+        return Err(AppError::new(
+            ErrorCode::ScannerUnavailable,
+            "The scanner is busy with another scan or a roll preview.",
+        ));
+    }
+
+    let events = Arc::clone(&events.0);
+    let thumbnails = ctx.thumbnail_requester()?;
+    let look = ctx.settings().get().starting_look;
+    let (first, last) = (
+        params.frames.start().to_owned(),
+        params.frames.end().to_owned(),
+    );
+    let id = jobs.spawn(JobKind::Scan, move |job| {
+        let result = scan::scan_roll(
+            &library,
+            roll_id,
+            scanner.as_ref(),
+            &params,
+            job,
+            events.as_ref(),
+            look,
+        )?;
+        // A better film base for the roll changes how its other frames look: refresh their thumbnails.
+        if result.base_replaced {
+            let following = roll_frame::frames_following_roll_base(&library, roll_id)?;
+            thumbnails.request(Arc::clone(&events), following);
+        }
+        tracing::info!(
+            stored = result.frames.len(),
+            frame_ms = ?result.frame_ms,
+            "scan finished"
+        );
+        Ok(JobResult::Imported(result))
+    })?;
+    tracing::info!(job = %id, roll = %roll_id, first, last, "scan started");
+    Ok(id)
+}
+
 /// The whole roll as the scanner's framing thumbnail, made into a positive strip, with the number of
 /// frames the scanner found and the pitch they are evenly spaced at (strip pixels). Scans no frame
 /// and leaves the film in; it takes about a minute on the LS-50. One at a time; see
@@ -114,12 +208,20 @@ pub fn triplet_group(paths: Vec<String>) -> CmdResult<Vec<TripletCandidate>> {
 pub fn scan_preview(
     hardware: State<'_, Hardware>,
     preview: State<'_, ScanPreviewService>,
+    jobs: State<'_, JobManager>,
     device_id: String,
 ) -> CmdResult<RollPreviewImage> {
-    let scanner = hardware
-        .scanner
-        .as_ref()
-        .ok_or_else(|| AppError::new(ErrorCode::ScannerUnavailable, "No scanner is set up."))?;
+    if jobs
+        .running()
+        .iter()
+        .any(|(_, kind)| *kind == JobKind::Scan)
+    {
+        return Err(AppError::new(
+            ErrorCode::ScannerUnavailable,
+            "The scanner is busy with a scan.",
+        ));
+    }
+    let scanner = scanner(&hardware)?;
     let image = preview.run(scanner.as_ref(), &device_id)?;
     tracing::info!(
         frames = image.frame_count,
@@ -154,9 +256,92 @@ mod tests {
         let missing = std::env::temp_dir().join(format!("gtp-cmd-no-roll-{}", std::process::id()));
         app.manage(Hardware::from_vars(Some("1"), Some(missing.into())));
         app.manage(ScanPreviewService::default());
-        let err = scan_preview(app.state(), app.state(), "fixture".into()).unwrap_err();
+        app.manage(JobManager::new(Arc::new(TauriJobSink::new(
+            app.handle().clone(),
+        ))));
+        let err =
+            scan_preview(app.state(), app.state(), app.state(), "fixture".into()).unwrap_err();
         assert_eq!(err.code, ErrorCode::ScannerUnavailable);
         assert!(!scan_preview_cancel(app.state()));
+    }
+
+    #[test]
+    fn a_scan_is_refused_without_a_roll_or_valid_parameters_and_a_failing_scan_reports_an_error() {
+        let dir = std::env::temp_dir().join(format!(
+            "gtp-cmd-scan-{}-{}",
+            std::process::id(),
+            FrameId::new()
+        ));
+        let empty = dir.join("no-scans");
+        std::fs::create_dir_all(&empty).unwrap();
+        let app = tauri::test::mock_app();
+        crate::ipc::builder::<tauri::test::MockRuntime>().mount_events(&app);
+        let sink = Arc::new(TauriJobSink::new(app.handle().clone()));
+        app.manage(JobManager::new(sink.clone()));
+        app.manage(EventsState(sink));
+        app.manage(Hardware::from_vars(Some("1"), Some(empty.clone().into())));
+        app.manage(ScanPreviewService::default());
+        let (ctx, _) = AppContext::new(&dir.join("settings.json"));
+        app.manage(ctx);
+        let request = |first: u32, last: u32| ScanRequest {
+            device_id: "fixture".into(),
+            first_frame: first,
+            last_frame: last,
+            dpi: 2000,
+            samples: 1,
+            ir: true,
+            autofocus: false,
+        };
+        let start = |roll: RollId, request: ScanRequest| {
+            scan_start(
+                app.state(),
+                app.state(),
+                app.state(),
+                app.state(),
+                app.state(),
+                roll,
+                request,
+            )
+        };
+
+        let err = start(RollId::new(), request(0, 3)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput, "frames start at 1");
+        let err = start(RollId::new(), request(1, 3)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound, "no library is open");
+
+        let ctx = app.state::<AppContext>();
+        ctx.create_library(&dir.join("lib"), "Cmd").unwrap();
+        let err = start(RollId::new(), request(1, 3)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound, "the roll must exist");
+        let roll = roll_create(
+            &ctx.library().unwrap(),
+            RollInput {
+                name: "R".into(),
+                ..RollInput::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(scan_resume_point(app.state(), roll.id).unwrap(), 1);
+        assert_eq!(
+            scan_resume_point(app.state(), RollId::new())
+                .unwrap_err()
+                .code,
+            ErrorCode::NotFound
+        );
+
+        // The fixture folder has no scans, so the scanner fails at frame 1: the job reports the error.
+        let (tx, rx) = mpsc::channel::<serde_json::Value>();
+        app.listen_any("job://error", move |event| {
+            let _ = tx.send(serde_json::from_str(event.payload()).unwrap());
+        });
+        let id = start(roll.id, request(1, 2)).unwrap();
+        let error = rx.recv_timeout(Duration::from_secs(20)).unwrap();
+        assert_eq!(error["id"], id.to_string());
+        assert_eq!(error["error"]["code"], "ScanFailed");
+        assert_eq!(scan_resume_point(app.state(), roll.id).unwrap(), 1);
+
+        drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

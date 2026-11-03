@@ -243,3 +243,89 @@ fn bad_parameters_never_start_the_program() {
         .unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidInput);
 }
+
+#[test]
+fn a_preview_returns_the_strip_and_frame_count_and_stops_the_scan() {
+    let dir = work_dir("preview");
+    let started = std::time::Instant::now();
+    let preview = source()
+        .with_work_dir(&dir)
+        .with_env("FAKE_NKSCAN_DELAY_MS", "30000")
+        .with_env("FAKE_NKSCAN_DETECTED", "5")
+        .preview("usb:01-1.4", &CancelToken::default())
+        .unwrap();
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(20),
+        "the program was stopped, not waited for"
+    );
+    assert_eq!(preview.frame_count, 5);
+    assert_eq!((preview.strip.width, preview.strip.height), (100, 8));
+    assert_eq!(preview.strip.rgb16.len(), 100 * 8 * 3);
+    // The red of a column is 100 times its number.
+    assert_eq!(preview.strip.rgb16[3 * 7], 700);
+    assert_eq!(left_in(&dir), 0, "the scan folder is removed");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_preview_without_a_thumbnail_or_a_count_is_an_error_that_says_what_nkscan_said() {
+    let dir = work_dir("preview-bad");
+    let none = source()
+        .with_work_dir(&dir)
+        .with_env("FAKE_NKSCAN_NO_THUMB", "1")
+        .preview("d", &CancelToken::default())
+        .unwrap_err();
+    assert_eq!(none.code, ErrorCode::ScanFailed);
+
+    let no_count = source()
+        .with_work_dir(&dir)
+        .with_env("FAKE_NKSCAN_NO_COUNT", "1")
+        .preview("d", &CancelToken::default())
+        .unwrap_err();
+    assert_eq!(no_count.code, ErrorCode::ScanFailed);
+
+    let driver = source()
+        .with_work_dir(&dir)
+        .with_env("FAKE_NKSCAN_NO_THUMB", "1")
+        .with_env("FAKE_NKSCAN_FAIL_AT", "1")
+        .with_env(
+            "FAKE_NKSCAN_ERROR",
+            "incompatible driver is installed for this device",
+        )
+        .preview("d", &CancelToken::default())
+        .unwrap_err();
+    assert_eq!(driver.code, ErrorCode::ScannerUnavailable);
+
+    let empty = source().preview(" ", &CancelToken::default()).unwrap_err();
+    assert_eq!(empty.code, ErrorCode::InvalidInput);
+    assert_eq!(left_in(&dir), 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_preview_gives_up_after_its_timeout_and_stops_when_cancelled() {
+    let dir = work_dir("preview-wait");
+    let slow = source()
+        .with_work_dir(&dir)
+        .with_env("FAKE_NKSCAN_NO_THUMB", "1")
+        .with_env("FAKE_NKSCAN_DELAY_MS", "30000")
+        .with_preview_timeout(std::time::Duration::from_millis(600));
+    let err = slow.preview("d", &CancelToken::default()).unwrap_err();
+    assert_eq!(err.code, ErrorCode::ScanFailed);
+    assert!(err.message.contains("too long"));
+
+    let patient = source()
+        .with_work_dir(&dir)
+        .with_env("FAKE_NKSCAN_NO_THUMB", "1")
+        .with_env("FAKE_NKSCAN_DELAY_MS", "30000");
+    let cancel = CancelToken::default();
+    let stopper = cancel.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        stopper.cancel();
+    });
+    let err = patient.preview("d", &cancel).unwrap_err();
+    assert_eq!(err.code, ErrorCode::Cancelled);
+    assert_eq!(left_in(&dir), 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}

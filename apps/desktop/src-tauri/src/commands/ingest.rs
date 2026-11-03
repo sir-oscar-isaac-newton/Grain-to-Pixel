@@ -6,8 +6,9 @@ use std::sync::Arc;
 use gtp_app::services::import::{import_tiffs_with_look, ImportKind};
 use gtp_app::services::import_triplets::import_triplets_with_look;
 use gtp_app::services::roll_frame;
+use gtp_app::services::scan_preview::{RollPreviewImage, ScanPreviewService};
 use gtp_app::services::triplets;
-use gtp_app::{AppContext, JobKind, JobManager, RawlerDecoder, TripletCandidate};
+use gtp_app::{AppContext, Hardware, JobKind, JobManager, RawlerDecoder, TripletCandidate};
 use gtp_core::{AppError, ErrorCode, JobId, JobResult, RollId};
 use tauri::State;
 
@@ -104,6 +105,37 @@ pub fn triplet_group(paths: Vec<String>) -> CmdResult<Vec<TripletCandidate>> {
     triplets::triplet_group(&paths)
 }
 
+/// The whole roll as the scanner's framing thumbnail, made into a positive strip, with the number of
+/// frames the scanner found and the pitch they are evenly spaced at (strip pixels). Scans no frame
+/// and leaves the film in; it takes about a minute on the LS-50. One at a time; see
+/// `scan_preview_cancel`.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn scan_preview(
+    hardware: State<'_, Hardware>,
+    preview: State<'_, ScanPreviewService>,
+    device_id: String,
+) -> CmdResult<RollPreviewImage> {
+    let scanner = hardware
+        .scanner
+        .as_ref()
+        .ok_or_else(|| AppError::new(ErrorCode::ScannerUnavailable, "No scanner is set up."))?;
+    let image = preview.run(scanner.as_ref(), &device_id)?;
+    tracing::info!(
+        frames = image.frame_count,
+        width = image.strip_width,
+        "roll previewed"
+    );
+    Ok(image)
+}
+
+/// Stops the running roll preview; false when none is running.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn scan_preview_cancel(preview: State<'_, ScanPreviewService>) -> bool {
+    preview.cancel()
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{mpsc, Arc};
@@ -115,6 +147,17 @@ mod tests {
 
     use super::*;
     use crate::sink::TauriJobSink;
+
+    #[test]
+    fn a_preview_needs_a_scanner_and_cancel_with_none_running_says_so() {
+        let app = tauri::test::mock_app();
+        let missing = std::env::temp_dir().join(format!("gtp-cmd-no-roll-{}", std::process::id()));
+        app.manage(Hardware::from_vars(Some("1"), Some(missing.into())));
+        app.manage(ScanPreviewService::default());
+        let err = scan_preview(app.state(), app.state(), "fixture".into()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::ScannerUnavailable);
+        assert!(!scan_preview_cancel(app.state()));
+    }
 
     #[test]
     fn an_import_job_runs_and_reports_through_job_done() {

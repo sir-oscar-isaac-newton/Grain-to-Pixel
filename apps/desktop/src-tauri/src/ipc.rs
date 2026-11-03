@@ -31,6 +31,8 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::frame::frame_delete,
             commands::ingest::import_files,
             commands::ingest::triplet_group,
+            commands::ingest::scan_preview,
+            commands::ingest::scan_preview_cancel,
             commands::export::export_start,
             commands::develop::develop_open,
             commands::develop::develop_analyze,

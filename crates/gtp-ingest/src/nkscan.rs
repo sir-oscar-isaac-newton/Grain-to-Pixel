@@ -12,13 +12,17 @@ use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gtp_core::{AppError, ErrorCode};
 use gtp_io::{read_tiff16, split_rgbi, Limits};
 
-use crate::scanner::{CancelToken, DeviceInfo, RawScan, ScanMeta, ScanParams, ScannerSource};
+use crate::scanner::{
+    CancelToken, DeviceInfo, RawScan, RollPreview, RollStrip, ScanMeta, ScanParams, ScannerSource,
+};
 
 /// The nkscan release the adapter was written and tested against.
 pub const NKSCAN_VERSION: &str = "0.17.0";
@@ -30,6 +34,9 @@ const BASENAME: &str = "frame";
 const POLL: Duration = Duration::from_millis(100);
 /// How many lines of nkscan's messages are kept to explain a failure.
 const STDERR_LINES: usize = 20;
+/// How long a preview waits for the thumbnail (the film loads and the frames are found in about a
+/// minute on the author's LS-50).
+pub const PREVIEW_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Scans with the `nkscan` command line.
 #[derive(Debug, Clone)]
@@ -37,6 +44,7 @@ pub struct NkscanSource {
     program: PathBuf,
     work_dir: PathBuf,
     env: Vec<(OsString, OsString)>,
+    preview_timeout: Duration,
 }
 
 impl NkscanSource {
@@ -47,6 +55,7 @@ impl NkscanSource {
             program: program.into(),
             work_dir: std::env::temp_dir(),
             env: Vec::new(),
+            preview_timeout: PREVIEW_TIMEOUT,
         }
     }
 
@@ -58,6 +67,12 @@ impl NkscanSource {
     /// Keeps the scans of a roll under `dir` instead of the temporary folder (a frame is 190 MB).
     pub fn with_work_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.work_dir = dir.into();
+        self
+    }
+
+    /// How long a preview waits for the scanner's thumbnail (the default is [`PREVIEW_TIMEOUT`]).
+    pub fn with_preview_timeout(mut self, timeout: Duration) -> Self {
+        self.preview_timeout = timeout;
         self
     }
 
@@ -348,6 +363,68 @@ fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// The frame count in a line of nkscan's log such as `INFO detected frames frames=36`.
+fn parse_detected(line: &str) -> Option<u32> {
+    let rest = line.split("detected frames").nth(1)?;
+    let digits: String = rest
+        .split("frames=")
+        .nth(1)?
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    digits.parse().ok()
+}
+
+/// Reads the messages of a running nkscan on a thread of their own: the last lines are kept to
+/// explain a failure, and the number of frames it detects is noted (0 until it does).
+fn watch_stderr(
+    child: &mut Child,
+    tail: &Arc<Mutex<VecDeque<String>>>,
+    detected: &Arc<AtomicU32>,
+) -> Option<JoinHandle<()>> {
+    let stderr = child.stderr.take()?;
+    let (tail, detected) = (Arc::clone(tail), Arc::clone(detected));
+    Some(std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if let Some(count) = parse_detected(&line) {
+                detected.store(count, Ordering::SeqCst);
+            }
+            if let Ok(mut lines) = tail.lock() {
+                if lines.len() == STDERR_LINES {
+                    lines.pop_front();
+                }
+                lines.push_back(line);
+            }
+        }
+    }))
+}
+
+fn said_by(tail: &Mutex<VecDeque<String>>) -> String {
+    tail.lock()
+        .map(|lines| Vec::from_iter(lines.iter().cloned()).join("\n"))
+        .unwrap_or_default()
+}
+
+/// The thumbnail nkscan wrote, as the strip of a roll with `frame_count` frames.
+fn read_strip(path: &Path, frame_count: u32) -> Result<RollPreview, AppError> {
+    let image = read_tiff16(path, &Limits::default())?;
+    if image.channels != 3 {
+        return Err(AppError::new(
+            ErrorCode::ScanFailed,
+            "The roll thumbnail is not a colour picture.",
+        )
+        .with_details(format!("{} channels", image.channels)));
+    }
+    Ok(RollPreview {
+        frame_count,
+        strip: RollStrip {
+            width: image.width,
+            height: image.height,
+            rgb16: image.data,
+        },
+    })
+}
+
 impl ScannerSource for NkscanSource {
     fn list_devices(&self) -> Result<Vec<DeviceInfo>, AppError> {
         self.check_version()?;
@@ -395,24 +472,8 @@ impl ScannerSource for NkscanSource {
             .spawn()
             .map_err(|err| not_started(&self.program, &err))?;
         let tail: Arc<Mutex<VecDeque<String>>> = Arc::default();
-        let reader = child.stderr.take().map(|stderr| {
-            let tail = Arc::clone(&tail);
-            std::thread::spawn(move || {
-                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                    if let Ok(mut lines) = tail.lock() {
-                        if lines.len() == STDERR_LINES {
-                            lines.pop_front();
-                        }
-                        lines.push_back(line);
-                    }
-                }
-            })
-        });
-        let said = || -> String {
-            tail.lock()
-                .map(|lines| Vec::from_iter(lines.iter().cloned()).join("\n"))
-                .unwrap_or_default()
-        };
+        let reader = watch_stderr(&mut child, &tail, &Arc::default());
+        let said = || said_by(&tail);
 
         let wanted: Vec<u32> = p.frames.clone().collect();
         let mut delivered = 0usize;
@@ -467,6 +528,92 @@ impl ScannerSource for NkscanSource {
                     )));
                 }
                 return Ok(());
+            }
+            std::thread::sleep(POLL);
+        }
+    }
+
+    fn preview(&self, device_id: &str, cancel: &CancelToken) -> Result<RollPreview, AppError> {
+        if device_id.trim().is_empty() {
+            return Err(AppError::new(ErrorCode::InvalidInput, "Choose a scanner.")
+                .with_details("empty device id"));
+        }
+        cancel.check()?;
+        self.check_version()?;
+        let dir = ScanDir::create(&self.work_dir)?;
+        let basename = dir.0.join(BASENAME);
+        let thumbnail = dir.0.join(format!("{BASENAME}_1_thumbnail.tiff"));
+
+        // The thumbnail is written once the film is loaded and the frames are found, before the
+        // first frame is focused: ask for one frame, wait for the file, and stop there.
+        let mut child = self
+            .command()
+            .args([
+                OsString::from("scan"),
+                device_id.into(),
+                "--basename".into(),
+                basename.into(),
+                "--frames".into(),
+                "1".into(),
+                "--dpi".into(),
+                "1000".into(),
+                "--lock-ae".into(),
+                "--no-eject".into(),
+                "--thumbnail".into(),
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|err| not_started(&self.program, &err))?;
+        let tail: Arc<Mutex<VecDeque<String>>> = Arc::default();
+        let detected: Arc<AtomicU32> = Arc::default();
+        let reader = watch_stderr(&mut child, &tail, &detected);
+
+        let started = Instant::now();
+        let mut last_size = None;
+        loop {
+            if cancel.is_cancelled() {
+                stop(&mut child);
+                return Err(AppError::new(
+                    ErrorCode::Cancelled,
+                    "The preview was cancelled.",
+                ));
+            }
+            let status = child.try_wait().map_err(|err| {
+                AppError::new(ErrorCode::ScanFailed, "The scanner program was lost.")
+                    .with_details(err.to_string())
+            })?;
+            let size = std::fs::metadata(&thumbnail)
+                .map(|m| m.len())
+                .ok()
+                .filter(|size| *size > 0);
+            let frames = detected.load(Ordering::SeqCst);
+            if size.is_some() && frames > 0 && (status.is_some() || last_size == size) {
+                stop(&mut child);
+                return read_strip(&thumbnail, frames);
+            }
+            last_size = size;
+            if let Some(status) = status {
+                if let Some(reader) = reader {
+                    let _ = reader.join();
+                }
+                if !status.success() {
+                    return Err(failure(&said_by(&tail)));
+                }
+                return Err(AppError::new(
+                    ErrorCode::ScanFailed,
+                    "The scanner did not give a thumbnail of the roll.",
+                )
+                .with_details(said_by(&tail)));
+            }
+            if started.elapsed() > self.preview_timeout {
+                stop(&mut child);
+                return Err(AppError::new(
+                    ErrorCode::ScanFailed,
+                    "The scanner took too long to give a thumbnail of the roll.",
+                )
+                .with_details(said_by(&tail)));
             }
             std::thread::sleep(POLL);
         }
@@ -554,6 +701,22 @@ mod tests {
         assert_eq!(parse_output_name("frame_1_thumbnail.tiff"), None);
         assert_eq!(parse_output_name("frame_1.jpg"), None);
         assert_eq!(parse_output_name("other_1.tiff"), None);
+    }
+
+    #[test]
+    fn the_frame_count_is_read_from_the_log_line() {
+        let line = "2026-11-03T03:33:23.830726Z  INFO detected frames frames=36";
+        assert_eq!(parse_detected(line), Some(36));
+        assert_eq!(
+            parse_detected("INFO detected frames frames=6 extra"),
+            Some(6)
+        );
+        assert_eq!(
+            parse_detected("INFO frame length format=F135 length=5959"),
+            None
+        );
+        assert_eq!(parse_detected("INFO detected frames"), None);
+        assert_eq!(parse_detected("INFO detected frames frames=x"), None);
     }
 
     #[test]

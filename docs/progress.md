@@ -578,6 +578,15 @@
       "number": 47,
       "title": "NkscanSource adapter",
       "branch": "feat/issue-47-nkscan-source",
+      "status": "completed",
+      "pr": 197,
+      "commit": "3f223d9"
+    },
+    {
+      "id": "H-12",
+      "number": 198,
+      "title": "Roll preview from the scanner's framing thumbnail",
+      "branch": "feat/issue-198-roll-preview",
       "status": "in_progress",
       "pr": null,
       "commit": null

@@ -70,6 +70,20 @@ pub fn encode_jpeg(
     quality: u8,
     path: &Path,
 ) -> Result<(), AppError> {
+    let bytes = encode_jpeg_bytes(image, space, quality)?;
+    write_through_temp(path, |writer| {
+        writer
+            .write_all(&bytes)
+            .map_err(|err| AppError::from_io(&err))
+    })
+}
+
+/// [`encode_jpeg`] to memory.
+pub fn encode_jpeg_bytes(
+    image: &ImageF32,
+    space: OutputSpace,
+    quality: u8,
+) -> Result<Vec<u8>, AppError> {
     if !JPEG_QUALITY.contains(&quality) {
         return Err(
             AppError::new(ErrorCode::InvalidInput, "JPEG quality runs from 1 to 100.")
@@ -103,12 +117,7 @@ pub fn encode_jpeg(
     encoder
         .encode(&rgb8, width, height, ColorType::Rgb)
         .map_err(|err| encode_failed("The JPEG file could not be written.", err))?;
-
-    write_through_temp(path, |writer| {
-        writer
-            .write_all(&bytes)
-            .map_err(|err| AppError::from_io(&err))
-    })
+    Ok(bytes)
 }
 
 #[cfg(test)]

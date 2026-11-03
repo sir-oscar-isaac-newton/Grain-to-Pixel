@@ -5,6 +5,7 @@
 //! cargo run --release -p gtp-ingest --example nkscan_roll -- [first] [last] [dpi]
 //! ```
 //!
+//! `nkscan_roll preview` previews the roll instead (the strip and the frame count, no frame scanned).
 //! The defaults are frames 1 to 3 at 2000 dpi, with infrared. `GTP_NKSCAN` names the nkscan program
 //! when it is not on `PATH`.
 
@@ -36,6 +37,23 @@ fn main() {
     };
     for device in &devices {
         say(&format!("scanner {} ({})", device.name, device.id));
+    }
+    if std::env::args().nth(1).as_deref() == Some("preview") {
+        let start = Instant::now();
+        match source.preview(&devices[0].id, &CancelToken::default()) {
+            Ok(p) => say(&format!(
+                "preview: {} frames, strip {} x {}, after {:.0} s",
+                p.frame_count,
+                p.strip.width,
+                p.strip.height,
+                start.elapsed().as_secs_f32()
+            )),
+            Err(err) => {
+                say(&format!("preview failed: {err:?}"));
+                std::process::exit(1);
+            }
+        }
+        return;
     }
     let mut params = ScanParams::new(devices[0].id.clone(), first..=last);
     params.dpi = dpi;

@@ -102,3 +102,44 @@ has to be a low-resolution scan (about 65 s a frame at 1000 dpi, so about 40 min
 Two things seen in the log: nkscan reports `detected frames frames=36` as soon as the film is
 loaded (the frame count of the roll for free), and a frame is refocused every time (positions 212 to
 215).
+
+## The roll preview (H-12)
+
+`ScannerSource::preview(device, cancel)` returns the scanner's framing thumbnail of the whole roll
+and the number of frames it found, without scanning a frame. `NkscanSource` runs
+`scan --thumbnail --frames 1 --dpi 1000 --lock-ae --no-eject` in a folder of its own, reads the frame
+count from the log line `detected frames frames=N`, waits for `frame_1_thumbnail.tiff` to stop
+growing, and stops the process; the film stays in. It gives up after 180 s (`PREVIEW_TIMEOUT`) and a
+cancel stops it at once.
+
+`gtp-app::services::scan_preview` turns the strip into a positive: the pipeline's automatic base and
+levels over the whole strip (no crop; the strip is the roll, rebate and all), rendered at full width
+and encoded as a JPEG. The strip comes back whole with the pitch of evenly spaced frames (strip
+width divided by the frame count; 143 px on the author's roll), so the contact sheet (H-13) can lay
+a grid over it and move the grid without asking the scanner again. The command is
+`scan_preview(device_id)`, with `scan_preview_cancel()`; one preview runs at a time.
+
+Run on the author's thumbnail (36 frames, 5149 x 96) the strip is a recognisable positive with a
+green cast: it has no colour balance of its own (automatic colour balance is not built yet), which
+is enough to see which frames are exposed and how they lie, not to judge colour.
+
+### Hardware checklist for H-12 (Windows and macOS)
+
+1. Run a preview from the app code on the LS-50 with a roll loaded (the scan-preview command, or
+   `nkscan scan --thumbnail --frames 1 --dpi 1000 --no-eject --basename t/frame` stopped once
+   `t/frame_1_thumbnail.tiff` exists): the frame count and the strip match the roll.
+2. **Right after a preview, run a normal scan** (`nkscan_roll 1 3 2000`). nkscan is killed while the
+   scanner may be in the middle of focusing; this checks that the next scan still works. Record the
+   result below, and whether the scanner needed to be switched off and on.
+3. Time from the start to the strip.
+
+| OS | Preview | Scan right after | Time |
+|---|---|---|---|
+| Windows 10 (2026-11-02) | Through `NkscanSource::preview` (`nkscan_roll preview`): 36 frames, strip 5144 x 96. | **Works**: frame 1 at 1000 dpi (1489 x 986, with infrared) scanned normally right after, 184 s with the film load. Straight after the kill, `nkscan list` showed the scanner as `LS-50 (no answer)` once; the next listing was normal. | 58 s |
+| macOS | | | |
+
+Seen once, cause not known: some twenty minutes after a preview that had been stopped by killing
+nkscan, the next preview found "load a film strip" (the scanner reported no film) and waited for one
+until the timeout; the film had to be put back by hand. A scan started straight after a kill is not
+affected (above). If the film is gone after a longer pause, the preview now times out with that
+message in its details instead of hanging.

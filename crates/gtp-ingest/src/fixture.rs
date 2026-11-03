@@ -12,7 +12,12 @@ use gtp_core::{AppError, ErrorCode};
 use gtp_io::{read_tiff16, split_rgbi, Limits, Tiff16};
 
 use crate::files::{scan_tiff_candidates, TiffCandidate};
-use crate::scanner::{CancelToken, DeviceInfo, RawScan, ScanMeta, ScanParams, ScannerSource};
+use crate::scanner::{
+    CancelToken, DeviceInfo, RawScan, RollPreview, RollStrip, ScanMeta, ScanParams, ScannerSource,
+};
+
+/// The height of the strip a [`FixtureSource`] previews, as nkscan's framing thumbnail has.
+pub const FIXTURE_STRIP_HEIGHT: u32 = 96;
 
 /// The id of the one device a [`FixtureSource`] lists.
 pub const FIXTURE_DEVICE_ID: &str = "fixture";
@@ -148,6 +153,78 @@ impl ScannerSource for FixtureSource {
         }
         Ok(())
     }
+
+    /// The frames of the folder shrunk to [`FIXTURE_STRIP_HEIGHT`] and laid side by side, as the
+    /// scanner's thumbnail shows a roll.
+    fn preview(&self, device_id: &str, cancel: &CancelToken) -> Result<RollPreview, AppError> {
+        if device_id != FIXTURE_DEVICE_ID {
+            return Err(unavailable("That scanner is not connected.", device_id));
+        }
+        let frames = self.frames()?;
+        if frames.is_empty() {
+            return Err(unavailable(
+                "The fixture folder has no scans to preview.",
+                self.dir.display().to_string(),
+            ));
+        }
+        let limits = Limits::default();
+        let mut pictures = Vec::new();
+        for candidate in &frames {
+            cancel.check()?;
+            let image = read_tiff16(&candidate.scan, &limits)?;
+            let rgb = if image.channels == 4 {
+                split_rgbi(&image)?.0
+            } else {
+                image
+            };
+            pictures.push(shrink_to_height(&rgb, FIXTURE_STRIP_HEIGHT));
+        }
+        let height = FIXTURE_STRIP_HEIGHT as usize;
+        let width: usize = pictures.iter().map(|p| p.0).sum();
+        let mut rgb16 = vec![0u16; width * height * 3];
+        let mut x0 = 0;
+        for (w, data) in &pictures {
+            for y in 0..height {
+                let from = y * w * 3;
+                let to = (y * width + x0) * 3;
+                rgb16[to..to + w * 3].copy_from_slice(&data[from..from + w * 3]);
+            }
+            x0 += w;
+        }
+        Ok(RollPreview {
+            frame_count: u32::try_from(frames.len()).unwrap_or(u32::MAX),
+            strip: RollStrip {
+                width: u32::try_from(width).unwrap_or(u32::MAX),
+                height: FIXTURE_STRIP_HEIGHT,
+                rgb16,
+            },
+        })
+    }
+}
+
+/// `image` shrunk to `height` rows by averaging, as (width, samples); the width keeps the aspect.
+fn shrink_to_height(image: &Tiff16, height: u32) -> (usize, Vec<u16>) {
+    let (sw, sh) = (image.width as usize, image.height as usize);
+    let h = height as usize;
+    let w = (sw * h / sh.max(1)).max(1);
+    let mut out = vec![0u16; w * h * 3];
+    for y in 0..h {
+        let (y0, y1) = (y * sh / h, ((y + 1) * sh / h).max(y * sh / h + 1).min(sh));
+        for x in 0..w {
+            let (x0, x1) = (x * sw / w, ((x + 1) * sw / w).max(x * sw / w + 1).min(sw));
+            for c in 0..3 {
+                let mut sum = 0u64;
+                for yy in y0..y1 {
+                    for xx in x0..x1 {
+                        sum += u64::from(image.data[(yy * sw + xx) * 3 + c]);
+                    }
+                }
+                let n = ((y1 - y0) * (x1 - x0)).max(1) as u64;
+                out[(y * w + x) * 3 + c] = (sum / n) as u16;
+            }
+        }
+    }
+    (w, out)
 }
 
 #[cfg(test)]
@@ -436,6 +513,56 @@ mod tests {
         let out = run(&roll.source(), &params(1..=4), &CancelToken::default());
         assert_eq!(numbers(&out), [1, 2, 3]);
         assert_eq!(out.result.unwrap_err().code, ErrorCode::ScanFailed);
+    }
+
+    #[test]
+    fn the_preview_is_the_frames_side_by_side_at_the_height_of_the_scanners_thumbnail() {
+        let roll = Roll::new("preview");
+        let preview = roll
+            .source()
+            .preview(FIXTURE_DEVICE_ID, &CancelToken::default())
+            .unwrap();
+        assert_eq!(preview.frame_count, 3);
+        let strip = &preview.strip;
+        assert_eq!(strip.height, FIXTURE_STRIP_HEIGHT);
+        // Each 60 x 40 frame becomes 144 x 96.
+        assert_eq!(strip.width, 3 * 144);
+        assert_eq!(strip.rgb16.len(), (strip.width * strip.height * 3) as usize);
+        // The strip is not blank, and its frames differ.
+        let first = &strip.rgb16[..3];
+        assert!(strip.rgb16.iter().any(|v| *v != 0));
+        let mid = (48 * strip.width as usize + 144 + 72) * 3;
+        assert_ne!(first, &strip.rgb16[mid..mid + 3]);
+    }
+
+    #[test]
+    fn a_preview_needs_the_device_a_folder_with_scans_and_stops_when_cancelled() {
+        let roll = Roll::new("preview-bad");
+        let source = roll.source();
+        let go = CancelToken::default();
+        assert_eq!(
+            source.preview("other", &go).unwrap_err().code,
+            ErrorCode::ScannerUnavailable
+        );
+        let cancelled = CancelToken::default();
+        cancelled.cancel();
+        assert_eq!(
+            source
+                .preview(FIXTURE_DEVICE_ID, &cancelled)
+                .unwrap_err()
+                .code,
+            ErrorCode::Cancelled
+        );
+        let empty = std::env::temp_dir().join(format!("gtp-fixture-empty-{}", std::process::id()));
+        fs::create_dir_all(&empty).unwrap();
+        assert_eq!(
+            FixtureSource::new(&empty)
+                .preview(FIXTURE_DEVICE_ID, &go)
+                .unwrap_err()
+                .code,
+            ErrorCode::ScannerUnavailable
+        );
+        let _ = fs::remove_dir_all(&empty);
     }
 
     /// Replays the first scans of the private samples folder. Run by hand with

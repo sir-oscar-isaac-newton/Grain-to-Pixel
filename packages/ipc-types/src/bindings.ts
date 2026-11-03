@@ -59,6 +59,15 @@ export const commands = {
 	 */
 	tripletGroup: (paths: string[]) => typedError<TripletCandidate_Serialize[], AppError_Serialize>(__TAURI_INVOKE("triplet_group", { paths })),
 	/**
+	 *  The whole roll as the scanner's framing thumbnail, made into a positive strip, with the number of
+	 *  frames the scanner found and the pitch they are evenly spaced at (strip pixels). Scans no frame
+	 *  and leaves the film in; it takes about a minute on the LS-50. One at a time; see
+	 *  `scan_preview_cancel`.
+	 */
+	scanPreview: (deviceId: string) => typedError<RollPreviewImage, AppError_Serialize>(__TAURI_INVOKE("scan_preview", { deviceId })),
+	/**  Stops the running roll preview; false when none is running. */
+	scanPreviewCancel: () => __TAURI_INVOKE<boolean>("scan_preview_cancel"),
+	/**
 	 *  Starts exporting the frames at full resolution, each with its saved recipe (the automatic one
 	 *  when it was never edited), as a job; progress and the result (the files written and the frames
 	 *  that failed) arrive as `job://*` events. An existing file is never overwritten: the name gets a
@@ -1159,6 +1168,21 @@ export type RollInput_Serialize = {
 	shot_from: string | null,
 	shot_to: string | null,
 	notes: string,
+};
+
+/**  The roll as the contact sheet shows it. */
+export type RollPreviewImage = {
+	/**  How many frames the scanner found. */
+	frame_count: number,
+	/**
+	 *  The distance between the starts of two frames on the strip if they are evenly spaced: the
+	 *  strip's width divided by the frame count, in strip pixels.
+	 */
+	pitch: number | null,
+	strip_width: number,
+	strip_height: number,
+	/**  The strip as a positive, sRGB, JPEG. */
+	strip_jpeg: number[],
 };
 
 /**

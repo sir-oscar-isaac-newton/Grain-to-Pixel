@@ -2,7 +2,9 @@
 //! 16-bit TIFFs the way nkscan names them and behaves as the environment says:
 //! `FAKE_NKSCAN_VERSION` (default 0.17.0), `FAKE_NKSCAN_FAIL_AT` (fail when this frame is next, with
 //! the message in `FAKE_NKSCAN_ERROR`), `FAKE_NKSCAN_DELAY_MS` (wait before each frame),
-//! `FAKE_NKSCAN_LIST` (what `list` prints), `FAKE_NKSCAN_NO_IR` (leave the infrared file out).
+//! `FAKE_NKSCAN_LIST` (what `list` prints), `FAKE_NKSCAN_NO_IR` (leave the infrared file out),
+//! `FAKE_NKSCAN_DETECTED` (the frames it finds, default 6) and `FAKE_NKSCAN_NO_THUMB` (write no
+//! thumbnail with `--thumbnail`; `FAKE_NKSCAN_NO_COUNT` leaves out the count).
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -63,6 +65,33 @@ fn scan(args: &[String], value: &dyn Fn(&str) -> Option<String>) {
         .and_then(|d| d.parse().ok())
         .unwrap_or(0);
     let fail_at: Option<usize> = env("FAKE_NKSCAN_FAIL_AT").and_then(|f| f.parse().ok());
+    if args.iter().any(|a| a == "--thumbnail") && env("FAKE_NKSCAN_NO_THUMB").is_none() {
+        let count: u32 = env("FAKE_NKSCAN_DETECTED")
+            .and_then(|c| c.parse().ok())
+            .unwrap_or(6);
+        if env("FAKE_NKSCAN_NO_COUNT").is_none() {
+            say(&format!("INFO detected frames frames={count}"));
+        }
+        // The strip: 20 columns a frame, 8 rows; the red of a column is 100 times its number.
+        let (sw, sh) = (count * 20, 8u32);
+        let mut data = Vec::new();
+        for _ in 0..sh {
+            for x in 0..sw {
+                data.extend([(x as u16) * 100, 5, 5]);
+            }
+        }
+        let strip = Tiff16 {
+            width: sw,
+            height: sh,
+            channels: 3,
+            data,
+        };
+        let path = PathBuf::from(format!("{basename}_1_thumbnail.tiff"));
+        if write_tiff16(&path, &strip, Compression::None).is_err() {
+            say("write failed");
+            std::process::exit(1);
+        }
+    }
     for (i, frame) in frames.iter().enumerate() {
         let n = i + 1;
         std::thread::sleep(Duration::from_millis(delay));

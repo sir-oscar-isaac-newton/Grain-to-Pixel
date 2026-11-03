@@ -596,9 +596,9 @@
       "number": 48,
       "title": "Roll-scan job - per-frame commit, cancel and resume",
       "branch": "feat/issue-48-roll-scan-job",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 203,
+      "commit": "f0ec92b"
     }
   ]
 }

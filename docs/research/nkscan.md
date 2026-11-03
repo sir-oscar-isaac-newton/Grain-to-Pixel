@@ -71,10 +71,10 @@ Hardware: LS-50 with coolscan-mods firmware and an SA-21 jumpered as SA-30 (whol
   frame. There is no way to preview the roll before scanning in what the spike found.
 
 **Tested without the scanner** against `examples/fake_nkscan.rs`, which writes TIFFs the way nkscan
-names them. **Not yet tested on the scanner.** The exact text of `nkscan list` with a scanner
-attached was not recorded in the spike; `parse_list` reads `<name> (usb:..)` lines and falls back to
-the whole line as the id. Whether the `scan` positional device argument takes that id is part of the
-check below.
+names them. **Tested on the scanner on Windows (2026-11-02)**, see the results below; macOS is still to
+do. `nkscan list` prints `Nikon LS-50 ED       usb:PCIROOT(0)#PCI(0102)#PCI(0000)#USBROOT(0)-7.2`
+(the name, spaces, then an id with no spaces); `parse_list` splits it at the `usb:` token, and the id
+is accepted by `scan`.
 
 ### Hardware checklist for H-02 (Windows with WinUSB, and macOS)
 
@@ -89,5 +89,16 @@ check below.
 
 | OS | Frames | dpi | Result | Time |
 |---|---|---|---|---|
-| Windows 10 | | | | |
+| Windows 10 | 1 to 3 | 2000 | Through `NkscanSource` (example `nkscan_roll`): three frames of 2979 x 1973, colour 0 to 65535, infrared 92 to 65131, handed over after 175 s, 251 s and 327 s (76 s per frame after the first). Progress 0, 33, 67, 100 %. Exit 0. | 5 min 27 s |
+| Windows 10, thumbnails | 1 to 3 | 1000 | `nkscan scan --thumbnail`: three frames of 1489 x 986 (9.0 MB each) in 275 s (65 to 70 s per frame after the first). **One** thumbnail, `frame_1_thumbnail.tiff`, 5153 x 96, 16-bit RGB, 3.0 MB, written 59 s after the start, right after the film is loaded and the frames are detected (36 on this roll), before focusing and metering. | 4 min 35 s |
 | macOS | | | | |
+
+**Thumbnails and a roll preview.** nkscan writes one framing thumbnail per scan run (not one per
+frame), a 5153 x 96 strip, about a minute after the film is loaded and before any frame is metered.
+Whether that strip shows the whole roll or only the holder's window was not looked at yet; if it
+shows the roll, a preview of the frames costs about a minute and needs no scan. Otherwise a preview
+has to be a low-resolution scan (about 65 s a frame at 1000 dpi, so about 40 minutes for 36 frames).
+
+Two things seen in the log: nkscan reports `detected frames frames=36` as soon as the film is
+loaded (the frame count of the roll for free), and a frame is refocused every time (positions 212 to
+215).

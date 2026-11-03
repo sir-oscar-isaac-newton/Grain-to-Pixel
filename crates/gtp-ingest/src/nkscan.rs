@@ -194,19 +194,20 @@ fn parse_list(stdout: &str) -> Vec<DeviceInfo> {
         if !listing || line.is_empty() || line.to_lowercase().contains("(in use)") {
             continue;
         }
-        let name = line.trim_start_matches(['-', '*', ' ']).trim();
-        let id = name
-            .split_whitespace()
-            .find(|word| word.contains("usb:"))
-            .map(|word| {
-                let word = word.trim_matches(|c| "()[],".contains(c));
-                word.to_owned()
-            })
-            .unwrap_or_else(|| name.to_owned());
-        devices.push(DeviceInfo {
-            id,
-            name: name.to_owned(),
-        });
+        let line = line.trim_start_matches(['-', '*', ' ']).trim();
+        // `Nikon LS-50 ED       usb:PCIROOT(0)#...-7.2`: the name, then the id.
+        let (name, id) = match line.split_whitespace().find(|word| word.contains("usb:")) {
+            Some(word) => {
+                let id = word.trim_matches(|c| "()[],".contains(c));
+                let name = line.replace(word, "");
+                (
+                    name.trim().trim_end_matches("()").trim().to_owned(),
+                    id.to_owned(),
+                )
+            }
+            None => (line.to_owned(), line.to_owned()),
+        };
+        devices.push(DeviceInfo { id, name });
     }
     devices
 }
@@ -465,7 +466,6 @@ impl ScannerSource for NkscanSource {
                         said()
                     )));
                 }
-                progress(1.0);
                 return Ok(());
             }
             std::thread::sleep(POLL);
@@ -525,7 +525,16 @@ mod tests {
             parse_list(listing),
             [DeviceInfo {
                 id: "usb:01-1.4".into(),
-                name: "Nikon LS-50 ED (usb:01-1.4)".into()
+                name: "Nikon LS-50 ED".into()
+            }]
+        );
+        // As the real nkscan 0.17.0 prints it on Windows.
+        let real = "Attached scanners:\nNikon LS-50 ED       usb:PCIROOT(0)#PCI(0102)#PCI(0000)#USBROOT(0)-7.2\n";
+        assert_eq!(
+            parse_list(real),
+            [DeviceInfo {
+                id: "usb:PCIROOT(0)#PCI(0102)#PCI(0000)#USBROOT(0)-7.2".into(),
+                name: "Nikon LS-50 ED".into()
             }]
         );
         let plain = parse_list("Attached scanners:\n- Nikon LS-50 ED\n");

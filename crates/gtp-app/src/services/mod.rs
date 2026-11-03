@@ -8,6 +8,7 @@ pub mod import;
 pub mod import_triplets;
 pub mod library;
 pub mod roll_frame;
+pub mod scan;
 pub mod scan_preview;
 pub mod settings;
 pub mod tags_search;

@@ -256,6 +256,48 @@ fn import_one(
     progress: &dyn Fn(f32),
 ) -> Result<Frame, FrameError> {
     let (rgb, ir) = read_planes(candidate, &Limits::default())?;
+    let picked_ir = candidate.ir.as_deref();
+    store_frame(
+        library,
+        roll,
+        frame_id,
+        &Planes {
+            rgb: &rgb,
+            ir: ir.as_ref(),
+            picked_scan: &candidate.scan,
+            picked_ir,
+        },
+        ctx,
+        look,
+        progress,
+        None,
+    )
+}
+
+/// The planes of a frame to store, and the files they came from (named in errors).
+pub(crate) struct Planes<'a> {
+    pub rgb: &'a Tiff16,
+    pub ir: Option<&'a Tiff16>,
+    pub picked_scan: &'a Path,
+    pub picked_ir: Option<&'a Path>,
+}
+
+/// Stores one frame from its planes, as described in the module docs: originals, hash, starting
+/// recipe, thumbnail and the catalog row. `scan` is the scanner frame number and a JSON record of
+/// how it was scanned, for a frame made by the scanner (H-03); `None` for an import. `progress` is
+/// told the step (1 to [`STEPS`]) done so far.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn store_frame(
+    library: &Library,
+    roll: RollId,
+    frame_id: FrameId,
+    planes: &Planes<'_>,
+    ctx: &JobCtx,
+    look: Look,
+    progress: &dyn Fn(f32),
+    scan: Option<(u32, &str)>,
+) -> Result<Frame, FrameError> {
+    let (rgb, ir) = (planes.rgb, planes.ir);
     progress(1.0);
     ctx.check_cancelled()?;
 
@@ -264,15 +306,15 @@ fn import_one(
     let mut sources = vec![store_original(
         library,
         &dir_rel.join("scan.tif"),
-        &rgb,
-        &candidate.scan,
+        rgb,
+        planes.picked_scan,
         SourceRole::Rgb,
         frame_id,
     )?];
     progress(2.0);
     ctx.check_cancelled()?;
-    if let Some(ir) = &ir {
-        let picked = candidate.ir.as_deref().unwrap_or(&candidate.scan);
+    if let Some(ir) = ir {
+        let picked = planes.picked_ir.unwrap_or(planes.picked_scan);
         sources.push(store_original(
             library,
             &dir_rel.join("ir.tif"),
@@ -285,7 +327,7 @@ fn import_one(
     progress(3.0);
     ctx.check_cancelled()?;
 
-    let (recipe, input) = analyse_for_import(library, roll, to_f32_linear(&rgb)?, look)?;
+    let (recipe, input) = analyse_for_import(library, roll, to_f32_linear(rgb)?, look)?;
     progress(4.0);
     ctx.check_cancelled()?;
 
@@ -305,7 +347,10 @@ fn import_one(
         created_at: String::new(),
         edited_at: None,
     };
-    Ok(library.write(|c| c.insert_imported_frame(&frame, &sources, &recipe))?)
+    Ok(library.write(|c| match scan {
+        Some((number, info)) => c.insert_scanned_frame(&frame, &sources, &recipe, number, info),
+        None => c.insert_imported_frame(&frame, &sources, &recipe),
+    })?)
 }
 
 /// Removes what a failed or cancelled frame left behind.

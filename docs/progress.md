@@ -587,6 +587,15 @@
       "number": 198,
       "title": "Roll preview from the scanner's framing thumbnail",
       "branch": "feat/issue-198-roll-preview",
+      "status": "completed",
+      "pr": 202,
+      "commit": "af2cbeb"
+    },
+    {
+      "id": "H-03",
+      "number": 48,
+      "title": "Roll-scan job - per-frame commit, cancel and resume",
+      "branch": "feat/issue-48-roll-scan-job",
       "status": "in_progress",
       "pr": null,
       "commit": null

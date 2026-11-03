@@ -1,0 +1,17 @@
+# A one-off measurement for R-06 (docs/research/nkscan.md). Outside the workspace on purpose, like
+# nef-probe: it depends on the nkscan crate, which the app does not (it runs the nkscan command line).
+[package]
+name = "nkscan-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Prints the frames nkscan finds and scans one at a shifted position (R-06)"
+
+[workspace]
+
+[dependencies]
+nkscan = "=0.17.0"
+pollster = "0.4"
+
+[profile.release]
+debug = false

@@ -605,6 +605,15 @@
       "number": 51,
       "title": "Scanner import UI",
       "branch": "feat/issue-51-scanner-ui",
+      "status": "completed",
+      "pr": 208,
+      "commit": "04273c1"
+    },
+    {
+      "id": "R-06",
+      "number": 199,
+      "title": "Spike - scan at a custom frame position with nkscan",
+      "branch": "feat/issue-199-spike-frame-position",
       "status": "in_progress",
       "pr": null,
       "commit": null

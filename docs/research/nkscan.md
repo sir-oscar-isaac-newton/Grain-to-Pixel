@@ -47,3 +47,47 @@ Hardware: LS-50 with coolscan-mods firmware and an SA-21 jumpered as SA-30 (whol
 - **macOS needs nothing installed** beyond nkscan itself: the scanner is used straight away.
 - **For H-02 (the nkscan adapter):** create the output folder before calling `scan` (nkscan does not), and pass `--no-eject` when more frames follow.
 - **Open:** time `--samples 2/4`; check how much of the top clipping is the rebate.
+
+## The adapter (H-02)
+
+`gtp-ingest::NkscanSource` runs the pinned CLI (`nkscan 0.17.0`; any other version is refused as
+`ScannerUnavailable`) and reads what it writes. The choices follow the spike:
+
+- **CLI, not the crate:** the crate's API went async in 0.17. The `ScannerSource` port hides the
+  difference, so a later move to the crate changes one file. The program is `GTP_NKSCAN` or `nkscan`
+  on `PATH`.
+- **One process per scan,** `scan <device> --frames 2,3,4 --dpi N --samples N --lock-ae --no-eject
+  [--ir] --basename <folder>/frame`, in a folder the adapter makes (nkscan does not) and removes.
+  `--lock-ae` keeps one exposure for the whole range; `--no-eject` leaves the film in, so a roll can be
+  scanned in parts. `NkscanSource::eject()` runs `nkscan eject`.
+- **Frame by frame:** the folder is watched; when `frame_<n>.tiff` (and `frame_<n>_IR.tiff`) are
+  whole and have stopped growing, the frame is read, handed to `on_frame` and its files deleted.
+  nkscan numbers files from 1 whatever frames were asked for, so file `n` is the `n`-th frame of the
+  range. Cancel kills the process; an error on frame k keeps frames 1 to k-1.
+- **Errors:** the program missing, another version, no scanner, a scanner "in use" or "incompatible
+  driver" (Windows without WinUSB) are `ScannerUnavailable`; any other failure is `ScanFailed` with
+  the last lines nkscan said.
+- **Not possible:** `ScanParams.autofocus` has no switch in the CLI; nkscan always focuses each
+  frame. There is no way to preview the roll before scanning in what the spike found.
+
+**Tested without the scanner** against `examples/fake_nkscan.rs`, which writes TIFFs the way nkscan
+names them. **Not yet tested on the scanner.** The exact text of `nkscan list` with a scanner
+attached was not recorded in the spike; `parse_list` reads `<name> (usb:..)` lines and falls back to
+the whole line as the id. Whether the `scan` positional device argument takes that id is part of the
+check below.
+
+### Hardware checklist for H-02 (Windows with WinUSB, and macOS)
+
+1. `cargo run --release -p gtp-ingest --example nkscan_roll -- 1 3 2000` prints the scanner, three
+   frames with size, colour range and infrared range, and the time. Paste the output into the table
+   below. If the scanner is not found or the device id is refused, paste `nkscan list` too.
+2. `nkscan list` output with the scanner attached (the lines under "Attached scanners").
+3. Thumbnails, for a possible roll preview: `nkscan scan --thumbnail --frames 1,2,3 --basename t/frame
+   --no-eject` in an existing folder `t`: are `frame_<n>_thumbnail.tiff` files written, how big, and
+   how long before the first one appears?
+4. `nkscan eject` after step 1.
+
+| OS | Frames | dpi | Result | Time |
+|---|---|---|---|---|
+| Windows 10 | | | | |
+| macOS | | | | |

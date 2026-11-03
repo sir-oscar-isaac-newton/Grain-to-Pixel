@@ -260,8 +260,16 @@ fn print_report(report: &Report, out: &mut impl Write) -> std::io::Result<()> {
     }
     writeln!(
         out,
-        "{:<26} {:>6} {:>5} {:>8} {:>6} {:>6}   {:>14} {:>7}",
-        "frame", "match", "turn", "crop gap", "median", "p95", "cast L* a* b*", "chroma"
+        "{:<26} {:>6} {:>5} {:>8} {:>6} {:>6}   {:>14} {:>7} {:>11}",
+        "frame",
+        "match",
+        "turn",
+        "crop gap",
+        "median",
+        "p95",
+        "cast L* a* b*",
+        "chroma",
+        "edge cast"
     )?;
     for f in &report.frames {
         let number = |v: Option<f32>, width: usize, precision: usize| {
@@ -287,7 +295,7 @@ fn print_report(report: &Report, out: &mut impl Write) -> std::io::Result<()> {
         });
         writeln!(
             out,
-            "{:<26} {} {:>5} {} {} {}   {:>14} {}{note}",
+            "{:<26} {} {:>5} {} {} {}   {:>14} {} {:>11}{note}",
             f.name,
             number(f.score, 6, 3),
             turn,
@@ -295,7 +303,9 @@ fn print_report(report: &Report, out: &mut impl Write) -> std::io::Result<()> {
             number(f.median, 6, 1),
             number(f.p95, 6, 1),
             cast,
-            number(f.chroma, 7, 1)
+            number(f.chroma, 7, 1),
+            f.edge_cast
+                .map_or("-".to_string(), |e| format!("{:+.0} {:+.0}", e[0], e[1]))
         )?;
     }
     if report.rolls.len() > 1 {

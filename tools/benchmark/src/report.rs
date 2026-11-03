@@ -8,13 +8,14 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use gtp_app::apply_flat_field;
 use gtp_app::{
     analyze_with, analyze_with_look, merge_triplet, render, BaseEstimate, FrameHint, PipelineInput,
     RenderTarget,
 };
 use gtp_core::model::FILM_BASE_MIN_CONFIDENCE;
 use gtp_core::recipe::{Crop, OutputSpace};
-use gtp_core::{AppError, ErrorCode, FilmFormat, ImageF32, Look};
+use gtp_core::{AppError, ErrorCode, FilmFormat, FlatField, ImageF32, Look};
 use gtp_io::{
     encode_jpeg, read_tiff16, read_tiff16_single_strip, split_rgbi, to_f32_linear, to_output,
     Limits, RawlerDecoder, Tiff16,
@@ -56,6 +57,9 @@ pub struct FrameReport {
     pub cast: Option<[f32; 3]>,
     /// Our mean chroma minus the reference's: positive when ours is the more saturated.
     pub chroma: Option<f32>,
+    /// How much redder than the centre the left and right edges are, ours minus the reference's (red
+    /// minus green, in 8-bit steps): the cast an uneven light leaves (P-21).
+    pub edge_cast: Option<[f32; 2]>,
 }
 
 /// What was measured on one roll (one film stock).
@@ -227,6 +231,30 @@ pub fn mean_chroma_difference(a: &ImageF32, b: &ImageF32) -> f32 {
     (chroma(a) - chroma(b)) as f32
 }
 
+/// How much redder (red minus green, in 8-bit steps) the left and right eighth of the picture is than
+/// its middle half, ours minus the reference's, over two sRGB-encoded images of the same size.
+pub fn edge_cast(ours: &ImageF32, reference: &ImageF32) -> [f32; 2] {
+    let excess = |image: &ImageF32| -> [f64; 2] {
+        let (w, h) = (image.width as usize, image.height as usize);
+        let band = |from: usize, to: usize| -> f64 {
+            let (mut sum, mut n) = (0.0f64, 0usize);
+            for y in 0..h {
+                for x in from..to {
+                    let i = (y * w + x) * 3;
+                    sum += f64::from(image.data[i] - image.data[i + 1]);
+                    n += 1;
+                }
+            }
+            sum / n.max(1) as f64 * 255.0
+        };
+        let edge = (w / 8).max(1);
+        let centre = band(w / 4, w - w / 4);
+        [band(0, edge) - centre, band(w - edge, w) - centre]
+    };
+    let (a, b) = (excess(ours), excess(reference));
+    [(a[0] - b[0]) as f32, (a[1] - b[1]) as f32]
+}
+
 fn crop_gap(registered: Window, ours: Crop) -> f32 {
     let edges = |x: f32, y: f32, w: f32, h: f32| [x, y, x + w, y + h];
     let a = edges(registered.x, registered.y, registered.w, registered.h);
@@ -237,12 +265,22 @@ fn crop_gap(registered: Window, ours: Crop) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// The frame of a pair as linear RGB: the triplet merged, or the scan with its infrared plane (if it
-/// has one) set aside.
-pub(crate) fn load_frame(pair: &Pair) -> Result<ImageF32, AppError> {
+/// The frame of a pair as linear RGB: the triplet merged (and divided by the flat field, if there
+/// is one, as the app does on load), or the scan with its infrared plane (if it has one) set aside.
+pub(crate) fn load_frame(pair: &Pair, flat: Option<&FlatField>) -> Result<ImageF32, AppError> {
     match &pair.source {
         Source::Triplet([r, g, b]) => {
-            Ok(merge_triplet(&RawlerDecoder, r, g, b, &Limits::default())?.image)
+            let mut image = merge_triplet(&RawlerDecoder, r, g, b, &Limits::default())?.image;
+            if let Some(flat) = flat {
+                if !apply_flat_field(&mut image, flat)? {
+                    return Err(AppError::new(
+                        ErrorCode::InvalidInput,
+                        "The flat field is not the size of this frame.",
+                    )
+                    .with_details(pair.name.clone()));
+                }
+            }
+            Ok(image)
         }
         Source::Scan(path) => {
             let tiff = read_tiff16(path, &Limits::default()).map_err(|err| {
@@ -338,6 +376,7 @@ pub fn run(
         size: None,
     });
     let hint = hint.filter(|_| manifest.format != FilmFormat::Mm35);
+    let flat = manifest.load_flat_field()?;
     let analyze = |image: ImageF32, film_base: Option<[f32; 3]>| {
         analyze_with(
             &PipelineInput {
@@ -365,7 +404,7 @@ pub fn run(
                 let mut estimates = Vec::new();
                 for pair in manifest.pairs.iter().filter(|p| p.roll == *roll) {
                     note(&format!("measuring the film base on {}", pair.name));
-                    estimates.push(analyze(load_frame(pair)?, None)?.base);
+                    estimates.push(analyze(load_frame(pair, flat.as_ref())?, None)?.base);
                 }
                 roll_base(&estimates)
                     .ok_or_else(|| AppError::internal("no film base was measured"))?
@@ -390,7 +429,7 @@ pub fn run(
         note(&format!("converting {}", pair.name));
         let roll_index = rolls.iter().position(|r| *r == pair.roll).unwrap_or(0);
         let film_base = bases[roll_index];
-        let image = load_frame(pair)?;
+        let image = load_frame(pair, flat.as_ref())?;
         let analysis = analyze_with_look(
             &PipelineInput {
                 rgb: Arc::new(image.clone()),
@@ -435,6 +474,7 @@ pub fn run(
             p95: None,
             cast: None,
             chroma: None,
+            edge_cast: None,
         };
         if let Some((found, _)) = found.filter(|(f, _)| f.score >= MIN_SCORE) {
             let ours = crop_resample(
@@ -449,6 +489,7 @@ pub fn run(
             report.p95 = Some(percentile(&by_value, 0.95));
             report.cast = Some(cast);
             report.chroma = Some(mean_chroma_difference(&ours, &reference));
+            report.edge_cast = Some(edge_cast(&ours, &reference));
             pooled_all.extend(des.iter().copied());
             pooled_by_roll[roll_index].extend(des.iter().copied());
             if let Some(dir) = maps {
@@ -500,6 +541,27 @@ mod tests {
             rgb: [confidence + 0.1, 0.5, 0.3],
             confidence,
         }
+    }
+
+    #[test]
+    fn the_edge_cast_is_the_redness_of_the_sides_over_the_middle() {
+        let picture = |side_red: f32| {
+            let (w, h) = (16usize, 2usize);
+            let mut data = Vec::new();
+            for _ in 0..h {
+                for x in 0..w {
+                    let edge = x < 2 || x >= w - 2;
+                    data.extend([0.5 + if edge { side_red } else { 0.0 }, 0.5, 0.5]);
+                }
+            }
+            ImageF32::new(w as u32, h as u32, 3, data).unwrap()
+        };
+        let [l, r] = edge_cast(&picture(0.2), &picture(0.0));
+        assert!(
+            (l - 51.0).abs() < 0.01 && (r - 51.0).abs() < 0.01,
+            "{l} {r}"
+        );
+        assert_eq!(edge_cast(&picture(0.1), &picture(0.1)), [0.0, 0.0]);
     }
 
     #[test]

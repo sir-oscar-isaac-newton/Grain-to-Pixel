@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { baseStatus, baseStatusText } from '../../shared/film-base-status';
-import { importFiles, pickTiffFiles, type Roll } from '../../shared/ipc';
+import {
+  flatFieldClear,
+  flatFieldImport,
+  importFiles,
+  pickCameraFiles,
+  pickTiffFiles,
+  type Roll,
+} from '../../shared/ipc';
 import { DeleteRollDialog } from './DeleteRollDialog';
 import styles from './library.module.css';
 import { messageOf, useLibraryStore } from './library-store';
@@ -16,6 +23,7 @@ export function RollSidebar() {
   const readOnly = useLibraryStore((s) => s.library?.read_only ?? false);
   const addJob = useLibraryStore((s) => s.addJob);
   const setNotice = useLibraryStore((s) => s.setNotice);
+  const reloadRolls = useLibraryStore((s) => s.reloadRolls);
 
   const [editing, setEditing] = useState<{ roll: Roll | null } | null>(null);
   const [deleting, setDeleting] = useState<Roll | null>(null);
@@ -35,6 +43,21 @@ export function RollSidebar() {
     } catch (e) {
       setNotice({ key: 'library.notice.importFailed', values: { message: messageOf(e) } });
     }
+  };
+
+  const changeFlatField = async (change: () => Promise<unknown>) => {
+    try {
+      await change();
+      await reloadRolls();
+    } catch (e) {
+      setNotice({ key: 'library.notice.flatFieldFailed', values: { message: messageOf(e) } });
+    }
+  };
+
+  const setFlatField = async (roll: Roll) => {
+    const paths = await pickCameraFiles();
+    if (paths.length === 0) return;
+    await changeFlatField(() => flatFieldImport(roll.id, paths));
   };
 
   return (
@@ -84,6 +107,18 @@ export function RollSidebar() {
           <button type="button" disabled={readOnly} onClick={() => void importInto(current)}>
             {t('library.rolls.import')}
           </button>
+          <button type="button" disabled={readOnly} onClick={() => void setFlatField(current)}>
+            {t('library.rolls.setFlatField')}
+          </button>
+          {current.has_flat_field && (
+            <button
+              type="button"
+              disabled={readOnly}
+              onClick={() => void changeFlatField(() => flatFieldClear(current.id))}
+            >
+              {t('library.rolls.removeFlatField')}
+            </button>
+          )}
         </div>
       )}
       {current && (
@@ -92,6 +127,11 @@ export function RollSidebar() {
             baseStatus(current.film_base_rgb !== null, current.film_base_confidence ?? null),
             t,
           )}
+        </p>
+      )}
+      {current && (
+        <p className={styles.hint}>
+          {t(current.has_flat_field ? 'library.rolls.flatFieldOn' : 'library.rolls.flatFieldOff')}
         </p>
       )}
 

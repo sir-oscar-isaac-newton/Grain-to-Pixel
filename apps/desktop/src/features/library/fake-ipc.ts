@@ -60,6 +60,7 @@ export function makeRoll(over: Partial<Roll> = {}): Roll {
     film_base_rgb: null,
     film_base_confidence: null,
     frame_size: null,
+    has_flat_field: false,
     created_at: '2026-10-30T10:00:00Z',
     ...over,
   };
@@ -533,6 +534,15 @@ export const ipc = {
       r.id === id ? { ...r, frame_size: size && { w: size[0], h: size[1], samples: 0 } } : r,
     );
     return state.rolls.find((r) => r.id === id) as Roll;
+  }),
+  flatFieldImport: vi.fn(async (id: string, paths: string[]) => {
+    state.rolls = state.rolls.map((r) => (r.id === id ? { ...r, has_flat_field: true } : r));
+    return { frame_width: 6016, frame_height: 4016, sources: paths };
+  }),
+  flatFieldClear: vi.fn(async (id: string) => {
+    const had = state.rolls.find((r) => r.id === id)?.has_flat_field ?? false;
+    state.rolls = state.rolls.map((r) => (r.id === id ? { ...r, has_flat_field: false } : r));
+    return had;
   }),
   logClientEvent: vi.fn(async () => undefined),
   developRender: vi.fn(async (_id: string, recipe: Recipe, maxEdge: number, seq: number) =>

@@ -13,5 +13,6 @@ Architecture Decision Records (ADRs), numbered, immutable once accepted (superse
 | [0007](0007-nef-decoder.md) | Decoder for the D600's NEF files (rawler, LGPL-2.1) | Accepted |
 | [0008](0008-film-log-look.md) | The Film log look: a log start for editing | Accepted |
 | [0009](0009-frontier-look.md) | The Frontier-style look, fitted to Trichroma Lab | Accepted |
+| [0010](0010-flat-field.md) | A flat field per roll, applied when a camera frame is read | Accepted |
 
 New ADR: copy [0000-template.md](0000-template.md), take the next number, add a row above.

@@ -139,6 +139,41 @@ fitted frames reach 9.0. What is left:
 - **The next step the numbers point to is colour**, not tone: an automatic colour balance
   (Q-09 found the same on the LS-50 scans).
 
+## The flat field, and the Frontier look fitted again (P-21)
+
+The P-20 numbers above were fitted on frames with the red edge cast of the lightbox. The bare-light
+triplet of the same session (DSC_4602 to 4604, same camera settings as the film frames) became the
+roll's flat field ([ADR 0010](../../decisions/0010-flat-field.md)); the manifest names it with
+`"flat_field": [red, green, blue]` and the benchmark divides every frame by it with the app's own code.
+The report has a new column, **edge cast**: how much redder (red minus green, in 8-bit steps) the
+left and right eighth of the picture is than its middle half, ours minus the reference's.
+
+| Neutral look, 15 frames | Without | With the flat field |
+|---|---|---|
+| Edge cast, left / right (frames 1 to 12) | +6 to +20 / +22 to +47 | -8 to +3 / -5 to +3 |
+| Registration match | 0.84 to 0.96 | 0.87 to 0.99 |
+| Median ΔE, all pixels (p95) | 17.2 (44.8) | 16.9 (44.5) |
+| Film base | 0.148 0.098 0.065 | 0.190 0.105 0.075 |
+
+The edge cast falls by more than half on 12 of the 15 frames (+6 to +47 to within ±8). Three do not
+follow: frames 13 and 14 were -17/+14 and -12/+20 and become -28/-16 and -23/-9, and frame 15 goes
+from +12/+25 to +10/+10. Their edges were different before (a bluer sky, or a sky gradient the lab
+rendered its own way), so the light correction is not the whole of their edge colour.
+
+The neutral look hardly moves in ΔE (16.9 against 17.2) because its error is tone, not the edges.
+The Frontier look was fitted again on the corrected frames (levels 0.5 / 99.5, ten frames fitted and
+five held out, as before):
+
+| Frontier look | Slope | Pivot | Gamma | Saturation | Median ΔE, fitted ten | Held out five |
+|---|---|---|---|---|---|---|
+| Before (uncorrected frames) | 4.918 | 0.525 | 1.069 | 0.465 | 9.0 | 13.2 |
+| After (flat-field corrected) | 5.719 | 0.495 | 1.284 | 0.562 | 7.7 | **10.8** |
+
+All pixels of the 15 frames: **median ΔE 8.8, p95 23.3** (10.0 and 22.0 before; 17.2 and 44.8 neutral
+and uncorrected). The held-out result is still above the target of 6. The refit also asked the other
+levels settings: the held-out medians were 21.3 (0.1 / 99.9), 11.0 (0.5 / 99.5), 9.2 (1 / 99) and
+10.3 (2 / 98), so 1 / 99 might do a little better, but the runs differ by about a unit and the levels
+stay as they are. What is left is colour: frame 3's b\* is 12 off, frame 15's L\* is 23 off.
 ## Quality: LS-50 scans against Nikon Scan 4 (Q-09)
 
 The author's LS-50 scans (16-bit RGB plus infrared, 3944 x 5952) have Nikon Scan 4's own positives

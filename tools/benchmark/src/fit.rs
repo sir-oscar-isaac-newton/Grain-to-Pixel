@@ -256,6 +256,8 @@ pub fn run_with_budget(
         size: None,
     });
 
+    let flat = manifest.load_flat_field()?;
+
     // One film base per roll, as the report measures it.
     let mut rolls: Vec<&str> = Vec::new();
     for pair in &manifest.pairs {
@@ -272,7 +274,7 @@ pub fn run_with_budget(
                 for pair in manifest.pairs.iter().filter(|p| p.roll == *roll) {
                     note(&format!("measuring the film base on {}", pair.name));
                     let input = PipelineInput {
-                        rgb: Arc::new(load_frame(pair)?),
+                        rgb: Arc::new(load_frame(pair, flat.as_ref())?),
                         ir: None,
                         film_base: None,
                     };
@@ -300,7 +302,7 @@ pub fn run_with_budget(
     for pair in &manifest.pairs {
         note(&format!("preparing {}", pair.name));
         let base = bases[rolls.iter().position(|r| *r == pair.roll).unwrap_or(0)];
-        let image = load_frame(pair)?;
+        let image = load_frame(pair, flat.as_ref())?;
         let input = PipelineInput {
             rgb: Arc::new(image),
             ir: None,
@@ -580,6 +582,7 @@ mod tests {
         let manifest = Manifest {
             format: FilmFormat::Mm35,
             film_base: None,
+            flat_field: None,
             pairs: Vec::new(),
         };
         let err = run(&manifest, 3, &[], &mut |_| {}).unwrap_err();

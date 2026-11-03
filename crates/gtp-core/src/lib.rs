@@ -20,7 +20,7 @@ pub use job::{
 };
 pub use look::Look;
 pub use model::{
-    BaseChange, FilmFormat, Frame, FrameKind, FrameSize, Roll, SearchQuery, SourceFile, SourceRole,
-    Tag, TripletChannel,
+    BaseChange, FilmFormat, FlatField, Frame, FrameKind, FrameSize, Roll, SearchQuery, SourceFile,
+    SourceRole, Tag, TripletChannel,
 };
 pub use recipe::{migrate, Recipe, RecipeField};

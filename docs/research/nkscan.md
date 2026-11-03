@@ -161,3 +161,48 @@ highest scanner number plus one (1 for a roll with none); frames imported from f
 number. One scan at a time, and no roll preview while a scan runs and no scan while one runs.
 
 Tested end to end with the fixture scanner. **Not yet run on the LS-50 through the job.**
+
+## Frame positions (R-06)
+
+Can the grid of the contact sheet (H-13) reach the scanner, so that a frame the detection got wrong is scanned where the user put it? Part 1 below is from reading the nkscan 0.17.0 source (the crate archive, 2026-11-03); nothing in it has been run on the scanner. Part 2 is the probe that measures what part 1 predicts.
+
+### What the source says
+
+- **The command line cannot place a frame.** `nkscan scan --frames 2,3` indexes into the rectangles that `framing::discover_with` found (`discovery.frames`) and hands each to `frame::scan_frame_with`. No flag changes a rectangle, and the scan is of exactly that rectangle: there is no margin to crop from either.
+- **The library can.** `scan::frame::scan_frame(session, &Recipe, frame: Rect, Options, &mut Samples)` takes any `Rect { top, left, bottom, right }` and returns the pass "over the rectangle that was asked for". `top` and `bottom` run along the film (stage addresses at the unit's optical resolution, 4000 per inch here), `left` and `right` across it. `Options` can reuse an exposure, as `--lock-ae` does. Cancel is a callback that returns `Break`, so a scan stops without killing a process, and the planes arrive as `Samples` in memory, with no temporary TIFF.
+- **How the LS-50 on the SA-30 finds its frames.** The line `frame length format=F135 length=5959` in the log of the spike is the message of the perforation mechanism (`Framing::Perforation`): a thumbnail pass, a read of the perforations, and a frame table written back to the unit (`BoundaryType2`). The probe prints the mechanism to confirm it.
+- **What that means for a moved frame.** A unit that positions the film by its frame table reads a rectangle that is not in the table "as an offset into the frame that holds its top, and sends black data past the end of that frame" (the comment of `framing::register`). `scan_frame` calls `register` itself: it adds an entry made from the perforation record at or before the rectangle's top, scans, and puts the measured table back. It fails with "no perforation reading of the last pass is at or before {top}" when there is no such record. So a moved frame is supported, but needs a perforation record at or before it: a small move inside the roll should work, and a move before the first perforation record (frame 1 towards the start) may not. **To be measured.**
+- **Thumbnail columns and scanner addresses.** `Discovery` carries the thumbnail (the pass the command line saves with `--thumbnail`), `line_pitch` (the addresses between two thumbnail lines: the optical resolution over the thumbnail's, rounded down; `None` when the columns are not evenly spaced) and `column_addresses` (the feed address of each column, never decreasing). With perforation framing the thumbnail is resampled to the columns it keeps, `line_pitch` is `None` and the columns are not evenly spaced.
+
+### What this changes in what was built
+
+- **The pitch of the roll preview (H-12) is an approximation.** The strip width divided by the frame count assumes even columns. The width of the strip of one roll was 5153, 5149 and 5144 pixels on three runs, which is the resampling at work. H-13 should map a strip pixel to an address through `column_addresses`, not through the pitch.
+- **The grid cannot be turned into positions by the command line.** Moving a frame needs the library (or a change to the command line).
+
+### The options for H-13
+
+| | What it takes | What it gives |
+|---|---|---|
+| **A. The adapter uses the nkscan crate** | The async API (through `pollster`) in `gtp-ingest`, pinned to the exact version, in one module; what `scan.rs` of the command line does around the call (wait for film, stage, exposure locking, infrared) is written again; the licence notices are regenerated. | Any rectangle; the column addresses for an exact strip-to-address mapping; cancel without killing the process; no temporary files; no preview hack (the preview is `discover` and then a stop). |
+| **B. A flag in the command line** (upstream or a fork) | A `--rect` or offset flag; a fork to keep, or a wait for upstream. | Any rectangle, with the adapter as it is; but still a process per scan, a kill to cancel, and no column addresses. |
+| **C. Keep the command line as it is** | Nothing. | The grid only selects frames. A frame cut at the wrong place stays cut at the wrong place. |
+
+**Preliminary recommendation, before the measurement: A**, if the probe shows that a moved frame scans. It is the larger change, but it also replaces two workarounds (killing the process to cancel and to stop a preview) and gives the exact mapping that H-13 needs. B only if A turns out too big. C does not answer the question.
+
+### The probe
+
+`tools/spikes/nkscan-probe` (outside the workspace, see its README) prints the framing mechanism, the frame table, the line pitch and the column addresses (`table`), and scans one frame as found and moved by a number of addresses (`shift`), then measures how far the picture moved. It compiles; it has not been run on the scanner.
+
+Hardware checklist for R-06 (Windows with WinUSB; the film loaded):
+
+1. `cargo run --release -- table`: paste the output.
+2. `cargo run --release -- shift 2 400` (a frame in the middle moved towards the end of the film): paste the output. Expected: the picture moves by about 100 lines at 1000 dpi (400 addresses).
+3. `cargo run --release -- shift 2 -400`: the same the other way.
+4. `cargo run --release -- shift 1 -400`: frame 1 towards the start of the roll, where there may be no perforation record before it. The error message, if there is one, is the result.
+
+| Run | Result |
+|---|---|
+| table | |
+| shift 2 400 | |
+| shift 2 -400 | |
+| shift 1 -400 | |

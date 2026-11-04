@@ -22,7 +22,7 @@ Decision: [ADR 0004](../../decisions/0004-guided-rgb-capture.md). Spec: [§6.1](
 
 ## The R-02 probe
 
-`tools/spikes/scanlight-probe` (outside the workspace, see its README) talks to the Scanlight from the desk research above. The packets, from the control interface document of firmware 1.2 (the byte order of the 16 and 32 bit fields is not given there; the probe prints both readings of the first packets and the recorded packets settle it):
+`tools/spikes/scanlight-probe` (outside the workspace, see its README) talks to the Scanlight from the desk research above. The packets, from the control interface document of firmware 1.2 (the byte order of the 16 and 32 bit fields is not given there; **it is big-endian**, measured on a Mac: a VBUS packet `fe 02 04 00 00 14 27` is 5159 mV, which read little-endian would be 655,622,144):
 
 | | Header | Data |
 |---|---|---|
@@ -36,7 +36,9 @@ Decision: [ADR 0004](../../decisions/0004-guided-rgb-capture.md). Spec: [§6.1](
 
 Every packet is `0xFE`, the header, the length of the data, then the data. There is no checksum and no acknowledgement.
 
-**Seen so far.** On the author's Windows machine the device appeared as a "USB Serial Device" on COM5 (vendor ID 2e8a, product ID 000a, which is the Raspberry Pi Pico's USB serial; the probe's first try, without DTR, timed out writing to it with error 121). Whether COM5 is the Scanlight is for `ports` to say.
+**Seen so far.**
+- **macOS: works.** `ports` finds the Scanlight and decodes its packets; the byte order is big-endian (above). The official web app also connects.
+- **Windows 10 (this PC): the port opens and stays silent.** The device appears as a "USB Serial Device" on COM5 (vendor ID 2e8a, product ID 000a; the device calls itself "Pico", with the serial interface "Board CDC" and a "Reset" interface: the stock names of the Raspberry Pi Pico SDK, which the V4's RP2040 firmware uses). `listen` for 3 s with DTR held gets 0 bytes, the probe's first try (no DTR) timed out writing (error 121), a later write blocked in the driver until the cable was pulled, and the official automation web app says "Connection Failed" too. So the fault is on the Windows side of this PC, not the probe or the light. Still to try: another USB port (a USB 2.0 one), another cable.
 
 Hardware checklist for R-02 (Windows; macOS for the first two lines). Each line is ticked in the list at the top by the person who ran it.
 

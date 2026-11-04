@@ -160,24 +160,25 @@ impl Drop for Light {
 fn describe(packet: &Packet) -> String {
     match packet {
         Packet::LedTemp(w) => format!(
-            "LED_TEMP raw {} -> {} m°C little-endian, {} big-endian",
+            "LED_TEMP raw {} -> {:.1} °C ({} m°C big-endian; read little-endian {})",
             hex(&w.0),
-            w.le(),
-            w.be()
+            f64::from(w.value()) / 1000.0,
+            w.value(),
+            w.le()
         ),
         Packet::Vbus(w) => format!(
-            "VBUS raw {} -> {} mV little-endian, {} big-endian",
+            "VBUS raw {} -> {} mV (big-endian; read little-endian {})",
             hex(&w.0),
-            w.le(),
-            w.be()
+            w.value(),
+            w.le()
         ),
         Packet::FwVersion(w) => format!(
-            "FW_VERSION raw {} -> firmware {} hardware {} little-endian; firmware {} hardware {} big-endian",
+            "FW_VERSION raw {} -> firmware {} hardware {} (big-endian; read little-endian {} and {})",
             hex(&w.0),
+            w.halves().0,
+            w.halves().1,
             w.halves_le().0,
-            w.halves_le().1,
-            w.halves_be().0,
-            w.halves_be().1
+            w.halves_le().1
         ),
         Packet::Unknown { header, data } => format!("unknown header {header}: {}", hex(data)),
     }
@@ -360,10 +361,10 @@ fn temp(args: &[String]) -> Result<()> {
                 for (at, p) in light.pump(Duration::from_millis(200))? {
                     match p {
                         Packet::LedTemp(w) => {
-                            temps.push((at, w.le()));
-                            let _ = writeln!(csv, "{at},{name},{},{vbus}", w.le());
+                            temps.push((at, w.value()));
+                            let _ = writeln!(csv, "{at},{name},{},{vbus}", w.value());
                         }
-                        Packet::Vbus(w) => vbus = w.le(),
+                        Packet::Vbus(w) => vbus = w.value(),
                         _ => {}
                     }
                 }

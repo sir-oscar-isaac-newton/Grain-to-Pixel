@@ -12,3 +12,6 @@ samples/private/*
 apps/desktop/src-tauri/gen/
 # Downloaded test tooling (msedgedriver)
 .cache/
+
+# What the spike probes write (copy the good ones to samples/public/)
+tools/spikes/*/probe-out/

@@ -1,8 +1,9 @@
 //! The Scanlight V4's serial packets, from its control interface document (firmware 1.2):
 //! `0xFE`, a header byte, a length byte, then that many data bytes; a length of 0 ends the packet.
 //! There is no checksum and no acknowledgement. The document does not give the byte order of the
-//! 16 and 32 bit fields, so a decoded word keeps its four bytes and offers both readings: the probe
-//! prints both, and the recorded packets settle which is right.
+//! 16 and 32 bit fields; the first packets recorded from a Scanlight on a Mac settled it: **big-endian**
+//! (VBUS `00 00 14 27` is 5159 mV). A decoded word keeps its four bytes and still offers the other
+//! reading, so a surprise shows.
 
 pub const START: u8 = 0xFE;
 
@@ -55,32 +56,35 @@ pub fn set_focus(on: bool) -> Vec<u8> {
     vec![START, H2D_SET_FOCUS, 1, u8::from(on)]
 }
 
-/// Four data bytes of a device packet, readable either way round.
+/// Four data bytes of a device packet. The device sends them big-endian; the little-endian readings
+/// are kept to show what a wrong guess would have given.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Word(pub [u8; 4]);
 
 impl Word {
+    /// The value as the device sends it: 32 bit signed, big-endian.
+    pub fn value(self) -> i32 {
+        i32::from_be_bytes(self.0)
+    }
+
+    /// The same bytes read little-endian (wrong for this device).
     pub fn le(self) -> i32 {
         i32::from_le_bytes(self.0)
     }
 
-    pub fn be(self) -> i32 {
-        i32::from_be_bytes(self.0)
+    /// The two 16 bit halves as the device sends them: big-endian each, in order.
+    pub fn halves(self) -> (u16, u16) {
+        (
+            u16::from_be_bytes([self.0[0], self.0[1]]),
+            u16::from_be_bytes([self.0[2], self.0[3]]),
+        )
     }
 
-    /// The two 16 bit halves, little-endian each, in order.
+    /// The two 16 bit halves read little-endian (wrong for this device).
     pub fn halves_le(self) -> (u16, u16) {
         (
             u16::from_le_bytes([self.0[0], self.0[1]]),
             u16::from_le_bytes([self.0[2], self.0[3]]),
-        )
-    }
-
-    /// The two 16 bit halves, big-endian each, in order.
-    pub fn halves_be(self) -> (u16, u16) {
-        (
-            u16::from_be_bytes([self.0[0], self.0[1]]),
-            u16::from_be_bytes([self.0[2], self.0[3]]),
         )
     }
 }
@@ -182,28 +186,33 @@ mod tests {
     }
 
     #[test]
-    fn device_packets_decode_and_a_word_reads_both_ways() {
+    fn device_packets_decode_big_endian_and_a_word_keeps_the_other_reading() {
         let mut decoder = Decoder::default();
         let packets = decoder.push(&[
-            0xFE, 1, 4, 0xA8, 0x61, 0x00, 0x00, // LED_TEMP 25000 little-endian
-            0xFE, 2, 4, 0x88, 0x13, 0x00, 0x00, // VBUS 5000
-            0xFE, 3, 4, 0x02, 0x01, 0x0B, 0x00, // firmware 0x0102, hardware 0x000B
+            0xFE, 1, 4, 0x00, 0x00, 0x61, 0xA8, // LED_TEMP 25000 big-endian
+            0xFE, 2, 4, 0x00, 0x00, 0x14, 0x27, // VBUS 5159, as a Scanlight on a Mac sent it
+            0xFE, 3, 4, 0x01, 0x02, 0x00, 0x0B, // firmware 0x0102, hardware 0x000B
         ]);
         assert_eq!(packets.len(), 3);
         let Packet::LedTemp(temp) = packets[0] else {
             panic!("{:?}", packets[0])
         };
-        assert_eq!(temp.le(), 25_000);
-        assert_ne!(temp.be(), 25_000);
+        assert_eq!(temp.value(), 25_000);
+        assert_ne!(temp.le(), 25_000);
         let Packet::Vbus(vbus) = packets[1] else {
             panic!("{:?}", packets[1])
         };
-        assert_eq!(vbus.le(), 5_000);
+        assert_eq!(vbus.value(), 5_159);
+        assert_eq!(
+            vbus.le(),
+            655_622_144,
+            "read the wrong way round it is nonsense"
+        );
         let Packet::FwVersion(fw) = packets[2] else {
             panic!("{:?}", packets[2])
         };
-        assert_eq!(fw.halves_le(), (0x0102, 0x000B));
-        assert_eq!(fw.halves_be(), (0x0201, 0x0B00));
+        assert_eq!(fw.halves(), (0x0102, 0x000B));
+        assert_eq!(fw.halves_le(), (0x0201, 0x0B00));
     }
 
     #[test]

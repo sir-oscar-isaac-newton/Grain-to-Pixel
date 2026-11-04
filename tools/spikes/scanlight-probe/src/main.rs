@@ -4,6 +4,7 @@
 //!
 //! ```text
 //! ports                                         which port answers, the firmware and hardware IDs
+//! listen  [--port P] [--seconds 3]              sends nothing; shows what the port says by itself
 //! colors  [--port P] [--level 64] [--seconds 3] each of red, green, blue alone
 //! temp    [--port P] [--level 64] [--cycles 5] [--seconds 10] [--abort-c 60]
 //!                                               the three colours in turn, logging LED_TEMP and VBUS
@@ -43,6 +44,8 @@ const BAUD: u32 = 115_200;
 const READ_TIMEOUT: Duration = Duration::from_millis(20);
 /// A write may take this long: a USB serial device that is not ready holds it up.
 const WRITE_TIMEOUT: Duration = Duration::from_millis(1000);
+/// How many received bytes `ports` and `listen` keep to show raw.
+const RAW_KEPT: usize = 256;
 /// A level above this lights the LEDs hard: say so.
 const BRIGHT: u8 = 128;
 
@@ -62,6 +65,8 @@ struct Light {
     decoder: Decoder,
     started: Instant,
     log: Vec<String>,
+    /// The first bytes received, as they came, whether or not they decoded.
+    raw: Vec<u8>,
 }
 
 impl Light {
@@ -80,6 +85,7 @@ impl Light {
             decoder: Decoder::default(),
             started: Instant::now(),
             log: Vec::new(),
+            raw: Vec::new(),
         })
     }
 
@@ -99,7 +105,9 @@ impl Light {
     fn send(&mut self, bytes: &[u8]) -> Result<()> {
         self.record("tx", bytes);
         self.port.set_timeout(WRITE_TIMEOUT)?;
-        let written = self.port.write_all(bytes).and_then(|()| self.port.flush());
+        // No flush: on Windows it waits for the device to drain its buffer, and a device that does not
+        // read would hold the probe there for good.
+        let written = self.port.write_all(bytes);
         self.port.set_timeout(READ_TIMEOUT)?;
         Ok(written?)
     }
@@ -114,6 +122,9 @@ impl Light {
                 Ok(0) => {}
                 Ok(n) => {
                     self.record("rx", &buffer[..n]);
+                    if self.raw.len() < RAW_KEPT {
+                        self.raw.extend_from_slice(&buffer[..n]);
+                    }
                     let at = self.ms();
                     packets.extend(self.decoder.push(&buffer[..n]).into_iter().map(|p| (at, p)));
                 }
@@ -141,8 +152,8 @@ impl Light {
 impl Drop for Light {
     fn drop(&mut self) {
         // Whatever happened, the light does not stay on.
+        let _ = self.port.set_timeout(WRITE_TIMEOUT);
         let _ = self.port.write_all(&packet::all_off());
-        let _ = self.port.flush();
     }
 }
 
@@ -211,13 +222,24 @@ fn list<T: std::str::FromStr + Clone>(
 fn answers(name: &str, show: bool) -> Result<bool> {
     let mut light = Light::open(name)?;
     light.send(&packet::get_fw_version())?;
-    let packets = light.pump(Duration::from_millis(700))?;
+    let packets = light.pump(Duration::from_millis(2000))?;
     let mut found = false;
     for (at, p) in &packets {
         if show {
             println!("  {at:>5} ms  {}", describe(p));
         }
         found |= matches!(p, Packet::FwVersion(_));
+    }
+    if show && !found {
+        if light.raw.is_empty() {
+            println!("  nothing at all came back in 2 s (not even the temperature the Scanlight sends by itself)");
+        } else {
+            println!(
+                "  {} bytes came back that did not make a firmware version: {}",
+                light.raw.len(),
+                hex(&light.raw[..light.raw.len().min(48)])
+            );
+        }
     }
     Ok(found)
 }
@@ -250,6 +272,32 @@ fn ports() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Sends nothing and shows what the port says by itself for a few seconds: the Scanlight sends its
+/// temperature and USB voltage every 200 ms, so a silent port is not the Scanlight (or not ready).
+fn listen(args: &[String]) -> Result<()> {
+    let seconds: f64 = number(args, "--seconds", 3.0)?;
+    let name = match option(args, "--port") {
+        Some(name) => name.to_owned(),
+        None => serialport::available_ports()?
+            .first()
+            .map(|p| p.port_name.clone())
+            .ok_or("no serial ports")?,
+    };
+    println!("listening on {name} for {seconds} s, sending nothing");
+    let mut light = Light::open(&name)?;
+    let packets = light.pump(Duration::from_secs_f64(seconds))?;
+    for (at, p) in &packets {
+        println!("  {at:>5} ms  {}", describe(p));
+    }
+    println!(
+        "{} packets, {} bytes; first bytes: {}",
+        packets.len(),
+        light.raw.len(),
+        hex(&light.raw[..light.raw.len().min(48)])
+    );
+    light.save("listen")
 }
 
 fn announce_level(level: u8) {
@@ -498,18 +546,25 @@ fn levels(files: &[String]) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    ctrlc::set_handler(|| STOP.store(true, Ordering::SeqCst))?;
+    // The first Ctrl-C asks the commands to finish (the light goes off); a second one leaves at once, for
+    // a device that does not answer.
+    ctrlc::set_handler(|| {
+        if STOP.swap(true, Ordering::SeqCst) {
+            std::process::exit(130);
+        }
+    })?;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let rest = args.get(1..).unwrap_or(&[]);
     match args.first().map(String::as_str) {
         Some("ports") => ports(),
+        Some("listen") => listen(rest),
         Some("colors") => colors(rest),
         Some("temp") => temp(rest),
         Some("shutter") => shutter(rest),
         Some("settle") => settle(rest),
         Some("levels") => levels(rest),
         _ => Err(
-            "usage: ports | colors | temp | shutter | settle | levels (see the top of src/main.rs)"
+            "usage: ports | listen | colors | temp | shutter | settle | levels (see the top of src/main.rs)"
                 .into(),
         ),
     }

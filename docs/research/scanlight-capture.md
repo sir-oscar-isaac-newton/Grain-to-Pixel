@@ -19,3 +19,39 @@ Decision: [ADR 0004](../../decisions/0004-guided-rgb-capture.md). Spec: [§6.1](
 - [ ] Windows: digiCamControl sees the D600, downloads NEFs fired by the Scanlight pulse into a session folder (without triggering captures itself); file-complete detection
 - [ ] EXIF identical across the three shots; histogram/clipping check works on `rawler` output
 - Result / recommendation:
+
+## The R-02 probe
+
+`tools/spikes/scanlight-probe` (outside the workspace, see its README) talks to the Scanlight from the desk research above. The packets, from the control interface document of firmware 1.2 (the byte order of the 16 and 32 bit fields is not given there; the probe prints both readings of the first packets and the recorded packets settle it):
+
+| | Header | Data |
+|---|---|---|
+| SET_COLOR | 0 | red, green, blue, white, IR (0 to 255 each), save flag. The device limits power on a weak supply, will not run white or IR with RGB, and ignores IR on a v4. **The probe always sends save = 0.** |
+| GET_FW_VERSION | 2 | none; the device answers with FW_VERSION |
+| SHUTTER_PULSE | 3 | the length in units of 10 ms |
+| SET_FOCUS | 7 | the focus signal on or off (PCB rev 26a902b only) |
+| LED_TEMP (from the device, every 200 ms) | 1 | 32-bit signed, millidegrees Celsius |
+| VBUS (from the device, every 200 ms) | 2 | 32-bit signed, millivolts |
+| FW_VERSION (from the device) | 3 | firmware ID (16 bits), hardware ID (16 bits) |
+
+Every packet is `0xFE`, the header, the length of the data, then the data. There is no checksum and no acknowledgement.
+
+**Seen so far.** On the author's Windows machine the device appeared as a "USB Serial Device" on COM5 (vendor ID 2e8a, product ID 000a, which is the Raspberry Pi Pico's USB serial; the probe's first try, without DTR, timed out writing to it with error 121). Whether COM5 is the Scanlight is for `ports` to say.
+
+Hardware checklist for R-02 (Windows; macOS for the first two lines). Each line is ticked in the list at the top by the person who ran it.
+
+1. `ports`: the port that answers, and the firmware and hardware IDs (rev B expected). Paste the output.
+2. `colors --level 64`: does each of red, green and blue light alone, and nothing else? Note anything odd.
+3. `temp --level 64 --cycles 5 --seconds 10`: paste the summary line; the CSV and the jsonl are written to `probe-out/`.
+4. `shutter` and then `shutter --focus`, with the D600 and the remote cable on the 3.5 mm output: which pulses took a picture?
+5. `settle --pulse <the shortest length that fired the camera> --colour red`, then `levels` on the five NEFs (copy them to `samples\private`): paste the table.
+
+| Run | Result |
+|---|---|
+| ports (Windows) | |
+| ports (macOS) | |
+| colors | |
+| temp | |
+| shutter | |
+| shutter --focus | |
+| settle and levels | |

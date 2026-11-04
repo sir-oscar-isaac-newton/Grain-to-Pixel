@@ -610,6 +610,15 @@
       "commit": "04273c1"
     },
     {
+      "id": "R-02",
+      "number": 9,
+      "title": "Spike - Scanlight V4 serial control",
+      "branch": "feat/issue-9-spike-scanlight-serial",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
       "id": "R-06",
       "number": 199,
       "title": "Spike - scan at a custom frame position with nkscan",

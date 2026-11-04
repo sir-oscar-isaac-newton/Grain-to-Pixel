@@ -37,7 +37,7 @@ Decision: [ADR 0004](../../decisions/0004-guided-rgb-capture.md). Spec: [§6.1](
 Every packet is `0xFE`, the header, the length of the data, then the data. There is no checksum and no acknowledgement.
 
 **Seen so far.**
-- **macOS: works.** `ports` finds the Scanlight and decodes its packets; the byte order is big-endian (above). The official web app also connects.
+- **macOS: works.** `ports` finds the Scanlight and decodes its packets; the byte order is big-endian (above). The official web app also connects. The light reports hardware ID 0 (the big scanlight, per the Scanlight README), not the V4 the issue assumed.
 - **Windows 10 (this PC): the port opens and stays silent.** The device appears as a "USB Serial Device" on COM5 (vendor ID 2e8a, product ID 000a; the device calls itself "Pico", with the serial interface "Board CDC" and a "Reset" interface: the stock names of the Raspberry Pi Pico SDK, which the V4's RP2040 firmware uses). `listen` for 3 s with DTR held gets 0 bytes, the probe's first try (no DTR) timed out writing (error 121), a later write blocked in the driver until the cable was pulled, and the official automation web app says "Connection Failed" too. So the fault is on the Windows side of this PC, not the probe or the light. Still to try: another USB port (a USB 2.0 one), another cable.
 
 Hardware checklist for R-02 (Windows; macOS for the first two lines). Each line is ticked in the list at the top by the person who ran it.
@@ -50,10 +50,14 @@ Hardware checklist for R-02 (Windows; macOS for the first two lines). Each line 
 
 | Run | Result |
 |---|---|
-| ports (Windows) | |
-| ports (macOS) | |
-| colors | |
-| temp | |
-| shutter | |
-| shutter --focus | |
-| settle and levels | |
+| ports (Windows) | The port opens and stays silent (0 bytes in 3 s with DTR held); the official automation web app fails to connect too. Not understood yet; another USB port and cable still to try. |
+| ports (macOS) | **Works** (2026-11-03). `/dev/cu.usbmodem1101` (and `tty.`), vendor 2e8a, product 0x000a, manufacturer "Raspberry Pi", product "Pico". FW_VERSION answers in 4 ms: raw `00 01 00 00`, **firmware ID 1, hardware ID 0**, which the Scanlight README lists as the *big scanlight* (a V4 would be 1 or 3). LED_TEMP and VBUS every 200 ms (29.7 °C, about 5.15 V). Big-endian words. |
+| colors | macOS: each of red, green and blue lights alone and the light is off afterwards (author's report). |
+| temp | macOS. Level 64, 5 x 10 s: 28.3 °C start, 28.4 peak, 27.4 end, VBUS 5159 idle to 5134 mV (no heating). **Level 255, 3 x 30 s (4.5 min):** 24.0 °C start, 29.9 peak, 29.6 end (levelled off, +6 °C), VBUS 5086 mV (-75 mV). |
+| shutter | macOS: **no pulse fired the D600** (20 to 500 ms, then 1 to 2.55 s, with manual focus, per the author), with an MC-DC2-to-3.5 mm cable in the camera's DC2/GPS port. The light's own web app does not fire it either. |
+| shutter --focus | Not run yet (the focus signal may not exist on this light). |
+| settle and levels | Waits for a pulse that fires the camera. |
+
+**Limits proposed from the temperature runs** (for the author to approve; they become settings): warn at 45 °C, abort at 55 °C. The worst case measured is about 30 °C at full power, one colour at a time, so these are safety nets (a stuck-on LED, a hot room: 35 °C plus the 6 °C rise is 41 °C), not limits normal use should meet. A VBUS below about 4.75 V (the lowest a USB port should give) would mean the supply is failing.
+
+**What the shutter result means.** With this cable and port, neither the probe nor the Scanlight's own app fires the D600, so the Scanlight pulse cannot be assumed to work for H-10. Possible causes, none confirmed: the cable's wiring (a Nikon release cord has a focus contact that closes before the release contact, and a light with no focus signal closes only one), the light (hardware ID 0 is the big scanlight, and its shutter output may differ from the V4's), or the camera. The fall-back is to trigger the shutter over USB (digiCamControl on Windows, libgphoto2 on macOS), which R-03 and R-04 test.

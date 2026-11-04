@@ -173,7 +173,7 @@ fn describe(packet: &Packet) -> String {
             w.le()
         ),
         Packet::FwVersion(w) => format!(
-            "FW_VERSION raw {} -> firmware {} hardware {} (big-endian; read little-endian {} and {})",
+            "FW_VERSION raw {} -> halves {} and {} (big-endian; read little-endian {} and {}). The document says firmware, then hardware; on a 26a901a board the first is 1, which the README lists as the v4 26a901a hardware ID",
             hex(&w.0),
             w.halves().0,
             w.halves().1,

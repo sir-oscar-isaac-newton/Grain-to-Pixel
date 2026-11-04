@@ -96,7 +96,8 @@ pub enum Packet {
     LedTemp(Word),
     /// Millivolts, every 200 ms.
     Vbus(Word),
-    /// Firmware version ID and hardware version ID (16 bits each).
+    /// Two 16 bit IDs: hardware first, then firmware, as measured on a V4 rev A (the control interface
+    /// document lists them the other way round).
     FwVersion(Word),
     /// A header this does not know, with its data.
     Unknown { header: u8, data: Vec<u8> },

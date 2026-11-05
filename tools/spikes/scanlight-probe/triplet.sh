@@ -4,7 +4,8 @@
 # (see docs/research/scanlight-capture.md: kill ptpcamerad, in every logged-in account, first).
 #
 #   ./triplet.sh <serial port> [level 64] [settle seconds 1.5] [output folder triplet-out]
-#   ./triplet.sh /dev/cu.usbmodem1101 64 1.5          (ls /dev/cu.usbmodem* shows the port)
+#   ./triplet.sh /dev/cu.usbmodem101 64 1.5           (ls /dev/cu.usbmodem* shows the port)
+#   ./triplet.sh /dev/cu.usbmodem101 64,32,16 1.5     one level per colour: red, green, blue
 #
 # The light is lit by `scanlight-probe hold` in the background; a shot is taken only after the probe
 # has said the light is on and the settle time has passed; then the hold is stopped (SIGINT: it
@@ -12,8 +13,8 @@
 # The light is off at the end, also if a shot fails or the script is stopped.
 set -u
 
-PORT="${1:?usage: triplet.sh <serial port> [level] [settle seconds] [output folder]}"
-LEVEL="${2:-64}"
+PORT="${1:?usage: triplet.sh <serial port> [level or red,green,blue levels] [settle seconds] [output folder]}"
+LEVELS="${2:-64}"
 SETTLE="${3:-1.5}"
 OUT="${4:-triplet-out}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -21,6 +22,10 @@ PROBE="$HERE/target/release/scanlight-probe"
 
 [ -x "$PROBE" ] || { echo "build the probe first: cargo build --release" >&2; exit 1; }
 [ -e "$PORT" ] || { echo "$PORT does not exist: is the Scanlight plugged into this Mac? (ls /dev/cu.usbmodem*)" >&2; exit 1; }
+# One level for all three colours, or three: red,green,blue.
+IFS=, read -r LEVEL_RED LEVEL_GREEN LEVEL_BLUE <<< "$LEVELS"
+LEVEL_GREEN="${LEVEL_GREEN:-$LEVEL_RED}"
+LEVEL_BLUE="${LEVEL_BLUE:-$LEVEL_RED}"
 mkdir -p "$OUT"
 LOG="$(mktemp -t triplet-hold)"
 
@@ -35,6 +40,7 @@ off() {
 trap 'off; rm -f "$LOG"' EXIT INT TERM
 
 for colour in red green blue; do
+  case "$colour" in red) LEVEL="$LEVEL_RED" ;; green) LEVEL="$LEVEL_GREEN" ;; blue) LEVEL="$LEVEL_BLUE" ;; esac
   : > "$LOG"
   "$PROBE" hold --port "$PORT" --colour "$colour" --level "$LEVEL" --seconds 30 > "$LOG" 2>&1 &
   HOLD=$!
@@ -55,7 +61,7 @@ for colour in red green blue; do
   sleep "$SETTLE"
   start=$(date +%s)
   if gphoto2 --capture-image-and-download --filename "$OUT/$colour.nef" --force-overwrite; then
-    echo "$colour: shot taken, $(( $(date +%s) - start )) s from trigger to file"
+    echo "$colour: level $LEVEL, shot taken, $(( $(date +%s) - start )) s from trigger to file"
   else
     echo "$colour: the shot failed" >&2
     off

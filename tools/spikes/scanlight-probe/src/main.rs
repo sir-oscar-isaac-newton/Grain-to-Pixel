@@ -13,6 +13,8 @@
 //! settle  --pulse N [--port P] [--colour red] [--level 64] [--delays 0,50,100,200,500]
 //!                                               set the colour, wait, fire the shutter: one shot per delay
 //! levels  <files>                               the mean colour of each file's embedded JPEG preview
+//! hold    [--port P] [--colour red] [--level 64] [--seconds 10]
+//!                                               one colour on until the time is up or SIGINT (for triplet.sh)
 //! ```
 //!
 //! Every run that talks to the device also writes the packets it sent and received, with times, to
@@ -481,6 +483,26 @@ fn settle(args: &[String]) -> Result<()> {
     light.save("settle")
 }
 
+/// Lights one colour and holds it for `--seconds` (or until Ctrl-C / SIGINT), then switches off. For a
+/// script that triggers the camera meanwhile (see `triplet.sh`): it says when the light is on.
+fn hold(args: &[String]) -> Result<()> {
+    let level: u8 = number(args, "--level", 64)?;
+    let seconds: f64 = number(args, "--seconds", 10.0)?;
+    let colour = option(args, "--colour").unwrap_or("red");
+    let index = NAMES
+        .iter()
+        .position(|n| *n == colour)
+        .ok_or("--colour is red, green or blue")?;
+    announce_level(level);
+    let mut light = Light::open(&find_port(args)?)?;
+    light.send(&channel(index, level))?;
+    println!("LIGHT ON {colour} {level}");
+    light.pump(Duration::from_secs_f64(seconds))?;
+    light.off()?;
+    println!("LIGHT OFF");
+    light.save("hold")
+}
+
 /// The embedded JPEG preview with the most pixels (at least a quarter of a megapixel), as an offset.
 fn largest_preview(bytes: &[u8]) -> Option<usize> {
     let mut best: Option<(u64, usize)> = None;
@@ -564,6 +586,7 @@ fn main() -> Result<()> {
         Some("shutter") => shutter(rest),
         Some("settle") => settle(rest),
         Some("levels") => levels(rest),
+        Some("hold") => hold(rest),
         _ => Err(
             "usage: ports | listen | colors | temp | shutter | settle | levels (see the top of src/main.rs)"
                 .into(),

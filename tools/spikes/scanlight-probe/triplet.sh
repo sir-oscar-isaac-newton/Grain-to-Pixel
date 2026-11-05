@@ -7,6 +7,9 @@
 #   ./triplet.sh /dev/cu.usbmodem101 64 1.5           (ls /dev/cu.usbmodem* shows the port)
 #   ./triplet.sh /dev/cu.usbmodem101 64,32,16 1.5     one level per colour: red, green, blue
 #
+# The app groups files into a triplet only if its shots are at most 5 s apart (MAX_SHOT_GAP_MS), so
+# keep the settle time short (0.5 s or so) and the pause between colours, PAUSE, short (0.2 s).
+#
 # The light is lit by `scanlight-probe hold` in the background; a shot is taken only after the probe
 # has said the light is on and the settle time has passed; then the hold is stopped (SIGINT: it
 # switches the light off before it ends; if the signal is ignored the hold ends by itself after 30 s).
@@ -68,7 +71,7 @@ for colour in red green blue; do
     exit 1
   fi
   off
-  sleep 1
+  sleep "${PAUSE:-0.2}"
 done
 
 echo "done: $OUT/red.nef $OUT/green.nef $OUT/blue.nef (light off)"

@@ -4,11 +4,12 @@
 # (see docs/research/scanlight-capture.md: kill ptpcamerad, in every logged-in account, first).
 #
 #   ./triplet.sh <serial port> [level 64] [settle seconds 1.5] [output folder triplet-out]
-#   ./triplet.sh /dev/cu.usbmodem1101 64 1.5
+#   ./triplet.sh /dev/cu.usbmodem1101 64 1.5          (ls /dev/cu.usbmodem* shows the port)
 #
-# The light is lit by `scanlight-probe hold` in the background; the shot is taken after the settle
-# time; then the hold is stopped (SIGINT: it switches the light off before it ends). The light is off
-# at the end, also if a shot fails or the script is stopped.
+# The light is lit by `scanlight-probe hold` in the background; a shot is taken only after the probe
+# has said the light is on and the settle time has passed; then the hold is stopped (SIGINT: it
+# switches the light off before it ends; if the signal is ignored the hold ends by itself after 30 s).
+# The light is off at the end, also if a shot fails or the script is stopped.
 set -u
 
 PORT="${1:?usage: triplet.sh <serial port> [level] [settle seconds] [output folder]}"
@@ -19,7 +20,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PROBE="$HERE/target/release/scanlight-probe"
 
 [ -x "$PROBE" ] || { echo "build the probe first: cargo build --release" >&2; exit 1; }
+[ -e "$PORT" ] || { echo "$PORT does not exist: is the Scanlight plugged into this Mac? (ls /dev/cu.usbmodem*)" >&2; exit 1; }
 mkdir -p "$OUT"
+LOG="$(mktemp -t triplet-hold)"
 
 HOLD=""
 off() {
@@ -29,11 +32,26 @@ off() {
   fi
   HOLD=""
 }
-trap off EXIT INT TERM
+trap 'off; rm -f "$LOG"' EXIT INT TERM
 
 for colour in red green blue; do
-  "$PROBE" hold --port "$PORT" --colour "$colour" --level "$LEVEL" --seconds 30 &
+  : > "$LOG"
+  "$PROBE" hold --port "$PORT" --colour "$colour" --level "$LEVEL" --seconds 30 > "$LOG" 2>&1 &
   HOLD=$!
+
+  # Wait up to 5 s for the probe to say the light is on.
+  for _ in $(seq 1 50); do
+    grep -q "LIGHT ON" "$LOG" && break
+    kill -0 "$HOLD" 2>/dev/null || break
+    sleep 0.1
+  done
+  if ! grep -q "LIGHT ON" "$LOG"; then
+    echo "$colour: the light did not come on, so no shot was taken:" >&2
+    cat "$LOG" >&2
+    off
+    exit 1
+  fi
+
   sleep "$SETTLE"
   start=$(date +%s)
   if gphoto2 --capture-image-and-download --filename "$OUT/$colour.nef" --force-overwrite; then

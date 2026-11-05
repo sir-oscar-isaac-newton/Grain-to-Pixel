@@ -65,3 +65,26 @@ Hardware checklist for R-02 (Windows; macOS for the first two lines). Each line 
 What the V4 documentation says, for anyone who wants the pulse later: "some cameras (mainly Nikon) may need the focus signal in order to trigger the shutter"; with "send focus signal" selected the focus is held for as long as the LEDs are on; rev B (26a901b) switches the shutter and the focus with isolated photorelays and its jack is isolated from USB, rev A (26a901a) is not isolated (test the wiring before tethering the camera and the light to one computer); and for Nikon on older units the workaround is a mono-to-stereo 3.5 mm adapter whose male end is a two-terminal plug. **The light is a V4 rev A (PCB 26a901a, read off the board by the author).** It reports `00 01 00 00` as its version. The Scanlight README lists hardware ID 1 as the v4 26a901a, so **the first half is the hardware ID (1) and the second the firmware ID (0), the other way round from the control interface document**, which says firmware first. Consequences for this unit: rev A has no focus signal (rev B, 26a901b, has it), so a Nikon that wants focus before release cannot be fired by it, which fits the result above; and its 3.5 mm jack is **not isolated from USB**, so while the camera is tethered by USB the release cable should stay unplugged.
 
 **What this changes elsewhere** (to be proposed as issue edits, not done here): H-10 and R-04 are written around a camera fired by the Scanlight pulse and would instead fire it over USB; the settle test is replaced by a simple check in the capture work (the light on for a second before a USB-triggered shot, compared with a longer wait), because a USB trigger has a delay of its own that is much longer than any LED settle time.
+
+## libgphoto2 on the Mac (R-03)
+
+Results on the author's M1 Pro MacBook with the D600 on USB (2026-11-03 and 04); the camera in M mode, single release, manual focus, RAW, the release cable unplugged. **Hardware items are ticked by the person who ran them.**
+
+| Check | Result |
+|---|---|
+| Install | `brew install gphoto2` (command line); the Rust probe needs `brew install libgphoto2 pkgconf`. |
+| `gphoto2 --auto-detect` | Lists "Nikon DSC D600" **twice** (`usb:001,001` and `usb:000,001`), the same camera. The capture worked with the default, so no `--port` was needed. |
+| First capture | **Failed in 0.04 s**: `Could not claim the USB device ... Could not claim interface 0 (No such file or directory)`. |
+| What held the camera | macOS's camera helper `ptpcamerad`, plus `mscamerad-xpc`, `icdd` and an open Photos, **in a second user account** that was still logged in (since 16 Oct). The author's own account ran no `ptpcamerad`, so a plain `pkill` could not reach it. |
+| Workaround 1 | `while true; do sudo pkill -9 ptpcamerad; done` in a second terminal, then unplug and replug the camera: the capture worked. |
+| Workaround 2 (better) | **Log the other account out**, with no kill loop: the capture worked at once. So a Mac with one user logged in needs no workaround. |
+| Capture and download | `gphoto2 --capture-image-and-download` takes a picture into the camera's memory (`/capt0000.nef`), saves it on the Mac and deletes it from the camera (the default): **1.9 s, 2.1 s and 1 to 2 s** from trigger to file in three runs, at 4 to 7 % CPU. |
+| A triplet over USB | `tools/spikes/scanlight-probe/triplet.sh`: the Scanlight lights red, green and blue in turn (settle 1.5 s), each shot fired over USB: three NEFs in about 15 s. **The first set came out black**: `levels` on the three files gave about 2 of 255 in every channel, so the exposure at level 64 with the camera as set was far too low (the capture chain itself ran). To be shot again with a higher level or a longer exposure; then `levels` and the triplet import in the app. |
+| Rust binding | `tools/spikes/gphoto-probe` (the `gphoto2` crate 3.4.1) lists the cameras and captures and downloads one picture. **Written from the crate's documentation and not yet compiled**: this PC has no libgphoto2. |
+| Bundling in the .app | Not done yet. |
+
+**What this means for the app** (the Mac side of the decision to trigger over USB):
+
+- **The camera claim is the one real problem on macOS.** Another logged-in account, or Photos or Image Capture open, makes the capture fail with `Could not claim the USB device`. The app should recognise that error and say in words what to do (log the other account out, quit Photos and Image Capture), not show the code. A kill loop is not something to ship.
+- **A frame takes about 5 s** (settle 1.5 s, trigger to file about 2 s, a second to switch colours), so a triplet is about 15 s, with the camera on USB and nothing to install but libgphoto2.
+- **Licence.** libgphoto2 and the `gphoto2` crate are LGPL-2.1, like rawler: the same notice and rebuild obligations apply when the crate becomes a dependency (a `deny.toml` exception, an entry in `docs/third-party-notices.md`, which `pnpm check:notices` will ask for). Shipping libgphoto2 as dynamic libraries in the .app keeps replacing it simple.

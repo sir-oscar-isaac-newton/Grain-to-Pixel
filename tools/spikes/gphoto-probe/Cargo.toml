@@ -1,0 +1,17 @@
+# A one-off check for R-03 (docs/research/scanlight-capture.md). Outside the workspace on purpose, like
+# the other probes: the gphoto2 crate is LGPL-2.1 and needs libgphoto2 installed, and nothing in the
+# app depends on it yet. macOS: brew install libgphoto2 pkgconf, then cargo run --release.
+[package]
+name = "gphoto-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Lists the cameras libgphoto2 sees and captures and downloads one picture with the gphoto2 crate (R-03)"
+
+[workspace]
+
+[dependencies]
+gphoto2 = "=3.4.1"
+
+[profile.release]
+debug = false

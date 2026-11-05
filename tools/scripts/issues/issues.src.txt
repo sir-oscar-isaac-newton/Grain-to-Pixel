@@ -1975,3 +1975,27 @@ ROUTES: none new; develop_analyze returns the recipe with the correction.
 MIGRATIONS: none, unless the per-roll correction is chosen: then a nullable column on the roll like the film base.
 TESTS: a synthetic frame with a known cast is balanced to neutral, a colourful frame is left alone, the roll median ignores one odd frame, balancing a balanced frame changes nothing, the goldens, and an ignored run of the benchmark on the real sets.
 NOTES: the steady LS-50 offset is measured separately; if it survives the balance it becomes its own per-source calibration issue. Written to wait for PR 192 (P-20, P-21 and Q-09, held for the author's rescans of five 8-bit positives): the numbers are judged against Q-09. Methods that learn from the user's edits, per-hue grading and a calibrated scanner profile are not part of it. GitHub issue: #204.
+## H-14
+title: Live preview of the camera in the capture view
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: H-08, D-04, R-03, U-10
+needs: hw
+adr: no
+spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md
+desc: Show the camera's live view in the capture view, so the film can be framed and focused (the lens is on manual) and the exposure judged at the chosen light levels before a triplet is taken. It runs over USB through libgphoto2 on macOS (capture_preview in the gphoto2 crate). On Windows the camera goes through digiCamControl, so the preview there depends on what that offers. It starts with a test on the author's D600, and ends there if the test fails.
+ac:
+- The test comes first (the author runs it on the Mac): with the light on and the camera free and awake, gphoto2 --capture-preview --filename preview.jpg writes a usable picture from the D600, and gphoto2 --capture-movie=10s shows the frame rate; the results go in docs/research/scanlight-capture.md; if it fails or is unusable, the issue ends with that finding and the rest is dropped
+- The camera trait gets a preview() that returns one JPEG frame, and the fake camera implements it, so everything is testable without hardware
+- GphotoCamera::preview uses capture_preview, switches live view on if the camera needs it, and leaves live view before a capture, so a normal capture works straight after a preview session (tested with the fake camera and checked on the D600)
+- The capture view shows the live frames and updates continuously, stops when the user leaves the view or starts a sequence, and does not light the Scanlight by itself: the user chooses the colour and level with the controls the view already has
+- Windows: either digiCamControl's live view can be reached from the app (the way is written down and works), or the preview is not offered on Windows and the view says so; this is decided in this issue's own proposal, after the R-04 result
+- Tests cover the fake camera's frames, the view with mocked ipc (start, stop, leaving the view, starting a sequence) and axe; the frame rate and the preview-to-capture switch are recorded from the real camera
+tech:
+FILES: crates/gtp-capture (the camera trait and the fake), the GphotoCamera backend (macOS, feature tether), apps/desktop/src/features/import (the capture view), the commands that carry a frame to the view, en.json, docs/research/scanlight-capture.md.
+ROUTES: a command that returns the next live-view frame (or an event with frames), and stop.
+MIGRATIONS: none.
+TESTS: the fake camera's frames, preview then capture, the view with mocked ipc, axe, and a hardware checklist for the human.
+NOTES: asked for while R-03 was run. The test to run first, from tools/spikes/gphoto-probe on the Mac with the light on (scanlight-probe hold) in another terminal: gphoto2 --capture-preview --filename preview.jpg --force-overwrite, then gphoto2 --capture-movie=10s. Live view locks the mirror up and costs a few frames a second over USB, so it is for framing and focus, not video. The capture view's test shot (D-04) stays as it is, for the histogram and clipping percentage. A zoomed live view for judging focus is not part of this. GitHub issue: #212.

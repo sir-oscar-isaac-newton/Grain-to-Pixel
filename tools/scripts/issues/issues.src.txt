@@ -1243,7 +1243,7 @@ ac:
 - Packet encode/decode is byte-exact against the vectors recorded in R-02
 - Decoder never panics on truncated or garbage input; unknown headers dropped; lengths checked
 - SET_COLOR always sends save flag 0; there is no SET_TRIM; levels clamped 0..=255
-- Port probing with GET_FW_VERSION accepts firmware IDs 1 and 2 and warns otherwise
+- Port probing with GET_FW_VERSION accepts hardware IDs 1 and 2 and warns otherwise
 tech:
 FILES (crates/gtp-capture/src): light.rs (trait LightSource, LightInfo, LightStatus), scanlight/{mod.rs, protocol.rs, port.rs}, fakes.rs (FakeLight).
 INTERFACES: `trait LightSource { fn connect(&mut self, port: Option<&str>) -> Result<LightInfo>; fn set_levels(&mut self, rgb: [u8; 3]) -> Result<()>; fn shutter_pulse(&mut self, tens_of_ms: u8) -> Result<()>; fn status(&self) -> LightStatus; }`. Packets `0xFE`, header, length, data: SET_COLOR (0), GET_FW_VERSION (2), SHUTTER_PULSE (3), SET_FOCUS (7); device packets LED_TEMP (1), VBUS (2), FW_VERSION (3). `serialport` crate; background reader updates status.

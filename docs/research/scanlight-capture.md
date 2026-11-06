@@ -37,7 +37,7 @@ Decision: [ADR 0004](../../decisions/0004-guided-rgb-capture.md). Spec: [§6.1](
 Every packet is `0xFE`, the header, the length of the data, then the data. There is no checksum and no acknowledgement.
 
 **Seen so far.**
-- **macOS: works.** `ports` finds the Scanlight and decodes its packets; the byte order is big-endian (above). The official web app also connects. The light reports hardware ID 0 (the big scanlight, per the Scanlight README), not the V4 the issue assumed.
+- **macOS: works.** `ports` finds the Scanlight and decodes its packets; the byte order is big-endian (above). The official web app also connects. The light reports hardware ID 1, firmware ID 0 (see the results table below); an early reading of hardware ID 0 had the two halves the wrong way round.
 - **Windows 10 (this PC): the port opens and stays silent.** The device appears as a "USB Serial Device" on COM5 (vendor ID 2e8a, product ID 000a; the device calls itself "Pico", with the serial interface "Board CDC" and a "Reset" interface: the stock names of the Raspberry Pi Pico SDK, which the V4's RP2040 firmware uses). `listen` for 3 s with DTR held gets 0 bytes, the probe's first try (no DTR) timed out writing (error 121), a later write blocked in the driver until the cable was pulled, and the official automation web app says "Connection Failed" too. So the fault is on the Windows side of this PC, not the probe or the light. Still to try: another USB port (a USB 2.0 one), another cable.
 
 Hardware checklist for R-02 (Windows; macOS for the first two lines). Each line is ticked in the list at the top by the person who ran it.
@@ -103,3 +103,25 @@ Results on the author's M1 Pro MacBook with the D600 on USB (2026-11-03 and 04);
 5. **How it gets into the Tauri build** (not tried yet): a step of the macOS release job, the same as `bundle-test.sh` but on the built `.app`, before signing; or Tauri's `bundle > macOS > frameworks` and `resources` for the files. The macOS build jobs need `brew install libgphoto2` to compile the `tether` feature.
 6. **Licence.** All LGPL-2.1, as dynamic libraries: see the amendments to ADR 0004. The notices check does not see dylibs, so they get a manual entry and a source offer.
 7. **Risks left.** The Tauri integration of steps 3 to 5; a Homebrew update changing the dylib set (the script is the check); an older macOS than the author's.
+
+## The driver (H-07)
+
+`crates/gtp-capture` holds the `LightSource` port (`light.rs`, as in architecture §3.4 and specification §6.1), the `ScanlightV4` serial driver (`scanlight/`) and the recording `FakeLight` (`fakes.rs`, public like `FixtureSource`, with a `FakeLightHandle` that stays readable after the light is moved or dropped).
+
+- **Packets (`scanlight/protocol.rs`).** `SET_COLOR` (red, green, blue; white and IR 0; **save flag always 0**), `GET_FW_VERSION`, `SHUTTER_PULSE`. No `SET_TRIM` and no `SET_FOCUS` (the light is a rev A). Levels are `u8`; `clamp_level` turns any `i32` into 0 to 255. The decoder reads big-endian words and the version reply as hardware ID, then firmware ID, joins packets split over reads, drops unknown headers and noise, skips a packet with a wrong length one byte at a time, never panics, and holds at most 19 bytes of an unfinished packet.
+- **Port (`scanlight/port.rs`).** A small `LightPort` trait (write, read, clone) with a real `serialport` implementation. Every read and write has a 100 ms timeout; **nothing flushes** (on Windows a flush waits for the device to drain, and the R-02 probe hung there); DTR and RTS are raised after opening, as in the probe.
+- **Probe.** `GET_FW_VERSION` is sent (again every 0.5 s) and the port gets 2 s to answer. The **hardware ID** is checked: 1 (V4 rev A) and 2 (rev B) are accepted; any other is accepted with a `tracing` warning and `LightInfo::recognised` false. (The issue and specification say "firmware IDs 1 and 2"; with the halves in the measured order those numbers are hardware IDs, and the measured light is hardware 1, firmware 0.) A port that stays silent gives an `AppError` (`Io`, "The port opened but the light did not answer ...") after the timeout. With no port named, USB serial ports are tried, the Pico's vendor ID `2e8a` first and macOS's `tty.` twins skipped; if none answers the error is `NotFound` with each port's reason in the details.
+- **Status.** After a successful probe a reader thread keeps `LightStatus` (`temp_c`, `vbus_mv`, `connected`) current from the 200 ms `LED_TEMP` and `VBUS` packets. The warn and abort limits are not in the driver; the sequence (H-08) applies them.
+- **Off on every exit.** Dropping the driver sends an all-zero `SET_COLOR` (best effort, bounded by the write timeout) and stops the reader. `FakeLight` records the same switch-off when dropped.
+
+**Windows.** The driver is proven on macOS only. On the author's Windows PC the port opens and never replies, so `connect` fails there with the "did not answer" error after about 2 s instead of hanging. The cause is not diagnosed or worked around here (ADR 0004, amendment 10).
+
+**Test vectors and where they come from.** `samples/public/scanlight/` does not exist, so the tests use this note. VBUS `fe 02 04 00 00 14 27` is **recorded** from the light. The version data `00 01 00 00` is **recorded**; the `fe 03 04` framing around it is hand-assembled. LED_TEMP bytes (the note gives 29.7 °C, not the bytes), and the packets the host sends, are **hand-derived** from the packet table above and marked so in the tests. `SHUTTER_PULSE` fired no camera, so its effect is unconfirmed.
+
+**Hardware checklist for H-07 (macOS; to be ticked by whoever runs it).**
+
+1. `cargo test -p gtp-capture --test scanlight_hardware -- --ignored` with the light on USB: it connects, reads `LED_TEMP` and `VBUS`, lights red at a low level for half a second and switches off.
+2. The reported `LightInfo` is port `/dev/cu.usbmodem...`, hardware ID 1, firmware ID 0, `recognised` true.
+3. The driver gets no reply from the camera side: no shutter test is needed (the camera is fired over USB).
+4. Unplug the cable while connected: the next `set_levels` returns an error and `status().connected` is false.
+5. Windows (when a light that answers there exists): the same test; until then `connect` is expected to fail with "did not answer".

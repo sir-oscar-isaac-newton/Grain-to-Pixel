@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-05",
+  "updated": "2026-11-06",
   "rules": "status is in_progress while the issue's branch exists or its PR is open; completed only after the PR is merged and closed (see docs/workflow.md section 10)",
   "issues": [
     {
@@ -677,9 +677,9 @@
       "number": 56,
       "title": "Scanlight V4 serial driver and FakeLight",
       "branch": "feat/issue-56-scanlight-driver",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 223,
+      "commit": "5ad1ddb"
     },
     {
       "id": "Q-08",

@@ -605,9 +605,9 @@
       "number": 204,
       "title": "Automatic colour balance",
       "branch": "feat/issue-204-colour-balance",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 221,
+      "commit": "4c71998"
     },
     {
       "id": "H-02",

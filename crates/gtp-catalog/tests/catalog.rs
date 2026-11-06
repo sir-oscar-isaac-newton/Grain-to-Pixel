@@ -166,8 +166,8 @@ fn a_v3_library_upgrades_with_a_backup_and_keeps_its_rolls() {
     assert_eq!(old.format, FilmFormat::Mm35);
     drop(cat);
 
-    assert_eq!(SCHEMA_VERSION, 6);
-    assert_eq!(user_version(&dir.db()), 6);
+    assert_eq!(SCHEMA_VERSION, 7);
+    assert_eq!(user_version(&dir.db()), 7);
     assert!(!old.has_flat_field, "an existing roll has no flat field");
     let backup = backup_path(&dir.db(), 3);
     assert!(backup.exists());
@@ -1050,6 +1050,46 @@ fn several_recipes_are_saved_together_or_not_at_all() {
     assert_eq!(cat.load_recipe(f1.id).unwrap(), Some(recipe));
 
     cat.save_recipes(&[]).unwrap();
+}
+
+#[test]
+fn a_scanned_frame_keeps_its_scanner_number_and_the_last_one_is_found() {
+    let dir = TempDir::new("scanned");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("Roll")).unwrap();
+    let other = cat.insert_roll(&roll("Other")).unwrap();
+    let recipe = Recipe::default();
+    assert_eq!(
+        cat.last_scan_number(r.id).unwrap(),
+        None,
+        "nothing scanned yet"
+    );
+
+    // A frame imported from a file has no scanner number.
+    cat.insert_imported_frame(&frame(r.id, 1), &[], &recipe)
+        .unwrap();
+    assert_eq!(cat.last_scan_number(r.id).unwrap(), None);
+
+    // Frames 5 and 6 scanned: they are the 2nd and 3rd of the roll, and 6 is the last number.
+    for number in [5, 6] {
+        let f = cat
+            .insert_scanned_frame(&frame(r.id, 1), &[], &recipe, number, r#"{"dpi":2000}"#)
+            .unwrap();
+        assert_eq!(f.index_in_roll, number - 3);
+    }
+    assert_eq!(cat.last_scan_number(r.id).unwrap(), Some(6));
+    assert_eq!(cat.last_scan_number(other.id).unwrap(), None, "per roll");
+
+    // A frame scanned again keeps the highest number as the last one.
+    cat.insert_scanned_frame(&frame(r.id, 1), &[], &recipe, 5, "{}")
+        .unwrap();
+    assert_eq!(cat.last_scan_number(r.id).unwrap(), Some(6));
+
+    // A roll that does not exist is refused, as for an import.
+    let err = cat
+        .insert_scanned_frame(&frame(RollId::new(), 1), &[], &recipe, 1, "{}")
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
 }
 
 #[test]

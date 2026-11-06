@@ -59,6 +59,7 @@ pub fn run() -> tauri::Result<()> {
             app.manage(app_context(app));
             app.manage(update_state(app));
             app.manage(hardware());
+            app.manage(gtp_app::services::scan_preview::ScanPreviewService::default());
             Ok(())
         })
         .build(tauri::generate_context!())?

@@ -5,6 +5,7 @@ pub mod channel;
 pub mod files;
 pub mod fixture;
 pub mod merge;
+pub mod nkscan;
 pub mod scanner;
 pub mod triplet;
 
@@ -17,14 +18,15 @@ pub use channel::{
     dominant_channel, guess_from_means, ChannelGuess, TripletChannel, MIN_LEVEL, MIN_RATIO,
 };
 pub use files::{scan_tiff_candidates, Grouped, Rejected, TiffCandidate};
-pub use fixture::{FixtureSource, FIXTURE_DEVICE_ID};
+pub use fixture::{FixtureSource, FIXTURE_DEVICE_ID, FIXTURE_STRIP_HEIGHT};
 pub use merge::{
     check_clipping, check_exif, merge_triplet, TripletMerge, TripletWarning, CLIP_FRACTION,
     CLIP_LEVEL,
 };
+pub use nkscan::{NkscanSource, NKSCAN_ENV, NKSCAN_VERSION};
 pub use scanner::{
-    CancelToken, DeviceInfo, RawScan, ScanMeta, ScanParams, ScannerSource, DEFAULT_DPI, MAX_FRAMES,
-    SAMPLE_COUNTS, SUPPORTED_DPI,
+    CancelToken, DeviceInfo, RawScan, RollPreview, RollStrip, ScanMeta, ScanParams, ScannerSource,
+    DEFAULT_DPI, MAX_FRAMES, SAMPLE_COUNTS, SUPPORTED_DPI,
 };
 pub use triplet::{
     group_triplets, CaptureTime, ExifFile, TripletCandidate, TripletFile, TripletProblem,

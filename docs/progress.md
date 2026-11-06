@@ -599,6 +599,78 @@
       "status": "in_progress",
       "pr": null,
       "commit": null
+    },
+    {
+      "id": "H-02",
+      "number": 47,
+      "title": "NkscanSource adapter",
+      "branch": "feat/issue-47-nkscan-source",
+      "status": "completed",
+      "pr": 197,
+      "commit": "3f223d9"
+    },
+    {
+      "id": "H-12",
+      "number": 198,
+      "title": "Roll preview from the scanner's framing thumbnail",
+      "branch": "feat/issue-198-roll-preview",
+      "status": "completed",
+      "pr": 202,
+      "commit": "af2cbeb"
+    },
+    {
+      "id": "H-03",
+      "number": 48,
+      "title": "Roll-scan job - per-frame commit, cancel and resume",
+      "branch": "feat/issue-48-roll-scan-job",
+      "status": "completed",
+      "pr": 203,
+      "commit": "f0ec92b"
+    },
+    {
+      "id": "U-08",
+      "number": 51,
+      "title": "Scanner import UI",
+      "branch": "feat/issue-51-scanner-ui",
+      "status": "completed",
+      "pr": 208,
+      "commit": "04273c1"
+    },
+    {
+      "id": "R-02",
+      "number": 9,
+      "title": "Spike - Scanlight V4 serial control",
+      "branch": "feat/issue-9-spike-scanlight-serial",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
+      "id": "R-03",
+      "number": 10,
+      "title": "Spike - libgphoto2 and D600 on macOS",
+      "branch": "feat/issue-10-spike-libgphoto2",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
+      "id": "R-06",
+      "number": 199,
+      "title": "Spike - scan at a custom frame position with nkscan",
+      "branch": "feat/issue-199-spike-frame-position",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
+      "id": "Q-08",
+      "number": 174,
+      "title": "Licence terms and third-party notices",
+      "branch": "chore/issue-174-licence-notices",
+      "status": "completed",
+      "pr": 206,
+      "commit": "d7eb915"
     }
   ]
 }

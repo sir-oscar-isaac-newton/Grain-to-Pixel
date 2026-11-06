@@ -1,0 +1,20 @@
+# A one-off measurement for R-02 (docs/research/scanlight-capture.md). Outside the workspace on purpose,
+# like nef-probe and nkscan-probe: it is a throwaway tool, and the app does not depend on it.
+[package]
+name = "scanlight-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Talks to the Scanlight V4 over USB serial: ports, colours, temperature, shutter pulses (R-02)"
+
+[workspace]
+
+[dependencies]
+# No libudev: the app ships on Windows and macOS only.
+serialport = { version = "4", default-features = false }
+ctrlc = "3"
+# The embedded JPEG preview of a NEF, to compare the brightness of shots.
+jpeg-decoder = { version = "0.3", default-features = false }
+
+[profile.release]
+debug = false

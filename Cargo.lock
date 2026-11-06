@@ -1650,6 +1650,7 @@ dependencies = [
  "gtp-ingest",
  "gtp-io",
  "gtp-negative",
+ "jpeg-decoder",
  "rayon",
  "serde",
  "serde_json",

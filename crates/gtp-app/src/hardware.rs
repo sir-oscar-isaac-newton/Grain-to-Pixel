@@ -1,12 +1,13 @@
 //! The devices the app talks to, chosen once at start. With `GTP_FAKE_HW=1` they are fixtures, so
-//! the app and its scan jobs run without hardware; otherwise each device is real, and one that has
-//! no adapter yet is simply absent.
+//! the app and its scan jobs run without hardware; otherwise each device is real: the scanner is
+//! the nkscan command line (`GTP_NKSCAN`, or `nkscan` on `PATH`), and a device that has no adapter
+//! yet is simply absent.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gtp_ingest::{FixtureSource, ScannerSource};
+use gtp_ingest::{FixtureSource, NkscanSource, ScannerSource};
 
 /// The environment variable that switches the app to fixture devices.
 pub const FAKE_HW_VAR: &str = "GTP_FAKE_HW";
@@ -16,7 +17,8 @@ pub const FIXTURE_DIR_VAR: &str = "GTP_FIXTURE_DIR";
 
 /// The scanner (and, with the capture issues, the light and camera) the app uses.
 pub struct Hardware {
-    /// `None` until a real scanner adapter exists and fixtures are off.
+    /// The nkscan scanner, or the fixture one with `GTP_FAKE_HW=1`. It is there even when no
+    /// scanner is connected: listing the devices says so.
     pub scanner: Option<Arc<dyn ScannerSource>>,
     fixture_dir: Option<PathBuf>,
 }
@@ -34,7 +36,7 @@ impl Hardware {
     pub fn from_vars(fake: Option<&str>, fixture_dir: Option<OsString>) -> Self {
         if fake.map(str::trim) != Some("1") {
             return Self {
-                scanner: None,
+                scanner: Some(Arc::new(NkscanSource::from_env())),
                 fixture_dir: None,
             };
         }
@@ -76,7 +78,7 @@ mod tests {
         ] {
             let hw = Hardware::from_vars(off, None);
             assert!(!hw.is_fake(), "{off:?}");
-            assert!(hw.scanner.is_none() && hw.fixture_dir().is_none());
+            assert!(hw.scanner.is_some() && hw.fixture_dir().is_none());
         }
         for on in [Some("1"), Some(" 1 ")] {
             let hw = Hardware::from_vars(on, None);

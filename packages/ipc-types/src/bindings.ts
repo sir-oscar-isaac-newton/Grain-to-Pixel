@@ -67,6 +67,32 @@ export const commands = {
 	 */
 	tripletGroup: (paths: string[]) => typedError<TripletCandidate_Serialize[], AppError_Serialize>(__TAURI_INVOKE("triplet_group", { paths })),
 	/**
+	 *  The scanners that can be used right now; `ScannerUnavailable` (with the reason in its message:
+	 *  not connected, wrong driver, nkscan missing) when there is none.
+	 */
+	scannerList: () => typedError<DeviceInfo[], AppError_Serialize>(__TAURI_INVOKE("scanner_list")),
+	/**
+	 *  The frame number a scan of the roll should resume at: one after the last frame scanned into it,
+	 *  or 1 when none was (above 40 the roll is done).
+	 */
+	scanResumePoint: (rollId: RollId) => typedError<number, AppError_Serialize>(__TAURI_INVOKE("scan_resume_point", { rollId })),
+	/**
+	 *  Starts scanning the requested frames into the roll as a job. Each frame is stored as soon as the
+	 *  scanner finishes it, so a cancel or an error keeps the frames before it; progress and the
+	 *  result (frames stored, like an import's) arrive as `job://*` events, each new frame as
+	 *  `library://changed`. One scan, and no roll preview, at a time. Returns the job id at once.
+	 */
+	scanStart: (rollId: RollId, request: ScanRequest) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("scan_start", { rollId, request })),
+	/**
+	 *  The whole roll as the scanner's framing thumbnail, made into a positive strip, with the number of
+	 *  frames the scanner found and the pitch they are evenly spaced at (strip pixels). Scans no frame
+	 *  and leaves the film in; it takes about a minute on the LS-50. One at a time; see
+	 *  `scan_preview_cancel`.
+	 */
+	scanPreview: (deviceId: string) => typedError<RollPreviewImage, AppError_Serialize>(__TAURI_INVOKE("scan_preview", { deviceId })),
+	/**  Stops the running roll preview; false when none is running. */
+	scanPreviewCancel: () => __TAURI_INVOKE<boolean>("scan_preview_cancel"),
+	/**
 	 *  Starts exporting the frames at full resolution, each with its saved recipe (the automatic one
 	 *  when it was never edited), as a job; progress and the result (the files written and the frames
 	 *  that failed) arrive as `job://*` events. An existing file is never overwritten: the name gets a
@@ -413,6 +439,12 @@ export type DevelopInfo_Serialize = {
 	 *  hand, or there is none. Below 0.5 the base is a guess.
 	 */
 	roll_base_confidence: number | null,
+};
+
+/**  A scanner the app can use. */
+export type DeviceInfo = {
+	id: string,
+	name: string,
 };
 
 /**  Infrared dust removal. */
@@ -1185,6 +1217,21 @@ export type RollInput_Serialize = {
 	notes: string,
 };
 
+/**  The roll as the contact sheet shows it. */
+export type RollPreviewImage = {
+	/**  How many frames the scanner found. */
+	frame_count: number,
+	/**
+	 *  The distance between the starts of two frames on the strip if they are evenly spaced: the
+	 *  strip's width divided by the frame count, in strip pixels.
+	 */
+	pitch: number | null,
+	strip_width: number,
+	strip_height: number,
+	/**  The strip as a positive, sRGB, JPEG. */
+	strip_jpeg: number[],
+};
+
 /**
  *  A roll of film: the unit that shares one measured film base. Its tags (in the catalog) count for
  *  every frame on it.
@@ -1269,6 +1316,20 @@ export type Roll_Serialize = {
 	has_flat_field: boolean,
 	/**  RFC 3339 timestamp. */
 	created_at: string,
+};
+
+/**
+ *  What the UI asks a scan to do: frames `first_frame` to `last_frame` of the roll (counted from 1) on
+ *  `device_id`. [`ScanRequest::params`] checks it.
+ */
+export type ScanRequest = {
+	device_id: string,
+	first_frame: number,
+	last_frame: number,
+	dpi: number,
+	samples: number,
+	ir: boolean,
+	autofocus: boolean,
 };
 
 /**

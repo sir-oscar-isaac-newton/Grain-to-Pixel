@@ -1859,3 +1859,143 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: manifest parsing for both kinds, matching by name, an 8-bit reference, a synthetic LS-50 pair through the report with a ΔE of about 0, and an ignored run on the author's 12 pairs.
 NOTES: asked for after the author pointed out that Nikon Scan positives exist for the LS-50 negatives in samples/private, beside the Trichroma Lab exports. It builds on the report of Q-02 and waits for that pull request to be merged. Whether the Film log look or a later look should be compared with Nikon Scan's rendition is for the author to judge from the report. GitHub issue: #190.
+
+## P-21
+title: Flat-field correction for camera triplets
+milestone: M5
+type: feature
+size: M
+estimate: 1d
+deps: H-06, U-09
+adr: yes
+spec: specification section 4.2 (load) and rules/colour-pipeline.md
+desc: Each exposure of a camera triplet is lit by a different LED colour, and the light is uneven across the frame, differently for each colour. On the author's roll the flat field (bare light, the same settings) falls to 0.38 to 0.61 of the centre at the edges, and red falls off most, which gives a red cast along the edges of every frame. A scratch test that divided each channel by the flat field removed most of it. Add the correction as a step of its own: a flat-field triplet is imported for a roll, and every triplet frame of that roll is divided by it when the frame is loaded.
+ac:
+- A flat-field triplet (three NEF files, red, green and blue, with the same settings as the frames and no film) can be imported for a roll; the three exposures are merged like a frame, reduced to a smooth per-channel gain grid and normalized by the centre, with the gain floored so the extreme edges stay finite
+- Every triplet frame of that roll is divided by the gain when it is loaded, which covers Develop, export, thumbnails and the analysis at import; the stored originals are not changed; a flat field of another size than the frame is refused with a message
+- A roll without a flat field behaves exactly as today, and the golden tests do not change
+- Attaching or replacing a flat field regenerates the thumbnails of the roll's frames and measures an automatic film base again from the corrected frame; a base picked by hand stays
+- On the author's 15 triplets with the bare-light capture the mean red-minus-green edge excess falls by at least half, and the median ΔE of the benchmark report does not get worse
+- The Frontier look (P-20) is fitted again on the corrected frames, and the new numbers and the ΔE are recorded in docs/research/benchmark.md
+tech:
+FILES: crates/gtp-core (the flat field type), crates/gtp-catalog (a flat_field table and roll.flat_field_id), crates/gtp-app (building and applying the gain; the load path of triplet frames that Develop, export and import share; a service and a command to import and attach one), apps/desktop/src/features/import and library (a Flat field step and the roll status), en.json, decisions/ (the ADR).
+ROUTES: flat_field_import(paths, roll_id), flat_field_clear(roll_id); roll_list carries whether the roll has one.
+MIGRATIONS: one, for the flat_field table (the smoothed gain grid and the names of the source files) and a nullable roll.flat_field_id.
+TESTS: a uniform flat field changes nothing, a synthetic vignette is removed, a size mismatch is refused, the migration keeps existing rolls, attaching measures an automatic base again and leaves a hand-picked one, the UI step with mocked ipc, the goldens unchanged, and an ignored run on the real roll with the benchmark report.
+NOTES: asked for after the red edge cast showed in the renders of the Frontier look (P-20); the flat-field capture in samples/private (DSC_4602 to DSC_4604) has the same settings as the frames. Stored as a small gain grid in the catalog, not as copies of the NEF files, and attached to one roll; a named flat field shared by several rolls would be a later issue, and so would one estimated from the picture without a capture. Frames loaded without the correction stay as they were until the roll's flat field is attached. GitHub issue: #194.
+
+## H-12
+title: Roll preview from the scanner's framing thumbnail
+milestone: M4
+type: feature
+size: M
+estimate: 1d
+deps: H-02
+needs: hw
+adr: no
+spec: specification section 6; ADR 0003; docs/research/nkscan.md
+desc: Show the whole roll before it is scanned. nkscan writes one framing thumbnail per scan run, a strip of about 5150 x 96 pixels with every frame of the roll side by side, about a minute after the film is loaded and before any frame is focused or metered, together with the number of frames it detected. Add a preview to the scanner port that returns that strip and the frame count without scanning the frames, and give the strip back whole with the pitch of evenly spaced frames as the detected positions.
+ac:
+- ScannerSource gets a preview method that returns the 16-bit strip and the detected frame count; FixtureSource implements it from a fixture strip so everything is tested without the scanner
+- NkscanSource previews by running a scan with --thumbnail and --frames 1, waits for the thumbnail file, and then stops the process without ejecting the film; a cancel stops it at once; a scanner that writes no thumbnail gives a clear error
+- The strip is turned into a positive with the pipeline's automatic film base and levels and comes back whole, with the frame count and the pitch of evenly spaced frames (strip width divided by the frame count), from a scan_preview command; it is not cut into frames, so the contact sheet (H-13) can move a grid over it
+- Tests cover the pitch, the inversion, cancel, the missing thumbnail and the fixture; the hardware check on the author's LS-50 on Windows (and macOS) is recorded in docs/research/nkscan.md
+tech:
+FILES: crates/gtp-ingest/src/scanner.rs (the port), fixture.rs and nkscan.rs (the two implementations); crates/gtp-app/src/services (the preview service); apps/desktop/src-tauri/src/commands/ingest.rs; docs/research/nkscan.md.
+ROUTES: scan_preview(device_id) -> RollPreviewImage { frame_count, pitch, strip_width, strip_height, strip_jpeg }; scan_preview_cancel().
+MIGRATIONS: none.
+TESTS: the pitch, the inversion, cancel while waiting, no thumbnail written, the fixture preview, and the fake nkscan (examples/fake_nkscan.rs gets a thumbnail mode); a hardware checklist for the human.
+NOTES: measured on the author's roll (2026-11-02): 36 frames, a 5149 x 96 strip of the uninverted negatives, 3 MB, written about 59 s after the start. The strip is too small to judge sharpness; it shows which frames are exposed and how they lie. Frame positions that are not evenly spaced are adjusted in H-13. nkscan always writes the thumbnail as <basename>_1_thumbnail.tiff. GitHub issue: #198.
+
+## R-06
+title: Spike - scan at a custom frame position with nkscan
+milestone: M4
+type: spike
+size: S
+estimate: 0.5d
+deps: H-02
+needs: hw
+adr: yes
+labels: spike
+spec: specification section 6; ADR 0003; docs/research/nkscan.md
+desc: Frame detection on a roll can be off (frames cut at the wrong place, uneven spacing), and the author wants to move the frame grid. The nkscan README describes no way to set where a frame sits: --frames only picks frames, and --format sets a frame length on the LS-8000 and LS-9000 only. Find out whether the LS-50 on the SA-30 roll adapter can be told to scan a frame at another position or pitch, and how.
+ac:
+- The nkscan library API (PYTHON.md and the crate sources of the pinned release) is read for anything that sets a frame position, pitch or offset, and the finding is recorded
+- If something exists, a probe scans one frame at a shifted position on the author's LS-50 and the shift is measured against the default frame (human reports)
+- If nothing exists, the options are written down with a recommendation: a contribution to nkscan, a patched fork, or the grid only selecting frames and the app cropping from a wider scan
+- docs/research/nkscan.md is updated and an ADR records the decision if it changes how the adapter talks to nkscan
+tech:
+SCOPE: reading and a throwaway probe; no change to NkscanSource unless the decision says so.
+NOTES: asked for together with the roll preview (H-12). H-13 applies the frame grid as far as this spike allows. The scanner reports the frame length in lines (5959 at 4000 dpi on 35 mm) and 36 detected frames on the author's roll. GitHub issue: #199.
+
+## H-13
+title: Roll contact sheet with frame spacing adjustment
+milestone: M4
+type: feature
+size: M
+estimate: 1d
+deps: H-12, H-03, R-06
+adr: no
+spec: specification section 6
+desc: Before a roll is scanned, show the preview of the whole roll as a contact sheet, let the user move the frame grid when the detected frames are off, and choose which frames to scan. The grid is kept with the roll so that a resumed scan uses the same one.
+ac:
+- The roll preview (H-12) is shown as a strip with a frame grid over it and one picture per frame; blank frames are easy to see
+- The grid can be moved as a whole, its pitch changed, and a single frame nudged, with the result shown at once; a reset returns to the detected positions
+- Frames can be ticked or unticked, and the scan job (H-03) gets the chosen frames and the adjusted positions
+- The adjusted grid is stored with the roll and used again when the scan is resumed
+- The grid reaches the scanner as far as the outcome of R-06 allows; where it cannot, the grid selects frames and the app crops, and the screen says so
+- Tests cover the grid maths (move, pitch, nudge, reset), the stored grid, the frame selection and the screen with mocked ipc and a fixture strip
+tech:
+FILES: apps/desktop/src/features/scan (the contact sheet view and the grid editor), crates/gtp-catalog (the grid stored per roll), crates/gtp-app (the chosen frames and positions in the scan job), en.json.
+ROUTES: scan_start carries the chosen frames and positions; roll_set_frame_grid(roll_id, grid) and the grid in roll_list.
+MIGRATIONS: one, for the grid stored per roll.
+TESTS: grid maths, the migration, the screen with mocked ipc, the scan job with FixtureSource and a grid.
+NOTES: asked for after the roll preview (H-12): the frame detection can be off on some rolls. How far the grid can steer the scanner is decided by the spike R-06; write the proposal for this issue after R-06 is done. GitHub issue: #200.
+
+## P-22
+title: Automatic colour balance
+milestone: M5
+type: feature
+size: M
+estimate: 1d
+deps: P-20, P-21, Q-09
+adr: yes
+spec: specification section 4.2 (colour) and rules/colour-pipeline.md
+desc: The automatic recipe sets no colour balance, so the remaining error against the reference renders is colour. On the author's 15 triplets (flat-field corrected, Frontier look) the casts change from frame to frame (b* up to 12 off on frame 3, 6 to 7 off on frames 4, 9, 14 and 15, a* 5 to 7 off on frames 8, 13 and 14), and the LS-50 scans against Nikon Scan are off by a steady a* -17 and b* -10 to -13, which is a calibration and not a scene effect. Add an automatic step that finds the neutral of a frame or a roll and writes it into the existing colour axes of the automatic recipe, chosen by measuring several estimators on the benchmark.
+ac:
+- Three estimators are implemented and measured with the benchmark report: the mean colour of mid-tone pixels, the mean of the least saturated mid-tone pixels, and one correction per roll from the median over its frames, stored like the film base
+- With the split of P-20 (ten triplets fitted, five held out), the chosen estimator lowers the mean colour cast (the size of our mean a* and b* minus the reference's) on the held-out frames by at least half, and does not raise it on any LS-50 stock
+- The median ΔE of the benchmark report does not get worse for the Neutral and Frontier looks
+- A frame with no usable neutral (a mostly saturated picture) gets no correction, and says so, instead of a wild one
+- The correction is written into the existing colour axes (red-cyan, green-magenta, blue-yellow) of the automatic recipe, so Develop shows it and the user can change or undo it; the recipe schema does not change
+- The golden tests are unchanged, or are re-blessed with the reason written down; the numbers, the estimators compared and the choice are recorded in an ADR and docs/research/benchmark.md
+tech:
+FILES: crates/gtp-edit (the estimators, next to neutral_balance), crates/gtp-app (analyze writes the result; the per-roll correction if chosen), tools/benchmark (a cast column per estimator), decisions/ (the ADR), docs/research/benchmark.md.
+ROUTES: none new; develop_analyze returns the recipe with the correction.
+MIGRATIONS: none, unless the per-roll correction is chosen: then a nullable column on the roll like the film base.
+TESTS: a synthetic frame with a known cast is balanced to neutral, a colourful frame is left alone, the roll median ignores one odd frame, balancing a balanced frame changes nothing, the goldens, and an ignored run of the benchmark on the real sets.
+NOTES: the steady LS-50 offset is measured separately; if it survives the balance it becomes its own per-source calibration issue. Written to wait for PR 192 (P-20, P-21 and Q-09, held for the author's rescans of five 8-bit positives): the numbers are judged against Q-09. Methods that learn from the user's edits, per-hue grading and a calibrated scanner profile are not part of it. GitHub issue: #204.
+## H-14
+title: Live preview of the camera in the capture view
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: H-08, D-04, R-03, U-10
+needs: hw
+adr: no
+spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md
+desc: Show the camera's live view in the capture view, so the film can be framed and focused (the lens is on manual) and the exposure judged at the chosen light levels before a triplet is taken. It runs over USB through libgphoto2 on macOS (capture_preview in the gphoto2 crate). On Windows the camera goes through digiCamControl, so the preview there depends on what that offers. It starts with a test on the author's D600, and ends there if the test fails.
+ac:
+- The test comes first (the author runs it on the Mac): with the light on and the camera free and awake, gphoto2 --capture-preview --filename preview.jpg writes a usable picture from the D600, and gphoto2 --capture-movie=10s shows the frame rate; the results go in docs/research/scanlight-capture.md; if it fails or is unusable, the issue ends with that finding and the rest is dropped
+- The camera trait gets a preview() that returns one JPEG frame, and the fake camera implements it, so everything is testable without hardware
+- GphotoCamera::preview uses capture_preview, switches live view on if the camera needs it, and leaves live view before a capture, so a normal capture works straight after a preview session (tested with the fake camera and checked on the D600)
+- The capture view shows the live frames and updates continuously, stops when the user leaves the view or starts a sequence, and does not light the Scanlight by itself: the user chooses the colour and level with the controls the view already has
+- Windows: either digiCamControl's live view can be reached from the app (the way is written down and works), or the preview is not offered on Windows and the view says so; this is decided in this issue's own proposal, after the R-04 result
+- Tests cover the fake camera's frames, the view with mocked ipc (start, stop, leaving the view, starting a sequence) and axe; the frame rate and the preview-to-capture switch are recorded from the real camera
+tech:
+FILES: crates/gtp-capture (the camera trait and the fake), the GphotoCamera backend (macOS, feature tether), apps/desktop/src/features/import (the capture view), the commands that carry a frame to the view, en.json, docs/research/scanlight-capture.md.
+ROUTES: a command that returns the next live-view frame (or an event with frames), and stop.
+MIGRATIONS: none.
+TESTS: the fake camera's frames, preview then capture, the view with mocked ipc, axe, and a hardware checklist for the human.
+NOTES: asked for while R-03 was run. The test to run first, from tools/spikes/gphoto-probe on the Mac with the light on (scanlight-probe hold) in another terminal: gphoto2 --capture-preview --filename preview.jpg --force-overwrite, then gphoto2 --capture-movie=10s. Live view locks the mirror up and costs a few frames a second over USB, so it is for framing and focus, not video. The capture view's test shot (D-04) stays as it is, for the histogram and clipping percentage. A zoomed live view for judging focus is not part of this. GitHub issue: #212.

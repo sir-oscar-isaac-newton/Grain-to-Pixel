@@ -21,7 +21,8 @@ pub const DEFAULT_DPI: u32 = 4000;
 pub const SAMPLE_COUNTS: [u8; 5] = [1, 2, 4, 8, 16];
 
 /// A scanner the app can use.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct DeviceInfo {
     pub id: String,
     pub name: String,
@@ -113,6 +114,24 @@ pub struct RawScan {
     pub meta: ScanMeta,
 }
 
+/// The scanner's framing thumbnail of the whole roll: every frame side by side, as the negative
+/// lies (not inverted), 16-bit, row-major and interleaved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RollStrip {
+    pub width: u32,
+    pub height: u32,
+    /// `width * height * 3` samples.
+    pub rgb16: Vec<u16>,
+}
+
+/// What the scanner shows of a roll before it is scanned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RollPreview {
+    /// How many frames the scanner found on the roll.
+    pub frame_count: u32,
+    pub strip: RollStrip,
+}
+
 /// Asks a running scan to stop. Cheap to clone; every clone sees the same flag.
 #[derive(Debug, Clone, Default)]
 pub struct CancelToken(Arc<AtomicBool>);
@@ -155,6 +174,10 @@ pub trait ScannerSource: Send + Sync {
         progress: &dyn Fn(f32),
         cancel: &CancelToken,
     ) -> Result<(), AppError>;
+
+    /// The whole roll as the scanner's framing thumbnail, with the number of frames it found,
+    /// without scanning any frame. The film stays in. Stops with `Cancelled` once `cancel` is set.
+    fn preview(&self, device_id: &str, cancel: &CancelToken) -> Result<RollPreview, AppError>;
 }
 
 #[cfg(test)]

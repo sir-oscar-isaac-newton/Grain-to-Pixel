@@ -13,7 +13,9 @@ pub mod services;
 
 pub use context::{AppContext, ThumbnailRequester};
 pub use gtp_edit::{frontier_curve, FrontierParams};
-pub use gtp_ingest::{merge_triplet, TripletCandidate, TripletFile, TripletProblem};
+pub use gtp_ingest::{
+    merge_triplet, DeviceInfo, ScannerSource, TripletCandidate, TripletFile, TripletProblem,
+};
 pub use gtp_io::RawlerDecoder;
 pub use gtp_negative::{BaseEstimate, FrameHint};
 pub use hardware::Hardware;

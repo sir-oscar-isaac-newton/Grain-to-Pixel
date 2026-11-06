@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use gtp_app::services::flat_field::{self, FlatFieldInfo};
 use gtp_app::services::roll_frame::{self, DeleteReport, RollInput};
 use gtp_app::AppContext;
 use gtp_core::{Roll, RollId};
@@ -71,6 +72,59 @@ pub fn roll_set_frame_size(
     let following = roll_frame::frames_following_roll_base(&library, id)?;
     ctx.regenerate_thumbnails(Arc::clone(&events.0), following)?;
     Ok(roll)
+}
+
+/// What changes when a roll's flat field is attached or removed: the proxies Develop kept were built
+/// without it, an automatic film base was measured without it, and every frame of the roll looks
+/// different, so all their thumbnails are made again in the background.
+fn after_flat_field_change(
+    ctx: &AppContext,
+    events: &EventsState,
+    id: RollId,
+) -> Result<(), gtp_core::AppError> {
+    let library = ctx.library()?;
+    ctx.develop().clear();
+    flat_field::remeasure_roll_base(&library, id)?;
+    let frames = library
+        .read(|c| c.list_frames(id))?
+        .into_iter()
+        .map(|f| f.id)
+        .collect();
+    ctx.regenerate_thumbnails(Arc::clone(&events.0), frames)
+}
+
+/// Makes the roll's flat field from three bare-light exposures (red, green and blue, in any order:
+/// they are told apart by colour) and attaches it, replacing the one it has. The roll's camera-triplet
+/// frames are divided by it from now on. The three files must fit the roll's frames in size.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn flat_field_import(
+    ctx: State<'_, AppContext>,
+    events: State<'_, EventsState>,
+    id: RollId,
+    paths: Vec<String>,
+) -> CmdResult<FlatFieldInfo> {
+    let paths: Vec<std::path::PathBuf> = paths.into_iter().map(Into::into).collect();
+    let info = flat_field::flat_field_import(&*ctx.library()?, id, &paths)?;
+    after_flat_field_change(&ctx, &events, id)?;
+    tracing::info!(roll = %id, "flat field attached");
+    Ok(info)
+}
+
+/// Removes the roll's flat field; true when it had one.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn flat_field_clear(
+    ctx: State<'_, AppContext>,
+    events: State<'_, EventsState>,
+    id: RollId,
+) -> CmdResult<bool> {
+    let removed = flat_field::flat_field_clear(&*ctx.library()?, id)?;
+    if removed {
+        after_flat_field_change(&ctx, &events, id)?;
+        tracing::info!(roll = %id, "flat field removed");
+    }
+    Ok(removed)
 }
 
 /// Deletes a roll with its frames, then their files.
@@ -197,6 +251,15 @@ mod tests {
         assert!(updated.frame_size.is_some());
         let cleared = roll_set_frame_size(app.state(), app.state(), roll.id, None).unwrap();
         assert_eq!(cleared.frame_size, None);
+
+        // A flat field is three files of one capture; nothing is attached by a refusal, and a roll
+        // with none says so when it is told to drop it.
+        let two = vec!["a.NEF".to_string(), "b.NEF".to_string()];
+        let err = flat_field_import(app.state(), app.state(), roll.id, two).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(!flat_field_clear(app.state(), app.state(), roll.id).unwrap());
+        let err = flat_field_clear(app.state(), app.state(), RollId::new()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
 
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);

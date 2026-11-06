@@ -66,6 +66,7 @@ fn roll(name: &str) -> Roll {
         film_base_rgb: None,
         film_base_confidence: None,
         frame_size: None,
+        has_flat_field: false,
         created_at: String::new(),
     }
 }
@@ -165,8 +166,9 @@ fn a_v3_library_upgrades_with_a_backup_and_keeps_its_rolls() {
     assert_eq!(old.format, FilmFormat::Mm35);
     drop(cat);
 
-    assert_eq!(SCHEMA_VERSION, 6);
-    assert_eq!(user_version(&dir.db()), 6);
+    assert_eq!(SCHEMA_VERSION, 7);
+    assert_eq!(user_version(&dir.db()), 7);
+    assert!(!old.has_flat_field, "an existing roll has no flat field");
     let backup = backup_path(&dir.db(), 3);
     assert!(backup.exists());
     assert_eq!(user_version(&backup), 3, "the backup is the old schema");
@@ -237,6 +239,73 @@ fn the_format_and_frame_size_of_a_roll_are_stored_and_measurements_average_in() 
         cat.update_roll(&by_hand).unwrap_err().code,
         ErrorCode::InvalidInput
     );
+}
+
+#[test]
+fn a_rolls_flat_field_is_stored_replaced_cleared_and_removed_with_the_roll() {
+    use gtp_core::FlatField;
+    let dir = TempDir::new("flat-field");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    let other = cat.insert_roll(&roll("Other")).unwrap();
+    assert_eq!(cat.get_flat_field(r.id).unwrap(), None);
+    assert!(!cat.get_roll(r.id).unwrap().has_flat_field);
+
+    let flat = |value: f32| FlatField {
+        grid_w: 3,
+        grid_h: 2,
+        frame_w: 600,
+        frame_h: 400,
+        light: (0..18).map(|i| value + i as f32 * 0.01).collect(),
+        sources: vec!["r.NEF".into(), "g.NEF".into(), "b.NEF".into()],
+    };
+    cat.set_flat_field(r.id, &flat(0.5)).unwrap();
+    assert_eq!(cat.get_flat_field(r.id).unwrap(), Some(flat(0.5)));
+    assert!(cat.get_roll(r.id).unwrap().has_flat_field);
+    assert!(
+        !cat.get_roll(other.id).unwrap().has_flat_field,
+        "only that roll"
+    );
+    assert!(cat
+        .list_rolls()
+        .unwrap()
+        .iter()
+        .any(|x| x.id == r.id && x.has_flat_field));
+
+    // A new one replaces the old.
+    cat.set_flat_field(r.id, &flat(0.7)).unwrap();
+    assert_eq!(cat.get_flat_field(r.id).unwrap(), Some(flat(0.7)));
+
+    // A grid that is not usable, and a roll that is not there, are refused.
+    let mut bad = flat(0.5);
+    bad.light.pop();
+    assert_eq!(
+        cat.set_flat_field(r.id, &bad).unwrap_err().code,
+        ErrorCode::InvalidInput
+    );
+    assert_eq!(
+        cat.set_flat_field(RollId::new(), &flat(0.5))
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+    assert_eq!(
+        cat.get_flat_field(r.id).unwrap(),
+        Some(flat(0.7)),
+        "unchanged by the refusals"
+    );
+
+    // Clearing says whether there was one; deleting the roll takes its flat field with it.
+    assert!(cat.clear_flat_field(r.id).unwrap());
+    assert!(!cat.clear_flat_field(r.id).unwrap());
+    assert_eq!(cat.get_flat_field(r.id).unwrap(), None);
+    assert_eq!(
+        cat.clear_flat_field(RollId::new()).unwrap_err().code,
+        ErrorCode::NotFound
+    );
+    cat.set_flat_field(other.id, &flat(0.6)).unwrap();
+    cat.delete_roll(other.id).unwrap();
+    assert_eq!(cat.get_flat_field(other.id).unwrap(), None);
 }
 
 #[test]

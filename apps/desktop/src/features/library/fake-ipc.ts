@@ -63,6 +63,7 @@ export function makeRoll(over: Partial<Roll> = {}): Roll {
     film_base_rgb: null,
     film_base_confidence: null,
     frame_size: null,
+    has_flat_field: false,
     created_at: '2026-10-30T10:00:00Z',
     ...over,
   };
@@ -129,9 +130,16 @@ export const FILM_LOG_CURVE: Array<[number, number]> = [
   [1, 0.31],
 ];
 
+/** The master curve the fake gives for the Frontier look. */
+export const FRONTIER_CURVE: Array<[number, number]> = [
+  [0, 0],
+  [0.5, 0.18],
+  [1, 1],
+];
+
 /** What the fake accepts of a settings patch. */
 interface SettingsPatchShape {
-  starting_look?: 'neutral' | 'film_log';
+  starting_look?: 'neutral' | 'film_log' | 'frontier';
   flags?: Partial<typeof DEFAULT_FLAGS>;
   keys?: Record<string, string>;
 }
@@ -193,7 +201,7 @@ export const state = {
   flags: { ...DEFAULT_FLAGS },
   settingsPatches: [] as SettingsPatchShape[],
   /** The Starting look setting now. */
-  startingLook: 'neutral' as 'neutral' | 'film_log',
+  startingLook: 'neutral' as 'neutral' | 'film_log' | 'frontier',
   /** The keyboard shortcuts the user changed (action name to key). */
   keys: {} as Record<string, string>,
   /** Reading the settings fails with this message when set. */
@@ -470,6 +478,10 @@ export const ipc = {
           ...((look ?? state.startingLook) === 'film_log'
             ? { tone: { curve: { master: FILM_LOG_CURVE } } }
             : {}),
+          // Frontier writes a curve and a saturation.
+          ...((look ?? state.startingLook) === 'frontier'
+            ? { tone: { curve: { master: FRONTIER_CURVE } }, color: { saturation: 1.1 } }
+            : {}),
         }),
       };
     },
@@ -535,6 +547,15 @@ export const ipc = {
       r.id === id ? { ...r, frame_size: size && { w: size[0], h: size[1], samples: 0 } } : r,
     );
     return state.rolls.find((r) => r.id === id) as Roll;
+  }),
+  flatFieldImport: vi.fn(async (id: string, paths: string[]) => {
+    state.rolls = state.rolls.map((r) => (r.id === id ? { ...r, has_flat_field: true } : r));
+    return { frame_width: 6016, frame_height: 4016, sources: paths };
+  }),
+  flatFieldClear: vi.fn(async (id: string) => {
+    const had = state.rolls.find((r) => r.id === id)?.has_flat_field ?? false;
+    state.rolls = state.rolls.map((r) => (r.id === id ? { ...r, has_flat_field: false } : r));
+    return had;
   }),
   logClientEvent: vi.fn(async () => undefined),
   developRender: vi.fn(async (_id: string, recipe: Recipe, maxEdge: number, seq: number) =>

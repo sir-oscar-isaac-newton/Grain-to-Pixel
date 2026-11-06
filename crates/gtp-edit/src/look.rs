@@ -19,6 +19,8 @@
 use gtp_core::recipe::{CurvePoint, Invert, CURVE_POINTS_MAX};
 use gtp_core::Look;
 
+use crate::frontier::{frontier_curve, FrontierParams};
+
 /// Blackmagic Film Generation 5 transfer function constants, from Blackmagic Design's
 /// "Blackmagic Generation 5 Color Science" (2021) as implemented by the `colour` library; the
 /// whitepaper itself was not read, so the tests pin the values of the published function:
@@ -104,11 +106,30 @@ pub fn film_log_curve(levels: &Invert) -> Vec<CurvePoint> {
         .collect()
 }
 
-/// The master curve a look gives a frame with these levels; none for [`Look::Neutral`].
-pub fn look_curve(look: Look, levels: &Invert) -> Option<Vec<CurvePoint>> {
+/// What a look writes into the recipe of a frame.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LookValues {
+    /// The master tone curve; `None` leaves the recipe's curve as it is.
+    pub master: Option<Vec<CurvePoint>>,
+    /// The colour saturation (1 is unchanged); `None` leaves the recipe's value as it is.
+    pub saturation: Option<f32>,
+}
+
+/// The values a look gives a frame with these levels; none for [`Look::Neutral`].
+pub fn look_values(look: Look, levels: &Invert) -> LookValues {
     match look {
-        Look::Neutral => None,
-        Look::FilmLog => Some(film_log_curve(levels)),
+        Look::Neutral => LookValues::default(),
+        Look::FilmLog => LookValues {
+            master: Some(film_log_curve(levels)),
+            saturation: None,
+        },
+        Look::Frontier => {
+            let params = FrontierParams::FITTED;
+            LookValues {
+                master: Some(frontier_curve(&params)),
+                saturation: Some(params.saturation as f32),
+            }
+        }
     }
 }
 
@@ -213,7 +234,27 @@ mod tests {
         assert!(curve
             .iter()
             .all(|p| (0.0..=1.0).contains(&p[0]) && (0.0..=1.0).contains(&p[1])));
-        assert_eq!(look_curve(Look::FilmLog, &levels(1.2)), Some(curve));
-        assert_eq!(look_curve(Look::Neutral, &levels(1.2)), None);
+        assert_eq!(
+            look_values(Look::FilmLog, &levels(1.2)),
+            LookValues {
+                master: Some(curve),
+                saturation: None
+            }
+        );
+        assert_eq!(
+            look_values(Look::Neutral, &levels(1.2)),
+            LookValues::default()
+        );
+        // Frontier writes both a curve and a saturation, the same for every frame.
+        let frontier = look_values(Look::Frontier, &levels(1.2));
+        assert_eq!(
+            frontier.master.as_ref().map(Vec::len),
+            Some(CURVE_POINTS_MAX)
+        );
+        assert_eq!(
+            frontier.saturation,
+            Some(FrontierParams::FITTED.saturation as f32)
+        );
+        assert_eq!(frontier, look_values(Look::Frontier, &levels(2.4)));
     }
 }

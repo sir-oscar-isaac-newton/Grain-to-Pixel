@@ -66,6 +66,8 @@ pub enum ImportWarningKind {
         channel: TripletChannel,
         per_mille: u32,
     },
+    /// The roll's flat field is for frames of another size, so this frame was imported without it.
+    FlatFieldSkipped,
 }
 
 /// A picked file that was not imported.

@@ -132,6 +132,10 @@ pub struct Roll {
     /// or set; the format's aspect ratio stands in for it.
     #[serde(default)]
     pub frame_size: Option<FrameSize>,
+    /// The roll has a flat field (the light of a bare-light triplet) that its camera-triplet frames are
+    /// divided by when they are loaded; the field itself is kept apart (see `FlatField`).
+    #[serde(default)]
+    pub has_flat_field: bool,
     /// RFC 3339 timestamp.
     pub created_at: String,
 }

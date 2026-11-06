@@ -2,6 +2,7 @@
 //! `&self`; writes take `&mut self` and run in one transaction together with their search update.
 
 mod export_log;
+mod flat_field;
 mod frame;
 mod import;
 mod meta;

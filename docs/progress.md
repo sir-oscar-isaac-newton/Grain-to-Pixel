@@ -574,6 +574,33 @@
       "commit": "331a308"
     },
     {
+      "id": "Q-09",
+      "number": 190,
+      "title": "Benchmark LS-50 scans against Nikon Scan positives",
+      "branch": "test/issue-190-ls50-benchmarks",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
+      "id": "P-20",
+      "number": 187,
+      "title": "Frontier-style look calibrated against reference renders",
+      "branch": "feat/issue-187-frontier-look",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
+      "id": "P-21",
+      "number": 194,
+      "title": "Flat-field correction for camera triplets",
+      "branch": "feat/issue-194-flat-field",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
       "id": "H-02",
       "number": 47,
       "title": "NkscanSource adapter",

@@ -276,7 +276,10 @@ fn export_one(
         },
     )?;
 
-    let full: ImageF32 = read_scan(library, &sources)?;
+    let flat = library
+        .read(|c| c.get_flat_field(roll.id))
+        .map_err(FrameError::from)?;
+    let full: ImageF32 = read_scan(library, &sources, flat.as_ref())?;
     // The infrared plane, at full size like the scan; a plane that cannot be used is skipped.
     let ir = read_ir_or_skip(library, &sources, &frame, (full.width, full.height))
         .filter(|_| dust_removal)

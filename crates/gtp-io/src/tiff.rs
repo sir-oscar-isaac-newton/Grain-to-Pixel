@@ -96,9 +96,25 @@ fn open(path: &Path) -> Result<File, AppError> {
 
 /// Reads a 16-bit TIFF. The size limits are applied before the pixels are decoded.
 pub fn read_tiff16(path: &Path, limits: &Limits) -> Result<Tiff16, AppError> {
+    read_tiff16_with(path, limits, MAX_INTERMEDIATE_BYTES)
+}
+
+/// [`read_tiff16`] for files written as one strip, such as the 16-bit output of Nikon Scan 4, whose
+/// single strip is larger than the intermediate buffer the app allows (128 MiB): the intermediate
+/// buffer may be as large as the decoded image itself. The decoded size limits still apply. For
+/// reference renders in the benchmark tool; the app reads scans with [`read_tiff16`].
+pub fn read_tiff16_single_strip(path: &Path, limits: &Limits) -> Result<Tiff16, AppError> {
+    read_tiff16_with(path, limits, limits.max_decoded_bytes)
+}
+
+fn read_tiff16_with(
+    path: &Path,
+    limits: &Limits,
+    intermediate_bytes: u64,
+) -> Result<Tiff16, AppError> {
     let reader = BufReader::new(open(path)?);
     let buffer_cap = usize::try_from(limits.max_decoded_bytes).unwrap_or(usize::MAX);
-    let intermediate_cap = usize::try_from(MAX_INTERMEDIATE_BYTES)
+    let intermediate_cap = usize::try_from(intermediate_bytes)
         .unwrap_or(usize::MAX)
         .min(buffer_cap);
     let mut decoder = Decoder::new(reader)
@@ -445,6 +461,26 @@ mod tests {
                 assert_eq!(back, image, "{} channels, {compression:?}", image.channels);
             }
         }
+    }
+
+    #[test]
+    fn the_single_strip_reader_reads_what_the_plain_reader_reads_and_the_cap_is_the_difference() {
+        let image = synthetic_rgb();
+        let path = temp_path("strip");
+        write_tiff16(&path, &image, Compression::None).unwrap();
+        let limits = Limits::default();
+        assert_eq!(read_tiff16_single_strip(&path, &limits).unwrap(), image);
+        assert_eq!(read_tiff16(&path, &limits).unwrap(), image);
+        // With the intermediate buffer capped too low a file is refused, which is what a single
+        // strip bigger than the app's cap meets; the decoded size limit still applies on top.
+        let refused = read_tiff16_with(&path, &limits, 16).unwrap_err();
+        assert_eq!(refused.code, ErrorCode::InvalidInput);
+        let tight = Limits {
+            max_decoded_bytes: 16,
+            ..limits
+        };
+        assert!(read_tiff16_single_strip(&path, &tight).is_err());
+        fs::remove_file(&path).unwrap();
     }
 
     #[test]

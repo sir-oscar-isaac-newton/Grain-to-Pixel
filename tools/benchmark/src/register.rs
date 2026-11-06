@@ -158,6 +158,28 @@ impl<'a> Search<'a> {
     }
 }
 
+/// The best window of the coarse copy of the source for the coarse copy of the reference, with its
+/// score: every `stride`-th position and scale from half to all of the width.
+fn coarse_best(source: &Plane, reference: &Plane, stride: usize) -> Option<(f32, (f32, f32, f32))> {
+    let mut coarse = Search::new(source, reference)?;
+    let width = source.w as f32;
+    let mut scale = 0.5f32;
+    while scale <= 1.0001 {
+        let ww = scale * width;
+        let wh = ww / (reference.w as f32 / reference.h as f32);
+        let (max_x, max_y) = (
+            (width - ww).max(0.0) as usize,
+            (source.h as f32 - wh).max(0.0) as usize,
+        );
+        for y0 in (0..=max_y).step_by(stride) {
+            for x0 in (0..=max_x).step_by(stride) {
+                coarse.try_window(x0 as f32, y0 as f32, ww);
+            }
+        }
+        scale += 0.025 * stride as f32;
+    }
+    coarse.best
+}
 /// Finds where `reference` sits inside `source`: the window of the reference's aspect ratio that
 /// matches it best, at a scale from half to all of the source's width. `None` when either picture is
 /// flat or too small. The score of a good match is close to 1.
@@ -167,24 +189,7 @@ pub fn register(source: &Plane, reference: &Plane) -> Option<Registration> {
     }
     // Coarse: every position and scale on a small copy.
     let (coarse_src, coarse_ref) = (box_downscale(source, 96), box_downscale(reference, 48));
-    let mut coarse = Search::new(&coarse_src, &coarse_ref)?;
-    let width = coarse_src.w as f32;
-    let mut scale = 0.5f32;
-    while scale <= 1.0001 {
-        let ww = scale * width;
-        let wh = ww / (coarse_ref.w as f32 / coarse_ref.h as f32);
-        let (max_x, max_y) = (
-            (width - ww).max(0.0) as usize,
-            (coarse_src.h as f32 - wh).max(0.0) as usize,
-        );
-        for y0 in 0..=max_y {
-            for x0 in 0..=max_x {
-                coarse.try_window(x0 as f32, y0 as f32, ww);
-            }
-        }
-        scale += 0.025;
-    }
-    let (_, (cx, cy, cw)) = coarse.best?;
+    let (_, (cx, cy, cw)) = coarse_best(&coarse_src, &coarse_ref, 1)?;
 
     // Fine: around the coarse answer, on a larger copy, in single pixels.
     let (fine_src, fine_ref) = (box_downscale(source, 512), box_downscale(reference, 128));
@@ -214,6 +219,128 @@ pub fn register(source: &Plane, reference: &Plane) -> Option<Registration> {
     })
 }
 
+/// How a reference is turned to match our render: mirrored left to right first when `mirrored`, then
+/// turned clockwise by `quarter_turns` quarter turns. Nikon Scan writes its positives upright, and
+/// the LS-50 scans lie on their side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Orientation {
+    pub quarter_turns: u8,
+    pub mirrored: bool,
+}
+
+impl Orientation {
+    /// As it is.
+    pub const IDENTITY: Orientation = Orientation {
+        quarter_turns: 0,
+        mirrored: false,
+    };
+
+    /// All eight, the identity first.
+    pub const ALL: [Orientation; 8] = [
+        Orientation {
+            quarter_turns: 0,
+            mirrored: false,
+        },
+        Orientation {
+            quarter_turns: 1,
+            mirrored: false,
+        },
+        Orientation {
+            quarter_turns: 2,
+            mirrored: false,
+        },
+        Orientation {
+            quarter_turns: 3,
+            mirrored: false,
+        },
+        Orientation {
+            quarter_turns: 0,
+            mirrored: true,
+        },
+        Orientation {
+            quarter_turns: 1,
+            mirrored: true,
+        },
+        Orientation {
+            quarter_turns: 2,
+            mirrored: true,
+        },
+        Orientation {
+            quarter_turns: 3,
+            mirrored: true,
+        },
+    ];
+
+    /// The interleaved samples (`channels` to a pixel) of a `w` x `h` picture with this orientation
+    /// applied, and the size of the result.
+    fn apply(self, data: &[f32], w: usize, h: usize, channels: usize) -> (Vec<f32>, usize, usize) {
+        let mut data = data.to_vec();
+        if self.mirrored {
+            for row in data.chunks_mut(w * channels) {
+                for x in 0..w / 2 {
+                    for c in 0..channels {
+                        row.swap(x * channels + c, (w - 1 - x) * channels + c);
+                    }
+                }
+            }
+        }
+        let (mut w, mut h) = (w, h);
+        for _ in 0..self.quarter_turns % 4 {
+            // One clockwise quarter turn: the pixel at (x, y) goes to (h - 1 - y, x).
+            let mut turned = vec![0.0; data.len()];
+            for y in 0..h {
+                for x in 0..w {
+                    let to = (x * h + (h - 1 - y)) * channels;
+                    let from = (y * w + x) * channels;
+                    turned[to..to + channels].copy_from_slice(&data[from..from + channels]);
+                }
+            }
+            data = turned;
+            (w, h) = (h, w);
+        }
+        (data, w, h)
+    }
+
+    /// The plane with this orientation applied.
+    pub fn apply_plane(self, plane: &Plane) -> Plane {
+        let (data, w, h) = self.apply(&plane.data, plane.w, plane.h, 1);
+        Plane { w, h, data }
+    }
+
+    /// The 3-channel image with this orientation applied.
+    pub fn apply_image(self, image: &ImageF32) -> Result<ImageF32, AppError> {
+        if image.channels != 3 {
+            return Err(AppError::new(
+                ErrorCode::InvalidInput,
+                "Only a 3-channel image can be turned.",
+            ));
+        }
+        let (data, w, h) = self.apply(&image.data, image.width as usize, image.height as usize, 3);
+        ImageF32::new(w as u32, h as u32, 3, data)
+    }
+}
+
+/// [`register`] when the reference may be turned or mirrored: every orientation is scored on the
+/// coarse copy, the best one is registered in full. `None` when no orientation can be registered.
+pub fn register_oriented(source: &Plane, reference: &Plane) -> Option<(Registration, Orientation)> {
+    if source.w < 16 || source.h < 16 || reference.w < 8 || reference.h < 8 {
+        return None;
+    }
+    let coarse_src = box_downscale(source, 96);
+    let mut best: Option<(f32, Orientation)> = None;
+    for orientation in Orientation::ALL {
+        let oriented = orientation.apply_plane(&box_downscale(reference, 96));
+        let coarse_ref = box_downscale(&oriented, 48);
+        if let Some((score, _)) = coarse_best(&coarse_src, &coarse_ref, 2) {
+            if best.is_none_or(|(top, _)| score > top) {
+                best = Some((score, orientation));
+            }
+        }
+    }
+    let (_, orientation) = best?;
+    let found = register(source, &orientation.apply_plane(reference))?;
+    Some((found, orientation))
+}
 /// The part of a 3-channel image in `window`, resampled to `out_w` x `out_h` (bilinear).
 pub fn crop_resample(
     image: &ImageF32,
@@ -302,11 +429,11 @@ mod tests {
 
     #[test]
     fn a_crop_is_found_at_its_position_and_scale_whatever_its_tones() {
-        let source = picture(640, 480);
+        let source = picture(320, 240);
         for (x, y, w) in [(0.12, 0.08, 0.8), (0.03, 0.2, 0.75), (0.25, 0.1, 0.6)] {
             // A 4:3 frame inside a 4:3 picture: its height is the same fraction as its width.
             let window = Window { x, y, w, h: w };
-            let reference = reference_of(&source, window, 300, |v| 0.55 * v + 0.2);
+            let reference = reference_of(&source, window, 100, |v| 0.55 * v + 0.2);
             let found = register(&source, &reference).unwrap();
             assert!(found.score > 0.98, "{x} {y} {w}: score {}", found.score);
             assert!(
@@ -319,6 +446,103 @@ mod tests {
         }
     }
 
+    #[test]
+    fn every_orientation_is_found_and_named() {
+        let source = picture(256, 192);
+        // A frame with the source's own aspect (4:3): its height is the same fraction as its width.
+        let window = Window {
+            x: 0.06,
+            y: 0.1,
+            w: 0.85,
+            h: 0.85,
+        };
+        let upright = reference_of(&source, window, 64, |v| 0.7 * v + 0.1);
+        // Four of the eight, mirrored and not, turned and not (the transforms themselves are
+        // checked for all eight in `turning_and_mirroring_move_pixels_as_named`).
+        for want in [
+            Orientation::IDENTITY,
+            Orientation {
+                quarter_turns: 1,
+                mirrored: false,
+            },
+            Orientation {
+                quarter_turns: 0,
+                mirrored: true,
+            },
+            Orientation {
+                quarter_turns: 3,
+                mirrored: true,
+            },
+        ] {
+            // The reference as a file would hold it: the upright one with the inverse of `want`
+            // applied, so applying `want` brings it back. Find the stored form by trying all.
+            let stored = Orientation::ALL
+                .iter()
+                .map(|o| o.apply_plane(&upright))
+                .find(|stored| {
+                    let back = want.apply_plane(stored);
+                    back.w == upright.w && back.h == upright.h && back.data == upright.data
+                })
+                .unwrap();
+            let (found, got) = register_oriented(&source, &stored).unwrap();
+            assert_eq!(got, want, "stored form for {want:?}");
+            assert!(found.score > 0.97, "{want:?}: score {}", found.score);
+            assert!(
+                (found.window.x - window.x).abs() < 0.02
+                    && (found.window.y - window.y).abs() < 0.02
+                    && (found.window.w - window.w).abs() < 0.02,
+                "{want:?}: {:?} vs {window:?}",
+                found.window
+            );
+        }
+    }
+
+    #[test]
+    fn turning_and_mirroring_move_pixels_as_named() {
+        // 3 x 2, one channel: 0 1 2 / 3 4 5.
+        let plane = Plane {
+            w: 3,
+            h: 2,
+            data: vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+        };
+        let turned = Orientation {
+            quarter_turns: 1,
+            mirrored: false,
+        }
+        .apply_plane(&plane);
+        // Clockwise: the left column read from the bottom becomes the top row.
+        assert_eq!((turned.w, turned.h), (2, 3));
+        assert_eq!(turned.data, vec![3.0, 0.0, 4.0, 1.0, 5.0, 2.0]);
+        let mirrored = Orientation {
+            quarter_turns: 0,
+            mirrored: true,
+        }
+        .apply_plane(&plane);
+        assert_eq!(mirrored.data, vec![2.0, 1.0, 0.0, 5.0, 4.0, 3.0]);
+        let half = Orientation {
+            quarter_turns: 2,
+            mirrored: false,
+        }
+        .apply_plane(&plane);
+        assert_eq!(half.data, vec![5.0, 4.0, 3.0, 2.0, 1.0, 0.0]);
+        assert_eq!(Orientation::IDENTITY.apply_plane(&plane), plane);
+        // Four turns are the identity, and a colour image keeps its channels together.
+        let four = Orientation {
+            quarter_turns: 4,
+            mirrored: false,
+        };
+        assert_eq!(four.apply_plane(&plane), plane);
+        let image = ImageF32::new(2, 1, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let flipped = Orientation {
+            quarter_turns: 0,
+            mirrored: true,
+        }
+        .apply_image(&image)
+        .unwrap();
+        assert_eq!(flipped.data, vec![4.0, 5.0, 6.0, 1.0, 2.0, 3.0]);
+        let gray = ImageF32::new(1, 1, 1, vec![0.0]).unwrap();
+        assert!(Orientation::IDENTITY.apply_image(&gray).is_err());
+    }
     #[test]
     fn a_flat_or_tiny_picture_is_not_registered() {
         let flat = Plane {

@@ -34,6 +34,10 @@
       "edit": "Edit roll",
       "delete": "Delete roll",
       "import": "Import TIFF files…",
+      "setFlatField": "Set flat field…",
+      "removeFlatField": "Remove flat field",
+      "flatFieldOn": "Flat field set: the roll's camera frames are corrected for uneven light.",
+      "flatFieldOff": "No flat field.",
       "actions": "Actions for the selected roll"
     },
     "location": {
@@ -79,6 +83,7 @@
       "rollDeletedLeft_one": "Roll deleted, but {{count}} file could not be removed: {{files}}",
       "rollDeletedLeft_other": "Roll deleted, but {{count}} files could not be removed: {{files}}",
       "importFailed": "The import could not start: {{message}}",
+      "flatFieldFailed": "The flat field could not be changed: {{message}}",
       "deleteFailed": "The roll could not be deleted: {{message}}"
     }
   },
@@ -202,7 +207,8 @@
       "exposure_time_mismatch": "the three shots used different shutter times",
       "iso_mismatch": "the three shots used different ISO values",
       "aperture_mismatch": "the three shots used different apertures",
-      "clipped": "the {{channel}}-lit shot is clipped in {{percent}} % of its picture"
+      "clipped": "the {{channel}}-lit shot is clipped in {{percent}} % of its picture",
+      "flat_field_skipped": "not corrected: the roll’s flat field is for frames of another size"
     }
   },
   "settings": {
@@ -295,6 +301,7 @@
       "label": "Starting look",
       "neutral": "Neutral (the conversion as it is)",
       "film_log": "Film log (Blackmagic Film Gen 5): a flat, wide-latitude start for editing",
+      "frontier": "Frontier style: a contrasty, saturated lab-print look, fitted to Trichroma Lab",
       "saveFailed": "The starting look could not be saved: {{message}}"
     },
     "flags": {

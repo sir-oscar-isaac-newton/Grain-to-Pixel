@@ -41,6 +41,21 @@ describe('SettingsView', () => {
       expect(state.startingLook).toBe('film_log');
     });
 
+    it('offers the Frontier style as a third look', async () => {
+      const user = userEvent.setup();
+      render(<SettingsView />);
+      const select = await screen.findByRole('combobox', { name: 'Starting look' });
+      expect(within(select).getAllByRole('option')).toHaveLength(3);
+      await user.selectOptions(
+        select,
+        'Frontier style: a contrasty, saturated lab-print look, fitted to Trichroma Lab',
+      );
+      await waitFor(() =>
+        expect(state.settingsPatches).toContainEqual({ starting_look: 'frontier' }),
+      );
+      expect(state.startingLook).toBe('frontier');
+    });
+
     it('starts from the saved look, and switches back when saving fails', async () => {
       const user = userEvent.setup();
       state.startingLook = 'film_log';

@@ -13,6 +13,7 @@ import {
   type ExportedFile,
   type FailedExport,
   type FilmFormat,
+  type FlatFieldInfo,
   type ImportResult,
   type ImportWarning,
   type LibraryDetails,
@@ -44,6 +45,7 @@ export type {
   ExportedFile,
   FailedExport,
   FilmFormat,
+  FlatFieldInfo,
   ImportResult,
   ImportWarning,
   LibraryDetails,
@@ -169,6 +171,16 @@ export async function rollSetFilmBase(...args: Args<'rollSetFilmBase'>): Promise
 /** Sets the size of one frame on the roll's captures by hand, or clears it with null. */
 export async function rollSetFrameSize(...args: Args<'rollSetFrameSize'>): Promise<Roll> {
   return unwrap(await commands.rollSetFrameSize(...args));
+}
+
+/** Makes a roll's flat field from three bare-light exposures (any order) and attaches it. */
+export async function flatFieldImport(...args: Args<'flatFieldImport'>): Promise<FlatFieldInfo> {
+  return unwrap(await commands.flatFieldImport(...args));
+}
+
+/** Removes a roll's flat field; false when it had none. */
+export async function flatFieldClear(...args: Args<'flatFieldClear'>): Promise<boolean> {
+  return unwrap(await commands.flatFieldClear(...args));
 }
 
 /** Deletes a roll and its frames; `files_left` lists files that could not be removed. */

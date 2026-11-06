@@ -4,6 +4,7 @@ pub mod counters;
 pub mod develop;
 pub mod diagnostics;
 pub mod export;
+pub mod flat_field;
 pub mod import;
 pub mod import_triplets;
 pub mod library;

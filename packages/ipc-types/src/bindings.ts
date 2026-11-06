@@ -39,6 +39,14 @@ export const commands = {
 	 *  automatic crop, so their thumbnails are regenerated in the background.
 	 */
 	rollSetFrameSize: (id: RollId, size: [(number | null), (number | null)] | null) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_set_frame_size", { id, size })),
+	/**
+	 *  Makes the roll's flat field from three bare-light exposures (red, green and blue, in any order:
+	 *  they are told apart by colour) and attaches it, replacing the one it has. The roll's camera-triplet
+	 *  frames are divided by it from now on. The three files must fit the roll's frames in size.
+	 */
+	flatFieldImport: (id: RollId, paths: string[]) => typedError<FlatFieldInfo, AppError_Serialize>(__TAURI_INVOKE("flat_field_import", { id, paths })),
+	/**  Removes the roll's flat field; true when it had one. */
+	flatFieldClear: (id: RollId) => typedError<boolean, AppError_Serialize>(__TAURI_INVOKE("flat_field_clear", { id })),
 	/**  Deletes a roll with its frames, then their files. */
 	rollDelete: (id: RollId) => typedError<DeleteReport, AppError_Serialize>(__TAURI_INVOKE("roll_delete", { id })),
 	/**  One page of frames of a roll, or of the whole library. */
@@ -596,6 +604,15 @@ export type Flags_Serialize = {
 	update_check: boolean,
 };
 
+/**  What the UI is told of a roll's flat field. */
+export type FlatFieldInfo = {
+	/**  The size in pixels of the frames it fits. */
+	frame_width: number,
+	frame_height: number,
+	/**  The names of the three files it was made from. */
+	sources: string[],
+};
+
 /**  What the first-run dialog shows about a folder before a library is created or opened there. */
 export type FolderCheck = FolderCheck_Serialize | FolderCheck_Deserialize;
 
@@ -878,7 +895,9 @@ export type ImportWarningKind =
  *  More of the lit channel than expected is at full scale: `per_mille` of its samples (parts
  *  per thousand).
  */
-{ kind: "clipped"; channel: TripletChannel; per_mille: number };
+{ kind: "clipped"; channel: TripletChannel; per_mille: number } | 
+/**  The roll's flat field is for frames of another size, so this frame was imported without it. */
+{ kind: "flat_field_skipped" };
 
 /**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
 export type Invert = Invert_Serialize | Invert_Deserialize;
@@ -1068,7 +1087,12 @@ export type Look =
  */
 "neutral" | 
 /**  A flat, wide-latitude start encoded with the Blackmagic Film Gen 5 log curve, for editing. */
-"film_log";
+"film_log" | 
+/**
+ *  A contrasty, saturated lab-print rendition in the style of the Fuji Frontier SP-3000, fitted
+ *  to Trichroma Lab's renders.
+ */
+"frontier";
 
 /**
  *  Black-and-white conversion. When enabled, every pixel becomes `mix[0]*R + mix[1]*G + mix[2]*B`
@@ -1242,6 +1266,11 @@ export type Roll_Deserialize = {
 	 *  or set; the format's aspect ratio stands in for it.
 	 */
 	frame_size?: FrameSize_Deserialize | null,
+	/**
+	 *  The roll has a flat field (the light of a bare-light triplet) that its camera-triplet frames are
+	 *  divided by when they are loaded; the field itself is kept apart (see `FlatField`).
+	 */
+	has_flat_field?: boolean,
 	/**  RFC 3339 timestamp. */
 	created_at: string,
 };
@@ -1280,6 +1309,11 @@ export type Roll_Serialize = {
 	 *  or set; the format's aspect ratio stands in for it.
 	 */
 	frame_size: FrameSize_Serialize | null,
+	/**
+	 *  The roll has a flat field (the light of a bare-light triplet) that its camera-triplet frames are
+	 *  divided by when they are loaded; the field itself is kept apart (see `FlatField`).
+	 */
+	has_flat_field: boolean,
 	/**  RFC 3339 timestamp. */
 	created_at: string,
 };

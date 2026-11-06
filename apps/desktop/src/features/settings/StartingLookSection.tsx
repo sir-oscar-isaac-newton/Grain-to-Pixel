@@ -4,7 +4,7 @@ import type { Look } from '../../shared/ipc';
 import styles from './settings.module.css';
 
 /** The looks the automatic conversion can start from, in the order they are offered. */
-export const LOOKS: readonly Look[] = ['neutral', 'film_log'];
+export const LOOKS: readonly Look[] = ['neutral', 'film_log', 'frontier'];
 
 interface StartingLookSectionProps {
   value: Look;

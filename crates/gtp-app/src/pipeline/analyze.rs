@@ -50,12 +50,40 @@ pub fn analyze_with(input: &PipelineInput, hint: Option<FrameHint>) -> Result<An
 }
 
 /// [`analyze_with`] that also writes the values of a [`Look`] into the automatic recipe (the master
-/// tone curve, computed from the automatic levels), so the histogram and the recipe both show it.
-/// [`Look::Neutral`] adds nothing.
+/// tone curve, computed from the automatic levels, and the saturation), so the histogram and the
+/// recipe both show it. [`Look::Neutral`] adds nothing.
 pub fn analyze_with_look(
     input: &PipelineInput,
     hint: Option<FrameHint>,
     look: Look,
+) -> Result<Analysis, AppError> {
+    analyze_with_levels(input, hint, look, LevelsPercentiles::DEFAULT)
+}
+
+/// The density percentiles the automatic black and white points are taken at.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LevelsPercentiles {
+    /// The percentile for the black point.
+    pub low: f32,
+    /// The percentile for the white point.
+    pub high: f32,
+}
+
+impl LevelsPercentiles {
+    /// What the app uses: 0.5 and 99.5.
+    pub const DEFAULT: LevelsPercentiles = LevelsPercentiles {
+        low: DEFAULT_LOW_PERCENTILE,
+        high: DEFAULT_HIGH_PERCENTILE,
+    };
+}
+
+/// [`analyze_with_look`] with the percentiles of the automatic levels chosen; the benchmark tool
+/// compares settings with it. The app itself uses [`LevelsPercentiles::DEFAULT`].
+pub fn analyze_with_levels(
+    input: &PipelineInput,
+    hint: Option<FrameHint>,
+    look: Look,
+    percentiles: LevelsPercentiles,
 ) -> Result<Analysis, AppError> {
     let proxy = build_proxy(&input.rgb, PREVIEW_EDGE)?;
     let (base, base_from_roll) = match input.film_base {
@@ -77,14 +105,18 @@ pub fn analyze_with_look(
         ..Geometry::default()
     };
     let cropped = gtp_edit::apply_geometry(&normalized, &crop_only)?;
-    let levels = auto_levels(&cropped, DEFAULT_LOW_PERCENTILE, DEFAULT_HIGH_PERCENTILE)?;
+    let levels = auto_levels(&cropped, percentiles.low, percentiles.high)?;
 
     let mut auto_recipe = Recipe::default();
     auto_recipe.geometry.crop = frame.rect;
     auto_recipe.base.rgb = base.rgb;
     auto_recipe.invert = levels;
-    if let Some(curve) = gtp_edit::look_curve(look, &auto_recipe.invert) {
+    let values = gtp_edit::look_values(look, &auto_recipe.invert);
+    if let Some(curve) = values.master {
         auto_recipe.tone.curve.master = curve;
+    }
+    if let Some(saturation) = values.saturation {
+        auto_recipe.color.saturation = saturation;
     }
     let auto_recipe = auto_recipe.clamped();
 
@@ -187,6 +219,7 @@ mod tests {
             film_base_rgb: None,
             film_base_confidence: None,
             frame_size: None,
+            has_flat_field: false,
             created_at: String::new(),
         };
         assert_eq!(frame_hint(&roll), None);
@@ -249,8 +282,12 @@ mod tests {
         assert_eq!(without, plain.auto_recipe);
         // The curve is the one `gtp-edit` gives for these levels, and survives the recipe's clamping.
         assert_eq!(
-            Some(curve.clone()),
-            gtp_edit::look_curve(Look::FilmLog, &looked.auto_recipe.invert)
+            gtp_edit::look_values(Look::FilmLog, &looked.auto_recipe.invert).master,
+            Some(curve.clone())
+        );
+        assert_eq!(
+            looked.auto_recipe.color.saturation, 1.0,
+            "Film log leaves the saturation"
         );
         // A flat start: the blacks are lifted and the whites held down, so the display levels in use
         // are a narrower band inside the full range.
@@ -266,6 +303,64 @@ mod tests {
             "black {log_first} vs {plain_first}"
         );
         assert!(log_last < plain_last, "white {log_last} vs {plain_last}");
+    }
+
+    #[test]
+    fn the_frontier_look_writes_a_curve_and_a_saturation_and_nothing_else() {
+        let s = scan(400, 300, 20);
+        let input = input_of(&s, None);
+        let plain = analyze(&input).unwrap();
+        let looked = analyze_with_look(&input, None, Look::Frontier).unwrap();
+        let values = gtp_edit::look_values(Look::Frontier, &looked.auto_recipe.invert);
+        assert_eq!(
+            Some(looked.auto_recipe.tone.curve.master.clone()),
+            values.master
+        );
+        assert_eq!(Some(looked.auto_recipe.color.saturation), values.saturation);
+        assert_ne!(looked.auto_recipe.color.saturation, 1.0);
+        // Everything else is what the neutral analysis found.
+        let mut without = looked.auto_recipe.clone();
+        without.tone.curve.master = plain.auto_recipe.tone.curve.master.clone();
+        without.color.saturation = plain.auto_recipe.color.saturation;
+        assert_eq!(without, plain.auto_recipe);
+        assert_eq!(looked.frame.rect, plain.frame.rect);
+    }
+
+    #[test]
+    fn the_levels_percentiles_move_the_black_and_white_points() {
+        // A picture with a spread of densities, not a wedge whose ends are all one value.
+        let s = synthetic::negative(
+            8,
+            &Params {
+                width: 400,
+                height: 300,
+                rebate: [20; 4],
+                pattern: Pattern::Blobs,
+                noise: 0.02,
+                ..Params::default()
+            },
+        )
+        .unwrap();
+        let input = input_of(&s, None);
+        let default =
+            analyze_with_levels(&input, None, Look::Neutral, LevelsPercentiles::DEFAULT).unwrap();
+        assert_eq!(default.auto_recipe, analyze(&input).unwrap().auto_recipe);
+        // Cutting more of each end brings the points inwards: a higher black, a lower white.
+        let tighter = analyze_with_levels(
+            &input,
+            None,
+            Look::Neutral,
+            LevelsPercentiles {
+                low: 5.0,
+                high: 95.0,
+            },
+        )
+        .unwrap();
+        for c in 0..3 {
+            assert!(tighter.auto_recipe.invert.black[c] >= default.auto_recipe.invert.black[c]);
+            assert!(tighter.auto_recipe.invert.white[c] <= default.auto_recipe.invert.white[c]);
+        }
+        assert_ne!(tighter.auto_recipe.invert, default.auto_recipe.invert);
     }
 
     #[test]

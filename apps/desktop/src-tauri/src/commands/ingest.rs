@@ -86,6 +86,8 @@ pub fn import_files(
             let following = roll_frame::frames_following_roll_base(&library, roll_id)?;
             thumbnails.request(Arc::clone(&events), following);
         }
+        // The roll's colour balance was written into these frames' recipes when the job ended.
+        thumbnails.request(Arc::clone(&events), result.rebalanced.clone());
         tracing::info!(
             imported = result.frames.len(),
             skipped = result.skipped.len(),
@@ -188,6 +190,8 @@ pub fn scan_start(
             let following = roll_frame::frames_following_roll_base(&library, roll_id)?;
             thumbnails.request(Arc::clone(&events), following);
         }
+        // The roll's colour balance was written into these frames' recipes when the job ended.
+        thumbnails.request(Arc::clone(&events), result.rebalanced.clone());
         tracing::info!(
             stored = result.frames.len(),
             frame_ms = ?result.frame_ms,

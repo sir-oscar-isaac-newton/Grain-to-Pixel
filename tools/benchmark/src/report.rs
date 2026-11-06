@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use gtp_app::apply_flat_field;
 use gtp_app::{
-    analyze_with, analyze_with_look, merge_triplet, render, BaseEstimate, FrameHint, PipelineInput,
-    RenderTarget,
+    analyze_with, analyze_with_balance, merge_triplet, render, BalanceMethod, BaseEstimate,
+    FrameHint, LevelsPercentiles, PipelineInput, RenderTarget,
 };
 use gtp_core::model::FILM_BASE_MIN_CONFIDENCE;
 use gtp_core::recipe::{Crop, OutputSpace};
@@ -362,6 +362,15 @@ fn write_map(
     encode_jpeg(&image, OutputSpace::Srgb, 85, path)
 }
 
+/// The automatic colour balance a report measures (P-22).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Balance {
+    /// Each frame by itself, with this method.
+    Frame(BalanceMethod),
+    /// One correction per roll: the median of the mid-tone estimate over the frames it can judge.
+    RollMedian,
+}
+
 /// Runs the report over a manifest, converting every frame with the starting `look`. `note` hears of
 /// each step (for the command line to print); `maps` is a folder to write a picture of each frame's
 /// difference to.
@@ -369,6 +378,7 @@ pub fn run(
     manifest: &Manifest,
     maps: Option<&Path>,
     look: Look,
+    balance: Balance,
     note: &mut dyn FnMut(&str),
 ) -> Result<Report, AppError> {
     let hint = Some(FrameHint {
@@ -415,6 +425,36 @@ pub fn run(
         bases.push(base);
     }
 
+    // One correction per roll, when asked for, from what each of its frames would get.
+    let mut roll_axes: Vec<Option<[f32; 3]>> = vec![None; rolls.len()];
+    if balance == Balance::RollMedian {
+        for (index, roll) in rolls.iter().enumerate() {
+            let mut frames = Vec::new();
+            for pair in manifest.pairs.iter().filter(|p| p.roll == *roll) {
+                note(&format!("estimating the balance of {}", pair.name));
+                let color = analyze_with_balance(
+                    &PipelineInput {
+                        rgb: Arc::new(load_frame(pair, flat.as_ref())?),
+                        ir: None,
+                        film_base: Some(bases[index]),
+                    },
+                    hint,
+                    look,
+                    LevelsPercentiles::DEFAULT,
+                    BalanceMethod::GreyWorld,
+                )?
+                .auto_recipe
+                .color;
+                let axes = [color.red_cyan, color.green_magenta, color.blue_yellow];
+                if axes != [0.0; 3] {
+                    frames.push(axes);
+                }
+            }
+            roll_axes[index] = gtp_app::roll_balance(&frames);
+            note(&format!("{roll}: roll balance {:?}", roll_axes[index]));
+        }
+    }
+
     if let Some(dir) = maps {
         std::fs::create_dir_all(dir).map_err(|err| {
             AppError::new(ErrorCode::Io, "The map folder could not be made.")
@@ -430,7 +470,7 @@ pub fn run(
         let roll_index = rolls.iter().position(|r| *r == pair.roll).unwrap_or(0);
         let film_base = bases[roll_index];
         let image = load_frame(pair, flat.as_ref())?;
-        let analysis = analyze_with_look(
+        let analysis = analyze_with_balance(
             &PipelineInput {
                 rgb: Arc::new(image.clone()),
                 ir: None,
@@ -438,9 +478,19 @@ pub fn run(
             },
             hint,
             look,
+            LevelsPercentiles::DEFAULT,
+            match balance {
+                Balance::Frame(method) => method,
+                Balance::RollMedian => BalanceMethod::Off,
+            },
         )?;
         // The automatic recipe, but over the whole capture, so the reference can be found in it.
         let mut recipe = analysis.auto_recipe.clone();
+        if let Some([red_cyan, green_magenta, blue_yellow]) = roll_axes[roll_index] {
+            recipe.color.red_cyan = red_cyan;
+            recipe.color.green_magenta = green_magenta;
+            recipe.color.blue_yellow = blue_yellow;
+        }
         recipe.geometry.crop = Crop::default();
         let input = PipelineInput {
             rgb: Arc::new(image),
@@ -724,7 +774,14 @@ mod tests {
     fn a_scan_pair_is_converted_turned_back_registered_and_compared() {
         let (dir, mut manifest, base) = scan_pair("scan");
         manifest.film_base = Some(base);
-        let report = run(&manifest, None, Look::Neutral, &mut |_| {}).unwrap();
+        let report = run(
+            &manifest,
+            None,
+            Look::Neutral,
+            Balance::Frame(BalanceMethod::Off),
+            &mut |_| {},
+        )
+        .unwrap();
         let frame = &report.frames[0];
         assert_eq!(frame.roll, "Stock A");
         // The reference was stored a quarter turn clockwise, so it is turned three more to match.
@@ -755,7 +812,14 @@ mod tests {
         second.name = "b".into();
         second.roll = "Stock B".into();
         two.pairs.push(second);
-        let report = run(&two, None, Look::Neutral, &mut |_| {}).unwrap();
+        let report = run(
+            &two,
+            None,
+            Look::Neutral,
+            Balance::Frame(BalanceMethod::Off),
+            &mut |_| {},
+        )
+        .unwrap();
         let names: Vec<_> = report.rolls.iter().map(|r| r.roll.as_str()).collect();
         assert_eq!(names, ["Stock A", "Stock B"]);
         assert_eq!(report.rolls[0].film_base, report.rolls[1].film_base);
@@ -777,7 +841,14 @@ mod tests {
         write_tiff16(&dir.join("positive.tif"), &gray, Compression::None).unwrap();
         let mut manifest = manifest;
         manifest.film_base = Some(base);
-        let err = run(&manifest, None, Look::Neutral, &mut |_| {}).unwrap_err();
+        let err = run(
+            &manifest,
+            None,
+            Look::Neutral,
+            Balance::Frame(BalanceMethod::Off),
+            &mut |_| {},
+        )
+        .unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
         let details = err.details.unwrap_or_default();
         assert!(details.contains("a ("), "the pair is named: {details}");

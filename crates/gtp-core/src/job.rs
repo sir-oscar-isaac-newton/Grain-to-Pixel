@@ -39,6 +39,9 @@ pub struct ImportResult {
     /// This import replaced the roll's guessed film base with a better measured one, so the roll's
     /// other frames look different now.
     pub base_replaced: bool,
+    /// Frames of the roll whose automatic recipe got the roll's colour balance when the job ended
+    /// (P-22), so their thumbnails are made again. Empty when every frame had it from the start.
+    pub rebalanced: Vec<FrameId>,
 }
 
 /// Something to know about an imported frame.
@@ -68,6 +71,9 @@ pub enum ImportWarningKind {
     },
     /// The roll's flat field is for frames of another size, so this frame was imported without it.
     FlatFieldSkipped,
+    /// None of the job's frames had a usable neutral, so the roll has no colour balance (the frame
+    /// named is the first of the job).
+    BalanceSkipped,
 }
 
 /// A picked file that was not imported.

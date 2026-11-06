@@ -52,6 +52,63 @@ impl Catalog {
         tx.commit().map_err(db_error)
     }
 
+    /// Writes the colour axes `[red_cyan, green_magenta, blue_yellow]` into the recipes of those of
+    /// `frames` that were never edited by the user (`edited_at` empty), leaving the rest of each
+    /// recipe and `edited_at` as they are: the automatic recipe changes, the frame does not count
+    /// as edited. Returns the frames whose recipe changed. One transaction.
+    pub fn set_unedited_color_axes(
+        &mut self,
+        frames: &[FrameId],
+        axes: [f32; 3],
+    ) -> Result<Vec<FrameId>, AppError> {
+        let tx = self.conn.transaction().map_err(db_error)?;
+        let mut changed = Vec::new();
+        for frame in frames {
+            let found: Option<String> = tx
+                .query_row(
+                    "SELECT recipe.json FROM recipe JOIN frame ON frame.id = recipe.frame_id
+                     WHERE recipe.frame_id = ?1 AND frame.edited_at IS NULL",
+                    [frame.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(db_error)?;
+            let Some(json) = found else { continue };
+            let mut recipe = migrate(&json)?;
+            let current = [
+                recipe.color.red_cyan,
+                recipe.color.green_magenta,
+                recipe.color.blue_yellow,
+            ];
+            if current == axes {
+                continue;
+            }
+            [
+                recipe.color.red_cyan,
+                recipe.color.green_magenta,
+                recipe.color.blue_yellow,
+            ] = axes;
+            let json = serde_json::to_string(&recipe).map_err(|err| {
+                AppError::new(
+                    ErrorCode::Internal,
+                    "The colour balance could not be saved.",
+                )
+                .with_details(err.to_string())
+            })?;
+            tx.execute(
+                &format!(
+                    "UPDATE recipe SET schema_v = ?2, json = ?3, updated_at = {NOW}
+                     WHERE frame_id = ?1"
+                ),
+                params![frame.to_string(), recipe.v, json],
+            )
+            .map_err(db_error)?;
+            changed.push(*frame);
+        }
+        tx.commit().map_err(db_error)?;
+        Ok(changed)
+    }
+
     /// The frame's recipe, migrated to the current version; `None` when it was never edited.
     pub fn load_recipe(&self, frame: FrameId) -> Result<Option<Recipe>, AppError> {
         let json: Option<String> = self

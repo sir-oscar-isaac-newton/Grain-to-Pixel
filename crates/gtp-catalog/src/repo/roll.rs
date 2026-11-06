@@ -18,7 +18,8 @@ const SELECT_COLUMNS: &str =
     "id, name, film_stock, format, camera, iso_box, iso_shot, shot_from, shot_to,
     notes, film_base_r, film_base_g, film_base_b, created_at, film_base_confidence,
     frame_w, frame_h, frame_samples,
-    EXISTS(SELECT 1 FROM flat_field WHERE flat_field.roll_id = roll.id)";
+    EXISTS(SELECT 1 FROM flat_field WHERE flat_field.roll_id = roll.id),
+    balance_red_cyan, balance_green_magenta, balance_blue_yellow";
 
 fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
     let base: [Option<f32>; 3] = [row.get(10)?, row.get(11)?, row.get(12)?];
@@ -47,6 +48,10 @@ fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
             _ => None,
         },
         has_flat_field: row.get::<_, i64>(18)? != 0,
+        color_balance: match [row.get(19)?, row.get(20)?, row.get(21)?] {
+            [Some(r), Some(g), Some(b)] => Some([r, g, b]),
+            _ => None,
+        },
         created_at: row.get(13)?,
     })
 }
@@ -178,6 +183,37 @@ impl Catalog {
             (true, true) => BaseChange::Replaced,
         };
         Ok((self.get_roll(id)?, change))
+    }
+
+    /// Stores `axes` (red-cyan, green-magenta, blue-yellow) as the roll's colour balance when it has
+    /// none; a stored one is never overwritten. Returns the roll as stored and whether this call
+    /// stored it. The check and the write are one statement. `update_roll` leaves the balance alone,
+    /// so editing a roll's details never loses it.
+    pub fn store_roll_color_balance(
+        &mut self,
+        id: RollId,
+        axes: [f32; 3],
+    ) -> Result<(Roll, bool), AppError> {
+        let limit = gtp_core::recipe::SLIDER_MAX;
+        if !axes.iter().all(|v| v.is_finite() && v.abs() <= limit) {
+            return Err(AppError::new(
+                gtp_core::ErrorCode::InvalidInput,
+                "A colour balance needs three values within the colour sliders' range.",
+            )
+            .with_details(format!("{axes:?}")));
+        }
+        self.get_roll(id)?;
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE roll SET balance_red_cyan = ?2, balance_green_magenta = ?3,
+                 balance_blue_yellow = ?4
+                 WHERE id = ?1 AND (balance_red_cyan IS NULL OR balance_green_magenta IS NULL
+                                    OR balance_blue_yellow IS NULL)",
+                params![id.to_string(), axes[0], axes[1], axes[2]],
+            )
+            .map_err(db_error)?;
+        Ok((self.get_roll(id)?, changed > 0))
     }
 
     /// Teaches the roll's frame size one more measured frame (width and height as fractions of the

@@ -67,6 +67,7 @@ fn roll(name: &str) -> Roll {
         film_base_confidence: None,
         frame_size: None,
         has_flat_field: false,
+        color_balance: None,
         created_at: String::new(),
     }
 }
@@ -166,8 +167,8 @@ fn a_v3_library_upgrades_with_a_backup_and_keeps_its_rolls() {
     assert_eq!(old.format, FilmFormat::Mm35);
     drop(cat);
 
-    assert_eq!(SCHEMA_VERSION, 7);
-    assert_eq!(user_version(&dir.db()), 7);
+    assert_eq!(SCHEMA_VERSION, 8);
+    assert_eq!(user_version(&dir.db()), 8);
     assert!(!old.has_flat_field, "an existing roll has no flat field");
     let backup = backup_path(&dir.db(), 3);
     assert!(backup.exists());
@@ -179,6 +180,143 @@ fn a_v3_library_upgrades_with_a_backup_and_keeps_its_rolls() {
     };
     assert!(!has_column(&backed_up));
     assert!(has_column(&Connection::open(dir.db()).unwrap()));
+}
+
+#[test]
+fn a_v7_library_upgrades_to_v8_and_its_rolls_have_no_colour_balance() {
+    let dir = TempDir::new("upgrade-v7");
+    let id = RollId::new();
+    {
+        let conn = Connection::open(dir.db()).unwrap();
+        for sql in [
+            include_str!("../migrations/0001_init.sql"),
+            include_str!("../migrations/0002_search.sql"),
+            include_str!("../migrations/0003_export_log.sql"),
+            include_str!("../migrations/0004_roll_base_confidence.sql"),
+            include_str!("../migrations/0005_roll_frame_size.sql"),
+            include_str!("../migrations/0006_frame_scan.sql"),
+            include_str!("../migrations/0007_flat_field.sql"),
+        ] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO roll(id, name, film_base_r, film_base_g, film_base_b, created_at)
+             VALUES (?1, 'Old', 0.8, 0.5, 0.3, '2026-01-01T00:00:00Z')",
+            [id.to_string()],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 7).unwrap();
+    }
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let old = cat.get_roll(id).unwrap();
+    assert_eq!(old.film_base_rgb, Some([0.8, 0.5, 0.3]));
+    assert_eq!(old.color_balance, None);
+    assert!(cat.store_roll_color_balance(id, [1.0, 2.0, 3.0]).unwrap().1);
+    drop(cat);
+
+    assert_eq!(user_version(&dir.db()), 8);
+    let backup = backup_path(&dir.db(), 7);
+    assert_eq!(user_version(&backup), 7, "the backup is the old schema");
+    assert!(Connection::open(&backup)
+        .unwrap()
+        .prepare("SELECT balance_red_cyan FROM roll")
+        .is_err());
+}
+
+#[test]
+fn a_rolls_colour_balance_is_stored_once_and_survives_editing_the_roll() {
+    let dir = TempDir::new("colour-balance");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    assert_eq!(r.color_balance, None);
+
+    let (stored, changed) = cat
+        .store_roll_color_balance(r.id, [4.0, -2.5, 7.0])
+        .unwrap();
+    assert!(changed);
+    assert_eq!(stored.color_balance, Some([4.0, -2.5, 7.0]));
+
+    // The first one stays.
+    let (kept, changed) = cat.store_roll_color_balance(r.id, [9.0, 9.0, 9.0]).unwrap();
+    assert!(!changed);
+    assert_eq!(kept.color_balance, Some([4.0, -2.5, 7.0]));
+
+    // Editing the roll's details, even with a stale copy of the roll, leaves it alone.
+    let mut edited = roll("Renamed");
+    edited.id = r.id;
+    edited.color_balance = None;
+    let updated = cat.update_roll(&edited).unwrap();
+    assert_eq!(updated.name, "Renamed");
+    assert_eq!(updated.color_balance, Some([4.0, -2.5, 7.0]));
+    assert_eq!(
+        cat.list_rolls().unwrap()[0].color_balance,
+        Some([4.0, -2.5, 7.0])
+    );
+
+    // Values that are not numbers or beyond the sliders are refused, an unknown roll is not found.
+    let other = cat.insert_roll(&roll("Other")).unwrap();
+    for bad in [[f32::NAN, 0.0, 0.0], [0.0, 101.0, 0.0]] {
+        assert_eq!(
+            cat.store_roll_color_balance(other.id, bad)
+                .unwrap_err()
+                .code,
+            ErrorCode::InvalidInput
+        );
+    }
+    assert_eq!(cat.get_roll(other.id).unwrap().color_balance, None);
+    assert_eq!(
+        cat.store_roll_color_balance(RollId::new(), [0.0; 3])
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+}
+
+#[test]
+fn the_colour_axes_are_written_only_into_recipes_that_were_never_edited() {
+    let dir = TempDir::new("colour-axes");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    let mut recipe = Recipe::default();
+    recipe.tone.exposure_ev = 0.5;
+    let untouched = cat
+        .insert_imported_frame(&frame(r.id, 1), &[], &recipe)
+        .unwrap();
+    let edited = cat
+        .insert_imported_frame(&frame(r.id, 2), &[], &recipe)
+        .unwrap();
+    cat.save_recipe(edited.id, &recipe).unwrap();
+    assert!(cat.get_frame(edited.id).unwrap().edited_at.is_some());
+
+    let changed = cat
+        .set_unedited_color_axes(&[untouched.id, edited.id], [3.0, -1.0, 2.0])
+        .unwrap();
+    assert_eq!(changed, vec![untouched.id]);
+    let after = cat.load_recipe(untouched.id).unwrap().unwrap();
+    assert_eq!(
+        [
+            after.color.red_cyan,
+            after.color.green_magenta,
+            after.color.blue_yellow
+        ],
+        [3.0, -1.0, 2.0]
+    );
+    assert_eq!(
+        after.tone.exposure_ev, 0.5,
+        "the rest of the recipe is kept"
+    );
+    assert!(
+        cat.get_frame(untouched.id).unwrap().edited_at.is_none(),
+        "the automatic recipe changed, the frame is not edited"
+    );
+    let theirs = cat.load_recipe(edited.id).unwrap().unwrap();
+    assert_eq!(theirs.color.red_cyan, 0.0, "an edited frame is left alone");
+
+    // The same axes again change nothing.
+    assert!(cat
+        .set_unedited_color_axes(&[untouched.id], [3.0, -1.0, 2.0])
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

@@ -166,6 +166,7 @@ describe('ScannerSection', () => {
             skipped: [],
             base_is_guess: false,
             base_replaced: false,
+            rebalanced: [],
           },
         }),
       ),

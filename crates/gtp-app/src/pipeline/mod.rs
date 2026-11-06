@@ -15,8 +15,8 @@ use std::sync::Arc;
 use gtp_core::{AppError, ErrorCode, ImageF32, Recipe};
 
 pub use analyze::{
-    analyze, analyze_with, analyze_with_levels, analyze_with_look, frame_hint, Analysis,
-    LevelsPercentiles,
+    analyze, analyze_with, analyze_with_axes, analyze_with_balance, analyze_with_levels,
+    analyze_with_look, apply_balance_axes, frame_hint, Analysis, LevelsPercentiles,
 };
 pub use display::{histogram, to_rgba8_srgb, Histogram};
 pub use proxy::{build_plane_proxy, build_proxy, resize_plane, PREVIEW_EDGE, PROXY_EDGE};

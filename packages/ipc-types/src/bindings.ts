@@ -853,6 +853,11 @@ export type ImportResult_Deserialize = {
 	 *  other frames look different now.
 	 */
 	base_replaced: boolean,
+	/**
+	 *  Frames of the roll whose automatic recipe got the roll's colour balance when the job ended
+	 *  (P-22), so their thumbnails are made again. Empty when every frame had it from the start.
+	 */
+	rebalanced: FrameId[],
 };
 
 /**  What a file import did. */
@@ -875,6 +880,11 @@ export type ImportResult_Serialize = {
 	 *  other frames look different now.
 	 */
 	base_replaced: boolean,
+	/**
+	 *  Frames of the roll whose automatic recipe got the roll's colour balance when the job ended
+	 *  (P-22), so their thumbnails are made again. Empty when every frame had it from the start.
+	 */
+	rebalanced: FrameId[],
 };
 
 /**  Something to know about an imported frame. */
@@ -897,7 +907,12 @@ export type ImportWarningKind =
  */
 { kind: "clipped"; channel: TripletChannel; per_mille: number } | 
 /**  The roll's flat field is for frames of another size, so this frame was imported without it. */
-{ kind: "flat_field_skipped" };
+{ kind: "flat_field_skipped" } | 
+/**
+ *  None of the job's frames had a usable neutral, so the roll has no colour balance (the frame
+ *  named is the first of the job).
+ */
+{ kind: "balance_skipped" };
 
 /**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
 export type Invert = Invert_Serialize | Invert_Deserialize;
@@ -1271,6 +1286,12 @@ export type Roll_Deserialize = {
 	 *  divided by when they are loaded; the field itself is kept apart (see `FlatField`).
 	 */
 	has_flat_field?: boolean,
+	/**
+	 *  The automatic colour balance of the roll's scanner frames: the colour axes
+	 *  `[red_cyan, green_magenta, blue_yellow]` of their recipes (P-22). `None` until a frame was
+	 *  judged; the first one stored stays. Camera triplets do not use it.
+	 */
+	color_balance?: [(number | null), (number | null), (number | null)] | null,
 	/**  RFC 3339 timestamp. */
 	created_at: string,
 };
@@ -1314,6 +1335,12 @@ export type Roll_Serialize = {
 	 *  divided by when they are loaded; the field itself is kept apart (see `FlatField`).
 	 */
 	has_flat_field: boolean,
+	/**
+	 *  The automatic colour balance of the roll's scanner frames: the colour axes
+	 *  `[red_cyan, green_magenta, blue_yellow]` of their recipes (P-22). `None` until a frame was
+	 *  judged; the first one stored stays. Camera triplets do not use it.
+	 */
+	color_balance: [(number | null), (number | null), (number | null)] | null,
 	/**  RFC 3339 timestamp. */
 	created_at: string,
 };

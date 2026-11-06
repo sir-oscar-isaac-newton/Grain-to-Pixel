@@ -9,6 +9,9 @@
 //!    crop, film base and levels. The first frame analyzed on a roll with no base also stores its
 //!    measured base, with the confidence, as the roll's base (`ensure_roll_base`), so every later
 //!    frame uses the same one;
+//!    A scanner frame also estimates its mid-tone neutral for the roll's colour balance (P-22): a
+//!    roll that has one gives it to the frame at once, otherwise the median over the job is stored
+//!    when the job ends and written into the job's unedited frames (`roll_balance`);
 //! 5. render a 512 px sRGB thumbnail from that recipe;
 //! 6. record frame, sources, recipe and search text in one catalog transaction, then announce the
 //!    change.
@@ -25,6 +28,7 @@ use gtp_core::{
     AppError, ErrorCode, Frame, FrameId, FrameKind, ImportResult, Look, Recipe, RollId, SkipReason,
     SkippedFile, SourceFile, SourceRole,
 };
+use gtp_edit::BalanceMethod;
 use gtp_ingest::{scan_tiff_candidates, Rejected, TiffCandidate};
 use gtp_io::{
     encode_jpeg, mark_read_only, read_tiff16, sha256_file, split_rgbi, to_f32_linear, write_tiff16,
@@ -34,9 +38,13 @@ use gtp_io::{
 use crate::jobs::{JobCtx, LibraryEvents};
 use crate::library_fs::{originals_rel, thumb_rel};
 use crate::paths::display_path;
-use crate::pipeline::{analyze_with_look, frame_hint, render, PipelineInput, RenderTarget};
+use crate::pipeline::{
+    analyze_with_balance, apply_balance_axes, frame_hint, render, LevelsPercentiles, PipelineInput,
+    RenderTarget,
+};
 use crate::services::counters;
 use crate::services::library::Library;
+use crate::services::roll_balance::JobBalance;
 use crate::services::roll_frame::{ensure_roll_base, record_frame_measurement, remove_tree};
 use gtp_core::recipe::OutputSpace;
 
@@ -177,12 +185,17 @@ pub(crate) fn store_original(
 /// The starting recipe of a new frame: analyzed on a proxy with the roll's film base. The first
 /// frame of a roll with no base also stores its measured base for the whole roll (L-10), so every
 /// later frame uses the same one. Returns the recipe and the pipeline input with that base.
+///
+/// A scanner frame (`kind` [`FrameKind::ScanRgbIr`]) takes the roll's colour balance into its colour
+/// axes when the roll has one; when it has none, the frame's own mid-tone estimate is returned (the
+/// axes stay 0 until the job ends, see `roll_balance`). A camera triplet gets neither.
 pub(crate) fn analyse_for_import(
     library: &Library,
     roll: RollId,
     rgb: gtp_core::ImageF32,
     look: Look,
-) -> Result<(Recipe, PipelineInput), AppError> {
+    kind: FrameKind,
+) -> Result<(Recipe, PipelineInput, Option<[f32; 3]>), AppError> {
     // The roll as of now: an earlier frame of this import may have set its film base.
     let current = library.read(|c| c.get_roll(roll))?;
     let hint = frame_hint(&current);
@@ -194,20 +207,34 @@ pub(crate) fn analyse_for_import(
         ir: None,
         film_base: current.film_base_rgb.filter(|_| !measure),
     };
-    let mut analysis = analyze_with_look(&input, hint, look)?;
+    let method = match (kind, current.color_balance) {
+        (FrameKind::ScanRgbIr, None) => BalanceMethod::GreyWorld,
+        _ => BalanceMethod::Off,
+    };
+    let analyse = |input: &PipelineInput| {
+        analyze_with_balance(input, hint, look, LevelsPercentiles::DEFAULT, method)
+    };
+    let mut analysis = analyse(&input)?;
     if measure {
         let ensured = ensure_roll_base(library, roll, analysis.base)?;
         input.film_base = Some(ensured.rgb);
         if !ensured.stored_now {
             // The roll keeps the base it has (another import stored one, or the guess stands):
             // this frame uses that one.
-            analysis = analyze_with_look(&input, hint, look)?;
+            analysis = analyse(&input)?;
         }
     }
     if let Some(size) = analysis.frame.measured_size.filter(|_| hint.is_some()) {
         record_frame_measurement(library, roll, size)?;
     }
-    Ok((analysis.auto_recipe, input))
+    let mut recipe = analysis.auto_recipe;
+    match (kind, current.color_balance) {
+        (FrameKind::ScanRgbIr, Some(axes)) => apply_balance_axes(&mut recipe, axes),
+        // The roll's own correction is not known yet: keep this frame's estimate for it, not in
+        // the recipe.
+        _ => apply_balance_axes(&mut recipe, [0.0; 3]),
+    }
+    Ok((recipe, input, analysis.balance))
 }
 
 /// Says in `result` what the import did to the roll's film base: whether it is a guess now, and
@@ -254,7 +281,7 @@ fn import_one(
     ctx: &JobCtx,
     look: Look,
     progress: &dyn Fn(f32),
-) -> Result<Frame, FrameError> {
+) -> Result<(Frame, Option<[f32; 3]>), FrameError> {
     let (rgb, ir) = read_planes(candidate, &Limits::default())?;
     let picked_ir = candidate.ir.as_deref();
     store_frame(
@@ -285,7 +312,8 @@ pub(crate) struct Planes<'a> {
 /// Stores one frame from its planes, as described in the module docs: originals, hash, starting
 /// recipe, thumbnail and the catalog row. `scan` is the scanner frame number and a JSON record of
 /// how it was scanned, for a frame made by the scanner (H-03); `None` for an import. `progress` is
-/// told the step (1 to [`STEPS`]) done so far.
+/// told the step (1 to [`STEPS`]) done so far. Returns the frame and the colour balance estimated
+/// for it (see [`analyse_for_import`]).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn store_frame(
     library: &Library,
@@ -296,7 +324,7 @@ pub(crate) fn store_frame(
     look: Look,
     progress: &dyn Fn(f32),
     scan: Option<(u32, &str)>,
-) -> Result<Frame, FrameError> {
+) -> Result<(Frame, Option<[f32; 3]>), FrameError> {
     let (rgb, ir) = (planes.rgb, planes.ir);
     progress(1.0);
     ctx.check_cancelled()?;
@@ -327,7 +355,13 @@ pub(crate) fn store_frame(
     progress(3.0);
     ctx.check_cancelled()?;
 
-    let (recipe, input) = analyse_for_import(library, roll, to_f32_linear(rgb)?, look)?;
+    let (recipe, input, balance) = analyse_for_import(
+        library,
+        roll,
+        to_f32_linear(rgb)?,
+        look,
+        FrameKind::ScanRgbIr,
+    )?;
     progress(4.0);
     ctx.check_cancelled()?;
 
@@ -347,10 +381,11 @@ pub(crate) fn store_frame(
         created_at: String::new(),
         edited_at: None,
     };
-    Ok(library.write(|c| match scan {
+    let stored = library.write(|c| match scan {
         Some((number, info)) => c.insert_scanned_frame(&frame, &sources, &recipe, number, info),
         None => c.insert_imported_frame(&frame, &sources, &recipe),
-    })?)
+    })?;
+    Ok((stored, balance))
 }
 
 /// Removes what a failed or cancelled frame left behind.
@@ -397,16 +432,63 @@ pub fn import_tiffs_with_look(
             .collect(),
         ..ImportResult::default()
     };
-    let total = grouped.candidates.len().max(1) as f32;
-    for (i, candidate) in grouped.candidates.iter().enumerate() {
+    let mut balance = JobBalance::default();
+    let outcome = import_candidates(
+        library,
+        roll,
+        &grouped.candidates,
+        ctx,
+        events,
+        look,
+        &mut result,
+        &mut balance,
+    );
+    // The roll's colour balance is settled after a cancelled or failed job too, so the frames it
+    // stored agree with the roll.
+    let settled = balance.finish(library, roll);
+    match outcome {
+        Ok(()) => {
+            settled?.report(&mut result);
+            ctx.progress(STAGE, 1.0);
+            report_roll_base(library, &before, &mut result)?;
+            Ok(result)
+        }
+        Err(err) => {
+            if let Ok(settled) = settled {
+                settled.drop_thumbnails(library);
+                if !settled.rebalanced.is_empty() {
+                    events.library_changed(Some(roll));
+                }
+            }
+            Err(err)
+        }
+    }
+}
+
+/// The frame loop of [`import_tiffs_with_look`]: stops with `Cancelled` or the error that stopped it,
+/// leaving what was stored in `result` and `balance`.
+#[allow(clippy::too_many_arguments)]
+fn import_candidates(
+    library: &Library,
+    roll: RollId,
+    candidates: &[TiffCandidate],
+    ctx: &JobCtx,
+    events: &dyn LibraryEvents,
+    look: Look,
+    result: &mut ImportResult,
+    balance: &mut JobBalance,
+) -> Result<(), AppError> {
+    let total = candidates.len().max(1) as f32;
+    for (i, candidate) in candidates.iter().enumerate() {
         ctx.check_cancelled()?;
         let started = Instant::now();
         let frame_id = FrameId::new();
         let progress = |step: f32| ctx.progress(STAGE, (i as f32 + step / STEPS) / total);
         progress(0.0);
         match import_one(library, roll, candidate, frame_id, ctx, look, &progress) {
-            Ok(frame) => {
+            Ok((frame, estimate)) => {
                 result.frames.push(frame.id);
+                balance.record(frame.id, estimate);
                 counters::count_import(library);
                 result
                     .frame_ms
@@ -423,9 +505,7 @@ pub fn import_tiffs_with_look(
             }
         }
     }
-    ctx.progress(STAGE, 1.0);
-    report_roll_base(library, &before, &mut result)?;
-    Ok(result)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -434,6 +514,7 @@ mod tests {
 
     use gtp_catalog::SCHEMA_VERSION;
     use gtp_core::testing::synthetic::{self, Params, Pattern};
+    use gtp_core::{ImportWarning, ImportWarningKind};
     use gtp_io::from_f32_linear;
 
     use super::*;
@@ -503,6 +584,47 @@ mod tests {
             path
         }
 
+        /// Writes a synthetic negative whose white point differs per channel (so each frame has a
+        /// colour cast of its own), of `width` by `height` pixels.
+        fn cast_scan(&self, name: &str, seed: u64, white: [f32; 3], size: (u32, u32)) -> PathBuf {
+            let s = synthetic::negative(
+                seed,
+                &Params {
+                    width: size.0,
+                    height: size.1,
+                    rebate: [if size.0 < 100 { 2 } else { 10 }; 4],
+                    pattern: Pattern::Blobs,
+                    white,
+                    ..Params::default()
+                },
+            )
+            .unwrap();
+            let path = self.incoming.join(name);
+            write_tiff16(&path, &from_f32_linear(&s.image), Compression::None).unwrap();
+            path
+        }
+
+        fn new_roll(&self, name: &str) -> RollId {
+            crate::services::roll_frame::roll_create(
+                self.lib(),
+                crate::services::roll_frame::RollInput {
+                    name: name.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .id
+        }
+
+        fn balance_of(&self, roll: RollId) -> Option<[f32; 3]> {
+            self.lib().read(|c| c.get_roll(roll)).unwrap().color_balance
+        }
+
+        fn axes(&self, frame: FrameId) -> [f32; 3] {
+            let r = self.lib().read(|c| c.load_recipe(frame)).unwrap().unwrap();
+            [r.color.red_cyan, r.color.green_magenta, r.color.blue_yellow]
+        }
+
         /// Writes a separate 1-channel infrared file of the given size.
         fn ir_file(&self, name: &str, width: u32, height: u32) -> PathBuf {
             let ir = Tiff16 {
@@ -559,6 +681,112 @@ mod tests {
                     .sum()
             })
             .unwrap_or(0)
+    }
+
+    const SEEDS: [u64; 3] = [1, 2, 4];
+    const CASTS: [[f32; 3]; 3] = [[2.1, 2.3, 2.5], [2.2, 2.3, 2.4], [2.15, 2.3, 2.45]];
+
+    fn import_casts(s: &Setup, roll: RollId, names: &[&str]) -> ImportResult {
+        let paths: Vec<PathBuf> = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| s.cast_scan(n, SEEDS[i % 3], CASTS[i % 3], (200, 140)))
+            .collect();
+        let (ctx, _) = JobCtx::standalone();
+        import_tiffs(s.lib(), roll, &paths, &ctx, &Events::default()).unwrap()
+    }
+
+    #[test]
+    fn a_scan_import_stores_the_median_balance_on_the_roll_and_writes_it_into_every_frame() {
+        let s = Setup::new("balance");
+        let result = import_casts(&s, s.roll, &["a.tif", "b.tif", "c.tif"]);
+        assert_eq!(result.frames.len(), 3);
+        assert!(
+            result.warnings.is_empty(),
+            "every frame was judged: {:?}",
+            result.warnings
+        );
+
+        // Each frame alone on a roll of its own: its balance is its own estimate.
+        let own: Vec<[f32; 3]> = ["a.tif", "b.tif", "c.tif"]
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let roll = s.new_roll(name);
+                let path = s.cast_scan(name, SEEDS[i], CASTS[i], (200, 140));
+                let (ctx, _) = JobCtx::standalone();
+                import_tiffs(s.lib(), roll, &[path], &ctx, &Events::default()).unwrap();
+                s.balance_of(roll).expect("a single frame is judged")
+            })
+            .collect();
+        assert!(
+            own[0] != own[1] && own[1] != own[2],
+            "casts differ: {own:?}"
+        );
+
+        let median = gtp_edit::roll_balance(&own).unwrap();
+        assert_eq!(s.balance_of(s.roll), Some(median));
+        for id in &result.frames {
+            assert_eq!(s.axes(*id), median);
+            let frame = s.lib().read(|c| c.get_frame(*id)).unwrap();
+            assert!(frame.edited_at.is_none());
+        }
+        assert_eq!(
+            result.rebalanced.len(),
+            3,
+            "their thumbnails are made again"
+        );
+    }
+
+    #[test]
+    fn a_second_import_into_a_roll_with_a_balance_uses_it_directly() {
+        let s = Setup::new("balance-second");
+        import_casts(&s, s.roll, &["a.tif", "b.tif"]);
+        let stored = s.balance_of(s.roll).unwrap();
+        let again = import_casts(&s, s.roll, &["c.tif"]);
+        assert_eq!(s.axes(again.frames[0]), stored);
+        assert_eq!(s.balance_of(s.roll), Some(stored), "the first stays");
+        assert!(again.rebalanced.is_empty(), "it had it from the start");
+        assert!(again.warnings.is_empty());
+    }
+
+    #[test]
+    fn a_job_with_no_judgeable_frame_stores_no_balance_and_says_so() {
+        let s = Setup::new("balance-none");
+        // 30 by 20 pixels, a frame of fewer pixels than an estimate needs.
+        let tiny = s.cast_scan("tiny.tif", 1, CASTS[0], (30, 20));
+        let (ctx, _) = JobCtx::standalone();
+        let result = import_tiffs(s.lib(), s.roll, &[tiny], &ctx, &Events::default()).unwrap();
+        assert_eq!(result.frames.len(), 1);
+        assert_eq!(s.balance_of(s.roll), None);
+        assert_eq!(s.axes(result.frames[0]), [0.0; 3]);
+        assert_eq!(
+            result.warnings,
+            vec![ImportWarning {
+                frame_id: result.frames[0],
+                kind: ImportWarningKind::BalanceSkipped
+            }]
+        );
+        assert!(result.rebalanced.is_empty());
+    }
+
+    #[test]
+    fn a_frame_that_cannot_be_judged_still_gets_the_rolls_balance() {
+        let s = Setup::new("balance-unjudged");
+        let mut paths = vec![
+            s.cast_scan("a.tif", SEEDS[0], CASTS[0], (200, 140)),
+            s.cast_scan("tiny.tif", 2, CASTS[1], (30, 20)),
+            s.cast_scan("c.tif", SEEDS[2], CASTS[2], (200, 140)),
+        ];
+        paths.sort();
+        let (ctx, _) = JobCtx::standalone();
+        let result = import_tiffs(s.lib(), s.roll, &paths, &ctx, &Events::default()).unwrap();
+        let balance = s.balance_of(s.roll).expect("two frames were judged");
+        assert_eq!(result.frames.len(), 3);
+        for id in &result.frames {
+            assert_eq!(s.axes(*id), balance);
+        }
+        assert!(result.warnings.is_empty());
     }
 
     #[test]
@@ -933,6 +1161,19 @@ mod tests {
             2,
             "the frames that finished are counted even though the job was cancelled"
         );
+        // The unfinished frame left no thumbnail. The two finished frames got the roll's colour
+        // balance when the job ended, so their thumbnails were dropped to be rebuilt from the
+        // saved recipe when asked for (nothing stale is left).
+        assert_eq!(files_under(&s.lib().root().join("thumbs")), 0);
+        let balance = s.balance_of(s.roll).expect("the two frames were judged");
+        let frames = s.lib().read(|c| c.list_frames(s.roll)).unwrap();
+        let develop = crate::services::develop::DevelopService::default();
+        let thumbnails = crate::services::thumbnails::ThumbnailService::default();
+        for frame in frames {
+            assert_eq!(s.axes(frame.id), balance);
+            let bytes = thumbnails.thumbnail(&develop, s.lib(), frame.id).unwrap();
+            assert!(bytes.starts_with(&[0xFF, 0xD8]));
+        }
         assert_eq!(files_under(&s.lib().root().join("thumbs")), 2);
     }
 

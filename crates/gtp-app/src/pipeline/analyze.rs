@@ -9,6 +9,8 @@ use gtp_negative::{
     FrameHint, DEFAULT_HIGH_PERCENTILE, DEFAULT_LOW_PERCENTILE,
 };
 
+use gtp_edit::BalanceMethod;
+
 use super::{build_proxy, histogram, render, to_rgba8_srgb, Histogram, PipelineInput};
 use super::{RenderTarget, PREVIEW_EDGE};
 
@@ -25,6 +27,19 @@ pub struct Analysis {
     pub histogram: Histogram,
     /// A recipe with the automatic crop, base and levels, everything else at its default.
     pub auto_recipe: Recipe,
+    /// The colour axes `[red_cyan, green_magenta, blue_yellow]` the balance method found, which
+    /// `auto_recipe` carries; `None` when the method is off or the frame could not be judged.
+    pub balance: Option<[f32; 3]>,
+}
+
+/// Writes the colour axes `[red_cyan, green_magenta, blue_yellow]` of a roll's balance into
+/// `recipe`, leaving its other colour settings as they are.
+pub fn apply_balance_axes(recipe: &mut Recipe, axes: [f32; 3]) {
+    [
+        recipe.color.red_cyan,
+        recipe.color.green_magenta,
+        recipe.color.blue_yellow,
+    ] = axes;
 }
 
 /// Analyzes a scan on a [`PREVIEW_EDGE`] proxy: film base (the roll's, or measured), frame
@@ -85,6 +100,41 @@ pub fn analyze_with_levels(
     look: Look,
     percentiles: LevelsPercentiles,
 ) -> Result<Analysis, AppError> {
+    analyze_with_balance(input, hint, look, percentiles, BalanceMethod::Off)
+}
+
+/// [`analyze_with_levels`] that also estimates the colour axes (automatic colour balance, P-22)
+/// from the inverted frame with `balance`. A frame the method cannot judge keeps the axes at 0.
+pub fn analyze_with_balance(
+    input: &PipelineInput,
+    hint: Option<FrameHint>,
+    look: Look,
+    percentiles: LevelsPercentiles,
+    balance: BalanceMethod,
+) -> Result<Analysis, AppError> {
+    analyze_inner(input, hint, look, percentiles, balance, None)
+}
+
+/// [`analyze_with_look`] whose automatic recipe carries the colour axes `axes` (a roll's stored
+/// balance, P-22) when given, so the histogram shows them; the axes are not estimated again.
+pub fn analyze_with_axes(
+    input: &PipelineInput,
+    hint: Option<FrameHint>,
+    look: Look,
+    axes: Option<[f32; 3]>,
+) -> Result<Analysis, AppError> {
+    let percentiles = LevelsPercentiles::DEFAULT;
+    analyze_inner(input, hint, look, percentiles, BalanceMethod::Off, axes)
+}
+
+fn analyze_inner(
+    input: &PipelineInput,
+    hint: Option<FrameHint>,
+    look: Look,
+    percentiles: LevelsPercentiles,
+    balance: BalanceMethod,
+    axes: Option<[f32; 3]>,
+) -> Result<Analysis, AppError> {
     let proxy = build_proxy(&input.rgb, PREVIEW_EDGE)?;
     let (base, base_from_roll) = match input.film_base {
         Some(rgb) => (
@@ -111,6 +161,18 @@ pub fn analyze_with_levels(
     auto_recipe.geometry.crop = frame.rect;
     auto_recipe.base.rgb = base.rgb;
     auto_recipe.invert = levels;
+    let mut found = axes;
+    if let Some(axes) = axes {
+        apply_balance_axes(&mut auto_recipe, axes);
+    }
+    if balance != BalanceMethod::Off {
+        let mut inverted = cropped.clone();
+        gtp_negative::invert(&mut inverted, &auto_recipe.invert)?;
+        if let Some(color) = gtp_edit::balance_color(&inverted, balance, &auto_recipe.color) {
+            found = Some([color.red_cyan, color.green_magenta, color.blue_yellow]);
+            auto_recipe.color = color;
+        }
+    }
     let values = gtp_edit::look_values(look, &auto_recipe.invert);
     if let Some(curve) = values.master {
         auto_recipe.tone.curve.master = curve;
@@ -134,6 +196,7 @@ pub fn analyze_with_levels(
         base_from_roll,
         histogram,
         auto_recipe,
+        balance: found,
     })
 }
 
@@ -220,6 +283,7 @@ mod tests {
             film_base_confidence: None,
             frame_size: None,
             has_flat_field: false,
+            color_balance: None,
             created_at: String::new(),
         };
         assert_eq!(frame_hint(&roll), None);

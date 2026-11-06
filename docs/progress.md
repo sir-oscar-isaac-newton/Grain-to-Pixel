@@ -673,6 +673,15 @@
       "commit": null
     },
     {
+      "id": "H-07",
+      "number": 56,
+      "title": "Scanlight V4 serial driver and FakeLight",
+      "branch": "feat/issue-56-scanlight-driver",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
       "id": "Q-08",
       "number": 174,
       "title": "Licence terms and third-party notices",

@@ -5,6 +5,13 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+gtp-core = { version = "0.0.0", path = "../gtp-core" }
+# No libudev: the app ships on Windows and macOS only (same as the R-02 probe).
+serialport = { version = "4", default-features = false }
+tracing = "0.1"
+
+[dev-dependencies]
+proptest = "1"
 
 [lints]
 workspace = true

@@ -241,6 +241,71 @@ What the numbers say:
   the 500T frame's different cast (a\* -8, b\* +3). Pick the base of that roll by hand in Develop
   and re-run before reading anything into its numbers.
 
+## Automatic colour balance (P-22)
+
+Four settings of the report, one per estimator of [decision 0011](../../decisions/0011-colour-balance.md):
+
+```text
+benchmark report --manifest <file> --look neutral|frontier --balance off|grey_world|near_neutral|roll_median
+```
+
+`off` is the report as before. `grey_world` and `near_neutral` correct each frame by itself;
+`roll_median` takes, per roll of the manifest, the median over its frames of their grey-world axes
+(`roll_balance`, the function the app uses) and writes it into every frame of the roll. All write
+the three colour axes of the automatic recipe. The manifests are the author's private ones:
+`samples/private/reference/manifest-flat.json` (the 15 triplets, flat field applied) and
+`manifest-ls50-all.json` (the LS-50 scans).
+
+**Compared frames.** The LS-50 report with the Neutral look compares 11 of the 12 pairs; with the
+Frontier look it compares 9 of 12, and they are not the same 9 as the 11 (a pair that does not
+register under one look can under the other). **The Neutral and Frontier LS-50 rows are not
+comparable with each other.** Compare methods only within a row.
+
+Median ΔE2000 / 95th percentile:
+
+| Set and look | off | grey_world | near_neutral | roll_median |
+|---|---|---|---|---|
+| Triplets, Neutral (15) | 16.9 / 44.5 | 21.7 / 47.5 | 21.3 / 50.9 | 18.7 / 44.5 |
+| Triplets, Frontier (15) | 8.8 / 23.3 | 15.1 / 33.6 | 15.0 / 34.9 | 13.0 / 25.4 |
+| LS-50, Neutral (11 of 12) | 19.0 / 33.9 | 16.3 / 29.3 | 16.6 / 30.7 | 16.0 / 27.0 |
+| LS-50, Frontier (9 of 12) | 23.2 / 46.7 | 22.8 / 48.1 | 22.6 / 47.9 | 22.8 / 48.3 |
+
+Triplets, mean cast size sqrt(a\*^2 + b\*^2) of ours minus the reference's, on the five frames held out
+by the P-20 split (3, 6, 9, 12, 15), and on the other ten after the slash (the change of the
+held-out cast against `off` in brackets):
+
+| Look | off | grey_world | near_neutral | roll_median |
+|---|---|---|---|---|
+| Neutral | 7.053 / 5.652 | 14.463 / 13.891 (+105.1 %) | 15.204 / 14.315 (+115.6 %) | 12.982 / 9.277 (+84.1 %) |
+| Frontier | 6.381 / 4.582 | 15.907 / 16.225 (+149.3 %) | 17.126 / 15.317 (+168.4 %) | 14.879 / 10.061 (+133.2 %) |
+
+Every estimator raised the cast of the triplets, held out or not, and their ΔE. The triplets stay
+uncorrected.
+
+LS-50, mean cast size per stock (n frames in brackets):
+
+| Look and method | Ektacolor160 | Ektacolor400 | Ektar100 | Vision3 250D | Vision3 500T |
+|---|---|---|---|---|---|
+| Neutral (2, 3, 1, 4, 1): off | 23.533 | 20.642 | 12.963 | 9.236 | 8.877 |
+| grey_world | 2.758 | 11.845 | 8.273 | 10.257 (rises) | 6.597 |
+| near_neutral | 3.695 | 10.266 | 8.246 | 10.958 (rises) | 5.882 |
+| roll_median | 4.393 | 12.069 | 8.273 | 7.446 | 8.001 |
+| Frontier (1, 3, 1, 2, 2): off | 14.375 | 16.356 | 11.424 | 8.880 | 9.620 |
+| grey_world | 3.842 | 13.433 | 9.795 | 8.092 | 10.209 (rises) |
+| near_neutral | 3.635 | 12.430 | 9.614 | 7.924 | 9.288 |
+| roll_median | 2.648 | 13.048 | 9.795 | 8.268 | 10.211 (rises) |
+
+Frames that are worse than with `off` by more than 2 ΔE, LS-50 Neutral: `grey_world` Vision3 250D
+0004 (9.5 to 13.1), `near_neutral` the same frame (9.5 to 18.8), `roll_median` none. LS-50 Frontier:
+none for any method. These roll medians include all frames of the roll.
+
+What the numbers say, and do not say: `roll_median` is the only method that lowers the cast of every
+stock with the Neutral look and moves no frame the wrong way by more than 2 ΔE; it is what the app
+applies, to scanner frames only. The Frontier 95th percentile of `roll_median` (48.3) is above `off`
+(46.7) on 9 frames. The sample is 11 frames of 5 stocks and one reference tool per set, and Nikon Scan
+and Trichroma Lab are references, not ground truth: that all estimators fail on the triplets says their
+reference is not a neutral render of the scene, not that balance is impossible.
+
 ## Speed: the criterion benches
 
 `cargo bench -p gtp-app` (21 MP frames are synthetic negatives of 6016 x 4016, a D600's size; the

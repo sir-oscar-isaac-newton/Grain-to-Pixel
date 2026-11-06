@@ -8,6 +8,7 @@ pub mod flat_field;
 pub mod import;
 pub mod import_triplets;
 pub mod library;
+pub mod roll_balance;
 pub mod roll_frame;
 pub mod scan;
 pub mod scan_preview;

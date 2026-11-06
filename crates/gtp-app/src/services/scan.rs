@@ -17,6 +17,7 @@ use crate::jobs::{JobCtx, LibraryEvents};
 use crate::services::counters;
 use crate::services::import::{clean_up, report_roll_base, store_frame, FrameError, Planes, STEPS};
 use crate::services::library::Library;
+use crate::services::roll_balance::JobBalance;
 
 /// The stage name reported while scanning.
 pub const STAGE: &str = "scanning";
@@ -88,6 +89,7 @@ pub fn scan_roll(
     let total = params.frame_count().max(1) as f32;
     let first = *params.frames.start();
     let mut result = ImportResult::default();
+    let mut balance = JobBalance::default();
 
     // The scanner polls its own token: forward the job's cancel to it while the scan runs.
     let token = CancelToken::default();
@@ -112,8 +114,9 @@ pub fn scan_roll(
                 progress(0.0);
                 let frame_id = FrameId::new();
                 match store_scan(library, roll, frame_id, number, &scan, ctx, look, &progress) {
-                    Ok(()) => {
+                    Ok(estimate) => {
                         result.frames.push(frame_id);
+                        balance.record(frame_id, estimate);
                         counters::count_import(library);
                         result
                             .frame_ms
@@ -134,15 +137,22 @@ pub fn scan_roll(
         finished.store(true, Ordering::SeqCst);
         outcome
     });
-    match scanned {
-        Ok(()) => {}
-        Err(err) => {
-            if err.code != ErrorCode::Cancelled {
-                counters::count_scan_failed(library);
-            }
-            return Err(err);
+    // The roll's colour balance is settled after a cancelled or failed scan too, so the frames it
+    // stored agree with the roll.
+    let settled = balance.finish(library, roll);
+    if let Err(err) = scanned {
+        if err.code != ErrorCode::Cancelled {
+            counters::count_scan_failed(library);
         }
+        if let Ok(settled) = settled {
+            settled.drop_thumbnails(library);
+            if !settled.rebalanced.is_empty() {
+                events.library_changed(Some(roll));
+            }
+        }
+        return Err(err);
     }
+    settled?.report(&mut result);
     ctx.progress(STAGE, 1.0);
     report_roll_base(library, &before, &mut result)?;
     Ok(result)
@@ -160,7 +170,7 @@ fn store_scan(
     ctx: &JobCtx,
     look: Look,
     progress: &dyn Fn(f32),
-) -> Result<(), AppError> {
+) -> Result<Option<[f32; 3]>, AppError> {
     let rgb = Tiff16 {
         width: scan.width,
         height: scan.height,
@@ -191,7 +201,7 @@ fn store_scan(
         Some((number, &info)),
     );
     match stored {
-        Ok(_) => Ok(()),
+        Ok((_, estimate)) => Ok(estimate),
         Err(FrameError::Stop(err)) => Err(err),
         Err(FrameError::Skip(SkippedFile {
             reason, details, ..
@@ -379,6 +389,72 @@ mod tests {
         s.scan(1..=1, &ctx).unwrap();
         let roll = s.library.read(|c| c.get_roll(s.roll)).unwrap();
         assert!(roll.film_base_rgb.is_some());
+    }
+
+    #[test]
+    fn a_scanner_job_gives_the_roll_one_balance_and_a_cancelled_one_leaves_it_consistent() {
+        let axes = |s: &Setup, id: FrameId| {
+            let r = s.library.read(|c| c.load_recipe(id)).unwrap().unwrap();
+            [r.color.red_cyan, r.color.green_magenta, r.color.blue_yellow]
+        };
+        let s = Setup::new("balance", 3);
+        let (ctx, _) = JobCtx::standalone();
+        let result = s.scan(1..=3, &ctx).unwrap();
+        let balance = s
+            .library
+            .read(|c| c.get_roll(s.roll))
+            .unwrap()
+            .color_balance
+            .expect("the scanned frames were judged");
+        for id in &result.frames {
+            assert_eq!(axes(&s, *id), balance);
+        }
+        assert!(result.warnings.is_empty());
+
+        // Cancelled after the second of four frames: the two stored frames and the roll agree.
+        let s = Setup::new("balance-cancel", 4);
+        let (ctx, flag) = JobCtx::standalone();
+        struct CancelOnSecond(crate::jobs::CancelFlag, Mutex<u32>);
+        impl LibraryEvents for CancelOnSecond {
+            fn library_changed(&self, _: Option<RollId>) {
+                let mut n = self.1.lock().unwrap();
+                *n += 1;
+                if *n == 2 {
+                    self.0.cancel();
+                }
+            }
+        }
+        let err = scan_roll(
+            &s.library,
+            s.roll,
+            &s.source,
+            &ScanParams::new(FIXTURE_DEVICE_ID, 1..=4),
+            &ctx,
+            &CancelOnSecond(flag, Mutex::new(0)),
+            Look::Neutral,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::Cancelled);
+        let balance = s
+            .library
+            .read(|c| c.get_roll(s.roll))
+            .unwrap()
+            .color_balance
+            .expect("the two frames were judged");
+        let frames = s.frames();
+        assert_eq!(frames.len(), 2);
+        for f in &frames {
+            assert_eq!(axes(&s, f.id), balance);
+            assert!(f.edited_at.is_none());
+        }
+
+        // Frames scanned later follow the roll's balance at once.
+        let (ctx, _) = JobCtx::standalone();
+        let rest = s.scan(3..=4, &ctx).unwrap();
+        assert!(rest.rebalanced.is_empty());
+        for id in &rest.frames {
+            assert_eq!(axes(&s, *id), balance);
+        }
     }
 
     #[test]

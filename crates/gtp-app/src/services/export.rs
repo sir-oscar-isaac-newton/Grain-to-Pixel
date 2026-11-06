@@ -27,6 +27,7 @@ use crate::pipeline::{analyze_with, build_proxy, render, PipelineInput, RenderTa
 use crate::services::counters;
 use crate::services::develop::{read_ir_or_skip, read_scan};
 use crate::services::library::Library;
+use crate::services::roll_balance::with_frame_balance;
 
 /// Most frames one export may name.
 pub const MAX_FRAMES: usize = 10_000;
@@ -296,7 +297,8 @@ fn export_one(
                 ir: None,
                 film_base: roll.film_base_rgb,
             };
-            analyze_with(&proxy, crate::pipeline::frame_hint(&roll))?.auto_recipe
+            let auto = analyze_with(&proxy, crate::pipeline::frame_hint(&roll))?.auto_recipe;
+            with_frame_balance(library, frame_id, auto)?
         }
     };
     let input = PipelineInput {

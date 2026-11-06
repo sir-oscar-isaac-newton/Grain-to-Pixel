@@ -64,6 +64,7 @@ impl RollInput {
             film_base_confidence: film_base.1,
             frame_size,
             has_flat_field: false,
+            color_balance: None,
             created_at,
         }
     }

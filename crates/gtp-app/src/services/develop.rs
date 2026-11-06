@@ -27,12 +27,13 @@ use gtp_io::{read_tiff16, to_f32_linear, Limits};
 use gtp_negative::{levels_from_sample, sample_film_base, LevelPoint, Rect};
 
 use crate::pipeline::{
-    analyze_with_look, build_plane_proxy, build_proxy, inverted_frame, normalized_frame,
+    analyze_with_axes, build_plane_proxy, build_proxy, inverted_frame, normalized_frame,
     to_rgba8_srgb, Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
 };
 use crate::services::counters;
 use crate::services::flat_field::apply_flat_field;
 use crate::services::library::Library;
+use crate::services::roll_balance;
 use crate::services::roll_frame::{hint_for_frame, record_frame_measurement};
 
 /// Frames whose proxy is kept in memory (about 34 MB each).
@@ -532,7 +533,9 @@ impl DevelopService {
             input.film_base = Some(base);
         }
         let (roll, hint) = hint_for_frame(library, id)?;
-        let analysis = analyze_with_look(&input, hint, look)?;
+        // A scanner frame takes its roll's stored colour balance, so running auto again keeps it.
+        let balance = roll_balance::frame_balance(library, id)?;
+        let analysis = analyze_with_axes(&input, hint, look, balance)?;
         if let Some(size) = analysis.frame.measured_size.filter(|_| hint.is_some()) {
             record_frame_measurement(library, roll, size)?;
         }
@@ -992,6 +995,31 @@ mod tests {
             .analyze_with_look(&t.library, id, None, Look::Neutral)
             .unwrap();
         assert_eq!(none.auto_recipe, neutral.auto_recipe);
+    }
+
+    #[test]
+    fn running_auto_again_keeps_the_rolls_colour_balance_for_a_scanner_frame() {
+        let t = Fixture::new("analyze-balance");
+        let id = t.frame(1, 1000, 700);
+        let plain = t.service.analyze(&t.library, id, None).unwrap();
+        assert_eq!(
+            plain.auto_recipe.color.red_cyan, 0.0,
+            "no balance stored yet"
+        );
+        t.library
+            .write(|c| c.store_roll_color_balance(t.roll, [4.0, -6.0, 9.0]))
+            .unwrap();
+        let balanced = t.service.analyze(&t.library, id, None).unwrap();
+        let color = &balanced.auto_recipe.color;
+        assert_eq!(
+            [color.red_cyan, color.green_magenta, color.blue_yellow],
+            [4.0, -6.0, 9.0]
+        );
+        // Nothing else of the recipe moved.
+        let mut same = balanced.auto_recipe.clone();
+        same.color = plain.auto_recipe.color;
+        assert_eq!(same, plain.auto_recipe);
+        assert_eq!(balanced.frame_rect, plain.frame_rect);
     }
 
     #[test]

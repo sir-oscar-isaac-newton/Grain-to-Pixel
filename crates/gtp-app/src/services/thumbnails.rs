@@ -25,6 +25,7 @@ use crate::pipeline::{analyze_with, render, RenderTarget};
 use crate::services::develop::DevelopService;
 use crate::services::import::{THUMB_EDGE, THUMB_QUALITY};
 use crate::services::library::Library;
+use crate::services::roll_balance::with_frame_balance;
 use crate::services::roll_frame;
 
 /// Requests that arrive within this time of each other are collapsed into one batch.
@@ -162,7 +163,8 @@ impl ThumbnailService {
         let recipe = match library.read(|c| c.load_recipe(frame))? {
             Some(recipe) => recipe,
             None => {
-                analyze_with(&input, roll_frame::hint_for_frame(library, frame)?.1)?.auto_recipe
+                let hint = roll_frame::hint_for_frame(library, frame)?.1;
+                with_frame_balance(library, frame, analyze_with(&input, hint)?.auto_recipe)?
             }
         };
         let image = render(

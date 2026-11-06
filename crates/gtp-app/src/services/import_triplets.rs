@@ -181,7 +181,7 @@ fn import_one(
             warnings.push(ImportWarningKind::FlatFieldSkipped);
         }
     }
-    let (recipe, input) = analyse_for_import(library, roll, image, look)?;
+    let (recipe, input, _) = analyse_for_import(library, roll, image, look, FrameKind::RgbTriplet)?;
     progress(4.0);
     ctx.check_cancelled()?;
 
@@ -650,6 +650,38 @@ mod tests {
         let roll = s.lib().read(|c| c.get_roll(s.roll)).unwrap();
         assert!(roll.film_base_rgb.is_some());
         assert!(roll.film_base_confidence.is_some());
+    }
+
+    #[test]
+    fn camera_triplets_are_never_colour_balanced_and_store_no_roll_balance() {
+        let axes = |s: &Setup, id| {
+            let r = s.lib().read(|c| c.load_recipe(id)).unwrap().unwrap();
+            [r.color.red_cyan, r.color.green_magenta, r.color.blue_yellow]
+        };
+        // A roll without a balance gets none from triplets, and no warning about it.
+        let s = Setup::new("no-balance", 2);
+        let result = run(&s, &s.files).unwrap();
+        assert_eq!(result.frames.len(), 2);
+        assert!(s
+            .lib()
+            .read(|c| c.get_roll(s.roll))
+            .unwrap()
+            .color_balance
+            .is_none());
+        assert!(result.warnings.is_empty() && result.rebalanced.is_empty());
+        for id in &result.frames {
+            assert_eq!(axes(&s, *id), [0.0; 3]);
+        }
+
+        // A roll that has one (from scanner frames) does not give it to a triplet.
+        let s = Setup::new("has-balance", 1);
+        s.lib()
+            .write(|c| c.store_roll_color_balance(s.roll, [7.0, -3.0, 5.0]))
+            .unwrap();
+        let result = run(&s, &s.files).unwrap();
+        assert_eq!(axes(&s, result.frames[0]), [0.0; 3]);
+        let roll = s.lib().read(|c| c.get_roll(s.roll)).unwrap();
+        assert_eq!(roll.color_balance, Some([7.0, -3.0, 5.0]));
     }
 
     #[test]

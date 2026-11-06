@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-01",
+  "updated": "2026-11-05",
   "rules": "status is in_progress while the issue's branch exists or its PR is open; completed only after the PR is merged and closed (see docs/workflow.md section 10)",
   "issues": [
     {
@@ -596,6 +596,15 @@
       "number": 194,
       "title": "Flat-field correction for camera triplets",
       "branch": "feat/issue-194-flat-field",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
+      "id": "P-22",
+      "number": 204,
+      "title": "Automatic colour balance",
+      "branch": "feat/issue-204-colour-balance",
       "status": "in_progress",
       "pr": null,
       "commit": null

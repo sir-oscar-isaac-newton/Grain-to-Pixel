@@ -416,6 +416,7 @@ describe('LibraryView', () => {
               skipped: [{ path: '/scans/notes.txt', reason: 'NotTiff', details: null }],
               base_is_guess: true,
               base_replaced: false,
+              rebalanced: [],
             },
           }),
         ),
@@ -477,6 +478,7 @@ describe('LibraryView', () => {
               warnings: [],
               base_is_guess: false,
               base_replaced: true,
+              rebalanced: [],
             },
           }),
         );

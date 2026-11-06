@@ -132,6 +132,11 @@ pub fn neutral_balance(image: &ImageF32, area: Area, current: &Color) -> Result<
         logs[c] = m.log2();
     }
 
+    axes_from_logs(logs, current)
+}
+
+/// The colour axes that equalize channels whose `log2` levels are `logs`; see [`neutral_balance`].
+pub(crate) fn axes_from_logs(logs: [f32; 3], current: &Color) -> Result<Color, AppError> {
     let mean = (logs[0] + logs[1] + logs[2]) / 3.0;
     let temperature = current.temperature / 100.0 * TEMPERATURE_STOPS / 2.0;
     let tint = current.tint / 100.0 * TINT_STOPS / 3.0;

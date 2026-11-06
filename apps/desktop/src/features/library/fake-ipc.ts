@@ -64,6 +64,7 @@ export function makeRoll(over: Partial<Roll> = {}): Roll {
     film_base_confidence: null,
     frame_size: null,
     has_flat_field: false,
+    color_balance: null,
     created_at: '2026-10-30T10:00:00Z',
     ...over,
   };

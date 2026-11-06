@@ -136,6 +136,11 @@ pub struct Roll {
     /// divided by when they are loaded; the field itself is kept apart (see `FlatField`).
     #[serde(default)]
     pub has_flat_field: bool,
+    /// The automatic colour balance of the roll's scanner frames: the colour axes
+    /// `[red_cyan, green_magenta, blue_yellow]` of their recipes (P-22). `None` until a frame was
+    /// judged; the first one stored stays. Camera triplets do not use it.
+    #[serde(default)]
+    pub color_balance: Option<[f32; 3]>,
     /// RFC 3339 timestamp.
     pub created_at: String,
 }

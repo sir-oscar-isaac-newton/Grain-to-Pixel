@@ -4,12 +4,15 @@
 //! differs by more than the limit; `--maps` writes a ΔE map of each differing case. With
 //! `--bless`, rewrites the stored renders and prints how far each one moved, for the pull request.
 //!
-//! `benchmark report --manifest <file> [--maps <folder>]`
+//! `benchmark report --manifest <file> [--maps <folder>] [--look neutral|film_log|frontier]
+//! [--balance off|grey_world|near_neutral|roll_median]`
 //!
 //! Converts each frame of the manifest (a camera triplet or an LS-50 scan) the way the app does,
 //! registers the reference render of the same frame in it (turned or mirrored if need be), and prints
 //! the CIEDE2000 difference per frame, per roll and for all of them (median and 95th percentile). `--maps` writes ours, the reference and the difference side by
 //! side for each frame. The pairs are the author's private samples (`samples/private/reference`).
+//! `--balance` sets the automatic colour balance (P-22): `off` (the default), one of the two per-frame
+//! estimators, or `roll_median`, the median over each roll of the grey-world axes.
 //!
 //! `benchmark manifest (--triplets <folder> | --scans <folder>) --references <folder> --out <file>
 //! [--format <f>]`
@@ -37,17 +40,17 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use gtp_app::LevelsPercentiles;
+use gtp_app::{BalanceMethod, LevelsPercentiles};
 use gtp_benchmark::fit::{self, FitReport, Score};
 use gtp_benchmark::fixture::{self, DEFAULT_FRAMES, DEFAULT_ROLLS};
 use gtp_benchmark::golden::default_dir;
 use gtp_benchmark::manifest;
-use gtp_benchmark::report::{self, Report, MIN_SCORE};
+use gtp_benchmark::report::{self, Balance, Report, MIN_SCORE};
 use gtp_benchmark::{bless, check, Outcome, CASES, MAX_DELTA_E};
 use gtp_core::Look;
 
 const USAGE: &str = "usage: benchmark golden [--bless] [--dir <folder>] [--maps <folder>]\n       \
-                     benchmark report --manifest <file> [--maps <folder>] [--look neutral|film_log|frontier]\n       \
+                     benchmark report --manifest <file> [--maps <folder>] [--look neutral|film_log|frontier] [--balance off|grey_world|near_neutral|roll_median]\n       \
                      benchmark fit --manifest <file> [--holdout <n>] [--percentiles <low,high>]...\n       \
                      benchmark manifest (--triplets <folder> | --scans <folder>) --references <folder> --out <file> [--format <f>]\n       \
                      benchmark fixture --dir <folder> [--frames <n>] [--rolls <n>]";
@@ -62,6 +65,7 @@ enum Command {
         manifest: PathBuf,
         maps: Option<PathBuf>,
         look: Look,
+        balance: Balance,
     },
     Fit {
         manifest: PathBuf,
@@ -82,6 +86,19 @@ enum Command {
         frames: u32,
         rolls: u32,
     },
+}
+
+fn parse_balance(text: &str) -> Result<Balance, String> {
+    match text {
+        "off" => Ok(Balance::Frame(BalanceMethod::Off)),
+        "grey_world" => Ok(Balance::Frame(BalanceMethod::GreyWorld)),
+        "near_neutral" => Ok(Balance::Frame(BalanceMethod::NearNeutral)),
+        "roll_median" => Ok(Balance::RollMedian),
+        other => Err(format!(
+            "unknown balance {other:?}
+{USAGE}"
+        )),
+    }
 }
 
 fn parse_look(text: &str) -> Result<Look, String> {
@@ -130,11 +147,13 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
         }
         Some("report") => {
             let (mut manifest, mut maps, mut look) = (None, None, Look::Neutral);
+            let mut balance = Balance::Frame(BalanceMethod::Off);
             while let Some(arg) = args.next() {
                 match arg.as_str() {
                     "--manifest" => manifest = Some(args.next().ok_or(USAGE)?.into()),
                     "--maps" => maps = Some(args.next().ok_or(USAGE)?.into()),
                     "--look" => look = parse_look(&args.next().ok_or(USAGE)?)?,
+                    "--balance" => balance = parse_balance(&args.next().ok_or(USAGE)?)?,
                     other => return Err(format!("unknown argument {other:?}\n{USAGE}")),
                 }
             }
@@ -142,6 +161,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
                 manifest: manifest.ok_or_else(|| format!("--manifest is required\n{USAGE}"))?,
                 maps,
                 look,
+                balance,
             })
         }
         Some("fit") => {
@@ -436,6 +456,7 @@ fn run() -> Result<bool, Box<dyn Error>> {
             manifest,
             maps,
             look,
+            balance,
         } => {
             // The details name the pair and the file, which the message alone does not.
             let with_details = |err: gtp_core::AppError| {
@@ -445,8 +466,8 @@ fn run() -> Result<bool, Box<dyn Error>> {
             let mut note = |line: &str| {
                 let _ = writeln!(std::io::stderr(), "{line}");
             };
-            let report =
-                report::run(&manifest, maps.as_deref(), look, &mut note).map_err(with_details)?;
+            let report = report::run(&manifest, maps.as_deref(), look, balance, &mut note)
+                .map_err(with_details)?;
             print_report(&report, &mut std::io::stdout().lock())?;
             Ok(true)
         }
@@ -523,18 +544,27 @@ mod tests {
             manifest,
             maps,
             look,
+            balance,
         }) = args(&["report", "--manifest", "m.json", "--maps", "out"])
         else {
             unreachable!("report should parse");
         };
         assert_eq!(
-            (manifest, maps, look),
+            (manifest, maps, look, balance),
             (
                 PathBuf::from("m.json"),
                 Some(PathBuf::from("out")),
-                Look::Neutral
+                Look::Neutral,
+                Balance::Frame(BalanceMethod::Off)
             )
         );
+        let Ok(Command::Report { balance, .. }) =
+            args(&["report", "--manifest", "m", "--balance", "near_neutral"])
+        else {
+            unreachable!("report with a balance should parse");
+        };
+        assert_eq!(balance, Balance::Frame(BalanceMethod::NearNeutral));
+        assert!(args(&["report", "--manifest", "m", "--balance", "magic"]).is_err());
         assert!(args(&["report"]).is_err(), "a manifest is required");
         let Ok(Command::Report { look, .. }) =
             args(&["report", "--manifest", "m", "--look", "frontier"])

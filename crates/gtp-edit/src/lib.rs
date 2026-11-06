@@ -3,6 +3,7 @@
 //! pixel or output row is independent, so the result is the same as on one thread. Every tuning constant is a named, documented `pub const`
 //! so it can be calibrated against reference renders (issue Q-03).
 
+mod balance;
 mod color;
 mod curve;
 mod dust;
@@ -12,6 +13,11 @@ mod look;
 mod sharpen;
 mod tone;
 
+pub use balance::{
+    balance_color, estimate_neutral, roll_balance, BalanceMethod, BALANCE_LUMA_HIGH,
+    BALANCE_LUMA_LOW, MAX_BALANCE_AXIS, MIN_BALANCE_PIXELS, MIN_NEUTRAL_FRACTION,
+    NEAR_NEUTRAL_RADIUS, NEAR_NEUTRAL_ROUNDS,
+};
 pub use color::{
     apply_color, channel_gains, neutral_balance, Area, AXIS_STOPS, TEMPERATURE_STOPS, TINT_STOPS,
 };

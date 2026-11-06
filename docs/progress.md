@@ -619,6 +619,15 @@
       "commit": null
     },
     {
+      "id": "R-03",
+      "number": 10,
+      "title": "Spike - libgphoto2 and D600 on macOS",
+      "branch": "feat/issue-10-spike-libgphoto2",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
       "id": "R-06",
       "number": 199,
       "title": "Spike - scan at a custom frame position with nkscan",

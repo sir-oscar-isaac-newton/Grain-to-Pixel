@@ -704,9 +704,9 @@
       "number": 60,
       "title": "Capture commands, profile persistence and light safety hooks",
       "branch": "feat/issue-60-capture-commands",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 229,
+      "commit": "4cab72b"
     }
   ]
 }

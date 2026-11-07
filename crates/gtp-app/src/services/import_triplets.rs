@@ -11,19 +11,22 @@
 //! 4. record the frame (`RgbTriplet`), its three sources, the recipe and the search text in one
 //!    catalog transaction, then announce the change.
 //!
+//! Steps 2 to 4 are [`store_merged`], which the capture job (`capture.rs`) shares: pictures it took
+//! itself are merged and stored the same way, with the same warnings and the same flat field.
+//!
 //! The NEF files themselves are not copied: the library keeps the converted planes (specification
 //! section 5.1). A triplet that cannot be imported is skipped, its three files listed with the
 //! reason, and the rest go on. A frame that fails or is cancelled part-way has its files removed;
 //! finished frames stay.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use gtp_core::{
     AppError, ErrorCode, Frame, FrameId, FrameKind, ImageF32, ImportResult, ImportWarning,
     ImportWarningKind, Look, RollId, SkipReason, SkippedFile, SourceFile, SourceRole,
 };
-use gtp_ingest::{merge_triplet, TripletWarning};
+use gtp_ingest::{merge_triplet, TripletMerge, TripletWarning};
 use gtp_io::{from_f32_linear, Limits, RawDecoder, Tiff16};
 
 use super::import::{
@@ -37,7 +40,7 @@ use crate::services::flat_field::apply_flat_field;
 use crate::services::library::Library;
 
 /// A triplet that was not imported, or a failure that stops the whole job.
-enum TripletError {
+pub(super) enum TripletError {
     Skip(Vec<SkippedFile>),
     Stop(AppError),
 }
@@ -106,9 +109,9 @@ fn plane(image: &ImageF32, channel: usize) -> Result<Tiff16, AppError> {
 
 /// Where an import puts its frames and what their automatic recipes start from.
 #[derive(Clone, Copy)]
-struct Target {
-    roll: RollId,
-    look: Look,
+pub(super) struct Target {
+    pub(super) roll: RollId,
+    pub(super) look: Look,
 }
 
 /// Imports one triplet; on any failure the frame's files are removed by the caller.
@@ -121,9 +124,33 @@ fn import_one(
     ctx: &JobCtx,
     progress: &dyn Fn(f32),
 ) -> Result<(Frame, Vec<ImportWarningKind>), TripletError> {
-    let Target { roll, look } = target;
     let merged = merge_triplet(decoder, &files[0], &files[1], &files[2], &Limits::default())
         .map_err(|err| merge_failure(files, &err))?;
+    store_merged(
+        library,
+        target,
+        merged,
+        [&files[0], &files[1], &files[2]],
+        frame_id,
+        ctx,
+        progress,
+    )
+}
+
+/// Stores a merged triplet as a frame: the three planes as originals (`picked` names the files they
+/// came from, for a skip report), the flat field, the starting recipe, the thumbnail and the catalog
+/// rows. The warnings are those of the merge, plus the flat field's. On any failure the frame's files
+/// are left for the caller to remove.
+pub(super) fn store_merged(
+    library: &Library,
+    target: Target,
+    merged: TripletMerge,
+    picked: [&Path; 3],
+    frame_id: FrameId,
+    ctx: &JobCtx,
+    progress: &dyn Fn(f32),
+) -> Result<(Frame, Vec<ImportWarningKind>), TripletError> {
+    let Target { roll, look } = target;
     progress(1.0);
     ctx.check_cancelled()?;
 
@@ -141,13 +168,13 @@ fn import_one(
     let stored: Vec<Result<SourceFile, FrameError>> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..3)
             .map(|i| {
-                let (planes, files, dir_rel) = (&planes, files, &dir_rel);
+                let (planes, dir_rel) = (&planes, &dir_rel);
                 scope.spawn(move || {
                     store_original(
                         library,
                         &dir_rel.join(names[i]),
                         &planes[i],
-                        &files[i],
+                        picked[i],
                         roles[i],
                         frame_id,
                     )

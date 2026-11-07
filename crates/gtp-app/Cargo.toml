@@ -10,6 +10,7 @@ publish = false
 specta = ["dep:specta", "gtp-core/specta", "gtp-ingest/specta"]
 
 [dependencies]
+gtp-capture = { version = "0.0.0", path = "../gtp-capture" }
 gtp-catalog = { version = "0.0.0", path = "../gtp-catalog" }
 gtp-core = { version = "0.0.0", path = "../gtp-core" }
 gtp-edit = { version = "0.0.0", path = "../gtp-edit" }

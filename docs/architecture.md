@@ -135,8 +135,9 @@ pub trait LightSource { fn connect(&mut self, port: Option<&str>) -> Result<Ligh
     fn set_levels(&mut self, rgb: [u8; 3]) -> Result<()>;           // SET_COLOR, save flag always 0
     fn shutter_pulse(&mut self, tens_of_ms: u8) -> Result<()>;
     fn status(&self) -> LightStatus; }
-pub trait CameraSource { fn arm(&mut self) -> Result<()>;
-    fn trigger(&mut self, light: &mut dyn LightSource) -> Result<()>;
+pub trait CameraSource { fn is_connected(&self) -> bool;
+    fn arm(&mut self) -> Result<()>;
+    fn trigger(&mut self) -> Result<()>;
     fn wait_for_image(&mut self, timeout: Duration) -> Result<CapturedFile>; }
 
 // gtp-app

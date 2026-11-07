@@ -682,6 +682,15 @@
       "commit": "5ad1ddb"
     },
     {
+      "id": "H-08",
+      "number": 57,
+      "title": "Capture orchestrator, CameraSource, FakeCamera and safety",
+      "branch": "feat/issue-57-capture-sequence",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
       "id": "Q-08",
       "number": 174,
       "title": "Licence terms and third-party notices",

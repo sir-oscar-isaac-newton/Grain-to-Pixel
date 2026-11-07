@@ -1,14 +1,24 @@
 //! Guided RGB capture: Scanlight V4 serial driver, camera backends (libgphoto2, watched folder), per-frame R/G/B sequence.
 //!
-//! Today this holds the light side: the [`LightSource`] port, the [`ScanlightV4`] serial driver
-//! and the recording [`FakeLight`]. The camera backends and the sequence come with H-08.
+//! This holds the light side (the [`LightSource`] port, the [`ScanlightV4`] serial driver and the
+//! recording [`FakeLight`]), the [`CameraSource`] port with its [`FakeCamera`], and the
+//! [`CaptureSequence`] that takes one R, G, B triplet with the hardware-safety rules. The real
+//! camera backends come with H-09 and H-10.
 
 #![forbid(unsafe_code)]
 
+pub mod camera;
 pub mod fakes;
 pub mod light;
+pub mod profile;
 pub mod scanlight;
+pub mod sequence;
 
-pub use fakes::{FakeLight, FakeLightHandle, LightCommand};
+pub use camera::{CameraSource, CapturedFile};
+pub use fakes::{
+    CameraCall, FakeCamera, FakeCameraHandle, FakeLight, FakeLightHandle, LightCommand, Shot,
+};
 pub use light::{LightInfo, LightSource, LightStatus};
+pub use profile::{CameraBackend, CaptureProfile, VBUS_WARN_MV};
 pub use scanlight::ScanlightV4;
+pub use sequence::{CaptureOutcome, CaptureSequence, CaptureWarning, Pause, ThreadPause};

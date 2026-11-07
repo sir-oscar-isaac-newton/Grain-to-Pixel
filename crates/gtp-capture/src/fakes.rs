@@ -2,10 +2,13 @@
 //! `gtp_ingest::FixtureSource`, so the capture sequence and the application layer can test
 //! against it without hardware.
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use gtp_core::{AppError, ErrorCode};
 
+use crate::camera::{CameraSource, CapturedFile};
 use crate::light::{LightInfo, LightSource, LightStatus};
 
 /// A command a [`FakeLight`] received.
@@ -33,7 +36,7 @@ struct State {
 pub struct FakeLightHandle(Arc<Mutex<State>>);
 
 impl FakeLightHandle {
-    fn state(&self) -> std::sync::MutexGuard<'_, State> {
+    fn state(&self) -> MutexGuard<'_, State> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -150,6 +153,161 @@ impl Drop for FakeLight {
 /// The error a failing fake gives when none is chosen.
 pub fn unplugged() -> AppError {
     AppError::new(ErrorCode::Io, "The light is not connected.")
+}
+
+/// What a [`FakeCamera`] does at one `wait_for_image`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Shot {
+    /// Delivers this picture.
+    File(CapturedFile),
+    /// Fails with this error (a timeout, a camera error).
+    Fail(AppError),
+}
+
+/// A call a [`FakeCamera`] received.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CameraCall {
+    /// `arm`.
+    Arm,
+    /// `trigger`, with the light levels at that moment when the camera is linked to a light.
+    Trigger { levels: Option<[u8; 3]> },
+    /// `wait_for_image`, with the timeout asked for.
+    Wait(Duration),
+}
+
+type WaitHook = Box<dyn FnMut(usize) + Send>;
+
+#[derive(Default)]
+struct CameraState {
+    shots: VecDeque<Shot>,
+    calls: Vec<CameraCall>,
+    connected: bool,
+    fail_arm: Option<AppError>,
+    fail_trigger: Option<AppError>,
+    light: Option<FakeLightHandle>,
+    waits: usize,
+    on_wait: Option<WaitHook>,
+}
+
+/// A handle on a [`FakeCamera`], still usable after the camera was moved into a `Box`.
+#[derive(Clone, Default)]
+pub struct FakeCameraHandle(Arc<Mutex<CameraState>>);
+
+impl FakeCameraHandle {
+    fn state(&self) -> MutexGuard<'_, CameraState> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Every call so far, in order.
+    pub fn calls(&self) -> Vec<CameraCall> {
+        self.state().calls.clone()
+    }
+
+    /// What `is_connected` returns from now on.
+    pub fn set_connected(&self, connected: bool) {
+        self.state().connected = connected;
+    }
+
+    /// Makes `arm` fail until cleared with `None`.
+    pub fn fail_arm_with(&self, error: Option<AppError>) {
+        self.state().fail_arm = error;
+    }
+
+    /// Makes `trigger` fail until cleared with `None`.
+    pub fn fail_trigger_with(&self, error: Option<AppError>) {
+        self.state().fail_trigger = error;
+    }
+}
+
+/// A camera that delivers scripted pictures and records its calls. With no shots left it fails
+/// like a camera that never answered.
+pub struct FakeCamera {
+    handle: FakeCameraHandle,
+}
+
+impl FakeCamera {
+    /// A connected camera that plays `shots`, one per `wait_for_image`.
+    pub fn new(shots: Vec<Shot>) -> Self {
+        let handle = FakeCameraHandle::default();
+        {
+            let mut state = handle.state();
+            state.connected = true;
+            state.shots = shots.into();
+        }
+        Self { handle }
+    }
+
+    /// A connected camera that delivers `files`, one per shot.
+    pub fn with_files(files: Vec<CapturedFile>) -> Self {
+        Self::new(files.into_iter().map(Shot::File).collect())
+    }
+
+    /// Records the light's levels at each `trigger`.
+    #[must_use]
+    pub fn linked_to(self, light: FakeLightHandle) -> Self {
+        self.handle.state().light = Some(light);
+        self
+    }
+
+    /// Calls `hook` with the number of the shot (from 0) at the start of each `wait_for_image`,
+    /// before its result is chosen: a test can change the light's status or fail its commands at
+    /// exactly that point of the sequence. The hook must not call this camera's handle.
+    #[must_use]
+    pub fn on_wait(self, hook: impl FnMut(usize) + Send + 'static) -> Self {
+        self.handle.state().on_wait = Some(Box::new(hook));
+        self
+    }
+
+    /// A handle to read the calls from.
+    pub fn handle(&self) -> FakeCameraHandle {
+        self.handle.clone()
+    }
+}
+
+impl CameraSource for FakeCamera {
+    fn is_connected(&self) -> bool {
+        self.handle.state().connected
+    }
+
+    fn arm(&mut self) -> Result<(), AppError> {
+        let mut state = self.handle.state();
+        state.calls.push(CameraCall::Arm);
+        state.fail_arm.clone().map_or(Ok(()), Err)
+    }
+
+    fn trigger(&mut self) -> Result<(), AppError> {
+        let mut state = self.handle.state();
+        let levels = state.light.as_ref().map(FakeLightHandle::levels);
+        state.calls.push(CameraCall::Trigger { levels });
+        state.fail_trigger.clone().map_or(Ok(()), Err)
+    }
+
+    fn wait_for_image(&mut self, timeout: Duration) -> Result<CapturedFile, AppError> {
+        let (shot, hook) = {
+            let mut state = self.handle.state();
+            state.calls.push(CameraCall::Wait(timeout));
+            let shot = state.waits;
+            state.waits += 1;
+            (shot, state.on_wait.take())
+        };
+        if let Some(mut hook) = hook {
+            hook(shot);
+            self.handle.state().on_wait = Some(hook);
+        }
+        match self.handle.state().shots.pop_front() {
+            Some(Shot::File(file)) => Ok(file),
+            Some(Shot::Fail(error)) => Err(error),
+            None => Err(no_picture()),
+        }
+    }
+}
+
+/// The error a camera gives when no picture came in time.
+pub fn no_picture() -> AppError {
+    AppError::new(
+        ErrorCode::Io,
+        "The camera did not deliver a picture in time.",
+    )
 }
 
 #[cfg(test)]

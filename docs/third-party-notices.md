@@ -28,6 +28,7 @@ These crates are under the Mozilla Public License, version 2.0 (MPL-2.0), and ar
 - `selectors`: https://github.com/servo/stylo
 - `dtoa-short`: https://github.com/upsuper/dtoa-short
 - `option-ext`: https://github.com/soc/option-ext
+- `serialport`: https://github.com/serialport/serialport-rs (the Scanlight's USB serial link, through `gtp-capture`; its own dependencies are MIT, Apache-2.0 or BSD)
 
 ## Tools that are not part of the app
 

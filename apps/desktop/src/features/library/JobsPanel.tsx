@@ -20,7 +20,11 @@ function warningText(job: JobRow, warning: ImportWarning, t: TFunction): string 
           channel: t(`import.channel.${kind.channel}`),
           percent: (kind.per_mille / 10).toLocaleString(undefined, { maximumFractionDigits: 1 }),
         })
-      : t(`jobs.warning.${kind.kind}`);
+      : kind.kind === 'high_temperature'
+        ? t('jobs.warning.high_temperature', { temp_c: kind.temp_c })
+        : kind.kind === 'low_supply'
+          ? t('jobs.warning.low_supply', { volts: (kind.vbus_mv / 1000).toFixed(2) })
+          : t(`jobs.warning.${kind.kind}`);
   return t('jobs.warningLine', { frame, what });
 }
 

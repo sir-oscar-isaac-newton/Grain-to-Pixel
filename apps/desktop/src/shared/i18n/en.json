@@ -209,7 +209,9 @@
       "aperture_mismatch": "the three shots used different apertures",
       "clipped": "the {{channel}}-lit shot is clipped in {{percent}} % of its picture",
       "flat_field_skipped": "not corrected: the roll’s flat field is for frames of another size",
-      "balance_skipped": "no colour balance for the roll: none of the frames in this job had a neutral to judge by"
+      "balance_skipped": "no colour balance for the roll: none of the frames in this job had a neutral to judge by",
+      "high_temperature": "the light was warm while this frame was taken ({{temp_c}} °C); let it cool if you take many frames in a row",
+      "low_supply": "the light’s supply voltage sagged to {{volts}} V; try another USB port or a powered hub"
     }
   },
   "settings": {

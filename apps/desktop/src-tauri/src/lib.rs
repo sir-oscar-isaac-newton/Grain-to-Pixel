@@ -39,7 +39,8 @@ fn signal_ready(path: &Path) -> std::io::Result<()> {
 pub fn run() -> tauri::Result<()> {
     // Before anything starts a thread: libgphoto2 reads its driver paths from the environment
     // (macOS builds with the `tether` feature; a no-op everywhere else).
-    gtp_app::prepare_camera_libraries();
+    // Logging has not started yet: what it did is logged in `setup`.
+    let camera_libraries_from_bundle = gtp_app::prepare_camera_libraries();
     let builder = ipc::builder::<tauri::Wry>();
     let handler = ipc::invoke_handler(&builder);
     tauri::Builder::default()
@@ -63,6 +64,7 @@ pub fn run() -> tauri::Result<()> {
             // The devices come first: the panic hook needs the light.
             let hardware = Hardware::from_env();
             start_observability(app, hardware.light.clone());
+            gtp_app::log_camera_libraries(camera_libraries_from_bundle);
             log_hardware(&hardware);
             let sink = Arc::new(sink::TauriJobSink::new(app.handle().clone()));
             app.manage(JobManager::new(sink.clone()));

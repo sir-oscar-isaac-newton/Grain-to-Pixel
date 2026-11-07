@@ -52,9 +52,6 @@ pub fn configure_library_paths() -> Option<LibraryDirs> {
             // part of the contract above.
             std::env::set_var(CAMLIBS_VAR, &dirs.camlibs);
             std::env::set_var(IOLIBS_VAR, &dirs.iolibs);
-            tracing::info!("libgphoto2 drivers are taken from the app bundle");
-        } else {
-            tracing::debug!("not running from an app bundle: libgphoto2 uses its own driver paths");
         }
     });
     set

@@ -129,11 +129,25 @@ fn real_camera() -> Option<Arc<CameraSlot>> {
 
 /// Points libgphoto2 at the drivers inside the app bundle. Call it first thing in `main`, before
 /// the app starts any thread (see `gtp_capture::configure_library_paths`). Does nothing without the
-/// macOS `tether` feature.
-pub fn prepare_camera_libraries() {
+/// macOS `tether` feature. Returns whether the drivers of the bundle are used; it runs before
+/// logging starts, so the caller logs this once the log is open ([`log_camera_libraries`]).
+pub fn prepare_camera_libraries() -> bool {
     #[cfg(all(feature = "tether", target_os = "macos"))]
     {
-        gtp_capture::configure_library_paths();
+        gtp_capture::configure_library_paths().is_some()
+    }
+    #[cfg(not(all(feature = "tether", target_os = "macos")))]
+    {
+        false
+    }
+}
+
+/// Logs what [`prepare_camera_libraries`] did. Call it after logging has started.
+pub fn log_camera_libraries(from_bundle: bool) {
+    if from_bundle {
+        tracing::info!("libgphoto2 drivers are taken from the app bundle");
+    } else if cfg!(all(feature = "tether", target_os = "macos")) {
+        tracing::info!("not running from an app bundle: libgphoto2 uses its own driver paths");
     }
 }
 

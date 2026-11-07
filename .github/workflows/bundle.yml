@@ -7,8 +7,10 @@ on:
   pull_request:
     paths:
       - apps/desktop/src-tauri/tauri.conf.json
+      - apps/desktop/src-tauri/tauri.macos.conf.json
       - apps/desktop/src-tauri/Cargo.toml
       - apps/desktop/src-tauri/icons/**
+      - tools/scripts/release/**
       - .github/workflows/bundle.yml
       - tools/scripts/check-bundle/**
   push:
@@ -66,8 +68,22 @@ jobs:
       - name: Installer settings
         run: pnpm check:bundle
 
+      # The dmg is built with the tether feature, which links libgphoto2 (H-09); the build then copies
+      # the libraries into the app (tauri.macos.conf.json, tools/scripts/release/bundle-libgphoto2.sh).
+      - name: Install libgphoto2 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libgphoto2 pkgconf
+
       - name: Build the installer
         run: pnpm --filter @gtp/desktop exec tauri build --bundles ${{ matrix.bundles }} ${{ matrix.features }}
+
+      - name: Libraries in the app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          shopt -s nullglob
+          apps=(target/release/bundle/macos/*.app)
+          if [ ${#apps[@]} -ne 1 ]; then echo "expected one app, found ${#apps[@]}"; exit 1; fi
+          bash tools/scripts/release/bundle-libgphoto2.sh verify "${apps[0]}"
 
       - name: Installer size
         run: |

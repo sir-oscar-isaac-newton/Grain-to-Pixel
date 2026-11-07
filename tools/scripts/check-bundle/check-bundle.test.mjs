@@ -9,6 +9,7 @@ import {
   findConfigProblems,
   findDebugPortProblems,
   findReleaseProblems,
+  findGphotoSourceProblems,
   findSourceArchiveProblems,
   PUBKEY_PLACEHOLDER,
   sizeReport,
@@ -174,6 +175,21 @@ test('the real release workflow attaches the rawler source', () => {
   const lock = readFileSync(path.join(root, 'Cargo.lock'), 'utf8');
   assert.deepEqual(findSourceArchiveProblems(workflow, lock), []);
 });
+test('the release workflow installs, verifies and offers the source of the bundled libraries', () => {
+  const workflow = [
+    'run: brew install libgphoto2 pkgconf',
+    'run: bash tools/scripts/release/bundle-libgphoto2.sh verify app',
+    'run: node tools/scripts/release/gphoto-source.mjs x',
+    'run: node tools/scripts/release/gphoto-crates-source.mjs x',
+  ].join(' ');
+  assert.deepEqual(findGphotoSourceProblems(workflow), []);
+  assert.match(findGphotoSourceProblems('').join(), /does not install libgphoto2/);
+  assert.match(findGphotoSourceProblems('').join(), /does not fetch the source/);
+  assert.match(findGphotoSourceProblems('').join(), /does not verify/);
+  const real = readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8');
+  assert.deepEqual(findGphotoSourceProblems(real), []);
+});
+
 test('the size is in megabytes and the limit is inclusive', () => {
   const mb = 1024 * 1024;
   assert.equal(sizeReport(40 * mb).ok, true);

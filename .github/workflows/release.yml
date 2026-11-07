@@ -71,6 +71,12 @@ jobs:
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile
 
+      # The macOS build has the tether feature, which links libgphoto2; the build copies the libraries
+      # into the app (H-09, tools/scripts/release/bundle-libgphoto2.sh).
+      - name: Install libgphoto2 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libgphoto2 pkgconf
+
       # Builds, signs the updater packages, uploads the installers and merges this platform into
       # latest.json. The release stays a draft; a tag with a hyphen (v0.1.0-rc.1) is a prerelease.
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
@@ -88,6 +94,32 @@ jobs:
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           updaterJsonPreferNsis: true
+
+      - name: Check the libraries in the app (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          apps=(target/release/bundle/macos/*.app)
+          if [ ${#apps[@]} -ne 1 ]; then echo "expected one app, found ${#apps[@]}"; exit 1; fi
+          bash tools/scripts/release/bundle-libgphoto2.sh verify "${apps[0]}"
+
+      # The LGPL-2.1 asks for the source of what the app contains. The gphoto2 and libgphoto2_sys
+      # crates are compiled into the app, so they are offered as rawler is (job `source` below): the
+      # pinned crate archives, checked against Cargo.lock. The libraries beside them are separate
+      # dylibs: their archives (checked against Homebrew's checksums) and the list of libraries with
+      # their licences go to the draft release too.
+      - name: Attach the source of the bundled libraries (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          files=$(node tools/scripts/release/gphoto-source.mjs "$RUNNER_TEMP/gphoto"; node tools/scripts/release/gphoto-crates-source.mjs "$RUNNER_TEMP/gphoto-crates")
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | .id")
+          for file in $files; do
+            gh api --method POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$id/assets?name=$(basename "$file")" -H "Content-Type: application/octet-stream" --input "$file"
+          done
 
   # The LGPL-2.1 asks for the source of the rawler version the app is linked with (Q-08, ADR 0007):
   # it is fetched from crates.io, checked against Cargo.lock and attached to the draft release.

@@ -634,3 +634,85 @@ fn light_set_needs_a_connected_light_with_a_current_reading_under_the_limit() {
     set([0; 3]).unwrap();
     assert!(!hw.busy().is_busy());
 }
+
+/// A finder that answers from a script: what the list gives, and whether `connect` fails.
+#[derive(Default)]
+struct ScriptedFinder {
+    lists: Mutex<std::collections::VecDeque<Result<Vec<CameraInfo>, AppError>>>,
+    connect_error: Mutex<Option<AppError>>,
+    connects: std::sync::atomic::AtomicUsize,
+}
+
+struct SharedFinder(Arc<ScriptedFinder>);
+
+impl CameraFinder for SharedFinder {
+    fn list(&self) -> Result<Vec<CameraInfo>, AppError> {
+        self.0
+            .lists
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(Ok(vec![]))
+    }
+
+    fn connect(&self) -> Result<CameraInfo, AppError> {
+        self.0.connects.fetch_add(1, Ordering::SeqCst);
+        match self.0.connect_error.lock().unwrap().clone() {
+            Some(err) => Err(err),
+            None => Ok(fake_camera_info()),
+        }
+    }
+}
+
+/// A rig whose camera is found through `finder` (the camera itself is the fake one).
+fn found_rig(label: &str, finder: &Arc<ScriptedFinder>) -> Rig {
+    let mut rig = Rig::new(label);
+    let camera = Box::new(fake_camera().linked_to(rig.light.clone()));
+    rig.hardware.camera = Some(Arc::new(CameraSlot::with_finder(
+        camera,
+        Box::new(SharedFinder(Arc::clone(finder))),
+    )));
+    rig
+}
+
+#[test]
+fn a_camera_found_later_is_listed_and_the_last_list_stands_when_the_backend_cannot_answer() {
+    let finder = Arc::new(ScriptedFinder::default());
+    let rig = found_rig("finder-list", &finder);
+    // Not plugged in at start: an empty list, not an error.
+    assert!(camera_list(&rig.hardware).is_empty());
+    finder
+        .lists
+        .lock()
+        .unwrap()
+        .extend([Ok(vec![fake_camera_info()]), Err(busy())]);
+    assert_eq!(camera_list(&rig.hardware), [fake_camera_info()]);
+    // A picture is being taken: the backend refuses, the last list is kept.
+    assert_eq!(camera_list(&rig.hardware), [fake_camera_info()]);
+}
+
+#[test]
+fn an_absent_or_held_camera_fails_a_test_shot_and_a_capture_in_words_before_any_light() {
+    let finder = Arc::new(ScriptedFinder::default());
+    let rig = found_rig("finder-absent", &finder);
+    let words = AppError::new(ErrorCode::NotFound, "No camera was found. Connect it.");
+    *finder.connect_error.lock().unwrap() = Some(words.clone());
+
+    assert_eq!(rig.test(TripletChannel::Red).unwrap_err(), words);
+    rig.start().unwrap();
+    match rig.outcome() {
+        Outcome::Error(err) => assert_eq!(err, words),
+        Outcome::Done(_) => panic!("a capture without a camera must fail"),
+    }
+    assert!(rig.lit_levels().is_empty(), "no light without a camera");
+    assert_eq!(rig.frames(), 0);
+    assert!(!rig.hardware.busy().is_busy());
+
+    // Plugged in now: the same commands find it and work, with no restart.
+    *finder.connect_error.lock().unwrap() = None;
+    rig.test(TripletChannel::Red).unwrap();
+    rig.start().unwrap();
+    assert!(matches!(rig.outcome(), Outcome::Done(_)));
+    assert_eq!(rig.frames(), 1);
+    assert!(finder.connects.load(Ordering::SeqCst) >= 4);
+}

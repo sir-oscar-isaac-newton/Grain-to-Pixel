@@ -10,6 +10,8 @@ samples/private/*
 .claude/settings.local.json
 # Tauri generated schemas
 apps/desktop/src-tauri/gen/
+# libgphoto2 and its drivers staged for the macOS bundle (tools/scripts/release/bundle-libgphoto2.sh)
+apps/desktop/src-tauri/gphoto-libs/
 # Downloaded test tooling (msedgedriver)
 .cache/
 

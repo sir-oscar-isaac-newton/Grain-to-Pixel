@@ -21,7 +21,7 @@ pub use gtp_ingest::{
 };
 pub use gtp_io::RawlerDecoder;
 pub use gtp_negative::{BaseEstimate, FrameHint};
-pub use hardware::Hardware;
+pub use hardware::{prepare_camera_libraries, Hardware};
 pub use jobs::{JobCtx, JobErrorEntry, JobKind, JobManager, JobSink, LibraryEvents, PROGRESS_STEP};
 pub use pipeline::{
     analyze, analyze_with, analyze_with_axes, analyze_with_balance, analyze_with_levels,

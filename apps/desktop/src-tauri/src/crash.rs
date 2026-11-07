@@ -8,6 +8,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use gtp_app::SharedLight;
 use serde::Serialize;
 use specta::Type;
 
@@ -39,14 +40,31 @@ pub fn write_note(dir: &Path, panic_text: &str) -> io::Result<PathBuf> {
     Ok(path)
 }
 
-/// Logs the panic, writes a crash note, then runs the previous hook (default message on stderr).
-pub fn install_hook(dir: PathBuf) {
+/// The light's part of the panic hook: a best-effort switch-off that never waits for the light's
+/// lock (`SharedLight::emergency_off` uses `try_lock`, recovers a poisoned lock and catches a
+/// panic of the driver), so the hook can neither deadlock nor panic. A light that could not be
+/// reached is logged; a killed process or a power loss cannot be covered at all.
+fn switch_light_off(light: Option<&SharedLight>) {
+    if let Some(light) = light {
+        if !light.emergency_off() {
+            tracing::error!(target: "panic", "the light could not be switched off from the panic hook");
+        }
+    }
+}
+
+/// Switches the light off, logs the panic, writes a crash note (when there is a folder for it),
+/// then runs the previous hook (default message on stderr).
+pub fn install_hook(dir: Option<PathBuf>, light: Option<SharedLight>) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        // First: nothing the hook does after this may leave the light on.
+        switch_light_off(light.as_ref());
         let text = info.to_string();
         tracing::error!(target: "panic", "{text}");
-        if let Err(err) = write_note(&dir, &text) {
-            tracing::error!(%err, "could not write the crash note");
+        if let Some(dir) = &dir {
+            if let Err(err) = write_note(dir, &text) {
+                tracing::error!(%err, "could not write the crash note");
+            }
         }
         previous(info);
     }));
@@ -83,6 +101,10 @@ pub fn take_unreported(dir: &Path) -> io::Result<Vec<CrashNote>> {
 
 #[cfg(test)]
 mod tests {
+    use gtp_app::fake_capture::{FakeLight, LightInfo, LightSource, LightStatus};
+    use gtp_app::shared_light::fake_ports;
+    use gtp_core::AppError;
+
     use super::*;
 
     const CHILD_DIR_ENV: &str = "GTP_CRASH_CHILD_DIR";
@@ -98,7 +120,7 @@ mod tests {
     fn a_panic_leaves_a_note_that_the_next_start_reports_once() {
         // Child mode: the parent re-runs this test in a subprocess with the env var set.
         if let Some(dir) = std::env::var_os(CHILD_DIR_ENV) {
-            install_hook(PathBuf::from(dir));
+            install_hook(Some(PathBuf::from(dir)), None);
             panic!("deliberate panic for the crash-note test");
         }
 
@@ -127,6 +149,66 @@ mod tests {
             "reported once only"
         );
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A light whose `set_levels` waits for a release, to hold its lock from another thread.
+    struct SlowLight {
+        entered: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+
+    impl LightSource for SlowLight {
+        fn connect(&mut self, _: Option<&str>) -> Result<LightInfo, AppError> {
+            Err(AppError::internal("unused"))
+        }
+        fn set_levels(&mut self, _: [u8; 3]) -> Result<(), AppError> {
+            let _ = self.entered.send(());
+            let _ = self
+                .release
+                .recv_timeout(std::time::Duration::from_secs(30));
+            Ok(())
+        }
+        fn shutter_pulse(&mut self, _: u8) -> Result<(), AppError> {
+            Ok(())
+        }
+        fn status(&self) -> LightStatus {
+            LightStatus::default()
+        }
+    }
+
+    #[test]
+    fn the_panic_hook_switches_the_light_off() {
+        let fake = FakeLight::new();
+        let handle = fake.handle();
+        let mut light = SharedLight::new(Box::new(fake), fake_ports);
+        light.set_levels([44, 0, 0]).unwrap();
+        switch_light_off(Some(&light));
+        assert_eq!(handle.levels(), [0; 3]);
+        switch_light_off(None);
+    }
+
+    #[test]
+    fn the_panic_hook_does_not_deadlock_when_the_light_is_locked() {
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let light = SharedLight::new(
+            Box::new(SlowLight {
+                entered: entered_tx,
+                release: release_rx,
+            }),
+            fake_ports,
+        );
+        let holder = {
+            let mut light = light.clone();
+            std::thread::spawn(move || light.set_levels([0; 3]))
+        };
+        entered_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        // The lock is held by the other thread: the hook returns instead of waiting for it.
+        switch_light_off(Some(&light));
+        release_tx.send(()).unwrap();
+        holder.join().unwrap().unwrap();
     }
 
     #[test]

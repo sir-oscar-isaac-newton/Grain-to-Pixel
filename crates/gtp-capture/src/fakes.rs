@@ -180,6 +180,7 @@ type WaitHook = Box<dyn FnMut(usize) + Send>;
 #[derive(Default)]
 struct CameraState {
     shots: VecDeque<Shot>,
+    repeat: Option<CapturedFile>,
     calls: Vec<CameraCall>,
     connected: bool,
     fail_arm: Option<AppError>,
@@ -242,6 +243,14 @@ impl FakeCamera {
         Self::new(files.into_iter().map(Shot::File).collect())
     }
 
+    /// When the scripted shots run out, delivers `file` for every further shot instead of failing
+    /// (the camera of `GTP_FAKE_HW=1`, which has to serve any number of frames).
+    #[must_use]
+    pub fn repeating(self, file: CapturedFile) -> Self {
+        self.handle.state().repeat = Some(file);
+        self
+    }
+
     /// Records the light's levels at each `trigger`.
     #[must_use]
     pub fn linked_to(self, light: FakeLightHandle) -> Self {
@@ -294,10 +303,11 @@ impl CameraSource for FakeCamera {
             hook(shot);
             self.handle.state().on_wait = Some(hook);
         }
-        match self.handle.state().shots.pop_front() {
+        let mut state = self.handle.state();
+        match state.shots.pop_front() {
             Some(Shot::File(file)) => Ok(file),
             Some(Shot::Fail(error)) => Err(error),
-            None => Err(no_picture()),
+            None => state.repeat.clone().ok_or_else(no_picture),
         }
     }
 }
@@ -344,6 +354,22 @@ mod tests {
         assert!(handle.commands().is_empty());
         handle.fail_commands_with(None);
         assert!(light.set_levels([1, 2, 3]).is_ok());
+    }
+
+    #[test]
+    fn a_repeating_camera_serves_any_number_of_shots_after_the_scripted_ones() {
+        let file = |n: u8| CapturedFile {
+            name: format!("{n}.nef"),
+            bytes: vec![n],
+        };
+        let mut camera = FakeCamera::new(vec![Shot::File(file(1))]).repeating(file(9));
+        let timeout = Duration::from_secs(1);
+        assert_eq!(camera.wait_for_image(timeout).unwrap(), file(1));
+        for _ in 0..3 {
+            assert_eq!(camera.wait_for_image(timeout).unwrap(), file(9));
+        }
+        let mut empty = FakeCamera::new(vec![]);
+        assert_eq!(empty.wait_for_image(timeout).unwrap_err(), no_picture());
     }
 
     #[test]

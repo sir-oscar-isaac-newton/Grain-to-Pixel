@@ -7,7 +7,12 @@ publish = false
 
 [features]
 # Derives specta::Type on the types that cross the IPC boundary (enabled by the Tauri shell).
-specta = ["dep:specta", "gtp-core/specta", "gtp-ingest/specta"]
+specta = [
+    "dep:specta",
+    "gtp-capture/specta",
+    "gtp-core/specta",
+    "gtp-ingest/specta",
+]
 
 [dependencies]
 gtp-capture = { version = "0.0.0", path = "../gtp-capture" }

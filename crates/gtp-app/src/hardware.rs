@@ -7,7 +7,13 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use gtp_capture::{list_ports, FakeLight, ScanlightV4};
 use gtp_ingest::{FixtureSource, NkscanSource, ScannerSource};
+use gtp_io::{RawDecoder, RawlerDecoder};
+
+use crate::fake_capture::{fake_camera, fake_camera_info, FakeRawDecoder};
+use crate::services::capture_control::{BusyFlag, CameraSlot};
+use crate::shared_light::{fake_ports, SharedLight};
 
 /// The environment variable that switches the app to fixture devices.
 pub const FAKE_HW_VAR: &str = "GTP_FAKE_HW";
@@ -15,11 +21,19 @@ pub const FAKE_HW_VAR: &str = "GTP_FAKE_HW";
 /// this build was made in.
 pub const FIXTURE_DIR_VAR: &str = "GTP_FIXTURE_DIR";
 
-/// The scanner (and, with the capture issues, the light and camera) the app uses.
+/// The scanner, the light and the camera the app uses.
 pub struct Hardware {
     /// The nkscan scanner, or the fixture one with `GTP_FAKE_HW=1`. It is there even when no
     /// scanner is connected: listing the devices says so.
     pub scanner: Option<Arc<dyn ScannerSource>>,
+    /// The Scanlight (not connected until `light_connect`), or the fake light with
+    /// `GTP_FAKE_HW=1`. Always there: connecting says whether there is a light.
+    pub light: SharedLight,
+    /// The camera, only with `GTP_FAKE_HW=1` until the real backends come (H-09, H-10).
+    pub camera: Option<Arc<CameraSlot>>,
+    /// Reads the camera's pictures: `rawler`, or the fake one with `GTP_FAKE_HW=1`.
+    pub decoder: Arc<dyn RawDecoder>,
+    busy: BusyFlag,
     fixture_dir: Option<PathBuf>,
 }
 
@@ -37,6 +51,10 @@ impl Hardware {
         if fake.map(str::trim) != Some("1") {
             return Self {
                 scanner: Some(Arc::new(NkscanSource::from_env())),
+                light: SharedLight::new(Box::new(ScanlightV4::new()), list_ports),
+                camera: None,
+                decoder: Arc::new(RawlerDecoder),
+                busy: BusyFlag::default(),
                 fixture_dir: None,
             };
         }
@@ -45,8 +63,34 @@ impl Hardware {
             .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../samples/private"));
         Self {
             scanner: Some(Arc::new(FixtureSource::new(&dir))),
+            light: SharedLight::new(Box::new(FakeLight::new()), fake_ports),
+            camera: Some(Arc::new(CameraSlot::new(
+                fake_camera_info(),
+                Box::new(fake_camera()),
+            ))),
+            decoder: Arc::new(FakeRawDecoder),
+            busy: BusyFlag::default(),
             fixture_dir: Some(dir),
         }
+    }
+
+    /// These devices with another light, camera and decoder (tests that script them).
+    #[must_use]
+    pub fn with_capture(
+        mut self,
+        light: SharedLight,
+        camera: Option<Arc<CameraSlot>>,
+        decoder: Arc<dyn RawDecoder>,
+    ) -> Self {
+        self.light = light;
+        self.camera = camera;
+        self.decoder = decoder;
+        self
+    }
+
+    /// The flag held while a capture or a test shot uses the light and the camera.
+    pub fn busy(&self) -> &BusyFlag {
+        &self.busy
     }
 
     /// True when the devices are fixtures.
@@ -85,6 +129,17 @@ mod tests {
             assert!(hw.is_fake(), "{on:?}");
             assert!(hw.scanner.is_some());
         }
+    }
+
+    #[test]
+    fn the_fake_devices_include_a_light_and_a_camera_and_the_real_ones_only_the_light() {
+        let fake = Hardware::from_vars(Some("1"), None);
+        assert_eq!(fake.light.list_ports().unwrap()[0].name, "fake");
+        let camera = fake.camera.as_ref().map(|slot| slot.info().id.as_str());
+        assert_eq!(camera, Some("fake"));
+        let real = Hardware::from_vars(None, None);
+        assert!(real.camera.is_none());
+        assert!(!real.busy().is_busy());
     }
 
     #[test]

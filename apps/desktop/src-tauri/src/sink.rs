@@ -3,12 +3,12 @@
 
 use std::sync::Arc;
 
-use gtp_app::{JobSink, LibraryEvents};
-use gtp_core::{AppError, ErrorCode, FrameId, JobId, JobResult, RollId};
+use gtp_app::{CaptureEvents, JobSink, LibraryEvents, LightReading, StepState};
+use gtp_core::{AppError, ErrorCode, FrameId, JobId, JobResult, RollId, TripletChannel};
 use tauri::{AppHandle, Runtime};
 use tauri_specta::Event;
 
-use crate::events::{JobDone, JobError, JobProgress, LibraryChanged};
+use crate::events::{CaptureStep, JobDone, JobError, JobProgress, LibraryChanged, LightStatus};
 
 pub struct TauriJobSink<R: Runtime> {
     app: AppHandle<R>,
@@ -76,8 +76,29 @@ impl<R: Runtime> LibraryEvents for TauriJobSink<R> {
     }
 }
 
+impl<R: Runtime> CaptureEvents for TauriJobSink<R> {
+    fn step(&self, channel: TripletChannel, state: StepState) {
+        delivered(
+            "capture://step",
+            CaptureStep { channel, state }.emit(&self.app),
+        );
+    }
+
+    fn light_status(&self, reading: &LightReading) {
+        let status = LightStatus {
+            temp_c: reading.temp_c,
+            vbus_mv: reading.vbus_mv,
+            tripped: reading.tripped,
+        };
+        delivered("light://status", status.emit(&self.app));
+    }
+}
+
 /// The library-change channel, managed as app state for commands that start jobs.
 pub struct EventsState(pub Arc<dyn LibraryEvents>);
+
+/// The capture-event channel, managed as app state for the capture commands.
+pub struct CaptureEventsState(pub Arc<dyn CaptureEvents>);
 
 #[cfg(test)]
 mod tests {
@@ -125,6 +146,49 @@ mod tests {
         let (name, done) = rx.recv_timeout(wait).unwrap();
         assert_eq!(name, "job://done");
         assert_eq!(done["result"]["kind"], "Finished");
+    }
+
+    #[test]
+    fn capture_steps_and_the_light_status_reach_the_ui_in_order() {
+        let app = mock_app();
+        let (tx, rx) = mpsc::channel::<(String, serde_json::Value)>();
+        for name in ["capture://step", "light://status"] {
+            let tx = tx.clone();
+            app.listen_any(name, move |event| {
+                let payload = serde_json::from_str(event.payload()).unwrap();
+                let _ = tx.send((name.to_owned(), payload));
+            });
+        }
+        let sink = TauriJobSink::new(app.handle().clone());
+        sink.step(TripletChannel::Red, StepState::Lit);
+        sink.light_status(&LightReading {
+            temp_c: Some(31.5),
+            vbus_mv: Some(5120),
+            tripped: false,
+        });
+        sink.step(TripletChannel::Red, StepState::Fired);
+        sink.light_status(&LightReading {
+            temp_c: None,
+            vbus_mv: None,
+            tripped: true,
+        });
+        let wait = Duration::from_secs(10);
+        let (name, step) = rx.recv_timeout(wait).unwrap();
+        assert_eq!(name, "capture://step");
+        assert_eq!(
+            (step["channel"].as_str(), step["state"].as_str()),
+            (Some("red"), Some("lit"))
+        );
+        let (name, status) = rx.recv_timeout(wait).unwrap();
+        assert_eq!(name, "light://status");
+        assert_eq!(status["temp_c"], 31.5);
+        assert_eq!(status["vbus_mv"], 5120);
+        assert_eq!(status["tripped"], false);
+        let (_, step) = rx.recv_timeout(wait).unwrap();
+        assert_eq!(step["state"], "fired");
+        let (_, status) = rx.recv_timeout(wait).unwrap();
+        assert_eq!(status["tripped"], true);
+        assert!(status["temp_c"].is_null());
     }
 
     #[test]

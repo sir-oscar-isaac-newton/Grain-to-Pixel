@@ -1,0 +1,492 @@
+//! The capture commands (D-04): light and camera control, the test shot and the capture job's
+//! start, on top of the shared light (`shared_light`), the busy flag and the camera slot.
+//!
+//! Two flags keep the hardware safe (docs/specification.md section 6.1):
+//!
+//! - **Busy**: held for the whole of a capture job, a test shot, a `light_connect` and a
+//!   `light_set`. While it is held the others are refused with "A capture is in progress". The
+//!   guard releases the flag on every way out, a panic included. `light_off` and the watchdog
+//!   ignore it.
+//! - **Tripped** (in `SharedLight`): the temperature watchdog switched the light off.
+//!
+//! The light is locked per call, never for a job, so the watchdog gets through while a capture
+//! waits for the camera. A trip is noticed by the running job at its next colour (`set_levels` is
+//! refused) or, after the last colour, when its picture arrives (`StepCamera`): the job then fails
+//! and stores nothing.
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
+use std::time::Duration;
+
+use gtp_capture::{
+    CameraInfo, CameraSource, CaptureSequence, CapturedFile, LightGuard, LightInfo, LightSource,
+    LightStatus, Pause, PortInfo, ThreadPause, CAPTURE_TIMEOUT,
+};
+use gtp_core::{AppError, ErrorCode, FrameId, JobId, JobResult, RollId, TripletChannel};
+use gtp_ingest::CLIP_LEVEL;
+use gtp_io::{demosaic_channel, Limits, RawDecoder};
+use serde::Serialize;
+
+use crate::context::AppContext;
+use crate::hardware::Hardware;
+use crate::jobs::{JobKind, JobManager, LibraryEvents};
+use crate::services::capture::{capture_triplet, safe_name};
+use crate::services::roll_frame;
+use crate::shared_light::{tripped_error, LightReading, SharedLight};
+
+/// How long a test shot waits for the light's first temperature reading.
+const READING_WAIT: Duration = Duration::from_secs(1);
+/// A wait for a reading is made of pauses of this length.
+const READING_SLICE: Duration = Duration::from_millis(50);
+/// The longest port name accepted by `light_connect`, in characters.
+const MAX_PORT_CHARS: usize = 256;
+
+/// Where a captured picture is in its step, for the `capture://step` event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "lowercase")]
+pub enum StepState {
+    /// The colour is on, settled, and the camera is about to be armed.
+    Lit,
+    /// The camera was told to take the picture.
+    Fired,
+    /// The picture arrived.
+    Received,
+}
+
+/// Receives what the capture hardware reports. Called from the job thread (steps) and from the
+/// watchdog thread (status), so it must be `Send + Sync`.
+pub trait CaptureEvents: Send + Sync {
+    /// `capture://step`: one channel moved to `state`.
+    fn step(&self, channel: TripletChannel, state: StepState);
+    /// `light://status`: what the light reported on a watchdog tick.
+    fn light_status(&self, reading: &LightReading);
+}
+
+/// What a test shot measured on the channel that was lit.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct TestShot {
+    /// 256 bins of the lit channel's linear value (0 to 1 over the sensor's range), so levels can
+    /// be balanced by hand: a peak in the last bins means the exposure is clipped.
+    pub histogram: Vec<u32>,
+    /// The share of photosites at 99 percent of full scale or more, in percent.
+    pub clipped_pct: f32,
+}
+
+/// The flag that says the light and the camera are in use.
+#[derive(Clone, Default)]
+pub struct BusyFlag(Arc<AtomicBool>);
+
+/// Holds the [`BusyFlag`]; releases it when dropped, whichever way the holder ends.
+pub struct BusyGuard(Arc<AtomicBool>);
+
+impl BusyFlag {
+    /// Takes the flag, or says in words that a capture is in progress.
+    pub fn acquire(&self) -> Result<BusyGuard, AppError> {
+        match self
+            .0
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        {
+            Ok(_) => Ok(BusyGuard(Arc::clone(&self.0))),
+            Err(_) => Err(busy()),
+        }
+    }
+
+    /// True while a guard exists.
+    pub fn is_busy(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+fn busy() -> AppError {
+    AppError::new(
+        ErrorCode::InvalidInput,
+        "A capture is in progress. Wait for it to finish, then try again.",
+    )
+}
+
+/// A camera the app can use, and the lock that gives one job the camera at a time.
+pub struct CameraSlot {
+    info: CameraInfo,
+    camera: Mutex<Box<dyn CameraSource + Send>>,
+}
+
+impl CameraSlot {
+    /// A slot holding `camera`, listed as `info`.
+    pub fn new(info: CameraInfo, camera: Box<dyn CameraSource + Send>) -> Self {
+        Self {
+            info,
+            camera: Mutex::new(camera),
+        }
+    }
+
+    /// How the camera is listed.
+    pub fn info(&self) -> &CameraInfo {
+        &self.info
+    }
+
+    /// The camera for one job; never waits (the busy flag already serialises the jobs).
+    fn take(&self) -> Result<MutexGuard<'_, Box<dyn CameraSource + Send>>, AppError> {
+        match self.camera.try_lock() {
+            Ok(camera) => Ok(camera),
+            Err(TryLockError::Poisoned(poisoned)) => Ok(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => Err(busy()),
+        }
+    }
+}
+
+/// The error when no camera backend exists (everything but `GTP_FAKE_HW=1`, until H-09 and H-10).
+fn no_camera() -> AppError {
+    AppError::new(
+        ErrorCode::NotFound,
+        "No camera backend is available in this version of the app, so a picture cannot be taken. The light can still be used on its own.",
+    )
+}
+
+// --- light and camera commands ---------------------------------------------------------------
+
+/// `light_list`: the serial ports the light may be on.
+pub fn light_list(hardware: &Hardware) -> Result<Vec<PortInfo>, AppError> {
+    hardware.light.list_ports()
+}
+
+/// `light_connect`: finds the light (on `port`, or by probing the serial ports). Refused while a
+/// capture is in progress. The light is switched off first, and the watchdog's trip is cleared.
+pub fn light_connect(hardware: &Hardware, port: Option<&str>) -> Result<LightInfo, AppError> {
+    let port = port.map(str::trim).filter(|p| !p.is_empty());
+    if let Some(port) = port {
+        if port.chars().count() > MAX_PORT_CHARS || port.chars().any(char::is_control) {
+            return Err(AppError::new(
+                ErrorCode::InvalidInput,
+                "That is not a valid port name.",
+            ));
+        }
+    }
+    let _busy = hardware.busy().acquire()?;
+    hardware.light.clone().connect(port)
+}
+
+/// `light_set`: lights red, green and blue at these levels. Refused while a capture is in
+/// progress and after a temperature trip, and (for non-zero levels) when the light is not connected,
+/// reports no current temperature or is over `abort_c`.
+pub fn light_set(hardware: &Hardware, levels: [u8; 3], abort_c: f32) -> Result<(), AppError> {
+    light_set_waiting(hardware, levels, abort_c, READING_WAIT)
+}
+
+/// [`light_set`] with the wait for a first reading given (tests shorten it). Non-zero levels need
+/// a light that is connected, reports a current temperature and is not over `abort_c`, so a light
+/// that cannot be monitored is never left on; all zeros are always allowed.
+fn light_set_waiting(
+    hardware: &Hardware,
+    levels: [u8; 3],
+    abort_c: f32,
+    reading_wait: Duration,
+) -> Result<(), AppError> {
+    let _busy = hardware.busy().acquire()?;
+    if levels != [0; 3] {
+        wait_for_reading(&hardware.light, reading_wait);
+        check_light(hardware.light.status(), abort_c)?;
+    }
+    hardware.light.clone().set_levels(levels)
+}
+
+/// `light_off`: switches the light off. Always allowed.
+pub fn light_off(hardware: &Hardware) -> Result<(), AppError> {
+    hardware.light.off()
+}
+
+/// `camera_list`: the cameras that can be used (none without `GTP_FAKE_HW=1`).
+pub fn camera_list(hardware: &Hardware) -> Vec<CameraInfo> {
+    hardware
+        .camera
+        .iter()
+        .map(|slot| slot.info.clone())
+        .collect()
+}
+
+impl Hardware {
+    /// One tick of the temperature watchdog: reads the light, switches it off above `abort_c` and
+    /// tells `events` what it read. Called every 200 ms by the thread that owns the status event.
+    pub fn watch_light(&self, abort_c: f32, events: &dyn CaptureEvents) {
+        if let Some(reading) = self.light.poll(abort_c) {
+            events.light_status(&reading);
+        }
+    }
+}
+
+// --- steps of the camera ---------------------------------------------------------------------
+
+/// A camera that reports each step of the channel in turn to `events`, and fails a picture that
+/// arrives after the light was tripped (it may not have been lit for the whole exposure).
+struct StepCamera<'a> {
+    inner: &'a mut dyn CameraSource,
+    events: &'a dyn CaptureEvents,
+    channels: &'a [TripletChannel],
+    light: &'a SharedLight,
+    next: usize,
+}
+
+impl StepCamera<'_> {
+    fn emit(&self, state: StepState) {
+        if let Some(channel) = self.channels.get(self.next) {
+            self.events.step(*channel, state);
+        }
+    }
+}
+
+impl CameraSource for StepCamera<'_> {
+    fn is_connected(&self) -> bool {
+        self.inner.is_connected()
+    }
+
+    fn arm(&mut self) -> Result<(), AppError> {
+        self.emit(StepState::Lit);
+        self.inner.arm()
+    }
+
+    fn trigger(&mut self) -> Result<(), AppError> {
+        self.inner.trigger()?;
+        self.emit(StepState::Fired);
+        Ok(())
+    }
+
+    fn wait_for_image(&mut self, timeout: Duration) -> Result<CapturedFile, AppError> {
+        let file = self.inner.wait_for_image(timeout)?;
+        if self.light.is_tripped() {
+            return Err(tripped_error());
+        }
+        self.emit(StepState::Received);
+        self.next += 1;
+        Ok(file)
+    }
+}
+
+// --- the capture job -------------------------------------------------------------------------
+
+/// `capture_triplet`: starts capturing one frame into `roll` as a job and returns its id. The new
+/// frame arrives in `job://done` like an import's. Refused when there is no camera backend, no
+/// library or roll, or another capture is running.
+pub fn start_triplet(
+    ctx: &AppContext,
+    jobs: &JobManager,
+    hardware: &Hardware,
+    library_events: Arc<dyn LibraryEvents>,
+    events: Arc<dyn CaptureEvents>,
+    roll: RollId,
+) -> Result<JobId, AppError> {
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    let library = ctx.library()?;
+    // Fail now, not inside the job, when the roll is gone or the library is read-only.
+    library.read(|c| c.get_roll(roll))?;
+    library.write(|_| Ok(()))?;
+    let busy = hardware.busy().acquire()?;
+    let profile = ctx.settings().capture_profile();
+    let look = ctx.settings().get().starting_look;
+    let thumbnails = ctx.thumbnail_requester()?;
+    let light = hardware.light.clone();
+    let decoder = Arc::clone(&hardware.decoder);
+
+    jobs.spawn(JobKind::Capture, move |job| {
+        // Held until the job ends, also by a panic.
+        let _busy = busy;
+        let sequence = CaptureSequence::new(profile);
+        let mut cam = camera.take()?;
+        let mut stepped = StepCamera {
+            inner: &mut **cam,
+            events: events.as_ref(),
+            channels: &TripletChannel::ALL,
+            light: &light,
+            next: 0,
+        };
+        let mut handle = light.clone();
+        let result = capture_triplet(
+            &library,
+            roll,
+            &sequence,
+            &mut handle,
+            &mut stepped,
+            decoder.as_ref(),
+            job,
+            library_events.as_ref(),
+            look,
+        )?;
+        // A better film base for the roll changes how its other frames look: refresh their thumbnails.
+        if result.base_replaced {
+            let following = roll_frame::frames_following_roll_base(&library, roll)?;
+            thumbnails.request(Arc::clone(&library_events), following);
+        }
+        thumbnails.request(Arc::clone(&library_events), result.rebalanced.clone());
+        tracing::info!(
+            frames = result.frames.len(),
+            warnings = result.warnings.len(),
+            "capture finished"
+        );
+        Ok(JobResult::Imported(result))
+    })
+}
+
+// --- the test shot ---------------------------------------------------------------------------
+
+/// `capture_test`: lights `channel` alone at its profile level, takes one picture, measures that
+/// channel and returns its histogram and clipped share. Stores nothing, and the light is off
+/// afterwards on every way out (the sequence's guard). Refused while a capture is in progress.
+pub fn test_shot(
+    ctx: &AppContext,
+    hardware: &Hardware,
+    events: &dyn CaptureEvents,
+    channel: TripletChannel,
+) -> Result<TestShot, AppError> {
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    let _busy = hardware.busy().acquire()?;
+    let profile = ctx.settings().capture_profile();
+    let file = {
+        let mut cam = camera.take()?;
+        shoot(&profile, channel, &hardware.light, &mut **cam, events)?
+    };
+    measure(&file, channel, hardware.decoder.as_ref())
+}
+
+/// Waits up to `wait` for the light's first temperature reading (it sends one every 200 ms). No
+/// lock is held while waiting.
+fn wait_for_reading(light: &SharedLight, wait: Duration) {
+    let mut waited = Duration::ZERO;
+    while waited < wait && light.status().temp_c.is_none() && light.status().connected {
+        ThreadPause.pause(READING_SLICE);
+        waited += READING_SLICE;
+    }
+}
+
+/// The safety checks of a test shot, the sequence's: a light that is connected, reports a
+/// temperature and is not over the abort limit.
+fn check_light(status: LightStatus, abort_c: f32) -> Result<(), AppError> {
+    if !status.connected {
+        return Err(AppError::new(
+            ErrorCode::Io,
+            "The light is not connected. Connect it first.",
+        ));
+    }
+    let Some(temp_c) = status.temp_c.filter(|t| t.is_finite()) else {
+        return Err(AppError::new(
+            ErrorCode::Io,
+            "The light is not reporting its temperature, so it cannot be used safely. Reconnect it and try again.",
+        ));
+    };
+    if temp_c > abort_c {
+        return Err(AppError::new(
+            ErrorCode::Io,
+            format!(
+                "The light is too hot ({temp_c:.0} C, the limit is {abort_c:.0} C). Let it cool down, then try again."
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Lights one channel and takes the picture; the light is off when this returns or unwinds.
+fn shoot(
+    profile: &gtp_capture::CaptureProfile,
+    channel: TripletChannel,
+    light: &SharedLight,
+    camera: &mut dyn CameraSource,
+    events: &dyn CaptureEvents,
+) -> Result<CapturedFile, AppError> {
+    if !camera.is_connected() {
+        return Err(AppError::new(
+            ErrorCode::Io,
+            "The camera is not connected. Check its USB cable and that it is switched on.",
+        ));
+    }
+    wait_for_reading(light, READING_WAIT);
+    check_light(light.status(), profile.temp_abort_c)?;
+
+    let mut handle = light.clone();
+    let guard = LightGuard::new(&mut handle);
+    let mut levels = [0u8; 3];
+    levels[channel.index()] = profile.levels[channel.index()];
+    guard.light.set_levels(levels)?;
+    ThreadPause.pause(Duration::from_millis(u64::from(profile.settle_ms)));
+    check_light(guard.light.status(), profile.temp_abort_c)?;
+
+    let channels = [channel];
+    let mut stepped = StepCamera {
+        inner: camera,
+        events,
+        channels: &channels,
+        light,
+        next: 0,
+    };
+    stepped.arm()?;
+    stepped.trigger()?;
+    stepped.wait_for_image(CAPTURE_TIMEOUT)
+}
+
+/// A picture written to a temporary file for the decoder, removed when dropped.
+struct TempPicture {
+    dir: PathBuf,
+    path: PathBuf,
+}
+
+impl TempPicture {
+    fn write(channel: TripletChannel, file: &CapturedFile) -> Result<Self, AppError> {
+        let dir = std::env::temp_dir().join(format!("gtp-capture-test-{}", FrameId::new()));
+        std::fs::create_dir_all(&dir).map_err(|err| AppError::from_io(&err))?;
+        let prefix = ["r", "g", "b"][channel.index()];
+        let path = dir.join(format!("{prefix}-{}", safe_name(&file.name)));
+        let picture = Self { dir, path };
+        std::fs::write(&picture.path, &file.bytes).map_err(|err| AppError::from_io(&err))?;
+        Ok(picture)
+    }
+}
+
+impl Drop for TempPicture {
+    fn drop(&mut self) {
+        if let Err(err) = std::fs::remove_dir_all(&self.dir) {
+            tracing::debug!("removing the test shot folder failed: {err}");
+        }
+    }
+}
+
+/// The histogram and clipped share of the lit channel of `file`.
+fn measure(
+    file: &CapturedFile,
+    channel: TripletChannel,
+    decoder: &dyn RawDecoder,
+) -> Result<TestShot, AppError> {
+    let staged = TempPicture::write(channel, file)?;
+    let raw = decoder.decode(&staged.path, &Limits::default())?;
+    let plane = demosaic_channel(&raw, channel.index())?;
+    let mut histogram = vec![0u32; 256];
+    let mut clipped = 0usize;
+    for value in &plane.data {
+        let value = if value.is_finite() {
+            value.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        histogram[(value * 255.0).round() as usize] += 1;
+        if value >= CLIP_LEVEL {
+            clipped += 1;
+        }
+    }
+    let clipped_pct = if plane.data.is_empty() {
+        0.0
+    } else {
+        100.0 * clipped as f32 / plane.data.len() as f32
+    };
+    Ok(TestShot {
+        histogram,
+        clipped_pct,
+    })
+}
+
+#[cfg(test)]
+#[path = "capture_control_tests.rs"]
+mod tests;

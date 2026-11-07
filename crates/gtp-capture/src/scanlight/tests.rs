@@ -276,3 +276,22 @@ fn a_failed_write_marks_the_light_disconnected() {
     assert_eq!(err.code, ErrorCode::Io);
     assert!(!light.status().connected);
 }
+
+#[test]
+fn a_reading_that_is_not_renewed_goes_stale_and_a_new_one_revives_it() {
+    let port = FakePort::answering(1, 0);
+    let mut light = driver().with_stale_after(Duration::from_millis(150));
+    light.attach("fake", Box::new(port.clone())).unwrap();
+    let packets = [START, 1, 4, 0, 0, 0x61, 0xA8, START, 2, 4, 0, 0, 0x14, 0x27];
+    port.queue(&packets);
+    wait_for("the status", || light.status().vbus_mv.is_some());
+    assert_eq!(light.status().temp_c, Some(25.0));
+    // The device goes quiet while the port stays open: after the limit nothing is reported.
+    wait_for("the readings to go stale", || {
+        let status = light.status();
+        status.temp_c.is_none() && status.vbus_mv.is_none()
+    });
+    assert!(light.status().connected, "the link itself is still up");
+    port.queue(&packets);
+    wait_for("a new reading", || light.status().temp_c.is_some());
+}

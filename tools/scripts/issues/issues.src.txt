@@ -1330,7 +1330,7 @@ spec: specification sections 6 and 6.1
 desc: Expose capture to the UI: light and camera commands, test shot, profile persistence, events, and light-off on app exit.
 ac:
 - All capture commands work against fakes (`GTP_FAKE_HW=1`) with regenerated ipc-types
-- The light is switched off on app exit, window close and view unmount
+- The light is switched off on app exit and window close; the capture view's unmount calling `light_off` moves to U-10
 - Test shot returns histogram and clipped percentage; `capture://step` and `light://status` events are emitted
 - Profile is validated (levels 0..=255, warn < abort) and persisted in settings.json
 tech:
@@ -1355,6 +1355,7 @@ ac:
 - Status badges for light and camera; sliders per colour; test shot with histogram
 - Large Next frame button (Space) runs capture_triplet and shows the merged result and a roll frame counter
 - Warning banners for temperature, EXIF mismatch and clipping; the light turns off when the view closes
+- The capture view calls light_off when it unmounts
 - Capture per frame (excluding exposure) is at most 15 s on the author's rig (human reports); axe clean
 tech:
 FILES: apps/desktop/src/features/import/CaptureSection.tsx and features/import/capture/{StatusBar.tsx, LevelSliders.tsx, TestShot.tsx, NextFrameButton.tsx}.

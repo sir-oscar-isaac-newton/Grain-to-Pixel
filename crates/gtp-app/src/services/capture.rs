@@ -194,7 +194,7 @@ impl Drop for Staging {
 }
 
 /// A file name that is safe to create in the staging folder: no folders, no odd characters.
-fn safe_name(name: &str) -> String {
+pub(super) fn safe_name(name: &str) -> String {
     let base = Path::new(name)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())

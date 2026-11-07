@@ -59,8 +59,16 @@ pub struct CaptureOutcome {
 /// Switches the light off when dropped, whichever way the sequence ends (including a panic). A
 /// failure of the off command is logged and nothing else: it must not hide the error that ended
 /// the sequence, and there is nothing more to try.
-struct LightGuard<'a> {
-    light: &'a mut dyn LightSource,
+pub struct LightGuard<'a> {
+    /// The light the guard switches off; use it through the guard.
+    pub light: &'a mut dyn LightSource,
+}
+
+impl<'a> LightGuard<'a> {
+    /// A guard that switches `light` off when it is dropped.
+    pub fn new(light: &'a mut dyn LightSource) -> Self {
+        Self { light }
+    }
 }
 
 impl Drop for LightGuard<'_> {
@@ -125,7 +133,7 @@ impl<'a> CaptureSequence<'a> {
         cancelled: &dyn Fn() -> bool,
         on_step: &mut dyn FnMut(TripletChannel),
     ) -> Result<CaptureOutcome, AppError> {
-        let guard = LightGuard { light };
+        let guard = LightGuard::new(light);
         let mut warnings = Warnings::default();
 
         if !guard.light.status().connected {

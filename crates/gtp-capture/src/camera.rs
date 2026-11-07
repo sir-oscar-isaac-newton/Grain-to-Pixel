@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use gtp_core::AppError;
+use serde::Serialize;
 
 /// One picture the camera delivered: its file name and its bytes. Nothing is decoded here; the
 /// merge path reads the EXIF data and the sensor data from the file.
@@ -14,6 +15,16 @@ pub struct CapturedFile {
     pub name: String,
     /// The NEF bytes.
     pub bytes: Vec<u8>,
+}
+
+/// A camera the app can use, as the UI lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct CameraInfo {
+    /// A stable id for the camera.
+    pub id: String,
+    /// The name to show.
+    pub name: String,
 }
 
 /// A camera that takes one picture on request. The camera is triggered over USB, not through the

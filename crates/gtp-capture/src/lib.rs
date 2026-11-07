@@ -14,11 +14,16 @@ pub mod profile;
 pub mod scanlight;
 pub mod sequence;
 
-pub use camera::{CameraSource, CapturedFile};
+pub use camera::{CameraInfo, CameraSource, CapturedFile};
 pub use fakes::{
     CameraCall, FakeCamera, FakeCameraHandle, FakeLight, FakeLightHandle, LightCommand, Shot,
 };
-pub use light::{LightInfo, LightSource, LightStatus};
-pub use profile::{CameraBackend, CaptureProfile, VBUS_WARN_MV};
-pub use scanlight::ScanlightV4;
-pub use sequence::{CaptureOutcome, CaptureSequence, CaptureWarning, Pause, ThreadPause};
+pub use light::{LightInfo, LightSource, LightStatus, PortInfo};
+pub use profile::{
+    CameraBackend, CaptureProfile, CaptureProfilePatch, MAX_SETTLE_MS, VBUS_WARN_MV,
+};
+pub use scanlight::{list_ports, ScanlightV4};
+pub use sequence::{
+    CaptureOutcome, CaptureSequence, CaptureWarning, LightGuard, Pause, ThreadPause,
+    CAPTURE_TIMEOUT,
+};

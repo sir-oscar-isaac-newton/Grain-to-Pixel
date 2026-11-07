@@ -10,17 +10,29 @@ pub mod protocol;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gtp_core::{AppError, ErrorCode};
 
-use crate::light::{LightInfo, LightSource, LightStatus};
+use crate::light::{LightInfo, LightSource, LightStatus, PortInfo};
 use port::{probe, Firmware, LightPort, SerialLightPort, PROBE_TIMEOUT};
 use protocol::{all_off, set_color, shutter_pulse, Decoder, Packet};
 
 /// The RP2040 vendor ID of the V4's Pico firmware. The control interface defines no VID/PID, so
 /// this only decides which port is tried first.
 const LIGHT_VENDOR_ID: u16 = 0x2e8a;
+
+/// A reading older than this is gone: the light sends one every 200 ms, so a device that has gone
+/// quiet while its port stays open shows no temperature (and no supply voltage) instead of the
+/// last one, and the safety checks that need a reading see that.
+pub const READING_STALE: Duration = Duration::from_secs(1);
+
+/// When the last temperature and supply readings arrived.
+#[derive(Default)]
+struct Stamps {
+    temp: Option<Instant>,
+    vbus: Option<Instant>,
+}
 
 /// A connected light: the writing port, the reader thread that keeps the status current.
 struct Link {
@@ -33,6 +45,8 @@ struct Link {
 pub struct ScanlightV4 {
     link: Option<Link>,
     status: Arc<Mutex<LightStatus>>,
+    stamps: Arc<Mutex<Stamps>>,
+    stale_after: Duration,
     probe_timeout: Duration,
 }
 
@@ -48,6 +62,8 @@ impl ScanlightV4 {
         Self {
             link: None,
             status: Arc::new(Mutex::new(LightStatus::default())),
+            stamps: Arc::new(Mutex::new(Stamps::default())),
+            stale_after: READING_STALE,
             probe_timeout: PROBE_TIMEOUT,
         }
     }
@@ -56,6 +72,13 @@ impl ScanlightV4 {
     #[must_use]
     pub fn with_probe_timeout(mut self, timeout: Duration) -> Self {
         self.probe_timeout = timeout;
+        self
+    }
+
+    /// Changes how old a reading may get before it counts as gone (tests shorten it).
+    #[must_use]
+    pub fn with_stale_after(mut self, stale_after: Duration) -> Self {
+        self.stale_after = stale_after;
         self
     }
 
@@ -99,10 +122,14 @@ impl ScanlightV4 {
         });
         let stop = Arc::new(AtomicBool::new(false));
         let reader = {
-            let (stop, status) = (Arc::clone(&stop), Arc::clone(&self.status));
+            let (stop, status, stamps) = (
+                Arc::clone(&stop),
+                Arc::clone(&self.status),
+                Arc::clone(&self.stamps),
+            );
             std::thread::Builder::new()
                 .name("scanlight-reader".into())
-                .spawn(move || read_loop(reader_port, &stop, &status))
+                .spawn(move || read_loop(reader_port, &stop, &status, &stamps))
                 .map_err(|err| {
                     AppError::new(ErrorCode::Internal, "The light's reader could not start.")
                         .with_details(err.to_string())
@@ -192,7 +219,16 @@ impl LightSource for ScanlightV4 {
     }
 
     fn status(&self) -> LightStatus {
-        *self.status.lock().unwrap_or_else(PoisonError::into_inner)
+        let mut status = *self.status.lock().unwrap_or_else(PoisonError::into_inner);
+        let stamps = self.stamps.lock().unwrap_or_else(PoisonError::into_inner);
+        let fresh = |at: Option<Instant>| at.is_some_and(|at| at.elapsed() <= self.stale_after);
+        if !fresh(stamps.temp) {
+            status.temp_c = None;
+        }
+        if !fresh(stamps.vbus) {
+            status.vbus_mv = None;
+        }
+        status
     }
 }
 
@@ -202,7 +238,12 @@ fn set_status(status: &Mutex<LightStatus>, change: impl FnOnce(&mut LightStatus)
 
 /// Reads until told to stop, keeping the status current. A read error ends it with `connected`
 /// false.
-fn read_loop(mut port: Box<dyn LightPort>, stop: &AtomicBool, status: &Mutex<LightStatus>) {
+fn read_loop(
+    mut port: Box<dyn LightPort>,
+    stop: &AtomicBool,
+    status: &Mutex<LightStatus>,
+    stamps: &Mutex<Stamps>,
+) {
     let mut decoder = Decoder::default();
     let mut buffer = [0u8; 256];
     while !stop.load(Ordering::SeqCst) {
@@ -217,17 +258,38 @@ fn read_loop(mut port: Box<dyn LightPort>, stop: &AtomicBool, status: &Mutex<Lig
         };
         for packet in decoder.push(buffer.get(..count).unwrap_or_default()) {
             set_status(status, |status| match packet {
-                Packet::LedTemp { milli_c } => status.temp_c = Some(milli_c as f32 / 1000.0),
-                Packet::Vbus { mv } => status.vbus_mv = Some(mv),
+                Packet::LedTemp { milli_c } => {
+                    status.temp_c = Some(milli_c as f32 / 1000.0);
+                    stamps.lock().unwrap_or_else(PoisonError::into_inner).temp =
+                        Some(Instant::now());
+                }
+                Packet::Vbus { mv } => {
+                    status.vbus_mv = Some(mv);
+                    stamps.lock().unwrap_or_else(PoisonError::into_inner).vbus =
+                        Some(Instant::now());
+                }
                 Packet::FwVersion { .. } => {}
             });
         }
     }
 }
 
+/// The USB serial ports the light may be on, the Pico's vendor first (the port list of the app).
+pub fn list_ports() -> Result<Vec<PortInfo>, AppError> {
+    Ok(usb_ports()?
+        .into_iter()
+        .map(|(likely, name)| PortInfo { name, likely })
+        .collect())
+}
+
 /// The USB serial ports, the Pico's vendor first. macOS lists each port twice (`cu.` and
 /// `tty.`); only the `cu.` one is tried.
 fn candidate_ports() -> Result<Vec<String>, AppError> {
+    Ok(usb_ports()?.into_iter().map(|(_, name)| name).collect())
+}
+
+/// Each candidate port with whether it carries the Pico vendor ID, that vendor first.
+fn usb_ports() -> Result<Vec<(bool, String)>, AppError> {
     let ports = serialport::available_ports().map_err(|err| {
         AppError::new(ErrorCode::Io, "The serial ports could not be listed.")
             .with_details(err.to_string())
@@ -243,7 +305,7 @@ fn candidate_ports() -> Result<Vec<String>, AppError> {
         .filter(|(_, name)| !name.starts_with("/dev/tty."))
         .collect();
     usb.sort_by_key(|(is_light, _)| !is_light);
-    Ok(usb.into_iter().map(|(_, name)| name).collect())
+    Ok(usb)
 }
 
 #[cfg(test)]

@@ -261,9 +261,16 @@ fn assert_too_hot<T: std::fmt::Debug>(result: Result<T, AppError>) {
     assert!(err.message.contains("too hot"), "{err}");
 }
 
+/// Without fake hardware there is no backend, except on macOS with `tether`, where libgphoto2 is
+/// the backend and finds no camera (none is plugged into a test machine).
 fn assert_no_camera<T: std::fmt::Debug>(result: Result<T, AppError>) {
     let err = result.unwrap_err();
-    assert!(err.message.contains("No camera backend"), "{err}");
+    let expected = if cfg!(all(target_os = "macos", feature = "tether")) {
+        "No camera was found"
+    } else {
+        "No camera backend"
+    };
+    assert!(err.message.contains(expected), "{err}");
 }
 
 #[test]

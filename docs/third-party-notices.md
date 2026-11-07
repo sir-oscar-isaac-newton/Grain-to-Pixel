@@ -16,6 +16,16 @@ NEF files of RGB triplets are decoded with `rawler` 0.8.0, Copyright (c) Daniel 
 
 What the LGPL-2.1 gives you, in short (not legal advice):
 
+- **The source of the exact version used** is attached to every release as `rawler-0.8.0.crate` (verified against the checksum in `Cargo.lock`), and is at https://crates.io/crates/rawler/0.8.0 (repository https://github.com/dnglab/dnglab).
+- **You may rebuild the app with a modified `rawler`.** The app's source and `Cargo.lock` are public, and [rebuild-with-rawler.md](rebuild-with-rawler.md) says how, with a Cargo `[patch]` entry. The app's licence allows modifying the app for your own use and reverse-engineering it to debug such changes.
+- **Any change to `rawler` itself** that is passed on is under the LGPL-2.1.
+
+## Camera control (macOS)
+
+On macOS the app drives the camera through libgphoto2. The crates `gphoto2` 3.4.1 and `libgphoto2_sys` 1.2.3 are under the LGPL-2.1 and are compiled into the app, as `rawler` is. libgphoto2 and the libraries it needs (libtool's libltdl, libexif, libusb, gettext's libintl and libjpeg-turbo) ship beside the app as separate dynamic libraries; each one's licence is named in `gphoto-libraries.txt`, and libjpeg-turbo is not under the LGPL. The full licence texts are in [third-party-licenses.txt](third-party-licenses.txt). The Windows app contains none of this.
+
+What their licences give you, in short (not legal advice):
+
 **For the two crates (compiled into the app, as `rawler`):**
 
 - **The source of the exact versions used** is attached to every release as `gphoto2-<version>.crate` and `libgphoto2_sys-<version>.crate` (verified against the checksums in `Cargo.lock`, by `tools/scripts/release/gphoto-crates-source.mjs`), and is at https://crates.io/crates/gphoto2 and https://crates.io/crates/libgphoto2_sys.

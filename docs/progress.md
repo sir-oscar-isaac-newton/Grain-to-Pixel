@@ -686,9 +686,9 @@
       "number": 57,
       "title": "Capture orchestrator, CameraSource, FakeCamera and safety",
       "branch": "feat/issue-57-capture-sequence",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 227,
+      "commit": "351c2bd"
     },
     {
       "id": "Q-08",

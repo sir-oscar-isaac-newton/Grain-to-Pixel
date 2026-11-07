@@ -5,6 +5,7 @@
   },
   "bundle": {
     "macOS": {
+      "entitlements": "entitlements.plist",
       "files": {
         "Frameworks/gphoto": "gphoto-libs"
       }

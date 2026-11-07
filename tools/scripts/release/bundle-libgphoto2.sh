@@ -177,6 +177,10 @@ verify() {
     codesign --verify --strict "$f" 2>/dev/null || { echo "bundle-libgphoto2: bad signature: $f" >&2; failed=1; }
   done
   codesign --verify --deep --strict "$app" || { echo "bundle-libgphoto2: the app's signature does not verify" >&2; failed=1; }
+  # A valid signature is not enough: under the hardened runtime, dyld refuses libraries of another
+  # signer (the ad hoc ones here) unless library validation is off, and the app aborts at launch.
+  codesign -d --entitlements - "$bin" 2>/dev/null | grep -q "com.apple.security.cs.disable-library-validation" \
+    || { echo "bundle-libgphoto2: $bin lacks the disable-library-validation entitlement, so it cannot load the libraries (apps/desktop/src-tauri/entitlements.plist)" >&2; failed=1; }
   du -sh "$gp"
   [ "$failed" -eq 0 ] && echo "bundle-libgphoto2: $app carries libgphoto2 and nothing points into Homebrew"
   return "$failed"

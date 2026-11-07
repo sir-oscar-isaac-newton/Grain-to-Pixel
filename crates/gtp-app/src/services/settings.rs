@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
+use gtp_capture::{CaptureProfile, CaptureProfilePatch};
 use gtp_core::{AppError, ErrorCode, Look};
 use serde::{Deserialize, Serialize};
 
@@ -65,7 +66,7 @@ impl Default for Flags {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
 pub struct Settings {
@@ -79,6 +80,10 @@ pub struct Settings {
     /// The keyboard shortcuts the user changed, action name to key (`Q`, `[`, `Escape`). An action
     /// that is not here has its default key, which the UI knows; the app only keeps the shape.
     pub keys: BTreeMap<String, String>,
+    /// The guided capture settings. Read and changed through `capture_profile_get` and
+    /// `capture_profile_set` (D-04), so they are not part of this type in the bindings.
+    #[cfg_attr(feature = "specta", specta(skip))]
+    pub capture: CaptureProfile,
     /// When the update check last got an answer, in seconds since 1970; none before the first.
     /// Kept by the app, not by a patch, and not shown to the UI.
     #[cfg_attr(feature = "specta", specta(skip))]
@@ -238,8 +243,15 @@ impl SettingsStore {
                 Settings::default(),
                 Some(format!("settings unreadable: {err}")),
             ),
-            Ok(text) => match serde_json::from_str(&text) {
-                Ok(settings) => (settings, None),
+            Ok(text) => match serde_json::from_str::<Settings>(&text) {
+                Ok(mut settings) => {
+                    // A hand-edited profile the app would refuse is replaced, not trusted.
+                    let note = settings.capture.validate().err().map(|err| {
+                        settings.capture = CaptureProfile::default();
+                        format!("capture settings invalid ({err}); using the defaults for them")
+                    });
+                    (settings, note)
+                }
                 Err(err) => {
                     let mut bad = path.as_os_str().to_owned();
                     bad.push(".bad");
@@ -274,6 +286,25 @@ impl SettingsStore {
     /// or the file cannot be written.
     pub fn update(&self, patch: &SettingsPatch) -> Result<Settings, AppError> {
         self.change(|settings| settings.apply(patch))
+    }
+
+    /// The capture profile.
+    pub fn capture_profile(&self) -> CaptureProfile {
+        self.current
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .capture
+            .clone()
+    }
+
+    /// Applies `patch` to the capture profile, saves and returns the new profile. Nothing changes
+    /// if the patch makes the profile invalid or the file cannot be written.
+    pub fn update_capture(&self, patch: &CaptureProfilePatch) -> Result<CaptureProfile, AppError> {
+        self.change(|settings| {
+            settings.capture = settings.capture.patched(patch)?;
+            Ok(())
+        })
+        .map(|settings| settings.capture)
     }
 
     /// Records the library opened last.
@@ -580,5 +611,97 @@ mod tests {
         assert_eq!(store.update(&with_keys(full.clone())).unwrap().keys, full);
         let named = keys(&[("a.b", "Escape"), ("c_d", "["), ("e-f", "\\"), ("g", "é")]);
         assert_eq!(store.update(&with_keys(named.clone())).unwrap().keys, named);
+    }
+
+    #[test]
+    fn the_capture_profile_defaults_and_a_patch_changes_only_its_fields_and_is_kept() {
+        let path = temp_file("capture");
+        let (store, _) = SettingsStore::load(&path);
+        assert_eq!(store.capture_profile(), CaptureProfile::default());
+        let patch = CaptureProfilePatch {
+            levels: Some([60, 30, 4]),
+            temp_abort_c: Some(50.0),
+            ..CaptureProfilePatch::default()
+        };
+        let updated = store.update_capture(&patch).unwrap();
+        assert_eq!(updated.levels, [60, 30, 4]);
+        assert_eq!(
+            CaptureProfile {
+                levels: [44, 22, 2],
+                temp_abort_c: 55.0,
+                ..updated.clone()
+            },
+            CaptureProfile::default()
+        );
+        // Other settings are untouched, and it survives a reload.
+        assert_eq!(store.get().theme, Theme::System);
+        let (reloaded, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert_eq!(reloaded.capture_profile(), updated);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("capture"));
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_refused_capture_patch_changes_and_saves_nothing() {
+        let path = temp_file("capture-refused");
+        let (store, _) = SettingsStore::load(&path);
+        let good = store
+            .update_capture(&CaptureProfilePatch {
+                settle_ms: Some(700),
+                ..CaptureProfilePatch::default()
+            })
+            .unwrap();
+        for patch in [
+            CaptureProfilePatch {
+                levels: Some([300, 0, 0]),
+                ..CaptureProfilePatch::default()
+            },
+            CaptureProfilePatch {
+                temp_warn_c: Some(55.0),
+                ..CaptureProfilePatch::default()
+            },
+            CaptureProfilePatch {
+                temp_abort_c: Some(f32::NAN),
+                ..CaptureProfilePatch::default()
+            },
+        ] {
+            let err = store.update_capture(&patch).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput);
+        }
+        assert_eq!(store.capture_profile(), good);
+        let (again, _) = SettingsStore::load(&path);
+        assert_eq!(again.capture_profile(), good);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_damaged_settings_file_gives_the_default_profile_and_a_hand_edited_invalid_one_is_replaced()
+    {
+        let path = temp_file("capture-damaged");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "{ not json").unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_some_and(|n| n.contains(".bad")));
+        assert_eq!(store.capture_profile(), CaptureProfile::default());
+
+        // Valid JSON, but a profile the app would refuse: the rest of the file is kept.
+        std::fs::write(
+            &path,
+            r#"{"theme": "dark", "capture": {"temp_warn_c": 60.0, "temp_abort_c": 50.0}}"#,
+        )
+        .unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_some_and(|n| n.contains("capture settings invalid")));
+        assert_eq!(store.capture_profile(), CaptureProfile::default());
+        assert_eq!(store.get().theme, Theme::Dark);
+
+        // A partial valid profile fills the rest with defaults.
+        std::fs::write(&path, r#"{"capture": {"settle_ms": 900}}"#).unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert_eq!(store.capture_profile().settle_ms, 900);
+        assert_eq!(store.capture_profile().levels, [44, 22, 2]);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

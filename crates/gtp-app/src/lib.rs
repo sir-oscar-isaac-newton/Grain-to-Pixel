@@ -4,14 +4,17 @@
 //! depend on Tauri.
 
 pub mod context;
+pub mod fake_capture;
 pub mod hardware;
 pub mod jobs;
 pub mod library_fs;
 pub mod paths;
 pub mod pipeline;
 pub mod services;
+pub mod shared_light;
 
 pub use context::{AppContext, ThumbnailRequester};
+pub use gtp_capture::{CameraInfo, CaptureProfile, CaptureProfilePatch, LightInfo, PortInfo};
 pub use gtp_edit::{frontier_curve, roll_balance, BalanceMethod, FrontierParams};
 pub use gtp_ingest::{
     merge_triplet, DeviceInfo, ScannerSource, TripletCandidate, TripletFile, TripletProblem,
@@ -26,6 +29,7 @@ pub use pipeline::{
     Histogram, LevelsPercentiles, PipelineInput, RenderTarget, Stage, PREVIEW_EDGE, PROXY_EDGE,
     STAGE_ORDER,
 };
+pub use services::capture_control::{CameraSlot, CaptureEvents, StepState, TestShot};
 pub use services::counters::Counters;
 pub use services::flat_field::{apply_flat_field, flat_field_from_exposures};
 pub use services::library::{Library, LibraryDetails};
@@ -33,3 +37,4 @@ pub use services::settings::{
     Flags, FlagsPatch, Settings, SettingsPatch, SettingsStore, Theme, WindowSize,
     UPDATE_CHECK_INTERVAL_SECS,
 };
+pub use shared_light::{LightReading, SharedLight};

@@ -1,7 +1,8 @@
 //! Backend-to-UI events, declared with `tauri_specta` so their payloads are typed in the bindings
-//! and registered in `ipc.rs`. `library://changed` and the capture events follow with their issues.
+//! and registered in `ipc.rs`.
 
-use gtp_core::{AppError, FrameId, JobId, JobResult, RollId};
+use gtp_app::StepState;
+use gtp_core::{AppError, FrameId, JobId, JobResult, RollId, TripletChannel};
 use serde::Serialize;
 use specta::Type;
 
@@ -38,4 +39,24 @@ pub struct LibraryChanged {
 pub struct JobError {
     pub id: JobId,
     pub error: AppError,
+}
+
+/// A capture moved one channel forward: the colour is on (`lit`), the camera was told to shoot
+/// (`fired`) or its picture arrived (`received`). Sent for a test shot and for every frame.
+#[derive(Debug, Clone, PartialEq, Serialize, Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "capture://step")]
+pub struct CaptureStep {
+    pub channel: TripletChannel,
+    pub state: StepState,
+}
+
+/// What the light reported, every 200 ms while it is connected. `tripped` is true once the
+/// temperature watchdog switched the light off for being too hot: it stays refused until the user
+/// reconnects it (`light_connect`).
+#[derive(Debug, Clone, PartialEq, Serialize, Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "light://status")]
+pub struct LightStatus {
+    pub temp_c: Option<f32>,
+    pub vbus_mv: Option<i32>,
+    pub tripped: bool,
 }

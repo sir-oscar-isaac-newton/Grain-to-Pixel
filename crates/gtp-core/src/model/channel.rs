@@ -1,9 +1,9 @@
 //! Which light an exposure of an RGB triplet was taken in.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// The light an exposure was taken in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum TripletChannel {

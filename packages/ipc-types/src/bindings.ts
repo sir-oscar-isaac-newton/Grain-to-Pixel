@@ -92,6 +92,40 @@ export const commands = {
 	scanPreview: (deviceId: string) => typedError<RollPreviewImage, AppError_Serialize>(__TAURI_INVOKE("scan_preview", { deviceId })),
 	/**  Stops the running roll preview; false when none is running. */
 	scanPreviewCancel: () => __TAURI_INVOKE<boolean>("scan_preview_cancel"),
+	/**  The serial ports the Scanlight may be on. */
+	lightList: () => typedError<PortInfo[], AppError_Serialize>(__TAURI_INVOKE("light_list")),
+	/**
+	 *  Connects the light on `port`, or finds it by probing the serial ports. Refused while a capture
+	 *  is in progress; clears a temperature trip.
+	 */
+	lightConnect: (port: string | null) => typedError<LightInfo, AppError_Serialize>(__TAURI_INVOKE("light_connect", { port })),
+	/**
+	 *  Lights red, green and blue at these levels (0 to 255). Refused while a capture is in progress,
+	 *  after a temperature trip, and when the light is not connected, reports no current temperature
+	 *  or is over the abort limit (switching off is always allowed).
+	 */
+	lightSet: (levels: [number, number, number]) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("light_set", { levels })),
+	/**  Switches the light off. Always allowed. */
+	lightOff: () => typedError<null, AppError_Serialize>(__TAURI_INVOKE("light_off")),
+	/**  The cameras that can be used (none until a camera backend exists, except with `GTP_FAKE_HW=1`). */
+	cameraList: () => typedError<CameraInfo[], AppError_Serialize>(__TAURI_INVOKE("camera_list")),
+	/**  The capture profile (levels, settle time, temperature limits, camera backend). */
+	captureProfileGet: () => typedError<CaptureProfile_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_profile_get")),
+	/**
+	 *  Changes the given fields of the profile, validates it as a whole, saves it in `settings.json`
+	 *  and returns it.
+	 */
+	captureProfileSet: (patch: CaptureProfilePatch_Deserialize) => typedError<CaptureProfile_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_profile_set", { patch })),
+	/**
+	 *  Lights one colour, takes a picture, and returns the histogram and clipped percentage of that
+	 *  channel. Stores nothing; the light is off afterwards.
+	 */
+	captureTest: (channel: TripletChannel) => typedError<TestShot, AppError_Serialize>(__TAURI_INVOKE("capture_test", { channel })),
+	/**
+	 *  Captures one frame into the roll as a job; the new frame arrives in `job://done` like an
+	 *  import's, the steps as `capture://step`. Returns the job id at once.
+	 */
+	captureTriplet: (rollId: RollId) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("capture_triplet", { rollId })),
 	/**
 	 *  Starts exporting the frames at full resolution, each with its saved recipe (the automatic one
 	 *  when it was never edited), as a job; progress and the result (the files written and the frames
@@ -204,10 +238,12 @@ export const commands = {
 
 /** Events */
 export const events = {
+	captureStep: makeEvent<CaptureStep, CaptureStep>("capture://step"),
 	jobDone: makeEvent<JobDone_Serialize, JobDone_Deserialize>("job://done"),
 	jobError: makeEvent<JobError_Serialize, JobError_Deserialize>("job://error"),
 	jobProgress: makeEvent<JobProgress, JobProgress>("job://progress"),
 	libraryChanged: makeEvent<LibraryChanged_Serialize, LibraryChanged_Deserialize>("library://changed"),
+	lightStatus: makeEvent<LightStatus_Serialize, LightStatus_Deserialize>("light://status"),
 };
 
 /* Types */
@@ -248,6 +284,108 @@ export type Base_Deserialize = {
 export type Base_Serialize = {
 	source: BaseSource,
 	rgb: [(number | null), (number | null), (number | null)],
+};
+
+/**  How the pictures reach the app. */
+export type CameraBackend = 
+/**  libgphoto2 over USB (macOS). */
+"gphoto" | 
+/**  A tool such as digiCamControl writes the NEF files to a folder. */
+"folder";
+
+/**  A camera the app can use, as the UI lists it. */
+export type CameraInfo = {
+	/**  A stable id for the camera. */
+	id: string,
+	/**  The name to show. */
+	name: string,
+};
+
+/**  What a capture sequence is set up with. */
+export type CaptureProfile = CaptureProfile_Serialize | CaptureProfile_Deserialize;
+
+/**  Profile fields to change; the ones left out keep their value. */
+export type CaptureProfilePatch = CaptureProfilePatch_Serialize | CaptureProfilePatch_Deserialize;
+
+/**  Profile fields to change; the ones left out keep their value. */
+export type CaptureProfilePatch_Deserialize = {
+	/**
+	 *  New red, green and blue levels. Wider than a byte so that a value outside 0 to 255 reaches
+	 *  the validation and is refused with a message, not as a malformed request.
+	 */
+	levels?: [number, number, number] | null,
+	settle_ms?: number | null,
+	temp_warn_c?: number | null,
+	temp_abort_c?: number | null,
+	camera_backend?: CameraBackend | null,
+	/**  The watch folder; an empty text clears it. */
+	watch_folder?: string | null,
+};
+
+/**  Profile fields to change; the ones left out keep their value. */
+export type CaptureProfilePatch_Serialize = {
+	/**
+	 *  New red, green and blue levels. Wider than a byte so that a value outside 0 to 255 reaches
+	 *  the validation and is refused with a message, not as a malformed request.
+	 */
+	levels: [number, number, number] | null,
+	settle_ms: number | null,
+	temp_warn_c: number | null,
+	temp_abort_c: number | null,
+	camera_backend: CameraBackend | null,
+	/**  The watch folder; an empty text clears it. */
+	watch_folder: string | null,
+};
+
+/**  What a capture sequence is set up with. */
+export type CaptureProfile_Deserialize = {
+	/**
+	 *  The red, green and blue LED level (0 to 255) for one exposure of that colour: the three
+	 *  LEDs need very different levels for one camera exposure. The defaults (44, 22, 2) are
+	 *  starting values measured on the bare light with no film in the gate (the blue was still
+	 *  clipped at 2); they are not balanced for film and must be rebalanced with a test shot.
+	 */
+	levels?: [number, number, number],
+	/**  Wait between switching the colour on and firing the camera. */
+	settle_ms?: number,
+	/**  Above this LED temperature (degrees Celsius) the sequence warns and goes on. */
+	temp_warn_c?: number | null,
+	/**  Above this LED temperature the sequence stops, and the light is switched off. */
+	temp_abort_c?: number | null,
+	/**  Where the pictures come from. */
+	camera_backend?: CameraBackend,
+	/**  The folder the pictures appear in, for [`CameraBackend::Folder`]. */
+	watch_folder?: string | null,
+};
+
+/**  What a capture sequence is set up with. */
+export type CaptureProfile_Serialize = {
+	/**
+	 *  The red, green and blue LED level (0 to 255) for one exposure of that colour: the three
+	 *  LEDs need very different levels for one camera exposure. The defaults (44, 22, 2) are
+	 *  starting values measured on the bare light with no film in the gate (the blue was still
+	 *  clipped at 2); they are not balanced for film and must be rebalanced with a test shot.
+	 */
+	levels: [number, number, number],
+	/**  Wait between switching the colour on and firing the camera. */
+	settle_ms: number,
+	/**  Above this LED temperature (degrees Celsius) the sequence warns and goes on. */
+	temp_warn_c: number | null,
+	/**  Above this LED temperature the sequence stops, and the light is switched off. */
+	temp_abort_c: number | null,
+	/**  Where the pictures come from. */
+	camera_backend: CameraBackend,
+	/**  The folder the pictures appear in, for [`CameraBackend::Folder`]. */
+	watch_folder: string | null,
+};
+
+/**
+ *  A capture moved one channel forward: the colour is on (`lit`), the camera was told to shoot
+ *  (`fired`) or its picture arrived (`received`). Sent for a test shot and for every frame.
+ */
+export type CaptureStep = {
+	channel: TripletChannel,
+	state: StepState,
 };
 
 /**  Severity of an event reported by the UI. */
@@ -1104,6 +1242,50 @@ export type LibraryInfo_Serialize = {
 	library: LibraryDetails_Serialize | null,
 };
 
+/**  What `connect` found out about the light. */
+export type LightInfo = {
+	/**  The serial port the light answered on. */
+	port: string,
+	/**  Hardware ID: 1 is the V4 rev A (PCB 26a901a), 2 the rev B (ADR 0004, amendment 3). */
+	hardware_id: number,
+	/**  Firmware ID. */
+	firmware_id: number,
+	/**
+	 *  False when the hardware ID is not one this app knows (1 or 2). The light is still used,
+	 *  and a warning was logged.
+	 */
+	recognised: boolean,
+};
+
+/**
+ *  What the light reported, every 200 ms while it is connected. `tripped` is true once the
+ *  temperature watchdog switched the light off for being too hot: it stays refused until the user
+ *  reconnects it (`light_connect`).
+ */
+export type LightStatus = LightStatus_Serialize | LightStatus_Deserialize;
+
+/**
+ *  What the light reported, every 200 ms while it is connected. `tripped` is true once the
+ *  temperature watchdog switched the light off for being too hot: it stays refused until the user
+ *  reconnects it (`light_connect`).
+ */
+export type LightStatus_Deserialize = {
+	temp_c?: number | null,
+	vbus_mv?: number | null,
+	tripped: boolean,
+};
+
+/**
+ *  What the light reported, every 200 ms while it is connected. `tripped` is true once the
+ *  temperature watchdog switched the light off for being too hot: it stays refused until the user
+ *  reconnects it (`light_connect`).
+ */
+export type LightStatus_Serialize = {
+	temp_c: number | null,
+	vbus_mv: number | null,
+	tripped: boolean,
+};
+
 /**  What the automatic conversion starts from. */
 export type Look = 
 /**
@@ -1159,6 +1341,14 @@ export type Output_Deserialize = {
 export type Output_Serialize = {
 	space: OutputSpace,
 	sharpen: Sharpen_Serialize,
+};
+
+/**  A serial port the light may be on. */
+export type PortInfo = {
+	/**  The port name to give to `connect` (`COM5`, `/dev/cu.usbmodem1101`). */
+	name: string,
+	/**  True for the Pico vendor ID of the V4: the port the probe tries first. */
+	likely: boolean,
 };
 
 export type Recipe = Recipe_Serialize | Recipe_Deserialize;
@@ -1568,6 +1758,15 @@ export type SkippedFile_Serialize = {
 /**  Which plane or exposure a source file holds. */
 export type SourceRole = "rgb" | "ir" | "r" | "g" | "b";
 
+/**  Where a captured picture is in its step, for the `capture://step` event. */
+export type StepState = 
+/**  The colour is on, settled, and the camera is about to be armed. */
+"lit" | 
+/**  The camera was told to take the picture. */
+"fired" | 
+/**  The picture arrived. */
+"received";
+
 /**
  *  A free-form label on frames and rolls. The name keeps the spelling it was first typed with;
  *  two names are the same tag when their [`Tag::key`]s are equal (case-insensitive across Unicode).
@@ -1579,6 +1778,17 @@ export type Tag = {
 
 /**  Identifies a tag. */
 export type TagId = string;
+
+/**  What a test shot measured on the channel that was lit. */
+export type TestShot = {
+	/**
+	 *  256 bins of the lit channel's linear value (0 to 1 over the sensor's range), so levels can
+	 *  be balanced by hand: a peak in the last bins means the exposure is clipped.
+	 */
+	histogram: number[],
+	/**  The share of photosites at 99 percent of full scale or more, in percent. */
+	clipped_pct: number | null,
+};
 
 export type Theme = "system" | "light" | "dark";
 

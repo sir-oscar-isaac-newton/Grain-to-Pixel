@@ -1,5 +1,6 @@
 //! One module per command group (docs/architecture.md section 4.2).
 
+pub mod capture;
 pub mod develop;
 pub mod export;
 pub mod frame;

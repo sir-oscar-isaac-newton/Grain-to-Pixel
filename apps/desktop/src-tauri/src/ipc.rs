@@ -7,7 +7,7 @@ use specta_typescript::Typescript;
 use tauri_specta::{collect_commands, collect_events, Builder};
 
 use crate::commands;
-use crate::events::{JobDone, JobError, JobProgress, LibraryChanged};
+use crate::events::{CaptureStep, JobDone, JobError, JobProgress, LibraryChanged, LightStatus};
 
 /// Collects all commands and events (one place, shared by the app, the generator and tests on
 /// the mock runtime).
@@ -38,6 +38,15 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::ingest::scan_start,
             commands::ingest::scan_preview,
             commands::ingest::scan_preview_cancel,
+            commands::capture::light_list,
+            commands::capture::light_connect,
+            commands::capture::light_set,
+            commands::capture::light_off,
+            commands::capture::camera_list,
+            commands::capture::capture_profile_get,
+            commands::capture::capture_profile_set,
+            commands::capture::capture_test,
+            commands::capture::capture_triplet,
             commands::export::export_start,
             commands::develop::develop_open,
             commands::develop::develop_analyze,
@@ -70,7 +79,9 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             JobProgress,
             JobDone,
             JobError,
-            LibraryChanged
+            LibraryChanged,
+            CaptureStep,
+            LightStatus
         ])
 }
 
@@ -166,6 +177,15 @@ mod tests {
             "updateCheck",
             "updateInstall",
             "updateRestart",
+            "lightList",
+            "lightConnect",
+            "lightSet",
+            "lightOff",
+            "cameraList",
+            "captureProfileGet",
+            "captureProfileSet",
+            "captureTest",
+            "captureTriplet",
         ] {
             assert!(text.contains(command), "{command} missing from bindings");
         }
@@ -174,6 +194,8 @@ mod tests {
             "job://done",
             "job://error",
             "library://changed",
+            "capture://step",
+            "light://status",
         ] {
             assert!(text.contains(event), "event {event} missing from bindings");
         }
@@ -202,6 +224,15 @@ mod tests {
             "TripletCandidate",
             "TripletProblem",
             "TripletChannel",
+            "PortInfo",
+            "LightInfo",
+            "CameraInfo",
+            "CaptureProfile",
+            "CaptureProfilePatch",
+            "TestShot",
+            "CaptureStep",
+            "LightStatus",
+            "StepState",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }

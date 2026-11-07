@@ -698,6 +698,15 @@
       "status": "completed",
       "pr": 206,
       "commit": "d7eb915"
+    },
+    {
+      "id": "D-04",
+      "number": 60,
+      "title": "Capture commands, profile persistence and light safety hooks",
+      "branch": "feat/issue-60-capture-commands",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

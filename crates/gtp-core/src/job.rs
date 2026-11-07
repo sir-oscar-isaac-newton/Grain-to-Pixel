@@ -74,6 +74,12 @@ pub enum ImportWarningKind {
     /// None of the job's frames had a usable neutral, so the roll has no colour balance (the frame
     /// named is the first of the job).
     BalanceSkipped,
+    /// The light was warm while this frame was captured: the highest LED temperature seen, in whole
+    /// degrees Celsius, above the warn limit (H-08).
+    HighTemperature { temp_c: u32 },
+    /// The light's supply voltage sagged while this frame was captured: the lowest reading, in
+    /// millivolts (H-08).
+    LowSupply { vbus_mv: u32 },
 }
 
 /// A picked file that was not imported.

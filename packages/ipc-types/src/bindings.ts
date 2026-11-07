@@ -912,7 +912,17 @@ export type ImportWarningKind =
  *  None of the job's frames had a usable neutral, so the roll has no colour balance (the frame
  *  named is the first of the job).
  */
-{ kind: "balance_skipped" };
+{ kind: "balance_skipped" } | 
+/**
+ *  The light was warm while this frame was captured: the highest LED temperature seen, in whole
+ *  degrees Celsius, above the warn limit (H-08).
+ */
+{ kind: "high_temperature"; temp_c: number } | 
+/**
+ *  The light's supply voltage sagged while this frame was captured: the lowest reading, in
+ *  millivolts (H-08).
+ */
+{ kind: "low_supply"; vbus_mv: number };
 
 /**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
 export type Invert = Invert_Serialize | Invert_Deserialize;

@@ -287,9 +287,9 @@ The Scanlight's serial interface (documented in its repository at `automation/bs
 | Header | Command | Data | Use |
 |---|---|---|---|
 | 0 | `SET_COLOR` | R, G, B, W, IR (0-255) and a save flag | light one colour at a time; **always save flag 0** (saving writes non-volatile memory). IR is ignored on v4 |
-| 2 | `GET_FW_VERSION` | none | handshake and device identification (the interface defines no VID/PID, so we probe serial ports); accept firmware IDs 1 and 2 (v4 rev A/B), warn on others |
-| 3 | `SHUTTER_PULSE` | length in 10 ms units | fire the camera through the 3.5 mm output |
-| 7 | `SET_FOCUS` | 0/1 | hold the focus signal; only on PCB 26a902b |
+| 2 | `GET_FW_VERSION` | none | handshake and device identification (the interface defines no VID/PID, so we probe serial ports); accept hardware IDs 1 and 2 (the first half of the version reply; v4 rev A/B), warn on others |
+| 3 | `SHUTTER_PULSE` | length in 10 ms units | not used: the camera is triggered over USB (ADR 0004, amendment 2) |
+| 7 | `SET_FOCUS` | 0/1 | not used; not available on the author's rev A (PCB 26a901a) |
 
 The device streams `LED_TEMP` (millidegrees C) and `VBUS` (mV) every 200 ms. Host commands are not acknowledged, and the firmware has no sequence command, so **the app does the sequencing** and treats the link as open-loop (verified by the camera actually delivering a file).
 
@@ -301,26 +301,27 @@ pub trait LightSource {                    // impl: ScanlightV4 (serial), FakeLi
     fn status(&self) -> LightStatus;                                   // last LED_TEMP / VBUS
 }
 pub trait CameraSource {                   // impl: GphotoCamera (feature `tether`), WatchedFolder, FakeCamera
+    fn is_connected(&self) -> bool;                                    // false once the link is gone
     fn arm(&mut self) -> Result<()>;                                   // ready to receive one exposure
-    fn trigger(&mut self, light: &mut dyn LightSource) -> Result<()>;  // gphoto: PTP capture; folder: Scanlight pulse
-    fn wait_for_image(&mut self, timeout: Duration) -> Result<CapturedFile>;  // the NEF bytes + EXIF
+    fn trigger(&mut self) -> Result<()>;                               // gphoto: PTP capture; folder: the tool fires it over USB
+    fn wait_for_image(&mut self, timeout: Duration) -> Result<CapturedFile>;  // the file name and NEF bytes
 }
 ```
 
 **Per-frame sequence** (`capture_triplet`, cancellable, one job per frame):
-1. Check the light and camera are connected and the temperature is under the warn limit.
-2. For each channel in order R, G, B: `set_levels` with only that channel at its calibrated level; wait `settle_ms` (default 200); `arm`; `trigger`; `wait_for_image` (timeout 15 s); emit `capture://step`.
+1. Check the light and camera are connected and that the light reports its temperature (refuse to start if no reading arrives within about 1 s). A temperature above the abort limit refuses the start before anything is lit; above the warn limit the sequence goes on, and it is reported as a warning on the frame.
+2. For each channel in order R, G, B: `set_levels` with only that channel at its own level; wait `settle_ms` (default 500, cancellable); check the link and the temperature (abort above `temp_abort_c`; abort too if the link or the readings are lost); `arm`; `trigger`; `wait_for_image` (timeout 15 s); emit `capture://step`.
 3. `light_off` (all zeros, never saved).
-4. Validate: three NEFs received; EXIF exposure time, ISO and aperture identical (warn if not); no exposure clipped (histogram check on the matching channel; warn if more than 0.1 percent of its photosites are saturated).
+4. Validate: three NEFs received; a supply below 4750 mV (`VBUS`) or a temperature above the warn limit seen during the sequence is a warning too; EXIF exposure time, ISO and aperture identical (warn if not); no exposure clipped (histogram check on the matching channel; warn if more than 0.1 percent of its photosites are saturated).
 5. Store as an `RgbTriplet` frame (originals converted to 16-bit TIFFs per §5.1) and hash-verify. The UI then shows the merged frame and waits for the user to advance the film by hand and press Next (or Space).
 
-**Capture profile** (stored in `settings.json`): `levels {r,g,b}` (LED balance so the three exposures are similar at the fixed exposure time), `settle_ms`, `pulse_10ms` (default 10, so 100 ms), `focus_signal` (bool), `camera_backend` (`gphoto` | `folder`), `watch_folder`, `temp_warn_c`, `temp_abort_c` (defaults 60 and 75, tunable; the Scanlight docs give no thresholds). A **test shot** command lights one channel, fires, and returns the histogram so levels can be balanced by hand.
+**Capture profile** (stored in `settings.json`): `levels {r,g,b}` (a separate LED level per colour, since the three LEDs need very different levels for one exposure; the defaults 44, 22 and 2 are starting values measured on the bare light with no film in the gate, not balanced for film, and must be rebalanced with a test shot), `settle_ms` (default 500), `camera_backend` (`gphoto` | `folder`), `watch_folder`, `temp_warn_c`, `temp_abort_c` (defaults 45 and 55, tunable; the Scanlight docs give no thresholds, these are safety nets from the spike measurements). A **test shot** command lights one channel, fires, and returns the histogram so levels can be balanced by hand.
 
-**Safety rules:** the app never writes presets or trim (SET_COLOR save flag always 0, no SET_TRIM), turns the light off on cancel, error, panic and exit, and aborts a sequence if `LED_TEMP` exceeds `temp_abort_c`.
+**Safety rules:** the app never writes presets or trim (SET_COLOR save flag always 0, no SET_TRIM), turns the light off on cancel, error, panic and exit, and aborts a sequence if `LED_TEMP` exceeds `temp_abort_c`, if the light stops reporting a temperature, or if the link is lost.
 
 **Camera backends**
 - `GphotoCamera` (macOS arm64 builds, Cargo feature `tether`): libgphoto2 over USB/PTP; the app sets the colour, triggers capture, and downloads the NEF directly, so no shutter cable is needed. Exposure settings stay under the camera's own manual controls. Known risk: macOS's own camera daemon can claim the USB device (to be handled in the spike). libgphoto2 and its camera/port driver libraries must ship inside the app bundle.
-- `WatchedFolder` (Windows via digiCamControl; macOS fallback): the Scanlight `SHUTTER_PULSE` fires the D600 through the author's remote cable (the profile's `focus_signal` option uses `SET_FOCUS`, available on rev B); digiCamControl, connected to the camera over USB, saves each NEF to `watch_folder`; the app waits for new files (`notify`, file-size-stable check). digiCamControl must only download, not also trigger captures. Any other tool that writes NEFs to a folder works the same way.
+- `WatchedFolder` (Windows via digiCamControl; macOS fallback): digiCamControl, connected to the camera over USB, fires the D600 and saves each NEF to `watch_folder` (the Scanlight's shutter output is not used); the app waits for new files (`notify`, file-size-stable check). digiCamControl is the only thing that fires the camera. Any other tool that writes NEFs to a folder works the same way.
 
 ## 7. UI
 

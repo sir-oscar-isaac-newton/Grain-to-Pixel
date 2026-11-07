@@ -125,3 +125,12 @@ Results on the author's M1 Pro MacBook with the D600 on USB (2026-11-03 and 04);
 3. The driver gets no reply from the camera side: no shutter test is needed (the camera is fired over USB).
 4. Unplug the cable while connected: the next `set_levels` returns an error and `status().connected` is false.
 5. Windows (when a light that answers there exists): the same test; until then `connect` is expected to fail with "did not answer".
+
+## The sequence (H-08)
+
+`gtp-capture` also holds the `CameraSource` port, `FakeCamera` and `CaptureSequence` (`sequence.rs`); `gtp-app` has the job (`services/capture.rs`).
+
+- **Sequence.** Per channel R, G, B: set only that colour's level, wait the settle time in pauses of at most 50 ms (cancel checked between them), check link and temperature, arm, trigger, wait up to 15 s for the file. A `LightGuard` writes all-zero levels when dropped, so the light is off after success, cancel, error, a camera timeout, a temperature abort and a panic; a failing off command is logged and does not replace the original error. The camera's own wait is one blocking call, so a cancel during it is seen when the call returns.
+- **Safety.** No temperature reading within about 1 s of the start refuses to start; a reading that disappears, a lost link, or a temperature above `temp_abort_c` aborts; above `temp_warn_c` or a `VBUS` under 4750 mV only warns, on the stored frame.
+- **Levels.** The defaults 44, 22 and 2 were measured on the bare light with no film in the gate (the blue was still clipped); they are starting values, to be rebalanced with a test shot for film.
+- **Storing.** The three files are staged in a temporary folder (the merge reads EXIF from a file), merged and stored by the same code as an imported triplet, so the EXIF mismatch and clipping warnings and the roll's flat field apply. A captured frame gets no colour balance.

@@ -1,5 +1,6 @@
 //! Use-case services over the feature crates. Each is called by a thin Tauri command.
 
+pub mod capture;
 pub mod counters;
 pub mod develop;
 pub mod diagnostics;

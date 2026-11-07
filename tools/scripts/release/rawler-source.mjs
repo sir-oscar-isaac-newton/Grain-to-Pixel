@@ -10,16 +10,19 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
-/** The version and checksum of the `rawler` package in a Cargo.lock, or null. */
-export function rawlerLock(cargoLock) {
+/** The version and checksum of the registry package `name` in a Cargo.lock, or null. */
+export function packageLock(cargoLock, name) {
   for (const block of cargoLock.replace(/\r\n/g, '\n').split('\n[[package]]')) {
-    if (!/^\s*name = "rawler"$/m.test(block)) continue;
+    if (!new RegExp(`^\\s*name = "${name}"$`, 'm').test(block)) continue;
     const version = /^version = "([^"]+)"$/m.exec(block)?.[1];
     const checksum = /^checksum = "([0-9a-f]{64})"$/m.exec(block)?.[1];
     return version && checksum ? { version, checksum } : null;
   }
   return null;
 }
+
+/** The version and checksum of the `rawler` package in a Cargo.lock, or null. */
+export const rawlerLock = (cargoLock) => packageLock(cargoLock, 'rawler');
 
 /** Where crates.io serves a crate archive from. */
 export const crateUrl = (name, version) =>

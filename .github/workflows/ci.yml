@@ -59,6 +59,18 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
+      # The libgphoto2 camera backend (H-09) is behind the `tether` feature, on macOS only: build,
+      # lint and test the three crates it touches with the feature on. Windows has no such build.
+      - name: Install libgphoto2 (macOS, for the tether feature)
+        if: runner.os == 'macOS'
+        run: brew install libgphoto2 pkgconf
+
+      - name: cargo clippy and test with the tether feature (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cargo clippy -p gtp-capture -p gtp-app -p grain-to-pixel-desktop --all-targets --features grain-to-pixel-desktop/tether -- -D warnings
+          cargo test -p gtp-capture -p gtp-app --features gtp-app/tether
+
       - name: cargo deny
         run: cargo deny check --hide-inclusion-graph
 

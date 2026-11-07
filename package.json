@@ -14,7 +14,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "test:rust": "cargo test --workspace",
-    "test:tools": "node --test tools/scripts/check-deps/check-deps.test.mjs tools/scripts/check-ipc/check-ipc.test.mjs tools/scripts/check-progress/check-progress.test.mjs tools/scripts/smoke/smoke.test.mjs tools/scripts/check-bundle/check-bundle.test.mjs tools/scripts/check-notices/check-notices.test.mjs tools/scripts/release/rawler-source.test.mjs",
+    "test:tools": "node --test tools/scripts/check-deps/check-deps.test.mjs tools/scripts/check-ipc/check-ipc.test.mjs tools/scripts/check-progress/check-progress.test.mjs tools/scripts/smoke/smoke.test.mjs tools/scripts/check-bundle/check-bundle.test.mjs tools/scripts/check-notices/check-notices.test.mjs tools/scripts/release/rawler-source.test.mjs tools/scripts/release/gphoto-source.test.mjs",
     "check:bundle": "node tools/scripts/check-bundle/check-bundle.mjs config",
     "build:app": "pnpm --filter @gtp/desktop exec tauri build --no-bundle",
     "smoke": "node tools/scripts/smoke/smoke.mjs --binary target/release/grain-to-pixel-desktop",

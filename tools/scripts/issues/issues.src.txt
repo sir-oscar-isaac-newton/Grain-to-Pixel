@@ -1286,12 +1286,12 @@ spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md
 desc: libgphoto2 camera backend for macOS behind Cargo feature `tether`, per the outcome of spike R-03.
 ac:
 - If R-03 concluded no-go, this issue is closed as Dropped and the WatchedFolder backend serves macOS
-- With the feature on, a full R, G, B triplet is captured and downloaded by the app (human reports)
+- With the feature on, a full R, G, B triplet is captured and downloaded through the real sequence by an ignored hardware test (human reports); the same in the app is reported under U-10
 - A clear error with the documented workaround is shown when macOS holds the USB device
 - The feature builds on macOS in CI and is off for Windows builds
 tech:
-FILES: crates/gtp-capture/src/gphoto.rs (feature `tether`); apps/desktop/src-tauri/Cargo.toml (feature on for macOS targets only); macOS bundle config for libgphoto2 libraries and env paths per R-03.
-INTERFACES: `GphotoCamera: CameraSource`; trigger = PTP capture (ignores the light arg); wait_for_image downloads the NEF to a temp file.
+FILES: crates/gtp-capture/src/gphoto/ (the worker builds everywhere; the real session is behind feature `tether` on macOS); apps/desktop/src-tauri/Cargo.toml (feature on for macOS targets only); macOS bundle config and tools/scripts/release/bundle-libgphoto2.sh for the libgphoto2 libraries and env paths per R-03.
+INTERFACES: `GphotoCamera: CameraSource`; a dedicated worker thread owns the camera and its session; trigger = PTP capture request to the worker (the camera is triggered over USB, the light is not involved), which returns at once; wait_for_image(timeout) waits for the worker's reply (the NEF downloaded to a temp file and read); a request unanswered at the timeout makes the camera unusable until a refresh or restart, and its late result is discarded.
 ROUTES / MIGRATIONS: none.
 TESTS: trait conformance shared with FakeCamera; compile with and without the feature; hardware checklist.
 

@@ -10,6 +10,7 @@
     "build": "vite build",
     "build:ui": "vite build",
     "tauri": "tauri",
+    "bundle:gphoto": "bash ../../tools/scripts/release/bundle-libgphoto2.sh bundle",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },

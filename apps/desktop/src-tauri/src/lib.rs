@@ -37,6 +37,9 @@ fn signal_ready(path: &Path) -> std::io::Result<()> {
 
 /// Builds and runs the desktop application.
 pub fn run() -> tauri::Result<()> {
+    // Before anything starts a thread: libgphoto2 reads its driver paths from the environment
+    // (macOS builds with the `tether` feature; a no-op everywhere else).
+    gtp_app::prepare_camera_libraries();
     let builder = ipc::builder::<tauri::Wry>();
     let handler = ipc::invoke_handler(&builder);
     tauri::Builder::default()

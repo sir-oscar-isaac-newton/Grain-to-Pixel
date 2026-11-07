@@ -29,7 +29,9 @@ pub struct Hardware {
     /// The Scanlight (not connected until `light_connect`), or the fake light with
     /// `GTP_FAKE_HW=1`. Always there: connecting says whether there is a light.
     pub light: SharedLight,
-    /// The camera, only with `GTP_FAKE_HW=1` until the real backends come (H-09, H-10).
+    /// The camera: the fake one with `GTP_FAKE_HW=1`, the libgphoto2 one on macOS builds with the
+    /// `tether` feature (it may be plugged in later; see `CameraSlot`), otherwise none until the
+    /// watched-folder backend (H-10).
     pub camera: Option<Arc<CameraSlot>>,
     /// Reads the camera's pictures: `rawler`, or the fake one with `GTP_FAKE_HW=1`.
     pub decoder: Arc<dyn RawDecoder>,
@@ -52,7 +54,7 @@ impl Hardware {
             return Self {
                 scanner: Some(Arc::new(NkscanSource::from_env())),
                 light: SharedLight::new(Box::new(ScanlightV4::new()), list_ports),
-                camera: None,
+                camera: real_camera(),
                 decoder: Arc::new(RawlerDecoder),
                 busy: BusyFlag::default(),
                 fixture_dir: None,
@@ -104,6 +106,37 @@ impl Hardware {
     }
 }
 
+/// The libgphoto2 camera: its worker starts now and the camera is found when it is needed.
+#[cfg(all(feature = "tether", target_os = "macos"))]
+fn real_camera() -> Option<Arc<CameraSlot>> {
+    match gtp_capture::GphotoCamera::new() {
+        Ok(camera) => {
+            let finder = Box::new(camera.finder());
+            Some(Arc::new(CameraSlot::with_finder(Box::new(camera), finder)))
+        }
+        Err(err) => {
+            tracing::error!("the camera backend did not start: {err}");
+            None
+        }
+    }
+}
+
+/// No camera backend in this build (not macOS, or the `tether` feature is off).
+#[cfg(not(all(feature = "tether", target_os = "macos")))]
+fn real_camera() -> Option<Arc<CameraSlot>> {
+    None
+}
+
+/// Points libgphoto2 at the drivers inside the app bundle. Call it first thing in `main`, before
+/// the app starts any thread (see `gtp_capture::configure_library_paths`). Does nothing without the
+/// macOS `tether` feature.
+pub fn prepare_camera_libraries() {
+    #[cfg(all(feature = "tether", target_os = "macos"))]
+    {
+        gtp_capture::configure_library_paths();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use gtp_core::ErrorCode;
@@ -135,10 +168,14 @@ mod tests {
     fn the_fake_devices_include_a_light_and_a_camera_and_the_real_ones_only_the_light() {
         let fake = Hardware::from_vars(Some("1"), None);
         assert_eq!(fake.light.list_ports().unwrap()[0].name, "fake");
-        let camera = fake.camera.as_ref().map(|slot| slot.info().id.as_str());
-        assert_eq!(camera, Some("fake"));
+        let camera = fake.camera.as_ref().map(|slot| slot.list());
+        assert_eq!(camera.map(|l| l[0].id.clone()), Some("fake".to_owned()));
         let real = Hardware::from_vars(None, None);
-        assert!(real.camera.is_none());
+        // The libgphoto2 camera exists only in macOS builds with the `tether` feature.
+        assert_eq!(
+            real.camera.is_some(),
+            cfg!(all(feature = "tether", target_os = "macos"))
+        );
         assert!(!real.busy().is_busy());
     }
 

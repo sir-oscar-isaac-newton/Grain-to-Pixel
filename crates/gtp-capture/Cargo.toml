@@ -7,6 +7,9 @@ publish = false
 [features]
 # Derives specta::Type on the types that cross the IPC boundary (enabled by the Tauri shell).
 specta = ["dep:specta", "gtp-core/specta"]
+# The libgphoto2 camera backend (GphotoCamera). macOS only: on other targets the feature compiles to
+# nothing and pulls in no dependency. It needs libgphoto2 installed (brew install libgphoto2 pkgconf).
+tether = ["dep:gphoto2"]
 
 [dependencies]
 gtp-core = { version = "0.0.0", path = "../gtp-core" }
@@ -15,6 +18,10 @@ serde = { version = "1", features = ["derive"] }
 serialport = { version = "4", default-features = false }
 specta = { version = "=2.0.0-rc.26", optional = true, features = ["derive"] }
 tracing = "0.1"
+
+# LGPL-2.1, compiled into the macOS app like rawler (ADR 0004 amendment 9). Pinned to the version the R-03 probe was verified with.
+[target.'cfg(target_os = "macos")'.dependencies]
+gphoto2 = { version = "=3.4.1", optional = true }
 
 [dev-dependencies]
 proptest = "1"

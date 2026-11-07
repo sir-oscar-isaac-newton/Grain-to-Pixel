@@ -275,6 +275,10 @@ function collect() {
           '1',
           '--filter-platform',
           target,
+          // What the macOS installer ships: the libgphoto2 binding is behind this feature (and only
+          // on macOS, so the Windows list is the same with or without it).
+          '--features',
+          `${ROOT_CRATE}/tether`,
         ]),
       ),
     ),

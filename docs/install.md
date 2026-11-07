@@ -26,7 +26,7 @@ File: `Grain to Pixel_<version>_aarch64.dmg`. Intel Macs are not supported.
 xattr -dr com.apple.quarantine "/Applications/Grain to Pixel.app"
 ```
 
-The macOS build has the tethered-capture feature (`tether`) switched on; the Windows build has it switched off.
+The macOS build has the tethered-capture feature (`tether`) switched on: the app takes the pictures of an RGB capture over USB with libgphoto2, which is inside the app (nothing to install). If the camera cannot be used because macOS holds it, the app says so: log out any other user accounts on the Mac, quit Photos and Image Capture, and plug the camera in again. The Windows build has the feature switched off.
 
 ## Updates
 
@@ -47,7 +47,10 @@ pnpm --filter @gtp/desktop exec tauri build --bundles nsis
 ```
 
 ```bash
-pnpm --filter @gtp/desktop exec tauri build --bundles dmg --features tether
+brew install libgphoto2 pkgconf
+pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether
 ```
+
+The macOS build links libgphoto2 and, after compiling, `tools/scripts/release/bundle-libgphoto2.sh` copies its libraries and the two drivers it needs into the app (`Contents/Frameworks/gphoto`, set up by `src-tauri/tauri.macos.conf.json`). `bash tools/scripts/release/bundle-libgphoto2.sh verify "target/release/bundle/macos/Grain to Pixel.app"` checks the result. A build without `--features tether` bundles nothing of it.
 
 `pnpm check:bundle` checks that the installer settings in `tauri.conf.json` have not drifted.

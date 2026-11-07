@@ -39,6 +39,27 @@ cargo build --release -p grain-to-pixel-desktop    # or: pnpm build:app
 
 `cargo tree -p grain-to-pixel-desktop -i rawler` should show the path of your folder, not the registry, which tells you that your version is the one linked in.
 
+## The same for the camera crates (macOS)
+
+The macOS app also contains two LGPL-2.1 crates, `gphoto2` and `libgphoto2_sys` (the camera backend, see [third-party-notices.md](third-party-notices.md)). They are compiled into the app like `rawler`, so the steps are the same:
+
+- Every release has `gphoto2-<version>.crate` and `libgphoto2_sys-<version>.crate` attached (versions in `Cargo.lock`); unpack them next to the app with `tar -xzf`.
+- Add the entries to the workspace `Cargo.toml` (not to be committed):
+
+  ```toml
+  [patch.crates-io]
+  gphoto2 = { path = "../gphoto2-3.4.1" }
+  libgphoto2_sys = { path = "../libgphoto2_sys-1.2.3" }
+  ```
+
+- Install libgphoto2 (`brew install libgphoto2 pkgconf`) and build with the feature that switches the camera backend on:
+
+  ```bash
+  cargo build --release -p grain-to-pixel-desktop --features tether
+  ```
+
+  `cargo tree -p gtp-capture -i gphoto2 --features tether` should show your folder. The libgphoto2 libraries themselves are not part of the crates: see the notices for replacing them in the app.
+
 ## If you pass your changes on
 
 A changed `rawler` that you give to anyone else stays under the LGPL-2.1: keep its licence, say what you changed, and make the source available. The licence of Grain to Pixel itself does not allow passing the app on.

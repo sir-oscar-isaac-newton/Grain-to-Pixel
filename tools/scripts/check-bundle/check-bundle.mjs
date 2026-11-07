@@ -23,6 +23,7 @@ const DEBUG_PORT_FLAG = /remote-debugging-port/;
 const SHIPPED_FILES = [
   'apps/desktop/src-tauri/tauri.conf.json',
   'apps/desktop/src-tauri/tauri.release.conf.json',
+  'apps/desktop/src-tauri/tauri.macos.conf.json',
   '.github/workflows/release.yml',
   '.github/workflows/bundle.yml',
 ];
@@ -122,6 +123,33 @@ export function findSourceArchiveProblems(workflow, cargoLock) {
   return problems;
 }
 
+/**
+ * Every reason the release workflow would not offer the source of the libraries bundled with
+ * libgphoto2 and of the gphoto2 and libgphoto2_sys crates (LGPL-2.1, H-09): the macOS leg must
+ * install them, fetch the source with tools/scripts/release/gphoto-source.mjs and
+ * gphoto-crates-source.mjs and upload it to the release.
+ */
+export function findGphotoSourceProblems(workflow) {
+  const problems = [];
+  if (!workflow.includes('brew install libgphoto2')) {
+    problems.push('release.yml does not install libgphoto2 for the macOS build');
+  }
+  if (!workflow.includes('tools/scripts/release/gphoto-source.mjs')) {
+    problems.push(
+      'release.yml does not fetch the source of the bundled libraries (tools/scripts/release/gphoto-source.mjs)',
+    );
+  }
+  if (!workflow.includes('tools/scripts/release/gphoto-crates-source.mjs')) {
+    problems.push(
+      'release.yml does not fetch the source of the gphoto2 crates (tools/scripts/release/gphoto-crates-source.mjs)',
+    );
+  }
+  if (!workflow.includes('bundle-libgphoto2.sh verify')) {
+    problems.push('release.yml does not verify the libraries bundled in the app');
+  }
+  return problems;
+}
+
 /** The size line for an installer, and whether it is within the limit. */
 export function sizeReport(bytes, maxMb = MAX_INSTALLER_MB) {
   const mb = bytes / (1024 * 1024);
@@ -154,6 +182,11 @@ function main(args) {
       ...findSourceArchiveProblems(
         readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8'),
         readFileSync(path.join(root, 'Cargo.lock'), 'utf8'),
+      ),
+    );
+    problems.push(
+      ...findGphotoSourceProblems(
+        readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8'),
       ),
     );
     for (const problem of problems) console.error(`check-bundle: ${problem}`);

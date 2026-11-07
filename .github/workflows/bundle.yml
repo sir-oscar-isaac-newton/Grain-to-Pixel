@@ -40,7 +40,7 @@ jobs:
             glob: target/release/bundle/nsis/*.exe
             enforce: '--enforce'
           - os: macos-15
-            bundles: dmg
+            bundles: app,dmg
             features: '--features tether'
             glob: target/release/bundle/dmg/*.dmg
             enforce: ''

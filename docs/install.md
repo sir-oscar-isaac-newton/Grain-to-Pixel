@@ -48,7 +48,7 @@ pnpm --filter @gtp/desktop exec tauri build --bundles nsis
 
 ```bash
 brew install libgphoto2 pkgconf
-pnpm --filter @gtp/desktop exec tauri build --bundles dmg --features tether
+pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether
 ```
 
 The macOS build links libgphoto2 and, after compiling, `tools/scripts/release/bundle-libgphoto2.sh` copies its libraries and the two drivers it needs into the app (`Contents/Frameworks/gphoto`, set up by `src-tauri/tauri.macos.conf.json`). `bash tools/scripts/release/bundle-libgphoto2.sh verify "target/release/bundle/macos/Grain to Pixel.app"` checks the result. A build without `--features tether` bundles nothing of it.

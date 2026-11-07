@@ -261,16 +261,10 @@ fn assert_too_hot<T: std::fmt::Debug>(result: Result<T, AppError>) {
     assert!(err.message.contains("too hot"), "{err}");
 }
 
-/// Without fake hardware there is no backend, except on macOS with `tether`, where libgphoto2 is
-/// the backend and finds no camera (none is plugged into a test machine).
+#[cfg(not(all(target_os = "macos", feature = "tether")))]
 fn assert_no_camera<T: std::fmt::Debug>(result: Result<T, AppError>) {
     let err = result.unwrap_err();
-    let expected = if cfg!(all(target_os = "macos", feature = "tether")) {
-        "No camera was found"
-    } else {
-        "No camera backend"
-    };
-    assert!(err.message.contains(expected), "{err}");
+    assert!(err.message.contains("No camera backend"), "{err}");
 }
 
 #[test]
@@ -558,15 +552,25 @@ fn the_busy_flag_is_released_after_success_error_and_panic() {
 }
 
 #[test]
-fn without_fake_hardware_there_is_no_camera_but_the_light_still_answers() {
+fn without_fake_hardware_the_light_still_answers() {
     let hardware = Hardware::from_vars(None, None);
-    assert!(camera_list(&hardware).is_empty());
     // Nothing is connected: switching off is fine, lighting is an error in words.
     light_off(&hardware).unwrap();
     let err = light_set(&hardware, [1, 0, 0], 55.0).unwrap_err();
     assert!(err.message.contains("not connected"), "{err}");
     assert!(!hardware.busy().is_busy());
+}
 
+/// Builds without a camera backend refuse up front. With `tether` on macOS, libgphoto2 is the
+/// backend and would drive whatever camera is plugged in, so this is not run there: an absent
+/// camera with a backend is covered by
+/// `an_absent_or_held_camera_fails_a_test_shot_and_a_capture_in_words_before_any_light`, and the
+/// real camera by the ignored `gphoto_hardware` test.
+#[cfg(not(all(target_os = "macos", feature = "tether")))]
+#[test]
+fn without_a_camera_backend_a_test_shot_and_a_capture_are_refused() {
+    let hardware = Hardware::from_vars(None, None);
+    assert!(camera_list(&hardware).is_empty());
     let rig = Rig::new("no-camera");
     assert_no_camera(test_shot(
         rig.ctx(),

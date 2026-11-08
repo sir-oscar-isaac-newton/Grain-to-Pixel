@@ -38043,7 +38043,7 @@ DEALINGS IN THE SOFTWARE.
 ==============================================================================
 Licence: MIT
 Packages:
-  zip 9.2.1 (crate)
+  zip 9.3.0 (crate)
 
 The MIT License (MIT)
 

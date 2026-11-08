@@ -4,11 +4,12 @@
 use std::sync::Arc;
 
 use gtp_app::services::capture_control as capture;
+use gtp_app::services::capture_levels::{self, CaptureLevels, LevelsScope};
 use gtp_app::{
     AppContext, CameraInfo, CaptureProfile, CaptureProfilePatch, Hardware, JobManager, LightInfo,
     PortInfo, TestShot,
 };
-use gtp_core::{JobId, RollId, TripletChannel};
+use gtp_core::{ExposureInfo, JobId, RollId, TripletChannel};
 use tauri::State;
 
 use crate::error::CmdResult;
@@ -78,8 +79,31 @@ pub fn capture_profile_set(
     ctx.settings().update_capture(&patch)
 }
 
-/// Lights one colour, takes a picture, and returns the histogram and clipped percentage of that
-/// channel. Stores nothing; the light is off afterwards.
+/// The levels the roll captures with: saved for its film stock, else the global default, with the
+/// camera settings they were saved after (H-15).
+#[tauri::command(async)]
+#[specta::specta]
+pub fn capture_levels_get(ctx: State<'_, AppContext>, roll_id: RollId) -> CmdResult<CaptureLevels> {
+    capture_levels::levels_for_roll(&ctx, roll_id)
+}
+
+/// Saves `levels` (0 to 255 each) as the global default or for a film stock, with the camera
+/// settings of the test shot they were balanced on. Returns the levels as they now resolve for that
+/// scope.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn capture_levels_save(
+    ctx: State<'_, AppContext>,
+    scope: LevelsScope,
+    levels: [u32; 3],
+    exposure: Option<ExposureInfo>,
+) -> CmdResult<CaptureLevels> {
+    capture_levels::save_levels(&ctx, &scope, levels, exposure)
+}
+
+/// Lights one colour at its level of `levels` (the working levels, 0 to 255 each), takes a
+/// picture, and returns the histogram and clipped percentage of that channel and the picture's
+/// camera settings. Stores nothing; the light is off afterwards.
 #[tauri::command(async)]
 #[specta::specta]
 pub fn capture_test(
@@ -87,12 +111,14 @@ pub fn capture_test(
     hardware: State<'_, Hardware>,
     events: State<'_, CaptureEventsState>,
     channel: TripletChannel,
+    levels: [u32; 3],
 ) -> CmdResult<TestShot> {
-    capture::test_shot(&ctx, &hardware, events.0.as_ref(), channel)
+    capture::test_shot(&ctx, &hardware, events.0.as_ref(), channel, levels)
 }
 
 /// Captures one frame into the roll as a job; the new frame arrives in `job://done` like an
-/// import's, the steps as `capture://step`. Returns the job id at once.
+/// import's, the steps as `capture://step`. `levels` are the working levels (0 to 255 each). Returns
+/// the job id at once.
 #[tauri::command(async)]
 #[specta::specta]
 pub fn capture_triplet(
@@ -102,6 +128,7 @@ pub fn capture_triplet(
     library_events: State<'_, EventsState>,
     events: State<'_, CaptureEventsState>,
     roll_id: RollId,
+    levels: [u32; 3],
 ) -> CmdResult<JobId> {
     capture::start_triplet(
         &ctx,
@@ -110,6 +137,7 @@ pub fn capture_triplet(
         Arc::clone(&library_events.0),
         Arc::clone(&events.0),
         roll_id,
+        levels,
     )
 }
 
@@ -245,6 +273,7 @@ mod tests {
             f.app.state(),
             f.app.state(),
             TripletChannel::Green,
+            [44, 22, 2],
         )
         .unwrap();
         assert_eq!(shot.histogram.len(), 256);
@@ -264,6 +293,44 @@ mod tests {
     }
 
     #[test]
+    fn levels_are_resolved_per_roll_saved_with_their_scope_and_validated() {
+        use gtp_app::services::capture_levels::{LevelsScope, LevelsSource};
+
+        let f = fixture("levels");
+        let got = capture_levels_get(f.app.state(), f.roll).unwrap();
+        assert_eq!(got.levels, [44, 22, 2]);
+        assert_eq!(got.source, LevelsSource::Default);
+
+        let saved = capture_levels_save(
+            f.app.state(),
+            LevelsScope::Stock("Portra 400".into()),
+            [60, 30, 4],
+            None,
+        )
+        .unwrap();
+        assert_eq!(saved.source, LevelsSource::Stock);
+        // The roll has no film stock, so it still uses the default.
+        assert_eq!(
+            capture_levels_get(f.app.state(), f.roll).unwrap().levels,
+            [44, 22, 2]
+        );
+        let err = capture_levels_save(f.app.state(), LevelsScope::Default, [1, 2, 256], None)
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        let text = std::fs::read_to_string(f.dir.join("settings.json")).unwrap();
+        assert!(text.contains("portra 400"), "{text}");
+        // The scope reaches the command as the UI sends it.
+        assert_eq!(
+            serde_json::from_str::<LevelsScope>("\"default\"").unwrap(),
+            LevelsScope::Default
+        );
+        assert_eq!(
+            serde_json::from_str::<LevelsScope>("{\"stock\":\"HP5\"}").unwrap(),
+            LevelsScope::Stock("HP5".into())
+        );
+    }
+
+    #[test]
     fn a_capture_returns_a_job_that_ends_with_the_new_frame() {
         let f = fixture("triplet");
         let rx = listen(&f.app, &["job://done", "job://error", "capture://step"]);
@@ -274,6 +341,7 @@ mod tests {
             f.app.state(),
             f.app.state(),
             f.roll,
+            [44, 22, 2],
         )
         .unwrap();
         let mut steps = 0;
@@ -297,8 +365,14 @@ mod tests {
         let real = Hardware::from_vars(None, None);
         let ctx = f.app.state::<AppContext>();
         let events = f.app.state::<CaptureEventsState>();
-        let err =
-            capture::test_shot(&ctx, &real, events.0.as_ref(), TripletChannel::Red).unwrap_err();
+        let err = capture::test_shot(
+            &ctx,
+            &real,
+            events.0.as_ref(),
+            TripletChannel::Red,
+            [44, 22, 2],
+        )
+        .unwrap_err();
         assert!(err.message.contains("No camera backend"), "{err}");
         assert!(capture::camera_list(&real).is_empty());
     }

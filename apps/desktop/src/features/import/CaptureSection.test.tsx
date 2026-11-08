@@ -163,36 +163,216 @@ describe('CaptureSection', () => {
   });
 
   describe('levels', () => {
-    it('starts from the profile and saves a change when it is made', async () => {
-      const user = userEvent.setup();
+    const slider = (name: string) => screen.getByRole('slider', { name });
+
+    it('starts from the levels of the chosen roll and shows where they come from', async () => {
       openLibrary();
       render(<Capture />);
       const red = await screen.findByRole('slider', { name: 'Red level' });
       expect(red).toHaveAttribute('aria-valuenow', '44');
-      expect(screen.getByRole('slider', { name: 'Blue level' })).toHaveAttribute(
-        'aria-valuenow',
-        '2',
+      expect(slider('Blue level')).toHaveAttribute('aria-valuenow', '2');
+      expect(screen.getByText('Default levels')).toBeInTheDocument();
+      expect(ipc.captureLevelsGet).toHaveBeenCalledWith(state.rolls[0]?.id);
+    });
+
+    it('uses the levels saved for the film stock of the roll, and the default for another', async () => {
+      const user = userEvent.setup();
+      const portra = makeRoll({ name: 'Portra roll', film_stock: ' Portra 400 ' });
+      const plain = makeRoll({ name: 'Plain roll' });
+      state.savedStocks['portra 400'] = {
+        levels: [60, 30, 4],
+        source: 'stock',
+        stock: 'Portra 400',
+        exposure: null,
+      };
+      state.rolls = [portra, plain];
+      state.details = libraryDetails();
+      useLibraryStore.setState({
+        phase: 'ready',
+        library: state.details,
+        rolls: [portra, plain],
+        rollId: portra.id,
+      });
+      render(<Capture />);
+      const red = await screen.findByRole('slider', { name: 'Red level' });
+      await waitFor(() => expect(red).toHaveAttribute('aria-valuenow', '60'));
+      expect(screen.getByText('Levels saved for Portra 400')).toBeInTheDocument();
+
+      await user.selectOptions(
+        screen.getByRole('combobox', { name: 'Import into roll' }),
+        plain.id,
       );
+      await waitFor(() => expect(red).toHaveAttribute('aria-valuenow', '44'));
+      expect(screen.getByText('Default levels')).toBeInTheDocument();
+      expect(ipc.captureLevelsGet).toHaveBeenLastCalledWith(plain.id);
+    });
+
+    it('changes only the working levels: no call is made and nothing is saved', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      render(<Capture />);
+      const red = await screen.findByRole('slider', { name: 'Red level' });
       red.focus();
       await user.keyboard('{ArrowRight}');
-      await waitFor(() =>
-        expect(ipc.captureProfileSet).toHaveBeenCalledWith({ levels: [45, 22, 2] }),
-      );
       expect(red).toHaveAttribute('aria-valuenow', '45');
+      expect(screen.getByText('Changed, not saved')).toBeInTheDocument();
+      expect(ipc.captureProfileSet).not.toHaveBeenCalled();
+      expect(ipc.captureLevelsSave).not.toHaveBeenCalled();
       // Moving a slider never lights the light.
       expect(ipc.lightSet).not.toHaveBeenCalled();
     });
 
-    it('shows why a change was refused and puts the old level back', async () => {
-      const user = userEvent.setup();
-      state.profileRefused = 'That level is too bright.';
+    it('shows why the levels could not be read', async () => {
+      state.levelsFail = 'The settings could not be read.';
       openLibrary();
       render(<Capture />);
-      const green = await screen.findByRole('slider', { name: 'Green level' });
-      green.focus();
+      expect(await screen.findByText('The settings could not be read.')).toBeInTheDocument();
+    });
+  });
+
+  describe('saving levels', () => {
+    it('is not possible while a capture runs', async () => {
+      const { user } = await ready();
+      await screen.findByRole('slider', { name: 'Red level' });
+      await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Save as default' })).toBeEnabled(),
+      );
+      await startCapture(user);
+      expect(screen.getByRole('button', { name: 'Save as default' })).toBeDisabled();
+      expect(screen.getByRole('slider', { name: 'Red level' })).toHaveAttribute('data-disabled');
+    });
+
+    const saveDefault = () => screen.getByRole('button', { name: 'Save as default' });
+
+    it('needs a test shot at the current levels, and a moved slider needs a new one', async () => {
+      const { user } = await ready();
+      await screen.findByRole('slider', { name: 'Red level' });
+      expect(saveDefault()).toBeDisabled();
+      expect(
+        screen.getByText('Take a test shot at these levels to save them.'),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+      await waitFor(() => expect(saveDefault()).toBeEnabled());
+
+      screen.getByRole('slider', { name: 'Red level' }).focus();
       await user.keyboard('{ArrowRight}');
-      expect(await screen.findByText('That level is too bright.')).toBeInTheDocument();
-      expect(green).toHaveAttribute('aria-valuenow', '22');
+      expect(saveDefault()).toBeDisabled();
+      await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+      await waitFor(() => expect(saveDefault()).toBeEnabled());
+    });
+
+    it('offers Save for the film stock only when the roll has one', async () => {
+      const { user } = await ready();
+      await screen.findByRole('slider', { name: 'Red level' });
+      expect(screen.queryByRole('button', { name: /^Save for/ })).not.toBeInTheDocument();
+      useLibraryStore.setState({ rolls: [makeRoll({ name: 'Harbour', film_stock: ' HP5 ' })] });
+      const rolls = useLibraryStore.getState().rolls;
+      state.rolls = rolls;
+      useLibraryStore.setState({ rollId: rolls[0]?.id ?? null });
+      expect(await screen.findByRole('button', { name: 'Save for HP5' })).toBeDisabled();
+      await user.click(screen.getByRole('button', { name: 'Test shot, green' }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Save for HP5' })).toBeEnabled(),
+      );
+    });
+
+    it('saves as the default with the levels and the camera settings of the test shot', async () => {
+      const { user } = await ready();
+      const red = await screen.findByRole('slider', { name: 'Red level' });
+      red.focus();
+      await user.keyboard('{ArrowRight}{ArrowRight}');
+      await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+      await waitFor(() => expect(saveDefault()).toBeEnabled());
+      await user.click(saveDefault());
+      await waitFor(() =>
+        expect(ipc.captureLevelsSave).toHaveBeenCalledWith(
+          'default',
+          [46, 22, 2],
+          state.testShot.exposure,
+        ),
+      );
+      expect(await screen.findByText('Levels saved.')).toBeInTheDocument();
+      expect(screen.getByText('Default levels')).toBeInTheDocument();
+      expect(ipc.captureLevelsGet).toHaveBeenCalledTimes(2);
+    });
+
+    it('saves for the film stock and then shows the levels as saved for it', async () => {
+      const user = userEvent.setup();
+      const roll = makeRoll({ name: 'Harbour', film_stock: 'Portra 400' });
+      state.details = libraryDetails();
+      state.rolls = [roll];
+      useLibraryStore.setState({
+        phase: 'ready',
+        library: state.details,
+        rolls: [roll],
+        rollId: roll.id,
+      });
+      render(<Capture />);
+      await screen.findByText('Camera: Nikon D600');
+      await user.click(screen.getByRole('button', { name: 'Connect light' }));
+      await screen.findByText('Light connected');
+      const red = await screen.findByRole('slider', { name: 'Red level' });
+      red.focus();
+      await user.keyboard('{ArrowRight}');
+      expect(screen.getByText('Changed, not saved')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+      const save = await screen.findByRole('button', { name: 'Save for Portra 400' });
+      await waitFor(() => expect(save).toBeEnabled());
+      await user.click(save);
+      await waitFor(() =>
+        expect(ipc.captureLevelsSave).toHaveBeenCalledWith(
+          { stock: 'Portra 400' },
+          [45, 22, 2],
+          state.testShot.exposure,
+        ),
+      );
+      expect(await screen.findByText('Levels saved for Portra 400')).toBeInTheDocument();
+    });
+
+    it('says when the test shot camera settings differ from those the levels were saved with', async () => {
+      state.savedDefaultExposure = {
+        exposure_time: { num: 1, den: 125 },
+        iso: 200,
+        f_number: null,
+      };
+      const { user } = await ready();
+      await screen.findByRole('slider', { name: 'Red level' });
+      expect(
+        screen.queryByText('The camera settings differ from when these levels were saved.'),
+      ).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+      expect(
+        await screen.findByText('The camera settings differ from when these levels were saved.'),
+      ).toBeInTheDocument();
+    });
+
+    it('shows why a save was refused', async () => {
+      const { user } = await ready();
+      await screen.findByRole('slider', { name: 'Red level' });
+      await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+      await waitFor(() => expect(saveDefault()).toBeEnabled());
+      state.levelsFail = 'The settings could not be written.';
+      await user.click(saveDefault());
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'The settings could not be written.',
+      );
+    });
+
+    it('is not blocked by a read-only library', async () => {
+      openLibrary({ read_only: true });
+      const user = userEvent.setup();
+      render(<Capture />);
+      await screen.findByText('Camera: Nikon D600');
+      await user.click(screen.getByRole('button', { name: 'Connect light' }));
+      await screen.findByText('Light connected');
+      await screen.findByRole('slider', { name: 'Red level' });
+      await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+      await waitFor(() => expect(saveDefault()).toBeEnabled());
+      expect(screen.getByRole('slider', { name: 'Red level' })).not.toHaveAttribute(
+        'data-disabled',
+      );
     });
   });
 
@@ -200,7 +380,11 @@ describe('CaptureSection', () => {
     const shotOf = (clipped: number | null) => {
       const histogram = new Array<number>(256).fill(0);
       histogram[100] = 0.5;
-      state.testShot = { histogram, clipped_pct: clipped };
+      state.testShot = {
+        ...state.testShot,
+        histogram,
+        clipped_pct: clipped,
+      } as typeof state.testShot;
     };
 
     it('shows the histogram of the colour and how much is clipped, without a warning', async () => {
@@ -210,7 +394,7 @@ describe('CaptureSection', () => {
       expect(
         await screen.findByRole('img', { name: 'Histogram of the green test shot' }),
       ).toBeInTheDocument();
-      expect(ipc.captureTest).toHaveBeenCalledWith('green');
+      expect(ipc.captureTest).toHaveBeenCalledWith('green', [44, 22, 2]);
       expect(screen.getByText('0.10 % clipped')).toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
@@ -244,7 +428,7 @@ describe('CaptureSection', () => {
       const { roll, user } = await ready();
       state.frames = makeFrames(roll.id, 7);
       const id = await startCapture(user);
-      expect(ipc.captureTriplet).toHaveBeenCalledWith(roll.id);
+      expect(ipc.captureTriplet).toHaveBeenCalledWith(roll.id, [44, 22, 2]);
       expect(useLibraryStore.getState().jobs[0]).toMatchObject({ id, kind: 'capture' });
 
       act(() => listeners.step.forEach((cb) => cb({ channel: 'red', state: 'lit' })));
@@ -262,6 +446,7 @@ describe('CaptureSection', () => {
         { frame_id: 'f', kind: { kind: 'iso_mismatch' } },
         { frame_id: 'f', kind: { kind: 'exposure_time_mismatch' } },
         { frame_id: 'f', kind: { kind: 'clipped', channel: 'blue', per_mille: 12 } },
+        { frame_id: 'f', kind: { kind: 'exposure_differs_from_levels' } },
       ]);
       expect(await screen.findByText('Frame 7 on this roll')).toBeInTheDocument();
       expect(screen.getByText('The light was warm during this frame (47 °C).')).toBeInTheDocument();
@@ -271,8 +456,20 @@ describe('CaptureSection', () => {
       expect(
         screen.getByText('The blue picture is clipped (1.2 %). Lower its level.'),
       ).toBeInTheDocument();
+      expect(
+        screen.getByText('The camera settings differ from when these levels were saved.'),
+      ).toBeInTheDocument();
       expect(screen.queryByRole('list', { name: 'Steps of this capture' })).not.toBeInTheDocument();
       expect(next()).toBeEnabled();
+    });
+
+    it('captures with the working levels, saved or changed', async () => {
+      const { roll, user } = await ready();
+      const red = await screen.findByRole('slider', { name: 'Red level' });
+      red.focus();
+      await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}');
+      await user.click(next());
+      await waitFor(() => expect(ipc.captureTriplet).toHaveBeenCalledWith(roll.id, [47, 22, 2]));
     });
 
     it('starts with the Space key', async () => {
@@ -280,7 +477,7 @@ describe('CaptureSection', () => {
       // Clicking Connect left the focus on that button, which keeps its own Space.
       (document.activeElement as HTMLElement | null)?.blur();
       await user.keyboard(' ');
-      await waitFor(() => expect(ipc.captureTriplet).toHaveBeenCalledWith(roll.id));
+      await waitFor(() => expect(ipc.captureTriplet).toHaveBeenCalledWith(roll.id, [44, 22, 2]));
     });
 
     it('ignores Space while a field, a slider or a select has the focus', async () => {
@@ -348,7 +545,6 @@ describe('CaptureSection', () => {
       await user.click(screen.getByRole('button', { name: 'Connect light' }));
       await screen.findByText('Light connected');
       expect(next()).toBeDisabled();
-      expect(screen.getByRole('slider', { name: 'Red level' })).toHaveAttribute('data-disabled');
     });
   });
 

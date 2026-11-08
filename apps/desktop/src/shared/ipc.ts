@@ -7,6 +7,7 @@ import {
   commands,
   type AppError,
   type CameraInfo,
+  type CaptureLevels_Serialize,
   type CaptureProfile_Serialize,
   type CaptureProfilePatch_Deserialize,
   type CaptureStep,
@@ -15,11 +16,13 @@ import {
   type CrashNote,
   type DeviceInfo,
   type ExportedFile,
+  type ExposureInfo_Serialize,
   type FailedExport,
   type FilmFormat,
   type FlatFieldInfo,
   type ImportResult,
   type ImportWarning,
+  type LevelsScope,
   type LibraryDetails,
   type LibraryInfo,
   type LightInfo,
@@ -33,7 +36,7 @@ import {
   type SettingsPatch,
   type SkipReason,
   type SkippedFile,
-  type TestShot,
+  type TestShot_Serialize,
   type TripletCandidate,
   type TripletChannel,
   type TripletFile,
@@ -58,6 +61,7 @@ export type {
   FlatFieldInfo,
   ImportResult,
   ImportWarning,
+  LevelsScope,
   LibraryDetails,
   LibraryInfo,
   LightInfo,
@@ -69,7 +73,6 @@ export type {
   SettingsPatch,
   SkipReason,
   SkippedFile,
-  TestShot,
   TripletCandidate,
   TripletChannel,
   TripletFile,
@@ -313,6 +316,9 @@ export async function folderCheck(path: string): Promise<FolderCheck> {
 }
 
 export type CaptureProfile = CaptureProfile_Serialize;
+export type CaptureLevels = CaptureLevels_Serialize;
+export type ExposureInfo = ExposureInfo_Serialize;
+export type TestShot = TestShot_Serialize;
 export type CaptureProfilePatch = CaptureProfilePatch_Deserialize;
 export type LightStatus = LightStatus_Serialize;
 
@@ -350,14 +356,34 @@ export async function captureProfileSet(patch: CaptureProfilePatch): Promise<Cap
   return unwrap(await commands.captureProfileSet(patch));
 }
 
-/** Lights one colour, takes a picture and returns its histogram; stores nothing. */
-export async function captureTest(channel: TripletChannel): Promise<TestShot> {
-  return unwrap(await commands.captureTest(channel));
+/** The three LED levels (red, green, blue), 0 to 255 each. */
+export type Levels = [number, number, number];
+
+/** The levels the roll captures with: saved for its film stock, else the global default. */
+export async function captureLevelsGet(rollId: string): Promise<CaptureLevels> {
+  return unwrap(await commands.captureLevelsGet(rollId));
 }
 
-/** Captures one frame into the roll as a job; the new frame arrives in `job://done`. Returns the job id. */
-export async function captureTriplet(rollId: string): Promise<string> {
-  return unwrap(await commands.captureTriplet(rollId));
+/**
+ * Saves levels as the global default or for a film stock, with the camera settings of the test
+ * shot they were balanced on. Returns the levels as they now resolve for that scope.
+ */
+export async function captureLevelsSave(
+  scope: LevelsScope,
+  levels: Levels,
+  exposure: ExposureInfo | null,
+): Promise<CaptureLevels> {
+  return unwrap(await commands.captureLevelsSave(scope, levels, exposure));
+}
+
+/** Lights one colour at its working level, takes a picture and returns its histogram; stores nothing. */
+export async function captureTest(channel: TripletChannel, levels: Levels): Promise<TestShot> {
+  return unwrap(await commands.captureTest(channel, levels));
+}
+
+/** Captures one frame into the roll at the working levels as a job; the frame arrives in `job://done`. Returns the job id. */
+export async function captureTriplet(rollId: string, levels: Levels): Promise<string> {
+  return unwrap(await commands.captureTriplet(rollId, levels));
 }
 
 /** The scanners that can be used now; fails with the reason (not connected, wrong driver ...) when none. */

@@ -20,11 +20,13 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::Duration;
 
 use gtp_capture::{
-    CameraFinder, CameraInfo, CameraSource, CaptureSequence, CapturedFile, LightGuard, LightInfo,
-    LightSource, LightStatus, Pause, PortInfo, ThreadPause, CAPTURE_TIMEOUT,
+    CameraFinder, CameraInfo, CameraSource, CaptureProfile, CaptureSequence, CapturedFile,
+    LightGuard, LightInfo, LightSource, LightStatus, Pause, PortInfo, ThreadPause, CAPTURE_TIMEOUT,
 };
-use gtp_core::{AppError, ErrorCode, FrameId, JobId, JobResult, RollId, TripletChannel};
-use gtp_ingest::CLIP_LEVEL;
+use gtp_core::{
+    AppError, ErrorCode, ExposureInfo, FrameId, JobId, JobResult, RollId, TripletChannel,
+};
+use gtp_ingest::{read_exposure_info, CLIP_LEVEL};
 use gtp_io::{demosaic_channel, Limits, RawDecoder};
 use serde::Serialize;
 
@@ -32,6 +34,9 @@ use crate::context::AppContext;
 use crate::hardware::Hardware;
 use crate::jobs::{JobKind, JobManager, LibraryEvents};
 use crate::services::capture::{capture_triplet, safe_name};
+use crate::services::capture_levels::{
+    exposure_from_exif, levels_for_roll, levels_from_wide, LevelsUsed,
+};
 use crate::services::roll_frame;
 use crate::shared_light::{tripped_error, LightReading, SharedLight};
 
@@ -73,6 +78,9 @@ pub struct TestShot {
     pub histogram: Vec<u32>,
     /// The share of photosites at 99 percent of full scale or more, in percent.
     pub clipped_pct: f32,
+    /// The shutter time, ISO and aperture of the test picture, as its EXIF says; saved with the
+    /// levels so that a capture with other settings can warn.
+    pub exposure: ExposureInfo,
 }
 
 /// The flag that says the light and the camera are in use.
@@ -332,7 +340,9 @@ impl CameraSource for StepCamera<'_> {
 
 /// `capture_triplet`: starts capturing one frame into `roll` as a job and returns its id. The new
 /// frame arrives in `job://done` like an import's. Refused when there is no camera backend, no
-/// library or roll, or another capture is running.
+/// library or roll, or another capture is running. `levels` are the working levels of the sliders
+/// (0 to 255 each), used instead of the profile's: they are recorded with the frame as the roll's
+/// saved levels when they equal them, and as manual otherwise.
 pub fn start_triplet(
     ctx: &AppContext,
     jobs: &JobManager,
@@ -340,14 +350,20 @@ pub fn start_triplet(
     library_events: Arc<dyn LibraryEvents>,
     events: Arc<dyn CaptureEvents>,
     roll: RollId,
+    levels: [u32; 3],
 ) -> Result<JobId, AppError> {
+    let levels = levels_from_wide(levels)?;
     let camera = hardware.camera.clone().ok_or_else(no_camera)?;
     let library = ctx.library()?;
     // Fail now, not inside the job, when the roll is gone or the library is read-only.
     library.read(|c| c.get_roll(roll))?;
     library.write(|_| Ok(()))?;
     let busy = hardware.busy().acquire()?;
-    let profile = ctx.settings().capture_profile();
+    let used = LevelsUsed::for_working(levels, &levels_for_roll(ctx, roll)?);
+    let profile = CaptureProfile {
+        levels,
+        ..ctx.settings().capture_profile()
+    };
     let look = ctx.settings().get().starting_look;
     let thumbnails = ctx.thumbnail_requester()?;
     let light = hardware.light.clone();
@@ -379,6 +395,7 @@ pub fn start_triplet(
             job,
             library_events.as_ref(),
             look,
+            &used,
         )?;
         // A better film base for the roll changes how its other frames look: refresh their thumbnails.
         if result.base_replaced {
@@ -397,18 +414,24 @@ pub fn start_triplet(
 
 // --- the test shot ---------------------------------------------------------------------------
 
-/// `capture_test`: lights `channel` alone at its profile level, takes one picture, measures that
-/// channel and returns its histogram and clipped share. Stores nothing, and the light is off
+/// `capture_test`: lights `channel` alone at its level of `levels` (the working levels of the
+/// sliders, 0 to 255 each), takes one picture, measures that channel and returns its histogram,
+/// clipped share and the camera settings of the picture. Stores nothing, and the light is off
 /// afterwards on every way out (the sequence's guard). Refused while a capture is in progress.
 pub fn test_shot(
     ctx: &AppContext,
     hardware: &Hardware,
     events: &dyn CaptureEvents,
     channel: TripletChannel,
+    levels: [u32; 3],
 ) -> Result<TestShot, AppError> {
+    let levels = levels_from_wide(levels)?;
     let camera = hardware.camera.clone().ok_or_else(no_camera)?;
     let _busy = hardware.busy().acquire()?;
-    let profile = ctx.settings().capture_profile();
+    let profile = CaptureProfile {
+        levels,
+        ..ctx.settings().capture_profile()
+    };
     let file = {
         camera.connect()?;
         let mut cam = camera.take()?;
@@ -547,6 +570,7 @@ fn measure(
     Ok(TestShot {
         histogram,
         clipped_pct,
+        exposure: exposure_from_exif(read_exposure_info(&staged.path)),
     })
 }
 

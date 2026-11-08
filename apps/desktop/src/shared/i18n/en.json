@@ -212,7 +212,8 @@
       "flat_field_skipped": "not corrected: the roll’s flat field is for frames of another size",
       "balance_skipped": "no colour balance for the roll: none of the frames in this job had a neutral to judge by",
       "high_temperature": "the light was warm while this frame was taken ({{temp_c}} °C); let it cool if you take many frames in a row",
-      "low_supply": "the light’s supply voltage sagged to {{volts}} V; try another USB port or a powered hub"
+      "low_supply": "the light’s supply voltage sagged to {{volts}} V; try another USB port or a powered hub",
+      "exposure_differs_from_levels": "the camera settings differ from when the light levels were saved"
     }
   },
   "settings": {
@@ -726,7 +727,17 @@
       "levels": {
         "red": "Red level",
         "green": "Green level",
-        "blue": "Blue level"
+        "blue": "Blue level",
+        "source": {
+          "stock": "Levels saved for {{stock}}",
+          "default": "Default levels",
+          "changed": "Changed, not saved"
+        },
+        "saveDefault": "Save as default",
+        "saveStock": "Save for {{stock}}",
+        "needTest": "Take a test shot at these levels to save them.",
+        "saved": "Levels saved.",
+        "exposureDiffers": "The camera settings differ from when these levels were saved."
       },
       "test": {
         "shoot": "Test shot, {{channel}}",
@@ -763,7 +774,8 @@
         "iso_mismatch": "The three pictures used different ISO values. Set the camera to a fixed ISO.",
         "aperture_mismatch": "The three pictures used different apertures. Set the camera to manual exposure.",
         "clipped": "The {{channel}} picture is clipped ({{pct}} %). Lower its level.",
-        "flat_field_skipped": "The roll's flat field is for another frame size, so it was not applied."
+        "flat_field_skipped": "The roll's flat field is for another frame size, so it was not applied.",
+        "exposure_differs_from_levels": "The camera settings differ from when these levels were saved."
       }
     },
     "channel": {

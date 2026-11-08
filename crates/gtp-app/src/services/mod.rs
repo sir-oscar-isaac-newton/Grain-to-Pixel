@@ -2,6 +2,7 @@
 
 pub mod capture;
 pub mod capture_control;
+pub mod capture_levels;
 pub mod counters;
 pub mod develop;
 pub mod diagnostics;

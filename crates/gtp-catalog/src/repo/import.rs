@@ -20,7 +20,7 @@ impl Catalog {
         sources: &[SourceFile],
         recipe: &Recipe,
     ) -> Result<Frame, AppError> {
-        self.store_new_frame(frame, sources, recipe, None)
+        self.store_new_frame(frame, sources, recipe, None, None)
     }
 
     /// [`Catalog::insert_imported_frame`] for a frame the scanner made: it also records the frame
@@ -34,7 +34,38 @@ impl Catalog {
         scan_number: u32,
         info: &str,
     ) -> Result<Frame, AppError> {
-        self.store_new_frame(frame, sources, recipe, Some((scan_number, info)))
+        self.store_new_frame(frame, sources, recipe, Some((scan_number, info)), None)
+    }
+
+    /// [`Catalog::insert_imported_frame`] for a frame the camera captured: it also records how the
+    /// frame was lit (`info`, JSON: levels, their source and the exposures), in the same
+    /// transaction.
+    pub fn insert_captured_frame(
+        &mut self,
+        frame: &Frame,
+        sources: &[SourceFile],
+        recipe: &Recipe,
+        info: &str,
+    ) -> Result<Frame, AppError> {
+        self.store_new_frame(frame, sources, recipe, None, Some(info))
+    }
+
+    /// How a captured frame was lit, as the JSON `insert_captured_frame` stored; `None` for a frame
+    /// that was imported or scanned (or captured before H-15). A frame that does not exist is
+    /// `NotFound`.
+    pub fn capture_info(&self, frame: gtp_core::FrameId) -> Result<Option<String>, AppError> {
+        self.conn
+            .query_row(
+                "SELECT capture_info FROM frame WHERE id = ?1",
+                params![frame.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|err| match err {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AppError::new(ErrorCode::NotFound, "That frame does not exist.")
+                }
+                other => db_error(other),
+            })
     }
 
     /// The highest scanner frame number among the roll's scanned frames; `None` when none of its
@@ -57,6 +88,7 @@ impl Catalog {
         sources: &[SourceFile],
         recipe: &Recipe,
         scan: Option<(u32, &str)>,
+        capture: Option<&str>,
     ) -> Result<Frame, AppError> {
         check_len(frame.note.trim(), MAX_NOTE_CHARS, "note")?;
         if sources.iter().any(|s| s.frame_id != frame.id) {
@@ -72,9 +104,9 @@ impl Catalog {
         tx.execute(
             &format!(
                 "INSERT INTO frame(id, roll_id, index_in_roll, kind, width, height, has_ir, note,
-                                   created_at, edited_at, scan_number, scan_info)
+                                   created_at, edited_at, scan_number, scan_info, capture_info)
                  SELECT ?1, ?2, coalesce(max(index_in_roll), 0) + 1, ?3, ?4, ?5, ?6, ?7, {NOW}, NULL,
-                        ?8, ?9
+                        ?8, ?9, ?10
                  FROM frame WHERE roll_id = ?2"
             ),
             params![
@@ -86,7 +118,8 @@ impl Catalog {
                 frame.has_ir,
                 frame.note.trim(),
                 scan.map(|(number, _)| number),
-                scan.map(|(_, info)| info)
+                scan.map(|(_, info)| info),
+                capture
             ],
         )
         .map_err(|err| match err.sqlite_error_code() {

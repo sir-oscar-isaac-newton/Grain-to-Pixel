@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 import type {
   AppError,
   CameraInfo,
+  CaptureLevels,
   CaptureProfile,
   CaptureStep,
   Counters,
@@ -12,6 +13,7 @@ import type {
   FramePage,
   FrameSummary,
   ImportResult,
+  LevelsScope,
   LibraryDetails,
   LightInfo,
   LightStatus,
@@ -283,7 +285,15 @@ export const state = {
   } as CaptureProfile,
   profileRefused: null as string | null,
   /** What capture_test answers, or the message it fails with. */
-  testShot: { histogram: new Array(256).fill(0), clipped_pct: 0 } as TestShot,
+  testShot: {
+    histogram: new Array(256).fill(0),
+    clipped_pct: 0,
+    exposure: { exposure_time: { num: 1, den: 60 }, iso: 200, f_number: { num: 56, den: 10 } },
+  } as TestShot,
+  /** Levels saved per film stock (key: the stock as the roll spells it), and the default's exposure. */
+  savedStocks: {} as Record<string, CaptureLevels>,
+  savedDefaultExposure: null as CaptureLevels['exposure'],
+  levelsFail: null as string | null,
   testFail: null as string | null,
   /** The id capture_triplet answers, or the message it fails with. */
   captureJob: 'job-capture-1' as string,
@@ -670,16 +680,55 @@ export const ipc = {
     state.profile = { ...state.profile, levels: patch.levels ?? state.profile.levels };
     return { ...state.profile };
   }),
-  captureTest: vi.fn(async (channel: string): Promise<TestShot> => {
-    void channel;
-    if (state.testFail) throw new IpcError({ code: 'Internal', message: state.testFail });
-    return { ...state.testShot };
+  captureLevelsGet: vi.fn(async (rollId: string): Promise<CaptureLevels> => {
+    if (state.levelsFail) throw new IpcError({ code: 'Internal', message: state.levelsFail });
+    const stock = state.rolls
+      .find((r) => r.id === rollId)
+      ?.film_stock?.trim()
+      .toLowerCase();
+    const hit = stock ? state.savedStocks[stock] : undefined;
+    return hit
+      ? { ...hit }
+      : {
+          levels: [...state.profile.levels] as [number, number, number],
+          source: 'default',
+          stock: null,
+          exposure: state.savedDefaultExposure,
+        };
   }),
-  captureTriplet: vi.fn(async (rollId: string): Promise<string> => {
-    void rollId;
-    if (state.captureFail) throw new IpcError({ code: 'Internal', message: state.captureFail });
-    return state.captureJob;
-  }),
+  captureLevelsSave: vi.fn(
+    async (
+      scope: LevelsScope,
+      levels: [number, number, number],
+      exposure: CaptureLevels['exposure'],
+    ): Promise<CaptureLevels> => {
+      if (state.levelsFail) throw new IpcError({ code: 'Internal', message: state.levelsFail });
+      if (scope === 'default') {
+        state.profile = { ...state.profile, levels };
+        state.savedDefaultExposure = exposure;
+        return { levels, source: 'default', stock: null, exposure };
+      }
+      const saved: CaptureLevels = { levels, source: 'stock', stock: scope.stock, exposure };
+      state.savedStocks[scope.stock.trim().toLowerCase()] = saved;
+      return saved;
+    },
+  ),
+  captureTest: vi.fn(
+    async (channel: string, levels?: [number, number, number]): Promise<TestShot> => {
+      void channel;
+      void levels;
+      if (state.testFail) throw new IpcError({ code: 'Internal', message: state.testFail });
+      return { ...state.testShot };
+    },
+  ),
+  captureTriplet: vi.fn(
+    async (rollId: string, levels?: [number, number, number]): Promise<string> => {
+      void rollId;
+      void levels;
+      if (state.captureFail) throw new IpcError({ code: 'Internal', message: state.captureFail });
+      return state.captureJob;
+    },
+  ),
   onLibraryChanged: vi.fn((cb: (roll: string | null, frameIds: string[]) => void) =>
     subscribe(listeners.changed, cb),
   ),
@@ -761,7 +810,14 @@ export function resetFake() {
     watch_folder: null,
   } as CaptureProfile;
   state.profileRefused = null;
-  state.testShot = { histogram: new Array(256).fill(0), clipped_pct: 0 };
+  state.testShot = {
+    histogram: new Array(256).fill(0),
+    clipped_pct: 0,
+    exposure: { exposure_time: { num: 1, den: 60 }, iso: 200, f_number: { num: 56, den: 10 } },
+  };
+  state.savedStocks = {};
+  state.savedDefaultExposure = null;
+  state.levelsFail = null;
   state.testFail = null;
   state.captureJob = 'job-capture-1';
   state.captureFail = null;

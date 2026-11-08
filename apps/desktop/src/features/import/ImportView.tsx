@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useLibraryStore } from '../library/library-store';
 import { useLibraryEvents } from '../library/use-library-events';
+import { CaptureSection } from './CaptureSection';
 import { FilesSection } from './FilesSection';
 import { ScannerSection } from './ScannerSection';
 import styles from './import.module.css';
@@ -21,6 +22,7 @@ export function ImportView() {
         <>
           <ScannerSection />
           <FilesSection />
+          <CaptureSection />
         </>
       ) : (
         <p role="status">{t('import.needsLibrary')}</p>

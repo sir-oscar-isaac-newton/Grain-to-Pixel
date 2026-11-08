@@ -109,6 +109,18 @@ export const commands = {
 	lightOff: () => typedError<null, AppError_Serialize>(__TAURI_INVOKE("light_off")),
 	/**  The cameras that can be used (none until a camera backend exists, except with `GTP_FAKE_HW=1`). */
 	cameraList: () => typedError<CameraInfo[], AppError_Serialize>(__TAURI_INVOKE("camera_list")),
+	/**
+	 *  The camera's ISO, shutter speed and aperture with the choices it allows. A setting the camera
+	 *  lacks comes back absent (no value, no choices, not writable). Refused while a capture or a
+	 *  test shot runs.
+	 */
+	cameraSettingsGet: () => typedError<CameraSetting_Serialize[], AppError_Serialize>(__TAURI_INVOKE("camera_settings_get")),
+	/**
+	 *  Sets one camera setting to one of its choices and returns the settings as the camera has them
+	 *  afterwards. Refused while a capture or a test shot runs, and for a value the camera does not
+	 *  offer or a setting it does not let change now.
+	 */
+	cameraSettingsSet: (kind: CameraSettingKind, value: string) => typedError<CameraSetting_Serialize[], AppError_Serialize>(__TAURI_INVOKE("camera_settings_set", { kind, value })),
 	/**  The capture profile (levels, settle time, temperature limits, camera backend). */
 	captureProfileGet: () => typedError<CaptureProfile_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_profile_get")),
 	/**
@@ -117,15 +129,28 @@ export const commands = {
 	 */
 	captureProfileSet: (patch: CaptureProfilePatch_Deserialize) => typedError<CaptureProfile_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_profile_set", { patch })),
 	/**
-	 *  Lights one colour, takes a picture, and returns the histogram and clipped percentage of that
-	 *  channel. Stores nothing; the light is off afterwards.
+	 *  The levels the roll captures with: saved for its film stock, else the global default, with the
+	 *  camera settings they were saved after (H-15).
 	 */
-	captureTest: (channel: TripletChannel) => typedError<TestShot, AppError_Serialize>(__TAURI_INVOKE("capture_test", { channel })),
+	captureLevelsGet: (rollId: RollId) => typedError<CaptureLevels_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_levels_get", { rollId })),
+	/**
+	 *  Saves `levels` (0 to 255 each) as the global default or for a film stock, with the camera
+	 *  settings of the test shot they were balanced on. Returns the levels as they now resolve for that
+	 *  scope.
+	 */
+	captureLevelsSave: (scope: LevelsScope, levels: [number, number, number], exposure: ExposureInfo_Deserialize | null) => typedError<CaptureLevels_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_levels_save", { scope, levels, exposure })),
+	/**
+	 *  Lights one colour at its level of `levels` (the working levels, 0 to 255 each), takes a
+	 *  picture, and returns the histogram and clipped percentage of that channel and the picture's
+	 *  camera settings. Stores nothing; the light is off afterwards.
+	 */
+	captureTest: (channel: TripletChannel, levels: [number, number, number]) => typedError<TestShot_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_test", { channel, levels })),
 	/**
 	 *  Captures one frame into the roll as a job; the new frame arrives in `job://done` like an
-	 *  import's, the steps as `capture://step`. Returns the job id at once.
+	 *  import's, the steps as `capture://step`. `levels` are the working levels (0 to 255 each). Returns
+	 *  the job id at once.
 	 */
-	captureTriplet: (rollId: RollId) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("capture_triplet", { rollId })),
+	captureTriplet: (rollId: RollId, levels: [number, number, number]) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("capture_triplet", { rollId, levels })),
 	/**
 	 *  Starts exporting the frames at full resolution, each with its saved recipe (the automatic one
 	 *  when it was never edited), as a job; progress and the result (the files written and the frames
@@ -299,6 +324,79 @@ export type CameraInfo = {
 	id: string,
 	/**  The name to show. */
 	name: string,
+};
+
+/**  A setting as the camera has it now. */
+export type CameraSetting = CameraSetting_Serialize | CameraSetting_Deserialize;
+
+/**  One of the settings the capture view shows. */
+export type CameraSettingKind = 
+/**  The sensor sensitivity. */
+"iso" | 
+/**  The exposure time. */
+"shutter_speed" | 
+/**  The lens aperture (f-number). */
+"aperture";
+
+/**  A setting as the camera has it now. */
+export type CameraSetting_Deserialize = {
+	/**  Which setting this is. */
+	kind: CameraSettingKind,
+	/**
+	 *  The current value as the camera words it (`"100"`, `"1/100"`, `"8"`); `None` when the
+	 *  camera has no such setting.
+	 */
+	value?: string | null,
+	/**  The values the camera allows now, in its order. Empty when the setting is absent. */
+	choices: string[],
+	/**
+	 *  False when the camera has no such setting or does not let it be changed now (the shutter
+	 *  speed and aperture only change in M mode, and a lens without electronic contacts has no
+	 *  aperture to set).
+	 */
+	writable: boolean,
+};
+
+/**  A setting as the camera has it now. */
+export type CameraSetting_Serialize = {
+	/**  Which setting this is. */
+	kind: CameraSettingKind,
+	/**
+	 *  The current value as the camera words it (`"100"`, `"1/100"`, `"8"`); `None` when the
+	 *  camera has no such setting.
+	 */
+	value: string | null,
+	/**  The values the camera allows now, in its order. Empty when the setting is absent. */
+	choices: string[],
+	/**
+	 *  False when the camera has no such setting or does not let it be changed now (the shutter
+	 *  speed and aperture only change in M mode, and a lens without electronic contacts has no
+	 *  aperture to set).
+	 */
+	writable: boolean,
+};
+
+/**  The levels a roll captures with, and what they were saved with. */
+export type CaptureLevels = CaptureLevels_Serialize | CaptureLevels_Deserialize;
+
+/**  The levels a roll captures with, and what they were saved with. */
+export type CaptureLevels_Deserialize = {
+	levels: [number, number, number],
+	source: LevelsSource,
+	/**  The stock the levels are saved for, as it was spelled when saving (for the `stock` source). */
+	stock?: string | null,
+	/**  The camera settings of the test shot these levels were saved after, when known. */
+	exposure?: ExposureInfo_Deserialize | null,
+};
+
+/**  The levels a roll captures with, and what they were saved with. */
+export type CaptureLevels_Serialize = {
+	levels: [number, number, number],
+	source: LevelsSource,
+	/**  The stock the levels are saved for, as it was spelled when saving (for the `stock` source). */
+	stock: string | null,
+	/**  The camera settings of the test shot these levels were saved after, when known. */
+	exposure: ExposureInfo_Serialize | null,
 };
 
 /**  What a capture sequence is set up with. */
@@ -659,6 +757,33 @@ export type ExportedFile = {
 	frame_id: FrameId,
 	/**  The file, as an absolute path. */
 	path: string,
+};
+
+/**  The shutter time, ISO and aperture of an exposure; each is `None` when the EXIF has none. */
+export type ExposureInfo = ExposureInfo_Serialize | ExposureInfo_Deserialize;
+
+/**  The shutter time, ISO and aperture of an exposure; each is `None` when the EXIF has none. */
+export type ExposureInfo_Deserialize = {
+	/**  The shutter time in seconds. */
+	exposure_time?: ExposureRatio | null,
+	iso?: number | null,
+	/**  The aperture, as an f-number. */
+	f_number?: ExposureRatio | null,
+};
+
+/**  The shutter time, ISO and aperture of an exposure; each is `None` when the EXIF has none. */
+export type ExposureInfo_Serialize = {
+	/**  The shutter time in seconds. */
+	exposure_time: ExposureRatio | null,
+	iso: number | null,
+	/**  The aperture, as an f-number. */
+	f_number: ExposureRatio | null,
+};
+
+/**  A fraction as the camera wrote it (an exposure of 1/60 s is 1 over 60). */
+export type ExposureRatio = {
+	num: number,
+	den: number,
 };
 
 /**  A frame an export could not write. */
@@ -1060,7 +1185,12 @@ export type ImportWarningKind =
  *  The light's supply voltage sagged while this frame was captured: the lowest reading, in
  *  millivolts (H-08).
  */
-{ kind: "low_supply"; vbus_mv: number };
+{ kind: "low_supply"; vbus_mv: number } | 
+/**
+ *  The camera settings (shutter, ISO or aperture) of this capture differ from those the levels
+ *  in use were saved with (H-15).
+ */
+{ kind: "exposure_differs_from_levels" };
 
 /**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
 export type Invert = Invert_Serialize | Invert_Deserialize;
@@ -1165,6 +1295,20 @@ export type JobResult_Serialize =
 
 /**  Which end of the levels a picked area sets. */
 export type LevelsPoint = "white" | "black";
+
+/**  Where levels are saved to. */
+export type LevelsScope = 
+/**  The global default. */
+"default" | 
+/**  This film stock. */
+{ stock: string };
+
+/**  Where a roll's levels come from. */
+export type LevelsSource = 
+/**  Saved for the roll's film stock. */
+"stock" | 
+/**  The global default. */
+"default";
 
 /**
  *  Frames were added, changed or removed (by a job such as an import): refresh the roll, or
@@ -1780,7 +1924,10 @@ export type Tag = {
 export type TagId = string;
 
 /**  What a test shot measured on the channel that was lit. */
-export type TestShot = {
+export type TestShot = TestShot_Serialize | TestShot_Deserialize;
+
+/**  What a test shot measured on the channel that was lit. */
+export type TestShot_Deserialize = {
 	/**
 	 *  256 bins of the lit channel's linear value (0 to 1 over the sensor's range), so levels can
 	 *  be balanced by hand: a peak in the last bins means the exposure is clipped.
@@ -1788,6 +1935,27 @@ export type TestShot = {
 	histogram: number[],
 	/**  The share of photosites at 99 percent of full scale or more, in percent. */
 	clipped_pct: number | null,
+	/**
+	 *  The shutter time, ISO and aperture of the test picture, as its EXIF says; saved with the
+	 *  levels so that a capture with other settings can warn.
+	 */
+	exposure: ExposureInfo_Deserialize,
+};
+
+/**  What a test shot measured on the channel that was lit. */
+export type TestShot_Serialize = {
+	/**
+	 *  256 bins of the lit channel's linear value (0 to 1 over the sensor's range), so levels can
+	 *  be balanced by hand: a peak in the last bins means the exposure is clipped.
+	 */
+	histogram: number[],
+	/**  The share of photosites at 99 percent of full scale or more, in percent. */
+	clipped_pct: number | null,
+	/**
+	 *  The shutter time, ISO and aperture of the test picture, as its EXIF says; saved with the
+	 *  levels so that a capture with other settings can warn.
+	 */
+	exposure: ExposureInfo_Serialize,
 };
 
 export type Theme = "system" | "light" | "dark";

@@ -121,6 +121,11 @@ export const commands = {
 	 *  offer or a setting it does not let change now.
 	 */
 	cameraSettingsSet: (kind: CameraSettingKind, value: string) => typedError<CameraSetting_Serialize[], AppError_Serialize>(__TAURI_INVOKE("camera_settings_set", { kind, value })),
+	/**
+	 *  Leaves the camera's live view; does nothing when it is not in live view or while a capture runs
+	 *  (a capture leaves live view itself).
+	 */
+	cameraPreviewStop: () => typedError<null, AppError_Serialize>(__TAURI_INVOKE("camera_preview_stop")),
 	/**  The capture profile (levels, settle time, temperature limits, camera backend). */
 	captureProfileGet: () => typedError<CaptureProfile_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_profile_get")),
 	/**

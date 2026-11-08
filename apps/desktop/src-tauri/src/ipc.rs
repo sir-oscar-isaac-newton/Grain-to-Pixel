@@ -45,6 +45,7 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::capture::camera_list,
             commands::capture::camera_settings_get,
             commands::capture::camera_settings_set,
+            commands::capture::camera_preview_stop,
             commands::capture::capture_profile_get,
             commands::capture::capture_profile_set,
             commands::capture::capture_levels_get,
@@ -92,14 +93,15 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
 
 /// Commands whose result is raw bytes (`tauri::ipc::Response`), which specta cannot describe. They
 /// are left out of the typed bindings and called by name from `shared/ipc.ts`.
-const RAW_COMMANDS: [&str; 2] = ["frame_thumbnail", "develop_render"];
+const RAW_COMMANDS: [&str; 3] = ["frame_thumbnail", "develop_render", "camera_preview_frame"];
 
 /// The handler of the raw-byte commands (a function of its own, so the closure's type is known).
 fn raw_handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static
 {
     tauri::generate_handler![
         commands::frame::frame_thumbnail,
-        commands::develop::develop_render
+        commands::develop::develop_render,
+        commands::capture::camera_preview_frame
     ]
 }
 
@@ -187,6 +189,7 @@ mod tests {
             "lightSet",
             "lightOff",
             "cameraList",
+            "cameraPreviewStop",
             "captureProfileGet",
             "captureProfileSet",
             "captureLevelsGet",
@@ -296,6 +299,40 @@ mod tests {
                 invoke_key: tauri::test::INVOKE_KEY.to_string(),
             },
         )
+    }
+
+    #[test]
+    fn a_live_view_frame_travels_as_raw_bytes_and_its_stop_answers_in_json() {
+        use tauri::ipc::InvokeResponseBody;
+
+        let typed = builder::<tauri::test::MockRuntime>();
+        let app = tauri::test::mock_builder()
+            .invoke_handler(invoke_handler(&typed))
+            .setup(move |app| {
+                typed.mount_events(app);
+                Ok(())
+            })
+            .manage(gtp_app::Hardware::from_vars(Some("1"), None))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let frame = |webview| call(webview, "camera_preview_frame", serde_json::json!({}));
+        let first = match frame(&webview).unwrap() {
+            InvokeResponseBody::Raw(bytes) => bytes,
+            other => unreachable!("expected raw bytes, got {other:?}"),
+        };
+        let second = match frame(&webview).unwrap() {
+            InvokeResponseBody::Raw(bytes) => bytes,
+            other => unreachable!("expected raw bytes, got {other:?}"),
+        };
+        assert_eq!(first[..2], [0xFF, 0xD8]);
+        assert_ne!(first, second, "the fake's frames change");
+        match call(&webview, "camera_preview_stop", serde_json::json!({})).unwrap() {
+            InvokeResponseBody::Json(json) => assert_eq!(json, "null"),
+            other => unreachable!("expected JSON, got {other:?}"),
+        }
     }
 
     #[test]

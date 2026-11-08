@@ -155,14 +155,14 @@ Results on the author's M1 Pro MacBook with the D600 on USB (2026-11-03 and 04);
 
 ## Capture view (U-10)
 
-The Capture section of the Import view (shown while the `guided_capture` flag is on) is `apps/desktop/src/features/import/CaptureSection.tsx`. Status badges for the light and the camera, a slider per colour for the LED level (saved when released, never lights the light), a test shot per colour with its histogram and a warning above 0.1 % clipped, and the large Next frame button (also the Space key) that runs `capture_triplet`, shows the steps, the stored frame, the roll's frame counter and warnings (warm light, low supply, EXIF mismatch, clipping). Leaving the view calls `light_off`.
+The Capture section of the Import view (shown while the `guided_capture` flag is on) is `apps/desktop/src/features/import/CaptureSection.tsx`. Status badges for the light and the camera, a slider per colour for the LED level (the working levels; since H-15 they are kept only by an explicit save, and they never light the light), a test shot per colour with its histogram and a warning above 0.1 % clipped, and the large Next frame button (also the Space key) that runs `capture_triplet`, shows the steps, the stored frame, the roll's frame counter and warnings (warm light, low supply, EXIF mismatch, clipping). Leaving the view calls `light_off`.
 
 **Hardware checklist for U-10 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
 
 - [ ] Open the Import view and press Connect light: the badge shows the light connected with its temperature, updating about every second.
 - [ ] The camera badge names the D600; unplug it and press Look for camera again: "No camera found"; plug it in again and it is named again.
 - [ ] A test shot for each colour shows a histogram in that colour and a clipped percentage; a test shot above 0.1 % clipped shows the warning. The light is dark afterwards.
-- [ ] The sliders change the levels, the next test shot reflects them, and they are the same after restarting the app.
+- [ ] The sliders change the working levels and the next test shot reflects them (saving them is H-15, below).
 - [ ] Next frame (button) stores a frame in the chosen roll: steps go through red, green and blue, the thumbnail and "Frame N on this roll" appear, and the frame opens in Develop.
 - [ ] Next frame with the Space key (focus not in a button, field or slider) does the same; Space during a capture does nothing.
 - [ ] Time from pressing Next frame to the stored frame, excluding exposure time (budget 15 s): ______ s.
@@ -170,3 +170,24 @@ The Capture section of the Import view (shown while the `guided_capture` flag is
 - [ ] The light is dark after leaving the Import view (look at it) and after closing the app. Also leave the view in the middle of a capture: the capture is cancelled and the light stays dark.
 - [ ] If practical: let the light heat past the abort temperature (or cover it): the badge turns to "too hot and switched off", Next frame is off, and Reconnect light brings it back once it has cooled.
 - [ ] Warnings: with a too-bright level, the clipping warning names the colour. (An EXIF mismatch cannot be forced on the rig: the camera's controls are locked while tethered, and auto ISO gave the same ISO to all three shots. The app reads ISO, shutter time and aperture from the D600's NEFs, checked on the private samples, and the mismatch warning has a unit test.)
+
+## Saved levels (H-15)
+
+The levels 44, 22 and 2 of ADR 0004 amendment 5 were measured on the bare light with no film in the gate. Film absorbs the three colours very differently, so each stock needs levels of its own. Automatic calibration is H-17; H-15 is the manual method and where its result is kept.
+
+**Method.** Put the clear film base of the stock in the gate (an unexposed leader or the rebate). Move the sliders and take a test shot per colour until each channel's histogram has its peak just below the right edge, with less than 0.1 % clipped. Then save the levels: **Save for {stock}** when the roll has a film stock, or **Save as default**. A save is possible only after a test shot at the levels as they now stand, and keeps that shot's shutter time, ISO and aperture (from its EXIF) with the levels.
+
+**Resolution.** A roll's levels come from its film stock (the stock text of the roll, compared trimmed and without case), then the global default. A roll with no stock, or a stock with no saved levels, uses the default. The sliders start from these when a roll is chosen; changes stay working levels (the line under the sliders says "Changed, not saved") until saved. They live in `settings.json` (`capture.levels` and `saved_levels`), not in the library, so they follow the lamp and the camera.
+
+**What a capture records.** `frame.capture_info` (JSON, null for imported and scanned frames): `{ "v": 1, "levels": [r, g, b], "source": "stock" | "default" | "manual", "stock": name or null, "exposure": [red, green, blue shots, each with exposure_time, iso, f_number] }`. `source` is `stock` or `default` when the levels used equal the roll's saved levels, `manual` otherwise.
+
+**Exposure warning.** If the levels were saved with camera settings and any of the three shots differs in shutter time, ISO or aperture, the capture warns that the camera settings differ from when the levels were saved. It is not raised for manual levels or when either side lacks a setting.
+
+**Hardware checklist for H-15 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
+
+- [ ] Save as default: set the sliders, take a test shot, press Save as default; the line under the sliders reads "Default levels".
+- [ ] Save for a stock: give a roll a film stock (Library, roll editor), choose it in the Import view, change the sliders, take a test shot and press Save for {stock}; the line reads "Levels saved for {stock}".
+- [ ] Capture on a roll with that stock uses its levels, and a roll with another stock (or none) uses the default (look at the sliders after choosing each roll, and at the light colours' brightness).
+- [ ] The capture records its levels: with the library closed or from another shell, run `sqlite3 <library folder>/library.db "SELECT id, capture_info FROM frame ORDER BY created_at DESC LIMIT 3;"`; the newest frame shows the levels, `"source":"stock"` (or `"default"`) and the three exposures.
+- [ ] Change the ISO or the shutter time on the camera between saving and capturing: the capture shows the warning "The camera settings differ from when these levels were saved." Put the settings back: no warning.
+- [ ] Restart the app: the saved levels (default and per stock) are the same.

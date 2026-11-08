@@ -548,6 +548,176 @@ describe('CaptureSection', () => {
     });
   });
 
+  describe('camera settings', () => {
+    const select = (name: string) => screen.getByRole('combobox', { name });
+    const absent = (kind: 'iso' | 'aperture') =>
+      state.cameraSettings.map((s) =>
+        s.kind === kind ? { kind, value: null, choices: [], writable: false } : s,
+      );
+
+    it('shows ISO, shutter speed and aperture with the choices the camera allows', async () => {
+      await ready();
+      const iso = await screen.findByRole('combobox', { name: 'ISO' });
+      expect(iso).toHaveValue('100');
+      expect(select('Shutter speed')).toHaveValue('1/100');
+      expect(select('Aperture')).toHaveValue('8');
+      const options = (el: HTMLElement) =>
+        Array.from(el.querySelectorAll('option')).map((o) => o.textContent);
+      expect(options(iso)).toEqual(['100', '200', '400', '800']);
+      expect(options(select('Aperture'))).toEqual(['5.6', '8', '11']);
+      expect(ipc.cameraSettingsGet).toHaveBeenCalled();
+    });
+
+    it('sets a change on the camera and shows what the camera answers', async () => {
+      const { user } = await ready();
+      await screen.findByRole('combobox', { name: 'ISO' });
+      await user.selectOptions(select('ISO'), '400');
+      expect(ipc.cameraSettingsSet).toHaveBeenCalledWith('iso', '400');
+      await waitFor(() => expect(select('ISO')).toHaveValue('400'));
+      expect(select('ISO')).toBeEnabled();
+    });
+
+    it('shows the reply of the camera, which may differ from what was asked', async () => {
+      const { user } = await ready();
+      await screen.findByRole('combobox', { name: 'ISO' });
+      ipc.cameraSettingsSet.mockImplementationOnce(async () => {
+        const settings = state.cameraSettings.map((s) => ({ ...s }));
+        const shutter = settings.find((s) => s.kind === 'shutter_speed');
+        if (shutter) shutter.value = '1/250';
+        return settings;
+      });
+      await user.selectOptions(select('Aperture'), '11');
+      await waitFor(() => expect(select('Shutter speed')).toHaveValue('1/250'));
+    });
+
+    it('says the aperture is set on the lens when the camera has none to set', async () => {
+      state.cameraSettings = absent('aperture');
+      await ready();
+      expect(await screen.findByText('Set on the lens')).toBeInTheDocument();
+      expect(screen.queryByRole('combobox', { name: 'Aperture' })).not.toBeInTheDocument();
+      expect(select('ISO')).toBeEnabled();
+    });
+
+    it('says Not available for an ISO the camera does not have', async () => {
+      state.cameraSettings = absent('iso');
+      await ready();
+      expect(await screen.findByText('Not available')).toBeInTheDocument();
+      expect(screen.queryByRole('combobox', { name: 'ISO' })).not.toBeInTheDocument();
+    });
+
+    it('greys a setting the camera does not let change, but still shows it', async () => {
+      state.cameraSettings = state.cameraSettings.map((s) =>
+        s.kind === 'shutter_speed' ? { ...s, writable: false } : s,
+      );
+      await ready();
+      await screen.findByRole('combobox', { name: 'ISO' });
+      expect(select('Shutter speed')).toBeDisabled();
+      expect(select('Shutter speed')).toHaveValue('1/100');
+      expect(select('ISO')).toBeEnabled();
+    });
+
+    it('cannot be used while a capture runs, and reads the camera again afterwards', async () => {
+      const { user } = await ready();
+      await screen.findByRole('combobox', { name: 'ISO' });
+      await screen.findByRole('slider', { name: 'Red level' });
+      const id = await startCapture(user);
+      for (const name of ['ISO', 'Shutter speed', 'Aperture']) {
+        expect(select(name)).toBeDisabled();
+      }
+      ipc.cameraSettingsGet.mockClear();
+      finish(id, 'frame-1');
+      await waitFor(() => expect(ipc.cameraSettingsGet).toHaveBeenCalled());
+      await waitFor(() => expect(select('ISO')).toBeEnabled());
+    });
+
+    it('is off while a change is on its way, and so are the test shot and Next frame', async () => {
+      const { user } = await ready();
+      await screen.findByRole('combobox', { name: 'ISO' });
+      let release: () => void = () => undefined;
+      ipc.cameraSettingsSet.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () => resolve(state.cameraSettings.map((s) => ({ ...s })));
+          }),
+      );
+      await user.selectOptions(select('ISO'), '200');
+      expect(select('Shutter speed')).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Test shot, red' })).toBeDisabled();
+      expect(next()).toBeDisabled();
+      act(() => release());
+      await waitFor(() => expect(select('Shutter speed')).toBeEnabled());
+      expect(screen.getByRole('button', { name: 'Test shot, red' })).toBeEnabled();
+    });
+
+    it('shows why the settings could not be read or a change was refused', async () => {
+      state.cameraSettingsFail = 'The camera is busy. Wait a moment and try again.';
+      const { user } = await ready();
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('The camera is busy. Wait a moment and try again.');
+      expect(screen.queryByRole('combobox', { name: 'ISO' })).not.toBeInTheDocument();
+
+      state.cameraSettingsFail = null;
+      await user.click(screen.getByRole('button', { name: 'Look for camera again' }));
+      await screen.findByRole('combobox', { name: 'ISO' });
+      state.cameraSettingsSetFail = 'The camera does not let this setting be changed now.';
+      await user.selectOptions(select('ISO'), '800');
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'The camera does not let this setting be changed now.',
+      );
+      expect(select('ISO')).toHaveValue('100');
+    });
+
+    it('shows nothing and asks nothing without a camera', async () => {
+      state.cameras = [];
+      openLibrary();
+      render(<Capture />);
+      await screen.findByText('No camera found');
+      expect(ipc.cameraSettingsGet).not.toHaveBeenCalled();
+      expect(screen.queryByText('Camera settings')).not.toBeInTheDocument();
+    });
+
+    it('says what exposure the default levels were saved at', async () => {
+      state.savedDefaultExposure = {
+        exposure_time: { num: 1, den: 125 },
+        iso: 200,
+        f_number: { num: 56, den: 10 },
+      };
+      await ready();
+      expect(
+        await screen.findByText('Default levels were saved at 1/125 s, ISO 200, f/5.6'),
+      ).toBeInTheDocument();
+    });
+
+    it('names the film stock the levels were saved for', async () => {
+      const portra = makeRoll({ name: 'Portra roll', film_stock: 'Portra 400' });
+      state.savedStocks['portra 400'] = {
+        levels: [60, 30, 4],
+        source: 'stock',
+        stock: 'Portra 400',
+        exposure: { exposure_time: { num: 2, den: 1 }, iso: 100, f_number: { num: 8, den: 1 } },
+      };
+      state.rolls = [portra];
+      state.details = libraryDetails();
+      useLibraryStore.setState({
+        phase: 'ready',
+        library: state.details,
+        rolls: [portra],
+        rollId: portra.id,
+      });
+      render(<Capture />);
+      expect(
+        await screen.findByText('Levels for Portra 400 were saved at 2 s, ISO 100, f/8'),
+      ).toBeInTheDocument();
+    });
+
+    it('says nothing about an exposure when none was saved', async () => {
+      openLibrary();
+      render(<Capture />);
+      await screen.findByRole('slider', { name: 'Red level' });
+      expect(screen.queryByText(/were saved at/)).not.toBeInTheDocument();
+    });
+  });
+
   describe('lifetime', () => {
     it('switches the light off when the view closes', async () => {
       const { unmount } = await ready();
@@ -588,6 +758,21 @@ describe('CaptureSection', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
     await screen.findByRole('img', { name: /Histogram/ });
+    await expectNoA11yViolations(container);
+  });
+
+  it('has no accessibility violations with the camera settings, an absent one and an error', async () => {
+    state.cameraSettings = state.cameraSettings.map((s) =>
+      s.kind === 'aperture' ? { kind: 'aperture', value: null, choices: [], writable: false } : s,
+    );
+    const { container } = await ready();
+    await screen.findByRole('combobox', { name: 'ISO' });
+    expect(screen.getByText('Set on the lens')).toBeInTheDocument();
+    await expectNoA11yViolations(container);
+    state.cameraSettingsSetFail = 'Refused.';
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'ISO' }), '200');
+    await screen.findByRole('alert');
     await expectNoA11yViolations(container);
   });
 });

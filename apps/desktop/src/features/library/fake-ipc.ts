@@ -4,6 +4,8 @@ import { vi } from 'vitest';
 import type {
   AppError,
   CameraInfo,
+  CameraSetting,
+  CameraSettingKind,
   CaptureLevels,
   CaptureProfile,
   CaptureStep,
@@ -163,6 +165,20 @@ export const DEFAULT_FLAGS = {
   update_check: true,
 };
 
+/** The camera of the fake: ISO, shutter speed and aperture, all writable. */
+export function defaultCameraSettings(): CameraSetting[] {
+  return [
+    { kind: 'iso', value: '100', choices: ['100', '200', '400', '800'], writable: true },
+    {
+      kind: 'shutter_speed',
+      value: '1/100',
+      choices: ['1/60', '1/100', '1/125', '1/250'],
+      writable: true,
+    },
+    { kind: 'aperture', value: '8', choices: ['5.6', '8', '11'], writable: true },
+  ];
+}
+
 export const state = {
   details: null as LibraryDetails | null,
   lastLibrary: null as string | null,
@@ -271,6 +287,10 @@ export const state = {
   /** What camera_list answers, or the message it fails with. */
   cameras: [{ id: 'cam:1', name: 'Nikon D600' }] as CameraInfo[],
   camerasFail: null as string | null,
+  /** What camera_settings_get answers (a set changes it), and the messages the two fail with. */
+  cameraSettings: defaultCameraSettings(),
+  cameraSettingsFail: null as string | null,
+  cameraSettingsSetFail: null as string | null,
   /** What light_connect answers, or the message it fails with. */
   light: { port: 'COM3', hardware_id: 2, firmware_id: 1, recognised: true } as LightInfo,
   lightFail: null as string | null,
@@ -672,6 +692,26 @@ export const ipc = {
     if (state.camerasFail) throw new IpcError({ code: 'Internal', message: state.camerasFail });
     return [...state.cameras];
   }),
+  cameraSettingsGet: vi.fn(async (): Promise<CameraSetting[]> => {
+    if (state.cameraSettingsFail) {
+      throw new IpcError({ code: 'Io', message: state.cameraSettingsFail });
+    }
+    return state.cameraSettings.map((s) => ({ ...s }));
+  }),
+  cameraSettingsSet: vi.fn(async (kind: CameraSettingKind, value: string) => {
+    if (state.cameraSettingsSetFail) {
+      throw new IpcError({ code: 'InvalidInput', message: state.cameraSettingsSetFail });
+    }
+    const setting = state.cameraSettings.find((s) => s.kind === kind);
+    if (!setting?.writable || !setting.choices.includes(value)) {
+      throw new IpcError({
+        code: 'InvalidInput',
+        message: 'That value is not one the camera offers.',
+      });
+    }
+    setting.value = value;
+    return state.cameraSettings.map((s) => ({ ...s }));
+  }),
   captureProfileGet: vi.fn(async (): Promise<CaptureProfile> => ({ ...state.profile })),
   captureProfileSet: vi.fn(async (patch: { levels?: [number, number, number] | null }) => {
     if (state.profileRefused) {
@@ -799,6 +839,9 @@ export function resetFake() {
   state.tripletsFail = null;
   state.cameras = [{ id: 'cam:1', name: 'Nikon D600' }];
   state.camerasFail = null;
+  state.cameraSettings = defaultCameraSettings();
+  state.cameraSettingsFail = null;
+  state.cameraSettingsSetFail = null;
   state.light = { port: 'COM3', hardware_id: 2, firmware_id: 1, recognised: true };
   state.lightFail = null;
   state.profile = {

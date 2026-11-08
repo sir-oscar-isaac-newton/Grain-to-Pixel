@@ -724,6 +724,18 @@
         "none": "No camera found",
         "refresh": "Look for camera again"
       },
+      "settings": {
+        "heading": "Camera settings",
+        "kind": {
+          "iso": "ISO",
+          "shutter_speed": "Shutter speed",
+          "aperture": "Aperture"
+        },
+        "setOnLens": "Set on the lens",
+        "notAvailable": "Not available",
+        "savedStock": "Levels for {{stock}} were saved at {{exposure}}",
+        "savedDefault": "Default levels were saved at {{exposure}}"
+      },
       "levels": {
         "red": "Red level",
         "green": "Green level",

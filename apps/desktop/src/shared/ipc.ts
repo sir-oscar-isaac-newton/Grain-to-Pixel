@@ -7,6 +7,8 @@ import {
   commands,
   type AppError,
   type CameraInfo,
+  type CameraSetting_Serialize,
+  type CameraSettingKind,
   type CaptureLevels_Serialize,
   type CaptureProfile_Serialize,
   type CaptureProfilePatch_Deserialize,
@@ -50,6 +52,7 @@ import {
 export type {
   AppError,
   CameraInfo,
+  CameraSettingKind,
   CaptureStep,
   ClientLogLevel,
   Counters,
@@ -315,6 +318,7 @@ export async function folderCheck(path: string): Promise<FolderCheck> {
   return unwrap(await commands.folderCheck(path));
 }
 
+export type CameraSetting = CameraSetting_Serialize;
 export type CaptureProfile = CaptureProfile_Serialize;
 export type CaptureLevels = CaptureLevels_Serialize;
 export type ExposureInfo = ExposureInfo_Serialize;
@@ -345,6 +349,22 @@ export async function lightOff(): Promise<void> {
 /** The cameras that can be used now. */
 export async function cameraList(): Promise<CameraInfo[]> {
   return unwrap(await commands.cameraList());
+}
+
+/**
+ * The camera's ISO, shutter speed and aperture with the choices it allows. A setting the camera
+ * lacks has no value and no choices. Rejects while a capture runs.
+ */
+export async function cameraSettingsGet(): Promise<CameraSetting[]> {
+  return unwrap(await commands.cameraSettingsGet());
+}
+
+/** Sets one camera setting to one of its choices; returns the settings as the camera has them now. */
+export async function cameraSettingsSet(
+  kind: CameraSettingKind,
+  value: string,
+): Promise<CameraSetting[]> {
+  return unwrap(await commands.cameraSettingsSet(kind, value));
 }
 
 export async function captureProfileGet(): Promise<CaptureProfile> {

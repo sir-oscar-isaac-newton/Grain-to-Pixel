@@ -225,3 +225,15 @@ With clear film base framed, `capture_calibrate` takes test shots, one colour at
 - [x] Try a too-long exposure (a slow shutter speed): the calibration says a colour is clipped even at level 1 and that the exposure is too long.
 - [x] Try a too-short exposure (a fast shutter speed): the calibration says a colour is too dark even at level 255 and that the exposure is too short.
 - [x] Save the result for the film stock and check the settings: the sliders read "Levels saved for {stock}" and `settings.json` holds them after a restart.
+
+## Live preview (H-14)
+
+**The test on the D600 (2026-11-08, gphoto2 command line, Grain to Pixel closed).**
+
+- `gphoto2 --auto-detect` lists the D600 twice (`usb:001,001` and `usb:000,001`); both are the same camera.
+- `gphoto2 --capture-preview` writes `thumb_preview.jpg` (gphoto2 adds the `thumb_` prefix), 640 × 424. The first frame was black with the Scanlight off; with the light on, a frame from a movie run shows the film clearly enough to frame it and roughly to focus.
+- `gphoto2 --capture-movie=10s` took 330 frames in 10 s, about 33 frames per second, about 7.4 KB per frame.
+- The camera's own screen stays dark while live view is read over USB.
+- `gphoto2 --capture-image-and-download` straight after live view gave a normal NEF (24.6 MB), so leaving live view before a capture works.
+
+Conclusion: live view over USB is usable for framing and rough focus on the D600; the rest of H-14 goes ahead. Fine focus needs a zoomed view, which is not part of H-14. Windows does not get live view in H-14 (it waits for R-04).

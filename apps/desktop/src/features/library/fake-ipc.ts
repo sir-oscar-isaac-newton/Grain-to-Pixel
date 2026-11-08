@@ -318,6 +318,9 @@ export const state = {
   /** The id capture_triplet answers, or the message it fails with. */
   captureJob: 'job-capture-1' as string,
   captureFail: null as string | null,
+  /** The id capture_calibrate answers, or the message it fails with. */
+  calibrationJob: 'job-calibration-1' as string,
+  calibrationFail: null as string | null,
 };
 
 export const listeners = {
@@ -769,6 +772,16 @@ export const ipc = {
       return state.captureJob;
     },
   ),
+  captureCalibrate: vi.fn(
+    async (rollId: string, levels?: [number, number, number]): Promise<string> => {
+      void rollId;
+      void levels;
+      if (state.calibrationFail) {
+        throw new IpcError({ code: 'InvalidInput', message: state.calibrationFail });
+      }
+      return state.calibrationJob;
+    },
+  ),
   onLibraryChanged: vi.fn((cb: (roll: string | null, frameIds: string[]) => void) =>
     subscribe(listeners.changed, cb),
   ),
@@ -864,6 +877,8 @@ export function resetFake() {
   state.testFail = null;
   state.captureJob = 'job-capture-1';
   state.captureFail = null;
+  state.calibrationJob = 'job-calibration-1';
+  state.calibrationFail = null;
   listeners.step.length = 0;
   listeners.light.length = 0;
   listeners.changed.length = 0;

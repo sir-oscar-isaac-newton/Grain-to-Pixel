@@ -166,6 +166,7 @@
     "import": "Import into {{roll}}",
     "scan": "Scan into {{roll}}",
     "capture": "Capture into {{roll}}",
+    "calibration": "Calibrate the light for {{roll}}",
     "running": "Working",
     "done": "Done",
     "error": "Failed",
@@ -758,6 +759,23 @@
         "clipped": "{{pct}} % clipped",
         "clippedUnknown": "How much is clipped is not known.",
         "clipWarning": "The {{channel}} test shot is clipped ({{pct}} %). Lower its level."
+      },
+      "calibrate": {
+        "label": "Calibrate",
+        "running": "Calibrating…",
+        "cancel": "Cancel",
+        "help": "Frame clear film base, such as the leader, with nothing else lit: no bare light past the film's edge. The black carrier and mask are fine.",
+        "starting": "Starting the calibration…",
+        "cancelled": "Calibration cancelled.",
+        "failed": "The calibration failed.",
+        "channel": {
+          "red": "Red",
+          "green": "Green",
+          "blue": "Blue"
+        },
+        "result_one": "{{channel}} {{level}}: {{reached}} of full scale in {{count}} shot",
+        "result_other": "{{channel}} {{level}}: {{reached}} of full scale in {{count}} shots",
+        "coarse": "{{channel}} ended at level {{level}}, where one step is a big change. A shorter shutter speed lets the light run at a higher level."
       },
       "next": {
         "label": "Next frame (Space)",

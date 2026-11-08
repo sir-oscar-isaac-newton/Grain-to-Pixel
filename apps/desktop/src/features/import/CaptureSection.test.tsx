@@ -95,6 +95,7 @@ const CALIBRATED = {
   reached: [0.93, 0.94, 0.987],
   shots: [3, 2, 2],
   warnings: [{ kind: 'coarse_level', channel: 'blue', level: 5 }],
+  exposure: { exposure_time: { num: 1, den: 50 }, iso: 100, f_number: { num: 8, den: 1 } },
 };
 
 /** Starts a calibration and returns the job id the fake gave it. */
@@ -814,7 +815,7 @@ describe('CaptureSection', () => {
         expect(ipc.captureLevelsSave).toHaveBeenCalledWith(
           'default',
           [212, 140, 5],
-          expect.anything(),
+          CALIBRATED.exposure,
         ),
       );
     });

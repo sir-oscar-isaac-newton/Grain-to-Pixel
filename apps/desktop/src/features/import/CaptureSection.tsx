@@ -28,7 +28,6 @@ import { StatusBar, type LightState } from './capture/StatusBar';
 import { TestShot } from './capture/TestShot';
 
 /** A calibration shoots at the camera's own settings and reports none: it counts as the test shot. */
-const CALIBRATED_SHOT: ExposureInfo = { exposure_time: null, iso: null, f_number: null };
 
 const sameLevels = (a: Levels, b: Levels) => a.every((v, i) => v === b[i]);
 
@@ -256,9 +255,9 @@ function Capture() {
           busy={running}
           roll={roll}
           levels={levels}
-          onCalibrated={(found) => {
+          onCalibrated={(found, exposure) => {
             setLevels(found);
-            setShotExposure(CALIBRATED_SHOT);
+            setShotExposure(exposure);
           }}
         />
       )}

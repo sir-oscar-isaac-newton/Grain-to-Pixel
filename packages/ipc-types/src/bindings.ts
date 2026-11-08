@@ -320,7 +320,10 @@ export type Base_Serialize = {
 };
 
 /**  What an automatic calibration found. Nothing is saved: the user reviews it and saves it. */
-export type CalibrationResult = {
+export type CalibrationResult = CalibrationResult_Serialize | CalibrationResult_Deserialize;
+
+/**  What an automatic calibration found. Nothing is saved: the user reviews it and saves it. */
+export type CalibrationResult_Deserialize = {
 	/**  The level to use for red, green and blue (1 to 255). */
 	levels: [number, number, number],
 	/**  What the brightest pixels (99.9th percentile) of each colour read at its level, 0 to 1. */
@@ -329,6 +332,30 @@ export type CalibrationResult = {
 	shots: [number, number, number],
 	/**  Things worth knowing about a calibration that still succeeded. */
 	warnings: CalibrationWarning[],
+	/**
+	 *  The shutter time, ISO and aperture of the last shot, as its EXIF says (all shots share
+	 *  them); saved with the levels like a test shot's, so a later capture with other settings
+	 *  can warn.
+	 */
+	exposure: ExposureInfo_Deserialize,
+};
+
+/**  What an automatic calibration found. Nothing is saved: the user reviews it and saves it. */
+export type CalibrationResult_Serialize = {
+	/**  The level to use for red, green and blue (1 to 255). */
+	levels: [number, number, number],
+	/**  What the brightest pixels (99.9th percentile) of each colour read at its level, 0 to 1. */
+	reached: [(number | null), (number | null), (number | null)],
+	/**  The shots each colour took. */
+	shots: [number, number, number],
+	/**  Things worth knowing about a calibration that still succeeded. */
+	warnings: CalibrationWarning[],
+	/**
+	 *  The shutter time, ISO and aperture of the last shot, as its EXIF says (all shots share
+	 *  them); saved with the levels like a test shot's, so a later capture with other settings
+	 *  can warn.
+	 */
+	exposure: ExposureInfo_Serialize,
 };
 
 /**  Something to know about a successful calibration. */
@@ -1306,7 +1333,7 @@ export type JobResult_Deserialize =
 /**  An automatic Scanlight level calibration (H-17). */
 {
 	kind: "Calibrated",
-} & CalibrationResult;
+} & CalibrationResult_Deserialize;
 
 /**  The result of a job that finished without error. */
 export type JobResult_Serialize = 
@@ -1327,7 +1354,7 @@ export type JobResult_Serialize =
 /**  An automatic Scanlight level calibration (H-17). */
 {
 	kind: "Calibrated",
-} & CalibrationResult;
+} & CalibrationResult_Serialize;
 
 /**  Which end of the levels a picked area sets. */
 export type LevelsPoint = "white" | "black";

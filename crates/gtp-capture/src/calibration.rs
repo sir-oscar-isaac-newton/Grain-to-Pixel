@@ -7,7 +7,9 @@
 //! reading carries no information about how far over it is, so the level is halved instead (or, once
 //! a level below it is known to be fine, bisected). Nothing here saves anything.
 
-use gtp_core::{AppError, CalibrationResult, CalibrationWarning, ErrorCode, TripletChannel};
+use gtp_core::{
+    AppError, CalibrationResult, CalibrationWarning, ErrorCode, ExposureInfo, TripletChannel,
+};
 use serde::{Deserialize, Serialize};
 
 /// What the brightest pixels should read: the middle of [`ACCEPT`].
@@ -129,6 +131,8 @@ pub fn calibrate(
         reached: [0.0; 3],
         shots: [0; 3],
         warnings: Vec::new(),
+        // The meter knows the camera settings; the caller fills them in.
+        exposure: ExposureInfo::default(),
     };
     for channel in TripletChannel::ALL {
         let i = channel.index();

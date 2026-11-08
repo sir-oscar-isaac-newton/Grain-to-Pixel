@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 use crate::ids::{FrameId, RollId};
-use crate::model::{SourceRole, TripletChannel};
+use crate::model::{ExposureInfo, SourceRole, TripletChannel};
 
 /// The result of a job that finished without error.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -35,6 +35,10 @@ pub struct CalibrationResult {
     pub shots: [u8; 3],
     /// Things worth knowing about a calibration that still succeeded.
     pub warnings: Vec<CalibrationWarning>,
+    /// The shutter time, ISO and aperture of the last shot, as its EXIF says (all shots share
+    /// them); saved with the levels like a test shot's, so a later capture with other settings
+    /// can warn.
+    pub exposure: ExposureInfo,
 }
 
 /// Something to know about a successful calibration.

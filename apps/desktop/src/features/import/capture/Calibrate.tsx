@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { captureCalibrate, jobCancel, type Levels, type Roll } from '../../../shared/ipc';
+import {
+  captureCalibrate,
+  jobCancel,
+  type ExposureInfo,
+  type Levels,
+  type Roll,
+} from '../../../shared/ipc';
 import { messageOf, useLibraryStore } from '../../library/library-store';
 import styles from '../import.module.css';
 
@@ -15,8 +21,11 @@ interface CalibrateProps {
   roll: Roll | null;
   /** The working levels it starts from; null until they are known. */
   levels: Levels | null;
-  /** Called with the levels found, once, when the calibration finishes. */
-  onCalibrated: (levels: Levels) => void;
+  /**
+   * Called once, when the calibration finishes, with the levels found and the camera settings
+   * its shots were taken with (they count as the test shot the save needs).
+   */
+  onCalibrated: (levels: Levels, exposure: ExposureInfo) => void;
 }
 
 /**
@@ -38,7 +47,14 @@ export function Calibrate({ ready, busy, roll, levels, onCalibrated }: Calibrate
   const onCalibratedRef = useRef(onCalibrated);
   onCalibratedRef.current = onCalibrated;
   useEffect(() => {
-    if (found) onCalibratedRef.current(found.levels);
+    if (found) {
+      const { exposure_time, iso, f_number } = found.exposure;
+      onCalibratedRef.current(found.levels, {
+        exposure_time: exposure_time ?? null,
+        iso: iso ?? null,
+        f_number: f_number ?? null,
+      });
+    }
     // The result is taken once, when the job finishes.
   }, [found]);
 

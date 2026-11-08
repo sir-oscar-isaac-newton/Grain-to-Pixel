@@ -505,8 +505,10 @@ pub fn start_calibration(
             region,
             job,
             shots: 0,
+            exposure: ExposureInfo::default(),
         };
-        let result = calibrate(&mut meter, levels)?;
+        let mut result = calibrate(&mut meter, levels)?;
+        result.exposure = meter.exposure;
         tracing::info!(
             levels = ?result.levels,
             shots = ?result.shots,
@@ -529,6 +531,8 @@ struct SceneMeter<'a> {
     job: &'a JobCtx,
     /// Shots taken so far, over all colours (for the progress fraction).
     shots: u32,
+    /// The camera settings of the last shot, from its EXIF.
+    exposure: ExposureInfo,
 }
 
 /// The most shots a calibration can take: the limit per colour for each of the three.
@@ -545,7 +549,8 @@ impl ChannelMeter for SceneMeter<'_> {
         let mut profile = self.profile.clone();
         profile.levels[channel.index()] = level;
         let file = shoot(&profile, channel, self.light, self.camera, self.events)?;
-        let (_staged, plane) = decode_plane(&file, channel, self.decoder)?;
+        let (staged, plane) = decode_plane(&file, channel, self.decoder)?;
+        self.exposure = exposure_from_exif(read_exposure_info(&staged.path));
         let mut area = region_values(&plane, self.region);
         percentile(&mut area, PERCENTILE)
             .ok_or_else(|| AppError::new(ErrorCode::Io, "The picture has no pixels to measure."))

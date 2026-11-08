@@ -134,13 +134,16 @@ fn import_one(
         frame_id,
         ctx,
         progress,
+        None,
     )
 }
 
 /// Stores a merged triplet as a frame: the three planes as originals (`picked` names the files they
 /// came from, for a skip report), the flat field, the starting recipe, the thumbnail and the catalog
-/// rows. The warnings are those of the merge, plus the flat field's. On any failure the frame's files
-/// are left for the caller to remove.
+/// rows. The warnings are those of the merge, plus the flat field's. `capture_info` is the JSON that
+/// records how a captured frame was lit (none for an import). On any failure the frame's files are
+/// left for the caller to remove.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn store_merged(
     library: &Library,
     target: Target,
@@ -149,6 +152,7 @@ pub(super) fn store_merged(
     frame_id: FrameId,
     ctx: &JobCtx,
     progress: &dyn Fn(f32),
+    capture_info: Option<&str>,
 ) -> Result<(Frame, Vec<ImportWarningKind>), TripletError> {
     let Target { roll, look } = target;
     progress(1.0);
@@ -228,7 +232,10 @@ pub(super) fn store_merged(
         created_at: String::new(),
         edited_at: None,
     };
-    library.write(|c| c.insert_imported_frame(&frame, &sources, &recipe))?;
+    library.write(|c| match capture_info {
+        Some(info) => c.insert_captured_frame(&frame, &sources, &recipe, info),
+        None => c.insert_imported_frame(&frame, &sources, &recipe),
+    })?;
     Ok((frame, warnings))
 }
 

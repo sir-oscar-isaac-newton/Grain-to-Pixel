@@ -3,13 +3,22 @@
 import { vi } from 'vitest';
 import type {
   AppError,
+  CameraInfo,
+  CameraSetting,
+  CameraSettingKind,
+  CaptureLevels,
+  CaptureProfile,
+  CaptureStep,
   Counters,
   DeviceInfo,
   FolderCheck,
   FramePage,
   FrameSummary,
   ImportResult,
+  LevelsScope,
   LibraryDetails,
+  LightInfo,
+  LightStatus,
   Look,
   Preview,
   Recipe,
@@ -18,6 +27,7 @@ import type {
   ScanRequest,
   SearchQuery,
   Tag,
+  TestShot,
   TripletCandidate,
   UpdateOutcome,
   VerifyResult,
@@ -155,6 +165,20 @@ export const DEFAULT_FLAGS = {
   update_check: true,
 };
 
+/** The camera of the fake: ISO, shutter speed and aperture, all writable. */
+export function defaultCameraSettings(): CameraSetting[] {
+  return [
+    { kind: 'iso', value: '100', choices: ['100', '200', '400', '800'], writable: true },
+    {
+      kind: 'shutter_speed',
+      value: '0.0100s',
+      choices: ['0.0040s', '0.0100s', '0.0166s', '0.0200s'],
+      writable: true,
+    },
+    { kind: 'aperture', value: '8', choices: ['5.6', '8', '11'], writable: true },
+  ];
+}
+
 export const state = {
   details: null as LibraryDetails | null,
   lastLibrary: null as string | null,
@@ -260,6 +284,40 @@ export const state = {
   /** What 	riplet_group answers. */
   triplets: [] as TripletCandidate[],
   tripletsFail: null as string | null,
+  /** What camera_list answers, or the message it fails with. */
+  cameras: [{ id: 'cam:1', name: 'Nikon D600' }] as CameraInfo[],
+  camerasFail: null as string | null,
+  /** What camera_settings_get answers (a set changes it), and the messages the two fail with. */
+  cameraSettings: defaultCameraSettings(),
+  cameraSettingsFail: null as string | null,
+  cameraSettingsSetFail: null as string | null,
+  /** What light_connect answers, or the message it fails with. */
+  light: { port: 'COM3', hardware_id: 2, firmware_id: 1, recognised: true } as LightInfo,
+  lightFail: null as string | null,
+  /** The capture profile, and the message a change of it is refused with. */
+  profile: {
+    levels: [44, 22, 2],
+    settle_ms: 300,
+    temp_warn_c: 45,
+    temp_abort_c: 60,
+    camera_backend: 'gphoto',
+    watch_folder: null,
+  } as CaptureProfile,
+  profileRefused: null as string | null,
+  /** What capture_test answers, or the message it fails with. */
+  testShot: {
+    histogram: new Array(256).fill(0),
+    clipped_pct: 0,
+    exposure: { exposure_time: { num: 1, den: 60 }, iso: 200, f_number: { num: 56, den: 10 } },
+  } as TestShot,
+  /** Levels saved per film stock (key: the stock as the roll spells it), and the default's exposure. */
+  savedStocks: {} as Record<string, CaptureLevels>,
+  savedDefaultExposure: null as CaptureLevels['exposure'],
+  levelsFail: null as string | null,
+  testFail: null as string | null,
+  /** The id capture_triplet answers, or the message it fails with. */
+  captureJob: 'job-capture-1' as string,
+  captureFail: null as string | null,
 };
 
 export const listeners = {
@@ -275,6 +333,8 @@ export const listeners = {
     }) => void
   >,
   error: [] as Array<(e: { id: string; error: AppError }) => void>,
+  step: [] as Array<(e: CaptureStep) => void>,
+  light: [] as Array<(e: LightStatus) => void>,
 };
 
 function subscribe<T>(list: T[], cb: T) {
@@ -620,6 +680,95 @@ export const ipc = {
   }),
   scanPreviewCancel: vi.fn(async () => true),
   jobCancel: vi.fn(async () => true),
+  lightList: vi.fn(async () => []),
+  lightConnect: vi.fn(async (port: string | null): Promise<LightInfo> => {
+    void port;
+    if (state.lightFail) throw new IpcError({ code: 'Internal', message: state.lightFail });
+    return { ...state.light };
+  }),
+  lightSet: vi.fn(async () => undefined),
+  lightOff: vi.fn(async () => undefined),
+  cameraList: vi.fn(async (): Promise<CameraInfo[]> => {
+    if (state.camerasFail) throw new IpcError({ code: 'Internal', message: state.camerasFail });
+    return [...state.cameras];
+  }),
+  cameraSettingsGet: vi.fn(async (): Promise<CameraSetting[]> => {
+    if (state.cameraSettingsFail) {
+      throw new IpcError({ code: 'Io', message: state.cameraSettingsFail });
+    }
+    return state.cameraSettings.map((s) => ({ ...s }));
+  }),
+  cameraSettingsSet: vi.fn(async (kind: CameraSettingKind, value: string) => {
+    if (state.cameraSettingsSetFail) {
+      throw new IpcError({ code: 'InvalidInput', message: state.cameraSettingsSetFail });
+    }
+    const setting = state.cameraSettings.find((s) => s.kind === kind);
+    if (!setting?.writable || !setting.choices.includes(value)) {
+      throw new IpcError({
+        code: 'InvalidInput',
+        message: 'That value is not one the camera offers.',
+      });
+    }
+    setting.value = value;
+    return state.cameraSettings.map((s) => ({ ...s }));
+  }),
+  captureProfileGet: vi.fn(async (): Promise<CaptureProfile> => ({ ...state.profile })),
+  captureProfileSet: vi.fn(async (patch: { levels?: [number, number, number] | null }) => {
+    if (state.profileRefused) {
+      throw new IpcError({ code: 'InvalidInput', message: state.profileRefused });
+    }
+    state.profile = { ...state.profile, levels: patch.levels ?? state.profile.levels };
+    return { ...state.profile };
+  }),
+  captureLevelsGet: vi.fn(async (rollId: string): Promise<CaptureLevels> => {
+    if (state.levelsFail) throw new IpcError({ code: 'Internal', message: state.levelsFail });
+    const stock = state.rolls
+      .find((r) => r.id === rollId)
+      ?.film_stock?.trim()
+      .toLowerCase();
+    const hit = stock ? state.savedStocks[stock] : undefined;
+    return hit
+      ? { ...hit }
+      : {
+          levels: [...state.profile.levels] as [number, number, number],
+          source: 'default',
+          stock: null,
+          exposure: state.savedDefaultExposure,
+        };
+  }),
+  captureLevelsSave: vi.fn(
+    async (
+      scope: LevelsScope,
+      levels: [number, number, number],
+      exposure: CaptureLevels['exposure'],
+    ): Promise<CaptureLevels> => {
+      if (state.levelsFail) throw new IpcError({ code: 'Internal', message: state.levelsFail });
+      if (scope === 'default') {
+        state.profile = { ...state.profile, levels };
+        state.savedDefaultExposure = exposure;
+        return { levels, source: 'default', stock: null, exposure };
+      }
+      const saved: CaptureLevels = { levels, source: 'stock', stock: scope.stock, exposure };
+      state.savedStocks[scope.stock.trim().toLowerCase()] = saved;
+      return saved;
+    },
+  ),
+  captureTest: vi.fn(
+    async (channel: string, levels?: [number, number, number]): Promise<TestShot> => {
+      void channel;
+      void levels;
+      if (state.testFail) throw new IpcError({ code: 'Internal', message: state.testFail });
+      return { ...state.testShot };
+    },
+  ),
+  captureTriplet: vi.fn(
+    async (rollId: string, levels?: [number, number, number]): Promise<string> => {
+      void rollId;
+      void levels;
+      if (state.captureFail) throw new IpcError({ code: 'Internal', message: state.captureFail });
+      return state.captureJob;
+    },
+  ),
   onLibraryChanged: vi.fn((cb: (roll: string | null, frameIds: string[]) => void) =>
     subscribe(listeners.changed, cb),
   ),
@@ -628,6 +777,8 @@ export const ipc = {
   ),
   onJobDone: vi.fn((cb: (typeof listeners.done)[number]) => subscribe(listeners.done, cb)),
   onJobError: vi.fn((cb: (typeof listeners.error)[number]) => subscribe(listeners.error, cb)),
+  onCaptureStep: vi.fn((cb: (typeof listeners.step)[number]) => subscribe(listeners.step, cb)),
+  onLightStatus: vi.fn((cb: (typeof listeners.light)[number]) => subscribe(listeners.light, cb)),
 };
 
 /** Forgets everything and clears the call history; call before each test. */
@@ -686,6 +837,35 @@ export function resetFake() {
   state.previewFail = null;
   state.triplets = [];
   state.tripletsFail = null;
+  state.cameras = [{ id: 'cam:1', name: 'Nikon D600' }];
+  state.camerasFail = null;
+  state.cameraSettings = defaultCameraSettings();
+  state.cameraSettingsFail = null;
+  state.cameraSettingsSetFail = null;
+  state.light = { port: 'COM3', hardware_id: 2, firmware_id: 1, recognised: true };
+  state.lightFail = null;
+  state.profile = {
+    levels: [44, 22, 2],
+    settle_ms: 300,
+    temp_warn_c: 45,
+    temp_abort_c: 60,
+    camera_backend: 'gphoto',
+    watch_folder: null,
+  } as CaptureProfile;
+  state.profileRefused = null;
+  state.testShot = {
+    histogram: new Array(256).fill(0),
+    clipped_pct: 0,
+    exposure: { exposure_time: { num: 1, den: 60 }, iso: 200, f_number: { num: 56, den: 10 } },
+  };
+  state.savedStocks = {};
+  state.savedDefaultExposure = null;
+  state.levelsFail = null;
+  state.testFail = null;
+  state.captureJob = 'job-capture-1';
+  state.captureFail = null;
+  listeners.step.length = 0;
+  listeners.light.length = 0;
   listeners.changed.length = 0;
   listeners.progress.length = 0;
   listeners.done.length = 0;

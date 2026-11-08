@@ -17,6 +17,9 @@ use std::time::Duration;
 use gtp_core::{AppError, ErrorCode};
 
 use crate::camera::{CameraFinder, CameraInfo, CameraSource, CapturedFile};
+use crate::settings::{
+    check_change, clean_value, CameraSetting, CameraSettingKind, CameraSettings,
+};
 
 /// The text libgphoto2 gives for a USB claim failure (`GP_ERROR_IO_USB_CLAIM`: "Could not claim the
 /// USB device"), which the app turns into words (ADR 0004 amendment 7).
@@ -31,6 +34,13 @@ pub trait Session {
     fn open(&mut self) -> Result<CameraInfo, SessionError>;
     /// Takes one picture, downloads it and removes it from the camera's memory.
     fn capture(&mut self) -> Result<CapturedFile, SessionError>;
+    /// Reads the three exposure settings, in `CameraSettingKind::ALL` order. A setting the camera
+    /// does not have (unknown key, not supported, not a menu) is `CameraSetting::absent`, not an
+    /// error; a failure of the link is an error. Called with the camera open.
+    fn settings(&mut self) -> Result<Vec<CameraSetting>, SessionError>;
+    /// Writes one setting. The worker has already checked that `value` is one of the choices of a
+    /// writable setting and reads the settings again afterwards.
+    fn set_setting(&mut self, kind: CameraSettingKind, value: &str) -> Result<(), SessionError>;
     /// Lets go of the camera (after a lost link, or when the worker ends).
     fn close(&mut self);
 }
@@ -114,6 +124,8 @@ pub struct Timeouts {
     pub open: Duration,
     /// Listing the cameras.
     pub list: Duration,
+    /// Reading or changing the exposure settings.
+    pub settings: Duration,
 }
 
 impl Default for Timeouts {
@@ -121,6 +133,7 @@ impl Default for Timeouts {
         Self {
             open: Duration::from_secs(20),
             list: Duration::from_secs(10),
+            settings: Duration::from_secs(10),
         }
     }
 }
@@ -152,6 +165,8 @@ enum Request {
     List(Reply<Vec<CameraInfo>>),
     Open(Reply<CameraInfo>),
     Capture(Reply<CapturedFile>),
+    Settings(Reply<Vec<CameraSetting>>),
+    SetSetting(CameraSettingKind, String, Reply<Vec<CameraSetting>>),
 }
 
 /// What the camera object and its worker both see; one per worker thread.
@@ -255,6 +270,27 @@ impl Hub {
         self.ask(Request::Open, self.timeouts.open)
     }
 
+    fn settings(&self) -> Result<Vec<CameraSetting>, AppError> {
+        self.refuse_while_busy()?;
+        self.ask(Request::Settings, self.timeouts.settings)
+    }
+
+    /// Reads the settings, checks that `value` is a choice of a writable setting, then writes it
+    /// and returns the settings read again. Nothing is written when the check fails.
+    fn set_setting(
+        &self,
+        kind: CameraSettingKind,
+        value: &str,
+    ) -> Result<Vec<CameraSetting>, AppError> {
+        let value = clean_value(value)?;
+        let current = self.settings()?;
+        check_change(&current, kind, &value)?;
+        self.ask(
+            |reply| Request::SetSetting(kind, value, reply),
+            self.timeouts.settings,
+        )
+    }
+
     /// Drops the current worker (it ends when its call returns, if it is stuck in one) and starts
     /// a new one. A new worker's first call still waits behind a call libgphoto2 never returned
     /// from, since the binding runs every call on one thread; it then times out and the app needs
@@ -312,22 +348,48 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
             Request::Capture(reply) => {
                 let result = ensure_open(&mut session, &mut opened, state)
                     .and_then(|_| with(&mut session, |s| s.capture()));
-                if let Err(err) = &result {
-                    if matches!(
-                        err.effective_kind(),
-                        SessionErrorKind::Lost | SessionErrorKind::NoCamera
-                    ) {
-                        close(&mut session);
-                        opened = None;
-                        state.connected.store(false, Ordering::SeqCst);
-                    }
-                }
+                drop_if_lost(&result, &mut session, &mut opened, state);
                 state.in_flight.fetch_sub(1, Ordering::SeqCst);
+                deliver(&reply, result);
+            }
+            Request::Settings(reply) => {
+                let result = ensure_open(&mut session, &mut opened, state)
+                    .and_then(|_| with(&mut session, |s| s.settings()));
+                drop_if_lost(&result, &mut session, &mut opened, state);
+                deliver(&reply, result);
+            }
+            Request::SetSetting(kind, value, reply) => {
+                let result = ensure_open(&mut session, &mut opened, state).and_then(|_| {
+                    with(&mut session, |s| {
+                        s.set_setting(kind, &value)?;
+                        s.settings()
+                    })
+                });
+                drop_if_lost(&result, &mut session, &mut opened, state);
                 deliver(&reply, result);
             }
         }
     }
     close(&mut session);
+}
+
+/// After a failure that says the link is gone, closes the session so the next request opens it again.
+fn drop_if_lost<T>(
+    result: &Result<T, SessionError>,
+    session: &mut SessionSlot,
+    opened: &mut Option<CameraInfo>,
+    state: &LinkState,
+) {
+    if let Err(err) = result {
+        if matches!(
+            err.effective_kind(),
+            SessionErrorKind::Lost | SessionErrorKind::NoCamera
+        ) {
+            close(session);
+            *opened = None;
+            state.connected.store(false, Ordering::SeqCst);
+        }
+    }
 }
 
 fn close(session: &mut SessionSlot) {
@@ -498,5 +560,19 @@ impl CameraFinder for GphotoFinder {
 
     fn connect(&self) -> Result<CameraInfo, AppError> {
         self.hub.connect()
+    }
+}
+
+impl CameraSettings for GphotoFinder {
+    fn settings(&self) -> Result<Vec<CameraSetting>, AppError> {
+        self.hub.settings()
+    }
+
+    fn set_setting(
+        &self,
+        kind: CameraSettingKind,
+        value: &str,
+    ) -> Result<Vec<CameraSetting>, AppError> {
+        self.hub.set_setting(kind, value)
     }
 }

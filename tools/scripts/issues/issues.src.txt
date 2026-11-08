@@ -2068,3 +2068,25 @@ ROUTES: capture_calibrate(RollId, region) -> JobId
 MIGRATIONS: none
 TESTS: as in ac
 NOTES: the 99.9th percentile of the channel in the area, a proportional step (the light is linear in its level), a target of about 0.90 to 0.97 of full scale and at most 6 shots per colour; the human runs the real calibration on the Mac.
+
+## U-18
+title: Shutter speeds shown as fractions in the capture view
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: H-16
+adr: no
+spec: specification section 7
+desc: The shutter speed select of H-16 shows the camera's own text, such as 0.0200s, which is hard to read. Show each speed the way a camera does (1/50 s, 1.3 s), while the value sent to the camera stays the camera's own choice.
+ac:
+- Speeds below 0.4 s are shown as fractions snapped to the nearest standard third-stop value (0.0200s as 1/50 s, 0.0166s as 1/60 s, 0.0002s as 1/4000 s)
+- Speeds from 0.4 s up are shown in seconds without trailing zeros (0.4 s, 1 s, 1.3 s, 30 s); Bulb and anything unreadable are shown as the camera gives them
+- The value sent with camera_settings_set is unchanged: the camera's own choice
+- Unit tests over the 53 D600 choices and a component test of the select; axe clean
+tech:
+FILES: apps/desktop/src/features/import/capture (a label function next to formatExposure, used by the shutter select in CameraSettings.tsx).
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the D600 gives each speed rounded to four decimals, so 1/4000 s arrives as 0.0002s and must be snapped, not inverted. No hardware check: the choices were recorded on the D600 during H-16.

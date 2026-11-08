@@ -740,9 +740,9 @@
       "number": 236,
       "title": "Camera exposure settings in the capture view (macOS)",
       "branch": "feat/issue-236-camera-settings",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 242,
+      "commit": "e81b952"
     }
   ]
 }

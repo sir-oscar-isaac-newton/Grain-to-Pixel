@@ -1,5 +1,5 @@
-//! The capture commands (D-04): light and camera control, the test shot and the capture job's
-//! start, on top of the shared light (`shared_light`), the busy flag and the camera slot.
+//! The capture commands (D-04): light and camera control, the test shot, the automatic level
+//! calibration (H-17) and the capture job's start, on top of the shared light (`shared_light`), the busy flag and the camera slot.
 //!
 //! Two flags keep the hardware safe (docs/specification.md section 6.1):
 //!
@@ -19,12 +19,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::Duration;
 
+use gtp_capture::calibration::{calibrate, percentile, PERCENTILE};
 use gtp_capture::settings::clean_value;
 use gtp_capture::{
     CameraFinder, CameraInfo, CameraSetting, CameraSettingKind, CameraSettings, CameraSource,
-    CaptureProfile, CaptureSequence, CapturedFile, LightGuard, LightInfo, LightSource, LightStatus,
-    Pause, PortInfo, ThreadPause, CAPTURE_TIMEOUT,
+    CaptureProfile, CaptureSequence, CapturedFile, ChannelMeter, LightGuard, LightInfo,
+    LightSource, LightStatus, Pause, PortInfo, Region, ThreadPause, CAPTURE_TIMEOUT,
 };
+use gtp_core::ImageF32;
 use gtp_core::{
     AppError, ErrorCode, ExposureInfo, FrameId, JobId, JobResult, RollId, TripletChannel,
 };
@@ -34,7 +36,7 @@ use serde::Serialize;
 
 use crate::context::AppContext;
 use crate::hardware::Hardware;
-use crate::jobs::{JobKind, JobManager, LibraryEvents};
+use crate::jobs::{JobCtx, JobKind, JobManager, LibraryEvents};
 use crate::services::capture::{capture_triplet, safe_name};
 use crate::services::capture_levels::{
     exposure_from_exif, levels_for_roll, levels_from_wide, LevelsUsed,
@@ -461,6 +463,113 @@ pub fn start_triplet(
     })
 }
 
+// --- the calibration job ---------------------------------------------------------------------
+
+/// `capture_calibrate`: starts the automatic level calibration as a job and returns its id. `levels`
+/// are the working levels (0 to 255 each) it starts from, `region` the part of the frame it measures
+/// (the whole frame when `None`). It takes test shots, one colour at a time, until the brightest
+/// pixels of each sit just below clipping (see `gtp_capture::calibration`), and ends with
+/// `JobResult::Calibrated`. Nothing is saved or changed: the levels are the user's to review and
+/// save. Same preconditions as [`start_triplet`]; the busy flag is held until the job ends, and the
+/// light is off after every shot and on every way out.
+pub fn start_calibration(
+    ctx: &AppContext,
+    jobs: &JobManager,
+    hardware: &Hardware,
+    events: Arc<dyn CaptureEvents>,
+    roll: RollId,
+    levels: [u32; 3],
+    region: Option<Region>,
+) -> Result<JobId, AppError> {
+    let levels = levels_from_wide(levels)?;
+    let region = region.map(Region::validated).transpose()?;
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    // Fail now, not inside the job, when there is no library or the roll is gone.
+    ctx.library()?.read(|c| c.get_roll(roll))?;
+    let busy = hardware.busy().acquire()?;
+    let profile = ctx.settings().capture_profile();
+    let light = hardware.light.clone();
+    let decoder = Arc::clone(&hardware.decoder);
+
+    jobs.spawn(JobKind::Calibration, move |job| {
+        // Held until the job ends, also by a panic.
+        let _busy = busy;
+        camera.connect()?;
+        let mut cam = camera.take()?;
+        let mut meter = SceneMeter {
+            profile,
+            light: &light,
+            camera: &mut **cam,
+            events: events.as_ref(),
+            decoder: decoder.as_ref(),
+            region,
+            job,
+            shots: 0,
+        };
+        let result = calibrate(&mut meter, levels)?;
+        tracing::info!(
+            levels = ?result.levels,
+            shots = ?result.shots,
+            warnings = result.warnings.len(),
+            "calibration finished"
+        );
+        Ok(JobResult::Calibrated(result))
+    })
+}
+
+/// Takes the shots of a calibration: lights one colour at the level asked for, shoots, and
+/// measures that colour over the region.
+struct SceneMeter<'a> {
+    profile: CaptureProfile,
+    light: &'a SharedLight,
+    camera: &'a mut dyn CameraSource,
+    events: &'a dyn CaptureEvents,
+    decoder: &'a dyn RawDecoder,
+    region: Option<Region>,
+    job: &'a JobCtx,
+    /// Shots taken so far, over all colours (for the progress fraction).
+    shots: u32,
+}
+
+/// The most shots a calibration can take: the limit per colour for each of the three.
+const MAX_SHOTS: f32 = 3.0 * gtp_capture::calibration::MAX_SHOTS_PER_CHANNEL as f32;
+
+impl ChannelMeter for SceneMeter<'_> {
+    fn measure(&mut self, channel: TripletChannel, level: u8, shot: u8) -> Result<f32, AppError> {
+        let name = ["Red", "Green", "Blue"][channel.index()];
+        self.job.progress(
+            &format!("{name}: shot {shot}, level {level}"),
+            self.shots as f32 / MAX_SHOTS,
+        );
+        self.shots += 1;
+        let mut profile = self.profile.clone();
+        profile.levels[channel.index()] = level;
+        let file = shoot(&profile, channel, self.light, self.camera, self.events)?;
+        let (_staged, plane) = decode_plane(&file, channel, self.decoder)?;
+        let mut area = region_values(&plane, self.region);
+        percentile(&mut area, PERCENTILE)
+            .ok_or_else(|| AppError::new(ErrorCode::Io, "The picture has no pixels to measure."))
+    }
+
+    fn cancelled(&self) -> bool {
+        self.job.is_cancelled()
+    }
+}
+
+/// The values of a one-channel image inside `region` (all of it when `None`).
+fn region_values(plane: &ImageF32, region: Option<Region>) -> Vec<f32> {
+    let Some(region) = region else {
+        return plane.data.clone();
+    };
+    let width = plane.width as usize;
+    let (x0, y0, x1, y1) = region.pixels(plane.width, plane.height);
+    let mut values = Vec::with_capacity((x1 - x0) * (y1 - y0));
+    for row in y0..y1 {
+        values.extend_from_slice(&plane.data[row * width + x0..row * width + x1]);
+    }
+    values
+}
+
 // --- the test shot ---------------------------------------------------------------------------
 
 /// `capture_test`: lights `channel` alone at its level of `levels` (the working levels of the
@@ -589,15 +698,26 @@ impl Drop for TempPicture {
     }
 }
 
+/// Stages `file` and decodes it to the lit channel's plane. The staged file lives as long as the
+/// returned guard.
+fn decode_plane(
+    file: &CapturedFile,
+    channel: TripletChannel,
+    decoder: &dyn RawDecoder,
+) -> Result<(TempPicture, ImageF32), AppError> {
+    let staged = TempPicture::write(channel, file)?;
+    let raw = decoder.decode(&staged.path, &Limits::default())?;
+    let plane = demosaic_channel(&raw, channel.index())?;
+    Ok((staged, plane))
+}
+
 /// The histogram and clipped share of the lit channel of `file`.
 fn measure(
     file: &CapturedFile,
     channel: TripletChannel,
     decoder: &dyn RawDecoder,
 ) -> Result<TestShot, AppError> {
-    let staged = TempPicture::write(channel, file)?;
-    let raw = decoder.decode(&staged.path, &Limits::default())?;
-    let plane = demosaic_channel(&raw, channel.index())?;
+    let (staged, plane) = decode_plane(file, channel, decoder)?;
     let mut histogram = vec![0u32; 256];
     let mut clipped = 0usize;
     for value in &plane.data {

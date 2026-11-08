@@ -152,6 +152,14 @@ export const commands = {
 	 */
 	captureTriplet: (rollId: RollId, levels: [number, number, number]) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("capture_triplet", { rollId, levels })),
 	/**
+	 *  Finds the Scanlight levels automatically as a job: test shots, one colour at a time, until the
+	 *  brightest pixels of each sit just below clipping. `levels` are the working levels it starts from
+	 *  (0 to 255 each); `region` is the part of the frame it measures, as fractions of its width and
+	 *  height (the whole frame when absent). The result arrives in `job://done` as `Calibrated`, the
+	 *  steps as `capture://step`. Nothing is saved: the user saves the levels. Returns the job id at once.
+	 */
+	captureCalibrate: (rollId: RollId, levels: [number, number, number], region: Region | null) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("capture_calibrate", { rollId, levels, region })),
+	/**
 	 *  Starts exporting the frames at full resolution, each with its saved recipe (the automatic one
 	 *  when it was never edited), as a job; progress and the result (the files written and the frames
 	 *  that failed) arrive as `job://*` events. An existing file is never overwritten: the name gets a
@@ -310,6 +318,26 @@ export type Base_Serialize = {
 	source: BaseSource,
 	rgb: [(number | null), (number | null), (number | null)],
 };
+
+/**  What an automatic calibration found. Nothing is saved: the user reviews it and saves it. */
+export type CalibrationResult = {
+	/**  The level to use for red, green and blue (1 to 255). */
+	levels: [number, number, number],
+	/**  What the brightest pixels (99.9th percentile) of each colour read at its level, 0 to 1. */
+	reached: [(number | null), (number | null), (number | null)],
+	/**  The shots each colour took. */
+	shots: [number, number, number],
+	/**  Things worth knowing about a calibration that still succeeded. */
+	warnings: CalibrationWarning[],
+};
+
+/**  Something to know about a successful calibration. */
+export type CalibrationWarning = 
+/**
+ *  The level is so low that one step of it changes the brightness by a large share, so it
+ *  cannot be set finely.
+ */
+{ kind: "coarse_level"; channel: TripletChannel; level: number };
 
 /**  How the pictures reach the app. */
 export type CameraBackend = 
@@ -1274,7 +1302,11 @@ export type JobResult_Deserialize =
 /**  An export (P-12). */
 {
 	kind: "Exported",
-} & ExportResult_Deserialize;
+} & ExportResult_Deserialize | 
+/**  An automatic Scanlight level calibration (H-17). */
+{
+	kind: "Calibrated",
+} & CalibrationResult;
 
 /**  The result of a job that finished without error. */
 export type JobResult_Serialize = 
@@ -1291,7 +1323,11 @@ export type JobResult_Serialize =
 /**  An export (P-12). */
 {
 	kind: "Exported",
-} & ExportResult_Serialize;
+} & ExportResult_Serialize | 
+/**  An automatic Scanlight level calibration (H-17). */
+{
+	kind: "Calibrated",
+} & CalibrationResult;
 
 /**  Which end of the levels a picked area sets. */
 export type LevelsPoint = "white" | "black";
@@ -1527,6 +1563,21 @@ export type Recipe_Serialize = {
 	tone: Tone_Serialize,
 	dust: Dust_Serialize,
 	output: Output_Serialize,
+};
+
+/**
+ *  A rectangle of the frame in fractions of its width and height (0 to 1): the area that
+ *  calibration measures. `None` where it is optional means the whole frame.
+ */
+export type Region = {
+	/**  The left edge. */
+	x: number | null,
+	/**  The top edge. */
+	y: number | null,
+	/**  The width. */
+	w: number | null,
+	/**  The height. */
+	h: number | null,
 };
 
 /**

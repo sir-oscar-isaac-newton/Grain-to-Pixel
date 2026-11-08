@@ -19,13 +19,13 @@
     "@gtp/ui": "workspace:^",
     "@radix-ui/react-alert-dialog": "^1.2.1",
     "@radix-ui/react-dialog": "^1.3.1",
-    "@tanstack/react-virtual": "^3.14.24",
+    "@tanstack/react-virtual": "^3.14.26",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.8.4",
-    "i18next": "^26.5.11",
+    "i18next": "^26.7.1",
     "react": "^18",
     "react-dom": "^18",
-    "react-i18next": "^17.1.9",
+    "react-i18next": "^17.1.12",
     "zustand": "^5.0.16"
   },
   "devDependencies": {

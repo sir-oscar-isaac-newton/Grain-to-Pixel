@@ -1528,6 +1528,27 @@ FILES: .github/workflows/ci.yml, .github/workflows/e2e-windows.yml, apps/desktop
 TESTS: the e2e run itself, green on CI. Evidence so far: runtime updated 155 to 156 and flags still ignored; runas /trustlevel does not lower integrity on the runner.
 DELIVERY: the hook is a build-time config file (src-tauri/tauri.e2e.conf.json, window additionalBrowserArgs), not a Cargo feature, so a normal build cannot carry it; see decisions/0006-e2e-debugging-port.md.
 
+## T-08
+title: Dependabot pull requests without hand fixes
+milestone: M0
+type: chore
+size: S
+estimate: 0.5d
+deps: T-07
+adr: no
+spec: convention section 8
+desc: Every Dependabot update of a Cargo or npm package fails CI twice over: docs/third-party-licenses.txt goes stale, which only pnpm gen:notices can fix, and the grouped titles are longer than the 72 characters the pr-title check allows. Each one needs the same hand steps. Let the title check accept Dependabot's titles, and put the notices fix in one script.
+ac:
+- The pr-title check skips the length limit for PRs by dependabot[bot] and still checks the type(scope) prefix
+- tools/scripts/deps/fix-dependabot.ps1 <PR> checks out the PR's branch, merges develop, installs, regenerates the notices, commits and pushes when they changed, and says what it did; it refuses a PR that is not Dependabot's or a working tree with changes
+- docs/convention.md section 8 says how a Dependabot PR is handled
+tech:
+FILES: .github/workflows/pr-title.yml, tools/scripts/deps/fix-dependabot.ps1 (new), docs/convention.md.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: the title check on a Dependabot PR and on a long human title; the script run on an open Dependabot PR.
+NOTES: a workflow that commits the notices was rejected: a push with the workflow token does not start CI again, so the required checks would stay on the old commit. Seen on PRs 218, 220 and 233.
+
 ## U-13
 title: Customizable keyboard shortcuts
 milestone: M3

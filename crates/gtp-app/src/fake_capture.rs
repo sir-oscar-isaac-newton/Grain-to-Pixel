@@ -12,7 +12,7 @@ use std::path::Path;
 
 // Re-exported so that the tests of the desktop shell can script a light without a dependency on
 // `gtp-capture` (the shell depends on `gtp-app` only).
-use gtp_capture::{CameraInfo, CapturedFile, FakeCamera};
+use gtp_capture::{CameraInfo, CaptureProfile, CapturedFile, FakeCamera};
 pub use gtp_capture::{FakeLight, FakeLightHandle, LightInfo, LightSource, LightStatus};
 use gtp_core::{AppError, ErrorCode};
 use gtp_io::{Cfa, Limits, RawDecoder, RawLinear};
@@ -44,50 +44,89 @@ pub fn fake_camera() -> FakeCamera {
 }
 
 /// Reads the staged pictures of the fake camera: the channel comes from the first letter of the
-/// file name (`r`, `g` or `b`).
+/// file name (`r`, `g` or `b`). The lit colour is as bright as at the default levels.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FakeRawDecoder;
 
 impl RawDecoder for FakeRawDecoder {
     fn decode(&self, path: &Path, _: &Limits) -> Result<RawLinear, AppError> {
-        let lit = match path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .and_then(|name| name.chars().next())
-        {
-            Some('r') => 0,
-            Some('g') => 1,
-            Some('b') => 2,
-            _ => {
-                return Err(AppError::new(
-                    ErrorCode::UnsupportedFormat,
-                    "This is not a picture of the fake camera.",
-                ))
-            }
-        };
-        let (w, h) = (WIDTH as usize, HEIGHT as usize);
-        let mut data = Vec::with_capacity(w * h);
-        for y in 0..h {
-            for x in 0..w {
-                let value = if Cfa::RGGB.color_at(x, y) == lit {
-                    // A smooth ramp from 30 % to 100 % of the peak, left to right and top to bottom.
-                    let ramp = 0.3 + 0.7 * ((x + y) as f32 / (w + h - 2) as f32);
-                    (WHITE * PEAK[lit] * ramp).round() as u16
-                } else {
-                    LEAK
-                };
-                data.push(value);
-            }
-        }
-        Ok(RawLinear {
-            width: WIDTH,
-            height: HEIGHT,
-            cfa: Cfa::RGGB,
-            black: [0.0; 4],
-            white: WHITE,
-            data,
-        })
+        decode_lit(path, 1.0)
     }
+}
+
+/// [`FakeRawDecoder`] whose lit colour follows the light: as bright as at the default levels when
+/// the light was at its default level for that colour, twice as bright at twice the level, up to
+/// the white level. It reads the level the fake light last had for the colour, so a calibration
+/// against the fake hardware converges.
+#[derive(Clone)]
+pub struct LevelledRawDecoder {
+    light: FakeLightHandle,
+}
+
+impl LevelledRawDecoder {
+    /// A decoder that follows `light`.
+    pub fn new(light: FakeLightHandle) -> Self {
+        Self { light }
+    }
+}
+
+impl RawDecoder for LevelledRawDecoder {
+    fn decode(&self, path: &Path, _: &Limits) -> Result<RawLinear, AppError> {
+        let lit = lit_channel(path)?;
+        let level = self.light.last_lit_level(lit);
+        // A light that was never lit leaves the default brightness.
+        let scale = if level == 0 {
+            1.0
+        } else {
+            f32::from(level) / f32::from(CaptureProfile::default().levels[lit])
+        };
+        decode_lit(path, scale)
+    }
+}
+
+/// The colour a staged fake picture was lit with: 0, 1 or 2.
+fn lit_channel(path: &Path) -> Result<usize, AppError> {
+    match path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.chars().next())
+    {
+        Some('r') => Ok(0),
+        Some('g') => Ok(1),
+        Some('b') => Ok(2),
+        _ => Err(AppError::new(
+            ErrorCode::UnsupportedFormat,
+            "This is not a picture of the fake camera.",
+        )),
+    }
+}
+
+/// The synthetic mosaic of the picture at `path`, its lit colour `scale` times as bright as at the
+/// default level (never above the white level).
+fn decode_lit(path: &Path, scale: f32) -> Result<RawLinear, AppError> {
+    let lit = lit_channel(path)?;
+    let (w, h) = (WIDTH as usize, HEIGHT as usize);
+    let mut data = Vec::with_capacity(w * h);
+    for y in 0..h {
+        for x in 0..w {
+            let value = if Cfa::RGGB.color_at(x, y) == lit {
+                // A smooth ramp from 30 % to 100 % of the peak, left to right and top to bottom.
+                let ramp = 0.3 + 0.7 * ((x + y) as f32 / (w + h - 2) as f32);
+                (WHITE * (PEAK[lit] * ramp * scale).min(1.0)).round() as u16
+            } else {
+                LEAK
+            };
+            data.push(value);
+        }
+    }
+    Ok(RawLinear {
+        width: WIDTH,
+        height: HEIGHT,
+        cfa: Cfa::RGGB,
+        black: [0.0; 4],
+        white: WHITE,
+        data,
+    })
 }
 
 #[cfg(test)]
@@ -122,6 +161,50 @@ mod tests {
                 .fold(0.0f32, f32::max);
             assert!(max < 0.99, "{prefix} clips at {max}");
         }
+    }
+
+    #[test]
+    fn a_brighter_light_level_gives_a_brighter_lit_channel_and_the_default_changes_nothing() {
+        let mut light = gtp_capture::FakeLight::new();
+        let decoder = LevelledRawDecoder::new(light.handle());
+        let peak = |name: &str, lit: usize| {
+            let raw = decoder.decode(Path::new(name), &Limits::default()).unwrap();
+            demosaic_channel(&raw, lit)
+                .unwrap()
+                .data
+                .into_iter()
+                .fold(0.0f32, f32::max)
+        };
+        let default = CaptureProfile::default().levels;
+        for (prefix, lit) in [("r", 0), ("g", 1)] {
+            let name = format!("{prefix}-FAKE_0001.NEF");
+            let plain = FakeRawDecoder
+                .decode(Path::new(&name), &Limits::default())
+                .unwrap();
+            let plain_max = demosaic_channel(&plain, lit)
+                .unwrap()
+                .data
+                .into_iter()
+                .fold(0.0f32, f32::max);
+            assert_eq!(peak(&name, lit), plain_max, "never lit: as before");
+            let mut levels = [0u8; 3];
+            levels[lit] = default[lit];
+            light.set_levels(levels).unwrap();
+            assert_eq!(peak(&name, lit), plain_max, "{prefix}: the default level");
+            levels[lit] = default[lit] / 2;
+            light.set_levels(levels).unwrap();
+            light.set_levels([0; 3]).unwrap();
+            let dimmer = peak(&name, lit);
+            assert!(
+                (dimmer - plain_max / 2.0).abs() < 0.01,
+                "{prefix}: {dimmer}"
+            );
+            levels[lit] = default[lit] + default[lit] / 4;
+            light.set_levels(levels).unwrap();
+            assert!(peak(&name, lit) > plain_max * 1.2, "{prefix}");
+        }
+        light.set_levels([255, 0, 0]).unwrap();
+        assert!(peak("r-FAKE_0001.NEF", 0) <= 1.0, "clipped at white");
     }
 
     #[test]

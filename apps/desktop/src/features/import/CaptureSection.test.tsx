@@ -87,6 +87,34 @@ const finish = (id: string, frame: string, warnings: ImportWarning[] = []) =>
     );
   });
 
+const calibrateButton = () => screen.getByRole('button', { name: /^Calibrat(e|ing)/ });
+
+const CALIBRATED = {
+  kind: 'Calibrated',
+  levels: [212, 140, 5],
+  reached: [0.93, 0.94, 0.987],
+  shots: [3, 2, 2],
+  warnings: [{ kind: 'coarse_level', channel: 'blue', level: 5 }],
+  exposure: { exposure_time: { num: 1, den: 50 }, iso: 100, f_number: { num: 8, den: 1 } },
+};
+
+/** Starts a calibration and returns the job id the fake gave it. */
+async function startCalibration(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(calibrateButton());
+  await waitFor(() => expect(ipc.captureCalibrate).toHaveBeenCalled());
+  await waitFor(() => expect(useLibraryStore.getState().jobs).toHaveLength(1));
+  return state.calibrationJob;
+}
+
+const calibrationProgress = (id: string, stage: string, fraction: number) =>
+  act(() => listeners.progress.forEach((cb) => cb({ id, stage, fraction })));
+
+const calibrationDone = (id: string, result: object = CALIBRATED) =>
+  act(() => listeners.done.forEach((cb) => cb({ id, result: result as never })));
+
+const calibrationError = (id: string, code: string, message: string) =>
+  act(() => listeners.error.forEach((cb) => cb({ id, error: { code, message } as never })));
+
 describe('CaptureSection', () => {
   beforeEach(() => {
     resetFake();
@@ -732,6 +760,101 @@ describe('CaptureSection', () => {
     });
   });
 
+  describe('calibration', () => {
+    it('starts with the working levels and the whole frame, and tracks the job', async () => {
+      const { roll, user } = await ready();
+      expect(calibrateButton()).toBeEnabled();
+      expect(screen.getByText(/Frame clear film base/)).toBeInTheDocument();
+      const id = await startCalibration(user);
+      expect(ipc.captureCalibrate).toHaveBeenCalledWith(roll.id, [44, 22, 2]);
+      expect(useLibraryStore.getState().jobs[0]).toMatchObject({ id, kind: 'calibration' });
+    });
+
+    it('needs the light and the camera', async () => {
+      openLibrary();
+      render(<Capture />);
+      await screen.findByText('Camera: Nikon D600');
+      expect(calibrateButton()).toBeDisabled();
+    });
+
+    it('shows the progress and Cancel, and holds the other controls while it runs', async () => {
+      const { user } = await ready();
+      const id = await startCalibration(user);
+      calibrationProgress(id, 'Red: shot 2, level 120', 2 / 18);
+      expect(await screen.findByText('Red: shot 2, level 120')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+      expect(calibrateButton()).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Test shot, red' })).toBeDisabled();
+      expect(next()).toBeDisabled();
+      expect(screen.getByRole('slider', { name: 'Red level' })).toHaveAttribute('data-disabled');
+      expect(screen.getByRole('combobox', { name: 'ISO' })).toBeDisabled();
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(ipc.jobCancel).toHaveBeenCalledWith(id);
+    });
+
+    it('sets the sliders, lists what it found and allows saving without another test shot', async () => {
+      const { user } = await ready();
+      expect(screen.getByRole('button', { name: 'Save as default' })).toBeDisabled();
+      const id = await startCalibration(user);
+      calibrationDone(id);
+      expect(await screen.findByText('Red 212: 93 % of full scale in 3 shots')).toBeInTheDocument();
+      expect(screen.getByText('Green 140: 94 % of full scale in 2 shots')).toBeInTheDocument();
+      expect(screen.getByText('Blue 5: 99 % of full scale in 2 shots')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Blue ended at level 5, where one step is a big change/),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('slider', { name: 'Red level' })).toHaveValue(212);
+      expect(screen.getByRole('slider', { name: 'Green level' })).toHaveValue(140);
+      expect(screen.getByRole('slider', { name: 'Blue level' })).toHaveValue(5);
+      expect(screen.getByText('Changed, not saved')).toBeInTheDocument();
+      expect(calibrateButton()).toBeEnabled();
+      const save = screen.getByRole('button', { name: 'Save as default' });
+      expect(save).toBeEnabled();
+      await user.click(save);
+      await waitFor(() =>
+        expect(ipc.captureLevelsSave).toHaveBeenCalledWith(
+          'default',
+          [212, 140, 5],
+          CALIBRATED.exposure,
+        ),
+      );
+    });
+
+    it('shows a dash for a colour whose reading is unknown', async () => {
+      const { user } = await ready();
+      const id = await startCalibration(user);
+      calibrationDone(id, { ...CALIBRATED, reached: [0.93, null, 0.5], warnings: [] });
+      expect(await screen.findByText('Green 140: – of full scale in 2 shots')).toBeInTheDocument();
+    });
+
+    it('shows the reason when the calibration fails', async () => {
+      const { user } = await ready();
+      const id = await startCalibration(user);
+      calibrationError(id, 'Io', 'Red is clipped even at level 1: the exposure is too long.');
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Red is clipped even at level 1: the exposure is too long.',
+      );
+      expect(calibrateButton()).toBeEnabled();
+    });
+
+    it('shows the reason when it cannot start', async () => {
+      const { user } = await ready();
+      state.calibrationFail = 'The levels are out of range.';
+      await user.click(calibrateButton());
+      expect(await screen.findByRole('alert')).toHaveTextContent('The levels are out of range.');
+    });
+
+    it('says it was cancelled and leaves the levels as they were', async () => {
+      const { user } = await ready();
+      const id = await startCalibration(user);
+      calibrationError(id, 'Cancelled', 'Cancelled');
+      expect(await screen.findByText('Calibration cancelled.')).toBeInTheDocument();
+      expect(screen.getByRole('slider', { name: 'Red level' })).toHaveValue(44);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(calibrateButton()).toBeEnabled();
+    });
+  });
+
   describe('lifetime', () => {
     it('switches the light off when the view closes', async () => {
       const { unmount } = await ready();
@@ -745,6 +868,18 @@ describe('CaptureSection', () => {
     it('cancels a running capture before switching off when the view closes', async () => {
       const { user, unmount } = await ready();
       const id = await startCapture(user);
+      expect(ipc.jobCancel).not.toHaveBeenCalled();
+      unmount();
+      expect(ipc.jobCancel).toHaveBeenCalledWith(id);
+      expect(ipc.lightOff).toHaveBeenCalledTimes(1);
+      const cancelOrder = vi.mocked(ipc.jobCancel).mock.invocationCallOrder[0] ?? Infinity;
+      const offOrder = vi.mocked(ipc.lightOff).mock.invocationCallOrder[0] ?? -Infinity;
+      expect(cancelOrder).toBeLessThan(offOrder);
+    });
+
+    it('cancels a running calibration before switching off when the view closes', async () => {
+      const { user, unmount } = await ready();
+      const id = await startCalibration(user);
       expect(ipc.jobCancel).not.toHaveBeenCalled();
       unmount();
       expect(ipc.jobCancel).toHaveBeenCalledWith(id);
@@ -772,6 +907,17 @@ describe('CaptureSection', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
     await screen.findByRole('img', { name: /Histogram/ });
+    await expectNoA11yViolations(container);
+  });
+
+  it('has no accessibility violations while calibrating and after', async () => {
+    const { container, user } = await ready();
+    const id = await startCalibration(user);
+    calibrationProgress(id, 'Red: shot 1, level 44', 1 / 18);
+    await screen.findByText('Red: shot 1, level 44');
+    await expectNoA11yViolations(container);
+    calibrationDone(id);
+    await screen.findByText(/Blue ended at level 5/);
     await expectNoA11yViolations(container);
   });
 

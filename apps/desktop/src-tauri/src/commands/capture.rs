@@ -7,7 +7,7 @@ use gtp_app::services::capture_control as capture;
 use gtp_app::services::capture_levels::{self, CaptureLevels, LevelsScope};
 use gtp_app::{
     AppContext, CameraInfo, CameraSetting, CameraSettingKind, CaptureProfile, CaptureProfilePatch,
-    Hardware, JobManager, LightInfo, PortInfo, TestShot,
+    Hardware, JobManager, LightInfo, PortInfo, Region, TestShot,
 };
 use gtp_core::{ExposureInfo, JobId, RollId, TripletChannel};
 use tauri::State;
@@ -160,6 +160,33 @@ pub fn capture_triplet(
         Arc::clone(&events.0),
         roll_id,
         levels,
+    )
+}
+
+/// Finds the Scanlight levels automatically as a job: test shots, one colour at a time, until the
+/// brightest pixels of each sit just below clipping. `levels` are the working levels it starts from
+/// (0 to 255 each); `region` is the part of the frame it measures, as fractions of its width and
+/// height (the whole frame when absent). The result arrives in `job://done` as `Calibrated`, the
+/// steps as `capture://step`. Nothing is saved: the user saves the levels. Returns the job id at once.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn capture_calibrate(
+    ctx: State<'_, AppContext>,
+    jobs: State<'_, JobManager>,
+    hardware: State<'_, Hardware>,
+    events: State<'_, CaptureEventsState>,
+    roll_id: RollId,
+    levels: [u32; 3],
+    region: Option<Region>,
+) -> CmdResult<JobId> {
+    capture::start_calibration(
+        &ctx,
+        &jobs,
+        &hardware,
+        Arc::clone(&events.0),
+        roll_id,
+        levels,
+        region,
     )
 }
 
@@ -409,6 +436,77 @@ mod tests {
         assert_eq!(steps, 9);
     }
 
+    #[test]
+    fn a_calibration_returns_a_job_that_ends_with_levels_and_saves_nothing() {
+        let f = fixture("calibrate");
+        let before = std::fs::read_to_string(f.dir.join("settings.json")).unwrap();
+        let rx = listen(&f.app, &["job://done", "job://error", "capture://step"]);
+        let id = capture_calibrate(
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            f.roll,
+            [44, 22, 2],
+            None,
+        )
+        .unwrap();
+        let mut steps = 0;
+        let done = loop {
+            let (name, payload) = rx.recv_timeout(WAIT).unwrap();
+            match name.as_str() {
+                "capture://step" => steps += 1,
+                "job://done" => break payload,
+                other => panic!("{other}: {payload}"),
+            }
+        };
+        assert_eq!(done["id"], id.to_string());
+        assert_eq!(done["result"]["kind"], "Calibrated");
+        let levels = done["result"]["levels"].as_array().unwrap();
+        assert_eq!(levels.len(), 3);
+        assert!(levels[0].as_u64().unwrap() > 44);
+        assert!(done["result"]["reached"][0].as_f64().unwrap() > 0.9);
+        assert_eq!(done["result"]["warnings"][0]["kind"], "coarse_level");
+        assert_eq!(done["result"]["warnings"][0]["channel"], "blue");
+        let shots: u64 = done["result"]["shots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_u64().unwrap())
+            .sum();
+        assert_eq!(steps, 3 * shots);
+        assert_eq!(
+            std::fs::read_to_string(f.dir.join("settings.json")).unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn a_calibration_area_arrives_as_the_ui_sends_it_and_a_bad_one_is_refused() {
+        let region: Region = serde_json::from_str(r#"{"x":0.1,"y":0.2,"w":0.5,"h":0.25}"#).unwrap();
+        assert_eq!(
+            (region.x, region.y, region.w, region.h),
+            (0.1, 0.2, 0.5, 0.25)
+        );
+        let f = fixture("calibrate-area");
+        let err = capture_calibrate(
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            f.roll,
+            [44, 22, 2],
+            Some(Region {
+                x: 0.5,
+                y: 0.0,
+                w: 0.9,
+                h: 1.0,
+            }),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+    }
+
     // Not with `tether` on macOS: libgphoto2 is the backend there, and this would drive whatever
     // camera is plugged in.
     #[cfg(not(all(target_os = "macos", feature = "tether")))]
@@ -428,6 +526,18 @@ mod tests {
         .unwrap_err();
         assert!(err.message.contains("No camera backend"), "{err}");
         assert!(capture::camera_list(&real).is_empty());
+        let jobs = f.app.state::<JobManager>();
+        let err = capture::start_calibration(
+            &ctx,
+            &jobs,
+            &real,
+            Arc::clone(&events.0),
+            f.roll,
+            [44, 22, 2],
+            None,
+        )
+        .unwrap_err();
+        assert!(err.message.contains("No camera backend"), "{err}");
         let err = capture::camera_settings(&real).unwrap_err();
         assert!(err.message.contains("No camera backend"), "{err}");
     }

@@ -2079,16 +2079,17 @@ adr: no
 spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md
 desc: With clear film base framed, each colour is test-shot and its level adjusted until the brightest pixels of that channel sit just below clipping, and the user reviews the result and saves it with H-15's save, as the global default or for the roll's film stock.
 ac:
-- Automatic calibration: with clear film base framed (an optional area, the whole frame by default), each colour is test-shot and its level adjusted until the brightest pixels of that channel sit just below clipping, within a fixed number of shots
+- Automatic calibration: with clear film base framed, each colour is test-shot from the working levels and its level adjusted until the brightest pixels of that channel (over the whole frame, so the black carrier and mask do not count) sit just below clipping, within a fixed number of shots
+- The calibration command takes an optional area of the frame; choosing one in the UI is a later issue, once there is a picture to draw it on
 - The user reviews the result and saves it as the global default or for that film stock; nothing is saved without that step
 - When calibration cannot succeed it says so in words: clipped at level 1 (exposure too long), too dark at level 255 (exposure too short), and a warning below a set level where one step is too coarse
 - Tests on fakes: convergence, the fixed shot limit, the three failure messages, nothing saved without confirmation; an ignored test for real hardware
 tech:
 FILES: crates/gtp-capture (calibration loop against the CameraSource and LightSource traits), crates/gtp-app/src/services/capture_control.rs, apps/desktop/src-tauri commands, apps/desktop/src/features/import/capture.
-ROUTES: capture_calibrate(RollId, region) -> JobId
+ROUTES: capture_calibrate(RollId, levels, region?) -> JobId; levels are the working levels the calibration starts from, region an optional normalised rectangle (the whole frame when absent)
 MIGRATIONS: none
 TESTS: as in ac
-NOTES: the 99.9th percentile of the channel in the area, a proportional step (the light is linear in its level), a target of about 0.90 to 0.97 of full scale and at most 6 shots per colour; the human runs the real calibration on the Mac.
+NOTES: the 99.9th percentile of the channel in the area, a proportional step (the light is linear in its level), a target of about 0.90 to 0.97 of full scale and at most 6 shots per colour; the human runs the real calibration on the Mac. Bare light leaking past the film's edge is brighter than the base and would pull the levels down, so the checklist asks for none to be visible. A finished calibration counts as the test shot H-15's save needs.
 
 ## U-18
 title: Shutter speeds shown as fractions in the capture view

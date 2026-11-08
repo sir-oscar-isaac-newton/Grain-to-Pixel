@@ -12,7 +12,7 @@ use gtp_capture::{
 use gtp_io::{Cfa, RawLinear};
 
 use super::*;
-use crate::fake_capture::{fake_camera, fake_camera_info, FakeRawDecoder};
+use crate::fake_capture::{fake_camera, fake_camera_info, FakeRawDecoder, LevelledRawDecoder};
 use crate::jobs::JobSink;
 use crate::services::roll_frame::{roll_create, RollInput};
 use crate::shared_light::fake_ports;
@@ -147,6 +147,23 @@ impl Rig {
         decoder: Arc<dyn RawDecoder>,
         camera: impl FnOnce(FakeLightHandle) -> Box<dyn CameraSource + Send>,
     ) -> Self {
+        Self::build_with(label, |_| decoder, camera)
+    }
+
+    /// A rig whose decoder follows the fake light, as with `GTP_FAKE_HW=1`.
+    fn levelled(label: &str) -> Self {
+        Self::build_with(
+            label,
+            |light| Arc::new(LevelledRawDecoder::new(light)),
+            |light| Box::new(fake_camera().linked_to(light)),
+        )
+    }
+
+    fn build_with(
+        label: &str,
+        decoder: impl FnOnce(FakeLightHandle) -> Arc<dyn RawDecoder>,
+        camera: impl FnOnce(FakeLightHandle) -> Box<dyn CameraSource + Send>,
+    ) -> Self {
         let dir = std::env::temp_dir().join(format!(
             "gtp-capture-control-{label}-{}-{}",
             std::process::id(),
@@ -177,7 +194,7 @@ impl Rig {
         let hardware = Hardware::from_vars(Some("1"), Some(OsString::from("none"))).with_capture(
             SharedLight::new(Box::new(fake), fake_ports),
             Some(slot),
-            decoder,
+            decoder(light.clone()),
         );
         let (tx, outcomes) = mpsc::channel();
         Self {
@@ -209,6 +226,18 @@ impl Rig {
             self.events.clone(),
             self.roll,
             levels,
+        )
+    }
+
+    fn calibrate(&self, levels: [u32; 3], region: Option<Region>) -> Result<JobId, AppError> {
+        start_calibration(
+            self.ctx(),
+            &self.jobs,
+            &self.hardware,
+            self.events.clone(),
+            self.roll,
+            levels,
+            region,
         )
     }
 
@@ -1079,4 +1108,174 @@ fn a_camera_found_through_a_finder_is_connected_before_its_settings_are_used() {
     *finder.connect_error.lock().unwrap() = None;
     assert_eq!(camera_settings(&rig.hardware).unwrap().len(), 3);
     assert_eq!(finder.connects.load(Ordering::SeqCst), 2);
+}
+
+fn calibrated(rig: &Rig) -> gtp_core::CalibrationResult {
+    match rig.outcome() {
+        Outcome::Done(JobResult::Calibrated(result)) => result,
+        Outcome::Done(_) => panic!("the job did not end with a calibration"),
+        Outcome::Error(err) => panic!("the calibration failed: {err}"),
+    }
+}
+
+#[test]
+fn a_calibration_converges_on_the_fakes_stores_nothing_and_leaves_the_light_off() {
+    let rig = Rig::levelled("calibrate");
+    let settings_before = std::fs::read_to_string(rig.dir.join("settings.json")).unwrap();
+    let profile_before = rig.ctx().settings().capture_profile();
+    rig.calibrate([44, 22, 2], None).unwrap();
+    let result = calibrated(&rig);
+
+    // Red and green settle inside the range. Blue's default level is 2, where one step of the
+    // light is a fifth of the picture's brightness: it ends just below clipping, with a warning.
+    for i in 0..2 {
+        assert!(
+            (0.90..=0.97).contains(&result.reached[i]),
+            "{i}: {result:?}"
+        );
+    }
+    assert!(
+        result.reached[2] > 0.7 && result.reached[2] < 0.99,
+        "{result:?}"
+    );
+    assert!(result.levels[0] > 44 && result.levels[1] > 22, "{result:?}");
+    assert_eq!(
+        result.warnings,
+        [gtp_core::CalibrationWarning::CoarseLevel {
+            channel: TripletChannel::Blue,
+            level: result.levels[2]
+        }]
+    );
+    assert!(result.shots.iter().all(|n| (1..=6).contains(n)));
+
+    // One colour lit at a time, in order; light off afterwards; the flag released.
+    let lit = rig.lit_levels();
+    assert_eq!(
+        lit.len(),
+        result.shots.iter().map(|n| usize::from(*n)).sum::<usize>()
+    );
+    assert!(lit
+        .iter()
+        .all(|l| l.iter().filter(|v| **v > 0).count() == 1));
+    assert_eq!(rig.light.levels(), [0; 3]);
+    assert!(!rig.hardware.busy().is_busy());
+    assert_eq!(rig.events.steps().len(), 3 * lit.len());
+
+    // Nothing was saved or stored.
+    assert_eq!(rig.frames(), 0);
+    assert_eq!(rig.ctx().settings().capture_profile(), profile_before);
+    assert_eq!(
+        std::fs::read_to_string(rig.dir.join("settings.json")).unwrap(),
+        settings_before
+    );
+}
+
+#[test]
+fn a_calibration_starts_from_any_level_and_measures_only_the_chosen_area() {
+    let rig = Rig::levelled("calibrate-region");
+    // Halving from 255 takes more than six shots to reach blue's few levels, so it starts near them.
+    rig.calibrate([255, 255, 8], None).unwrap();
+    let whole = calibrated(&rig);
+    for i in 0..2 {
+        assert!((0.90..=0.97).contains(&whole.reached[i]), "{whole:?}");
+    }
+    // The fake's picture is darker at the top left, so that corner needs a brighter light.
+    let corner = Region {
+        x: 0.0,
+        y: 0.0,
+        w: 0.25,
+        h: 0.25,
+    };
+    rig.calibrate([44, 22, 2], Some(corner)).unwrap();
+    let part = calibrated(&rig);
+    assert!(
+        part.levels[0] > whole.levels[0] + 20,
+        "{part:?} vs {whole:?}"
+    );
+    assert!((0.90..=0.97).contains(&part.reached[0]), "{part:?}");
+}
+
+#[test]
+fn a_calibration_that_cannot_succeed_says_why_and_leaves_the_light_off() {
+    // Red is clipped whatever the level.
+    let rig = Rig::build("calibrate-clipped", Arc::new(ClipRed), |light| {
+        Box::new(fake_camera().linked_to(light))
+    });
+    rig.calibrate([44, 22, 2], None).unwrap();
+    let Outcome::Error(err) = rig.outcome() else {
+        panic!("a clipped red must fail the calibration");
+    };
+    assert_eq!(
+        err.message,
+        "Red is clipped even at level 1: the exposure is too long. Use a shorter shutter speed and calibrate again."
+    );
+    assert_eq!(rig.light.levels(), [0; 3]);
+    assert!(!rig.hardware.busy().is_busy());
+    assert_eq!(rig.frames(), 0);
+}
+
+#[test]
+fn a_calibration_is_refused_while_busy_for_a_bad_area_or_levels_or_roll() {
+    let rig = Rig::levelled("calibrate-refused");
+    {
+        let _busy = rig.hardware.busy().acquire().unwrap();
+        assert_busy(rig.calibrate([44, 22, 2], None));
+    }
+    let nan = Region {
+        x: f32::NAN,
+        y: 0.0,
+        w: 0.5,
+        h: 0.5,
+    };
+    let outside = Region {
+        x: 0.6,
+        y: 0.0,
+        w: 0.5,
+        h: 0.5,
+    };
+    let empty = Region {
+        x: 0.0,
+        y: 0.0,
+        w: 0.0,
+        h: 0.5,
+    };
+    for region in [nan, outside, empty] {
+        let err = rig.calibrate([44, 22, 2], Some(region)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput, "{region:?}");
+    }
+    assert_eq!(
+        rig.calibrate([44, 22, 256], None).unwrap_err().code,
+        ErrorCode::InvalidInput
+    );
+    let err = start_calibration(
+        rig.ctx(),
+        &rig.jobs,
+        &rig.hardware,
+        rig.events.clone(),
+        RollId::new(),
+        [44, 22, 2],
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+    assert!(!rig.hardware.busy().is_busy(), "a refusal holds nothing");
+    assert!(rig.lit_levels().is_empty());
+}
+
+// Not with `tether` on macOS: libgphoto2 is the backend there, and this would drive whatever
+// camera is plugged in.
+#[cfg(not(all(target_os = "macos", feature = "tether")))]
+#[test]
+fn a_calibration_without_a_camera_backend_says_so() {
+    let rig = Rig::new("calibrate-no-camera");
+    let real = Hardware::from_vars(None, None);
+    assert_no_camera(start_calibration(
+        rig.ctx(),
+        &rig.jobs,
+        &real,
+        rig.events.clone(),
+        rig.roll,
+        [44, 22, 2],
+        None,
+    ));
 }

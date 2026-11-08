@@ -9,6 +9,7 @@ import {
 } from '../../../shared/ipc';
 import { messageOf } from '../../library/library-store';
 import styles from '../import.module.css';
+import { formatShutterChoice } from './exposure';
 
 const KINDS: CameraSettingKind[] = ['iso', 'shutter_speed', 'aperture'];
 
@@ -130,7 +131,7 @@ function SettingField({ kind, setting, disabled, onChange }: SettingFieldProps) 
         {setting.value === null && <option value="" disabled />}
         {setting.choices.map((choice) => (
           <option key={choice} value={choice}>
-            {choice}
+            {kind === 'shutter_speed' ? formatShutterChoice(choice) : choice}
           </option>
         ))}
       </select>

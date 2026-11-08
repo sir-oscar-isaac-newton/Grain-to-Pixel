@@ -49,3 +49,40 @@ export function formatExposure(exposure: ExposureInfo | null): string | null {
   }
   return parts.length > 0 ? parts.join(', ') : null;
 }
+
+/** Third-stop shutter denominators from 1/4000 s (the fastest of the D600) down to 1/3 s. */
+const FAST_DENOMINATORS = [
+  4000, 3200, 2500, 2000, 1600, 1250, 1000, 800, 640, 500, 400, 320, 250, 200, 160, 125, 100, 80,
+  60, 50, 40, 30, 25, 20, 15, 13, 10, 8, 6, 5, 4, 3,
+];
+
+/** Standard shutter times in seconds, from 0.4 s up. */
+const LONG_SECONDS = [
+  0.4, 0.5, 0.6, 0.8, 1, 1.3, 1.6, 2, 2.5, 3, 4, 5, 6, 8, 10, 13, 15, 20, 25, 30,
+];
+
+/** The value of `candidates` nearest to `x` on a logarithmic scale, as stops are. */
+const nearestLog = (x: number, candidates: number[]): number =>
+  candidates.reduce((best, c) =>
+    Math.abs(Math.log(x / c)) < Math.abs(Math.log(x / best)) ? c : best,
+  );
+
+/**
+ * A shutter choice of the camera ("0.0200s") as a photographer writes it ("1/50 s"). The camera
+ * rounds its times, so they snap to the nearest standard third stop. Text that is not a time
+ * ("Bulb") is returned as it is.
+ */
+export function formatShutterChoice(choice: string): string {
+  const match = /^(\d+(?:\.\d+)?)s$/.exec(choice);
+  const seconds = match ? Number(match[1]) : NaN;
+  if (!Number.isFinite(seconds) || seconds <= 0) return choice;
+  if (seconds < 0.4) {
+    const nearest = nearestLog(
+      seconds,
+      FAST_DENOMINATORS.map((d) => 1 / d),
+    );
+    return `1/${Math.round(1 / nearest)} s`;
+  }
+  if (seconds > 30) return `${plain(seconds, 2)} s`;
+  return `${plain(nearestLog(seconds, LONG_SECONDS), 1)} s`;
+}

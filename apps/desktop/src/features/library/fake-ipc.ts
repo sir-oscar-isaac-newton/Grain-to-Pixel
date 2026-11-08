@@ -171,8 +171,8 @@ export function defaultCameraSettings(): CameraSetting[] {
     { kind: 'iso', value: '100', choices: ['100', '200', '400', '800'], writable: true },
     {
       kind: 'shutter_speed',
-      value: '1/100',
-      choices: ['1/60', '1/100', '1/125', '1/250'],
+      value: '0.0100s',
+      choices: ['0.0040s', '0.0100s', '0.0166s', '0.0200s'],
       writable: true,
     },
     { kind: 'aperture', value: '8', choices: ['5.6', '8', '11'], writable: true },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ExposureInfo } from '../../../shared/ipc';
-import { exposureDiffers, formatExposure } from './exposure';
+import { exposureDiffers, formatExposure, formatShutterChoice } from './exposure';
 
 const base: ExposureInfo = {
   exposure_time: { num: 1, den: 60 },
@@ -65,5 +65,80 @@ describe('formatExposure', () => {
       formatExposure({ exposure_time: { num: 1, den: 0 }, iso: null, f_number: null }),
     ).toBeNull();
     expect(formatExposure(null)).toBeNull();
+  });
+});
+
+describe('formatShutterChoice', () => {
+  const table: [string, string][] = [
+    ['0.0002s', '1/4000 s'],
+    ['0.0003s', '1/3200 s'],
+    ['0.0004s', '1/2500 s'],
+    ['0.0005s', '1/2000 s'],
+    ['0.0006s', '1/1600 s'],
+    ['0.0008s', '1/1250 s'],
+    ['0.0010s', '1/1000 s'],
+    ['0.0012s', '1/800 s'],
+    ['0.0015s', '1/640 s'],
+    ['0.0020s', '1/500 s'],
+    ['0.0025s', '1/400 s'],
+    ['0.0031s', '1/320 s'],
+    ['0.0040s', '1/250 s'],
+    ['0.0050s', '1/200 s'],
+    ['0.0062s', '1/160 s'],
+    ['0.0080s', '1/125 s'],
+    ['0.0100s', '1/100 s'],
+    ['0.0125s', '1/80 s'],
+    ['0.0166s', '1/60 s'],
+    ['0.0200s', '1/50 s'],
+    ['0.0250s', '1/40 s'],
+    ['0.0333s', '1/30 s'],
+    ['0.0400s', '1/25 s'],
+    ['0.0500s', '1/20 s'],
+    ['0.0666s', '1/15 s'],
+    ['0.0769s', '1/13 s'],
+    ['0.1000s', '1/10 s'],
+    ['0.1250s', '1/8 s'],
+    ['0.1666s', '1/6 s'],
+    ['0.2000s', '1/5 s'],
+    ['0.2500s', '1/4 s'],
+    ['0.3333s', '1/3 s'],
+    ['0.4000s', '0.4 s'],
+    ['0.5000s', '0.5 s'],
+    ['0.6250s', '0.6 s'],
+    ['0.7692s', '0.8 s'],
+    ['1.0000s', '1 s'],
+    ['1.3000s', '1.3 s'],
+    ['1.6000s', '1.6 s'],
+    ['2.0000s', '2 s'],
+    ['2.5000s', '2.5 s'],
+    ['3.0000s', '3 s'],
+    ['4.0000s', '4 s'],
+    ['5.0000s', '5 s'],
+    ['6.0000s', '6 s'],
+    ['8.0000s', '8 s'],
+    ['10.0000s', '10 s'],
+    ['13.0000s', '13 s'],
+    ['15.0000s', '15 s'],
+    ['20.0000s', '20 s'],
+    ['25.0000s', '25 s'],
+    ['30.0000s', '30 s'],
+    ['Bulb', 'Bulb'],
+  ];
+
+  it('labels the 53 choices of a D600 as standard shutter speeds', () => {
+    expect(table).toHaveLength(53);
+    for (const [choice, label] of table) expect(formatShutterChoice(choice)).toBe(label);
+  });
+
+  it('gives every choice of the D600 a label of its own', () => {
+    const labels = table.map(([choice]) => formatShutterChoice(choice));
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it('leaves text that is not a time as it is, and writes times over 30 s plainly', () => {
+    expect(formatShutterChoice('Bulb')).toBe('Bulb');
+    expect(formatShutterChoice('1/100')).toBe('1/100');
+    expect(formatShutterChoice('')).toBe('');
+    expect(formatShutterChoice('60.0000s')).toBe('60 s');
   });
 });

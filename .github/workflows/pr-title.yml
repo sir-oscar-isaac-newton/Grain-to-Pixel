@@ -16,13 +16,16 @@ jobs:
       - name: Check the title
         env:
           TITLE: ${{ github.event.pull_request.title }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           re='^(feat|fix|perf|refactor|test|docs|build|ci|chore)(\([a-z0-9-]+\))?!?: .+$'
           if [[ ! "$TITLE" =~ $re ]]; then
             echo "::error::PR title must look like 'type(scope): summary' with type one of feat, fix, perf, refactor, test, docs, build, ci, chore. Got: $TITLE"
             exit 1
           fi
-          if [ "${#TITLE}" -gt 72 ]; then
+          # Dependabot writes its own titles, and those of grouped updates are longer than 72; the
+          # squash commit can be given a shorter one when it is merged.
+          if [ "$AUTHOR" != "dependabot[bot]" ] && [ "${#TITLE}" -gt 72 ]; then
             echo "::error::PR title is ${#TITLE} characters; the limit is 72."
             exit 1
           fi

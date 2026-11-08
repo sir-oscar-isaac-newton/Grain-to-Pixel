@@ -123,6 +123,8 @@ Tag builds (`vX.Y.Z`) additionally run the release pipeline (spec §15). A budge
 
 Run the same commands locally before pushing (see the README). Third-party actions are pinned by commit SHA, first-party ones by major version; Dependabot keeps them current.
 
+A Dependabot PR that changes a Cargo or npm package also needs `docs/third-party-licenses.txt` regenerated, which Dependabot cannot do: run `tools/scripts/deps/fix-dependabot.ps1 <PR>` (it merges `develop`, regenerates the notices and pushes them to the PR's branch), then merge it when CI passes. Its title may be longer than 72 characters (the title check lets Dependabot's through); shorten it in the squash commit. A major version that needs code changes is not taken from Dependabot: tell it `@dependabot ignore this major version` and propose an issue if the update is wanted.
+
 ### Branch protection (settings to apply once, by the owner)
 
 Apply to `develop` (the default branch) in Settings > Branches (or via a ruleset). `main` gets the same rules, plus "restrict who can push" to the owner, since it only receives release merges.

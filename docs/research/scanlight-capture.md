@@ -169,4 +169,4 @@ The Capture section of the Import view (shown while the `guided_capture` flag is
 - [ ] Cancel during a capture stops it and the light is dark.
 - [ ] The light is dark after leaving the Import view (look at it) and after closing the app. Also leave the view in the middle of a capture: the capture is cancelled and the light stays dark.
 - [ ] If practical: let the light heat past the abort temperature (or cover it): the badge turns to "too hot and switched off", Next frame is off, and Reconnect light brings it back once it has cooled.
-- [ ] Warnings: with the camera on auto ISO or a different shutter time, the frame is stored with the EXIF warning in words; with a too-bright level, the clipping warning names the colour.
+- [ ] Warnings: with a too-bright level, the clipping warning names the colour. (An EXIF mismatch cannot be forced on the rig: the camera's controls are locked while tethered, and auto ISO gave the same ISO to all three shots. The app reads ISO, shutter time and aperture from the D600's NEFs, checked on the private samples, and the mismatch warning has a unit test.)

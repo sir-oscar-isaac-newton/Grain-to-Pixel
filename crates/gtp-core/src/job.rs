@@ -7,7 +7,7 @@ use crate::ids::{FrameId, RollId};
 use crate::model::{SourceRole, TripletChannel};
 
 /// The result of a job that finished without error.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "kind")]
 pub enum JobResult {
@@ -19,6 +19,32 @@ pub enum JobResult {
     Verified(VerifyResult),
     /// An export (P-12).
     Exported(ExportResult),
+    /// An automatic Scanlight level calibration (H-17).
+    Calibrated(CalibrationResult),
+}
+
+/// What an automatic calibration found. Nothing is saved: the user reviews it and saves it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct CalibrationResult {
+    /// The level to use for red, green and blue (1 to 255).
+    pub levels: [u8; 3],
+    /// What the brightest pixels (99.9th percentile) of each colour read at its level, 0 to 1.
+    pub reached: [f32; 3],
+    /// The shots each colour took.
+    pub shots: [u8; 3],
+    /// Things worth knowing about a calibration that still succeeded.
+    pub warnings: Vec<CalibrationWarning>,
+}
+
+/// Something to know about a successful calibration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CalibrationWarning {
+    /// The level is so low that one step of it changes the brightness by a large share, so it
+    /// cannot be set finely.
+    CoarseLevel { channel: TripletChannel, level: u8 },
 }
 
 /// What a file import did.

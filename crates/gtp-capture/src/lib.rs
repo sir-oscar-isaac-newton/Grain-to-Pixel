@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod calibration;
 pub mod camera;
 pub mod fakes;
 pub mod gphoto;
@@ -17,6 +18,7 @@ pub mod scanlight;
 pub mod sequence;
 pub mod settings;
 
+pub use calibration::{calibrate, ChannelMeter, Region};
 pub use camera::{CameraFinder, CameraInfo, CameraSource, CapturedFile};
 pub use fakes::{
     CameraCall, FakeCamera, FakeCameraHandle, FakeLight, FakeLightHandle, LightCommand, Shot,

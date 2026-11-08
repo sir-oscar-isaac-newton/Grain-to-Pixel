@@ -217,6 +217,7 @@ With clear film base framed, `capture_calibrate` takes test shots, one colour at
 
 **Hardware checklist for H-17 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
 
+- [ ] With the camera and the light connected and clear film base framed, run the ignored test: `cargo test -p gtp-app --features tether --test calibration_hardware -- --ignored --nocapture` (optional `GTP_SCANLIGHT_PORT`, `GTP_CALIBRATE_LEVELS=r,g,b`); it prints the levels, reached values and shots per colour and leaves the light off.
 - [ ] Build with `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`.
 - [ ] Frame clear film base (for example the leader) so that it fills the frame, and make sure no bare light leaks past the film's edge: it is brighter than the base and would pull the levels down.
 - [ ] Press Calibrate. Record the levels, the reached values and the shots per colour: red ___ / ___ / ___, green ___ / ___ / ___, blue ___ / ___ / ___.

@@ -2112,3 +2112,51 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: the D600 gives each speed rounded to four decimals, so 1/4000 s arrives as 0.0002s and must be snapped, not inverted. No hardware check: the choices were recorded on the D600 during H-16.
+
+## H-18
+title: Focus aids in the live view
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: H-14
+needs: hw, mac
+adr: no
+spec: specification section 6.1 and 7; docs/research/scanlight-capture.md
+desc: The 640 x 424 live view of H-14 is enough to frame the film but not to focus on its grain. Add focus aids to the live view: focus peaking as an option, a sharpness number with the best value seen, and the camera's own zoomed live view, which shows a small part of the film in detail. The zoom starts with a test on the D600, and that part ends there if the test fails.
+ac:
+- The test comes first (the author runs it on the Mac): gphoto2 --list-config shows whether libgphoto2 offers the D600's live-view zoom (and moving the zoomed area); setting it and grabbing a frame shows a magnified part of the film; the results go in docs/research/scanlight-capture.md; if the D600 offers no zoom over USB, the zoom is dropped and the rest goes ahead
+- Focus peaking, off by default: sharp edges of each live frame are outlined in a chosen colour, with a sensitivity control; it is computed in the app on the frame's brightness, so it works with any camera
+- A sharpness number for the middle of the frame (or the whole zoomed view), with a mark for the best value since live view or the zoom started, so the focus ring can be turned to the peak
+- Zoomed live view (if the test passes): the zoom steps the camera allows and moving the zoomed area if it allows that; the zoom is left before any capture, like live view
+- Tests: the edge filter and the sharpness number on known images (a sharp one scores higher than a blurred one), peaking on and off, the zoom commands with the fake camera, axe; the zoom and focusing are checked on the D600 (human)
+tech:
+FILES: apps/desktop/src/features/import/capture (the peaking overlay and the sharpness number, computed on the frame in the app), crates/gtp-capture (zoom on the CameraPreview trait, GphotoCamera and the fake), apps/desktop/src-tauri commands, en.json.
+ROUTES: the zoom (set the ratio, move the area), if the test passes.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the sharpness number is a common one (for example the variance of the Laplacian) on the frame's brightness. Peaking and the number work on the zoomed frames as they are, which makes them much more precise. The focus check shot and the flatness map are H-19.
+
+## H-19
+title: Focus check shot and film flatness map
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: H-14
+needs: hw, mac
+adr: no
+spec: specification section 6.1 and 7; docs/research/scanlight-capture.md
+desc: The most exact focus check is a real picture: take one shot with the chosen light colour and show a 1:1 crop of the middle of the NEF at full sensor resolution, with its sharpness number. The same shot gives a 3 x 3 map of sharpness over the frame, which shows whether the film is flat, bowed or tilted; a map saved from a flat target as a reference removes the lens's own field curvature.
+ac:
+- Focus check: one shot with the chosen light colour and level (the light is off afterwards on every way out, refused while a capture runs) shows a 1:1 crop of the middle of that colour at full sensor resolution and its sharpness number; nothing is stored in the library
+- A 3 x 3 sharpness map of the same shot, each region relative to the best, with a hint that names the pattern: middle sharp and the edges evenly softer (bowed), one side or corner softer (tilted), even (flat)
+- Save as flat reference: a map from a flat target is saved in settings.json, and later maps are shown against it, so what is left is the film; the reference can be cleared
+- The hint and the docs say that the map is fair only on a frame with even texture (grain in an evenly exposed area, or a flat target such as a printed fine pattern or a graticule slide), and that a wide aperture shows the differences best
+- Tests: the crop and the map on synthetic images (bowed, tilted, flat), the hints, the comparison against a reference, the light off on every way out, the command refused while busy, axe; the real check on the D600 (human)
+tech:
+FILES: crates/gtp-app/src/services/capture_control.rs (the shot, with test_shot's shoot and decode), a sharpness function shared with H-18 where it fits, apps/desktop/src-tauri commands, apps/desktop/src/features/import/capture, settings (the reference), en.json.
+ROUTES: capture_focus_check(channel, levels) -> the crop (raw bytes or an image), its number and the 3 x 3 map; the reference is saved and cleared through the settings commands.
+MIGRATIONS: none (the reference is a 3 x 3 array in settings.json).
+TESTS: as in ac.
+NOTES: the sharpness of a region depends on its content, so the hint does not claim more than the pattern; the reference is per setup and is cleared when the user wants.

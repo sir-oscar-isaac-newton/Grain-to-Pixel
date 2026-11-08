@@ -767,9 +767,9 @@
       "number": 212,
       "title": "Live preview of the camera in the capture view",
       "branch": "feat/issue-212-live-preview",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 252,
+      "commit": "e547f66"
     }
   ]
 }

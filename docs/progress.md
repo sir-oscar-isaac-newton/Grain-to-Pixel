@@ -743,6 +743,15 @@
       "status": "completed",
       "pr": 242,
       "commit": "e81b952"
+    },
+    {
+      "id": "U-18",
+      "number": 243,
+      "title": "Shutter speeds shown as fractions in the capture view",
+      "branch": "fix/issue-243-shutter-fractions",
+      "status": "completed",
+      "pr": 245,
+      "commit": "1d94093"
     }
   ]
 }

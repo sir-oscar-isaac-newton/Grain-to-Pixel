@@ -11,7 +11,7 @@ use gtp_capture::{list_ports, FakeLight, ScanlightV4};
 use gtp_ingest::{FixtureSource, NkscanSource, ScannerSource};
 use gtp_io::{RawDecoder, RawlerDecoder};
 
-use crate::fake_capture::{fake_camera, fake_camera_info, FakeRawDecoder};
+use crate::fake_capture::{fake_camera, fake_camera_info, LevelledRawDecoder};
 use crate::services::capture_control::{BusyFlag, CameraSlot};
 use crate::shared_light::{fake_ports, SharedLight};
 
@@ -63,16 +63,18 @@ impl Hardware {
         let dir = fixture_dir
             .map(PathBuf::from)
             .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../samples/private"));
+        let fake_light = FakeLight::new();
+        let decoder = LevelledRawDecoder::new(fake_light.handle());
         Self {
             scanner: Some(Arc::new(FixtureSource::new(&dir))),
-            light: SharedLight::new(Box::new(FakeLight::new()), fake_ports),
+            light: SharedLight::new(Box::new(fake_light), fake_ports),
             camera: Some(Arc::new({
                 let camera = fake_camera();
                 let settings = camera.handle();
                 CameraSlot::new(fake_camera_info(), Box::new(camera))
                     .with_settings(Box::new(settings))
             })),
-            decoder: Arc::new(FakeRawDecoder),
+            decoder: Arc::new(decoder),
             busy: BusyFlag::default(),
             fixture_dir: Some(dir),
         }

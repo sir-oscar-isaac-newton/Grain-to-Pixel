@@ -6,6 +6,8 @@ import {
   events,
   commands,
   type AppError,
+  type CalibrationResult,
+  type CalibrationWarning,
   type CameraInfo,
   type CameraSetting_Serialize,
   type CameraSettingKind,
@@ -51,6 +53,8 @@ import {
 
 export type {
   AppError,
+  CalibrationResult,
+  CalibrationWarning,
   CameraInfo,
   CameraSettingKind,
   CaptureStep,
@@ -404,6 +408,14 @@ export async function captureTest(channel: TripletChannel, levels: Levels): Prom
 /** Captures one frame into the roll at the working levels as a job; the frame arrives in `job://done`. Returns the job id. */
 export async function captureTriplet(rollId: string, levels: Levels): Promise<string> {
   return unwrap(await commands.captureTriplet(rollId, levels));
+}
+
+/**
+ * Finds the Scanlight level of each colour that fills the camera's range as a job, shooting the
+ * whole frame; the `CalibrationResult` arrives in `job://done` and nothing is saved. Returns the job id.
+ */
+export async function captureCalibrate(rollId: string, levels: Levels): Promise<string> {
+  return unwrap(await commands.captureCalibrate(rollId, levels, null));
 }
 
 /** The scanners that can be used now; fails with the reason (not connected, wrong driver ...) when none. */

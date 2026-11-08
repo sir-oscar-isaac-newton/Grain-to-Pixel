@@ -215,3 +215,8 @@
 .captureSettings p {
   margin: 0;
 }
+
+.captureCalibration {
+  margin: 0;
+  padding-left: var(--space-4);
+}

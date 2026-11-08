@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import {
   cameraList,
   captureProfileGet,
+  jobCancel,
   lightConnect,
   lightOff,
   onLightStatus,
@@ -87,9 +88,17 @@ function Capture() {
     };
   }, []);
 
-  // The light must never be left on when the view closes.
+  // The light must never be left on when the view closes. A running capture is cancelled first:
+  // otherwise it would light its next colour again after the switch-off.
   useEffect(
     () => () => {
+      for (const job of useLibraryStore.getState().jobs) {
+        if (job.kind === 'capture' && job.state === 'running') {
+          jobCancel(job.id).catch(() => {
+            // The job may have just ended; the switch-off below still runs.
+          });
+        }
+      }
       lightOff().catch(() => {
         // Switching off is always allowed; nothing more can be done here.
       });

@@ -362,6 +362,18 @@ describe('CaptureSection', () => {
       expect(listeners.step).toHaveLength(0);
     });
 
+    it('cancels a running capture before switching off when the view closes', async () => {
+      const { user, unmount } = await ready();
+      const id = await startCapture(user);
+      expect(ipc.jobCancel).not.toHaveBeenCalled();
+      unmount();
+      expect(ipc.jobCancel).toHaveBeenCalledWith(id);
+      expect(ipc.lightOff).toHaveBeenCalledTimes(1);
+      const cancelOrder = vi.mocked(ipc.jobCancel).mock.invocationCallOrder[0] ?? Infinity;
+      const offOrder = vi.mocked(ipc.lightOff).mock.invocationCallOrder[0] ?? -Infinity;
+      expect(cancelOrder).toBeLessThan(offOrder);
+    });
+
     it('does not even look for the light when the flag is off', async () => {
       state.flags = { ...state.flags, guided_capture: false };
       openLibrary();

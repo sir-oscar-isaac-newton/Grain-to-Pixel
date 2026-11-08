@@ -167,6 +167,6 @@ The Capture section of the Import view (shown while the `guided_capture` flag is
 - [ ] Next frame with the Space key (focus not in a button, field or slider) does the same; Space during a capture does nothing.
 - [ ] Time from pressing Next frame to the stored frame, excluding exposure time (budget 15 s): ______ s.
 - [ ] Cancel during a capture stops it and the light is dark.
-- [ ] The light is dark after leaving the Import view (look at it) and after closing the app.
+- [ ] The light is dark after leaving the Import view (look at it) and after closing the app. Also leave the view in the middle of a capture: the capture is cancelled and the light stays dark.
 - [ ] If practical: let the light heat past the abort temperature (or cover it): the badge turns to "too hot and switched off", Next frame is off, and Reconnect light brings it back once it has cooled.
 - [ ] Warnings: with the camera on auto ISO or a different shutter time, the frame is stored with the EXIF warning in words; with a too-bright level, the clipping warning names the colour.

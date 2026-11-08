@@ -6,8 +6,8 @@ use std::sync::Arc;
 use gtp_app::services::capture_control as capture;
 use gtp_app::services::capture_levels::{self, CaptureLevels, LevelsScope};
 use gtp_app::{
-    AppContext, CameraInfo, CaptureProfile, CaptureProfilePatch, Hardware, JobManager, LightInfo,
-    PortInfo, TestShot,
+    AppContext, CameraInfo, CameraSetting, CameraSettingKind, CaptureProfile, CaptureProfilePatch,
+    Hardware, JobManager, LightInfo, PortInfo, TestShot,
 };
 use gtp_core::{ExposureInfo, JobId, RollId, TripletChannel};
 use tauri::State;
@@ -59,6 +59,28 @@ pub fn light_off(hardware: State<'_, Hardware>) -> CmdResult<()> {
 #[specta::specta]
 pub fn camera_list(hardware: State<'_, Hardware>) -> CmdResult<Vec<CameraInfo>> {
     Ok(capture::camera_list(&hardware))
+}
+
+/// The camera's ISO, shutter speed and aperture with the choices it allows. A setting the camera
+/// lacks comes back absent (no value, no choices, not writable). Refused while a capture or a
+/// test shot runs.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn camera_settings_get(hardware: State<'_, Hardware>) -> CmdResult<Vec<CameraSetting>> {
+    capture::camera_settings(&hardware)
+}
+
+/// Sets one camera setting to one of its choices and returns the settings as the camera has them
+/// afterwards. Refused while a capture or a test shot runs, and for a value the camera does not
+/// offer or a setting it does not let change now.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn camera_settings_set(
+    hardware: State<'_, Hardware>,
+    kind: CameraSettingKind,
+    value: String,
+) -> CmdResult<Vec<CameraSetting>> {
+    capture::camera_set_setting(&hardware, kind, &value)
 }
 
 /// The capture profile (levels, settle time, temperature limits, camera backend).
@@ -232,6 +254,34 @@ mod tests {
     }
 
     #[test]
+    fn the_camera_settings_commands_read_set_and_refuse_on_the_fakes() {
+        let f = fixture("camera-settings");
+        let hardware = || f.app.state::<Hardware>();
+        let got = camera_settings_get(hardware()).unwrap();
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0].kind, CameraSettingKind::Iso);
+        let set = camera_settings_set(hardware(), CameraSettingKind::ShutterSpeed, "1/250".into())
+            .unwrap();
+        assert_eq!(set[1].value.as_deref(), Some("1/250"));
+        let err =
+            camera_settings_set(hardware(), CameraSettingKind::Iso, "12345".into()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        // The kind reaches the command as the UI sends it, and the answer has the UI's field names.
+        assert_eq!(
+            serde_json::from_str::<CameraSettingKind>("\"shutter_speed\"").unwrap(),
+            CameraSettingKind::ShutterSpeed
+        );
+        let json = serde_json::to_value(&set[0]).unwrap();
+        assert_eq!(json["kind"], "iso");
+        assert!(json["choices"].is_array() && json["writable"].is_boolean());
+        let _busy = hardware().busy().acquire().unwrap();
+        assert!(camera_settings_get(hardware())
+            .unwrap_err()
+            .message
+            .contains("capture is in progress"));
+    }
+
+    #[test]
     fn the_profile_is_read_changed_validated_and_kept() {
         let f = fixture("profile");
         let ctx = || f.app.state::<AppContext>();
@@ -359,6 +409,9 @@ mod tests {
         assert_eq!(steps, 9);
     }
 
+    // Not with `tether` on macOS: libgphoto2 is the backend there, and this would drive whatever
+    // camera is plugged in.
+    #[cfg(not(all(target_os = "macos", feature = "tether")))]
     #[test]
     fn without_a_camera_backend_a_capture_and_a_test_shot_say_so() {
         let f = fixture("no-camera");
@@ -375,5 +428,7 @@ mod tests {
         .unwrap_err();
         assert!(err.message.contains("No camera backend"), "{err}");
         assert!(capture::camera_list(&real).is_empty());
+        let err = capture::camera_settings(&real).unwrap_err();
+        assert!(err.message.contains("No camera backend"), "{err}");
     }
 }

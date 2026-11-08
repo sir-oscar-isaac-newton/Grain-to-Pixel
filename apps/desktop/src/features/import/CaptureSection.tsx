@@ -18,6 +18,8 @@ import {
 import { flagsOf } from '../settings/flags';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import styles from './import.module.css';
+import { CameraSettings } from './capture/CameraSettings';
+import { formatExposure } from './capture/exposure';
 import { LevelSliders } from './capture/LevelSliders';
 import { NextFrameButton } from './capture/NextFrameButton';
 import { SaveLevels } from './capture/SaveLevels';
@@ -71,6 +73,8 @@ function Capture() {
   const [saved, setSaved] = useState<CaptureLevels | null>(null);
   const [levels, setLevels] = useState<Levels | null>(null);
   const [shotExposure, setShotExposure] = useState<ExposureInfo | null>(null);
+  // True while a change of a camera setting is on its way to the camera.
+  const [settingsChanging, setSettingsChanging] = useState(false);
 
   const refreshCameras = useCallback(async () => {
     try {
@@ -166,6 +170,7 @@ function Capture() {
     await refreshCameras();
   };
 
+  const savedExposure = formatExposure(saved?.exposure ?? null);
   const usable = light.connected && light.status?.tripped !== true && cameras.length > 0;
 
   return (
@@ -186,6 +191,17 @@ function Capture() {
           void refreshCameras();
         }}
       />
+      <CameraSettings cameras={cameras} running={running} onChanging={setSettingsChanging} />
+      {savedExposure && (
+        <p className={styles.muted}>
+          {saved?.source === 'stock'
+            ? t('import.capture.settings.savedStock', {
+                stock: saved.stock ?? '',
+                exposure: savedExposure,
+              })
+            : t('import.capture.settings.savedDefault', { exposure: savedExposure })}
+        </p>
+      )}
       {rolls.length === 0 ? (
         <p role="status">{t('import.files.noRolls')}</p>
       ) : (
@@ -225,7 +241,7 @@ function Capture() {
       )}
       {levels && (
         <TestShot
-          disabled={running || !usable}
+          disabled={running || !usable || settingsChanging}
           levels={levels}
           onShot={(exposure) => setShotExposure(exposure)}
         />
@@ -241,7 +257,7 @@ function Capture() {
           onSaved={setSaved}
         />
       )}
-      <NextFrameButton ready={usable} roll={roll} levels={levels} />
+      <NextFrameButton ready={usable && !settingsChanging} roll={roll} levels={levels} />
     </section>
   );
 }

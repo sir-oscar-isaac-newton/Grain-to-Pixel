@@ -191,3 +191,22 @@ The levels 44, 22 and 2 of ADR 0004 amendment 5 were measured on the bare light 
 - [ ] The capture records its levels: with the library closed or from another shell, run `sqlite3 <library folder>/library.db "SELECT id, capture_info FROM frame ORDER BY created_at DESC LIMIT 3;"`; the newest frame shows the levels, `"source":"stock"` (or `"default"`) and the three exposures.
 - [ ] Change the ISO or the shutter time on the camera between saving and capturing (the controls are locked while tethered: unplug the camera, change it, plug it in again and press Look for camera again): the capture shows the warning "The camera settings differ from when these levels were saved." Put the settings back: no warning.
 - [ ] Restart the app: the saved levels (default and per stock) are the same.
+
+## Camera settings (H-16)
+
+The camera's own dials are locked while it is tethered, so the capture view reads and sets the exposure itself. Three libgphoto2 configuration keys, each read as a menu (`RadioWidget`): `iso` (ISO), `shutterspeed` (shutter speed) and `f-number` (aperture). The values are the camera's own words (`"100"`, `"1/100"`, `"8"`) and the choices are its list in its order; both are bounded (at most 200 choices, each at most 32 characters, control characters dropped) because they come from a device.
+
+**Absent and readonly.** A key the driver lacks (libgphoto2 answers "bad parameters" or "not supported") or one that is not a menu is an absent setting: no value, no choices, not writable, and not an error. The view then says "Set on the lens" for the aperture (a lens without electronic contacts has no aperture to set) and "Not available" for the others. A readonly widget (the D600 only lets shutter speed and aperture change in M mode) keeps its value and choices but is not writable: the select is greyed. A real I/O failure is an error in words, with the usual link-loss handling.
+
+**Setting.** The worker reads the settings, refuses a value that is not one of the choices of a writable setting before anything is written, then sets the menu value and writes that single widget, and answers with the settings read again (a change of one setting can alter what another allows). Reading and changing go through the worker like every other call, with a 10 s timeout that marks the camera unusable like the others, and are refused while a capture is in flight and while the app's busy flag is held (a capture or a test shot).
+
+**Saved levels.** One line under the settings says what the roll's saved levels were taken at ("Levels for {stock} were saved at 1/100 s, ISO 100, f/8"). It is not compared live with the settings; the capture's own warning (H-15) still does that.
+
+**Hardware checklist for H-16 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
+
+- [ ] Run the ignored test, `cargo test -p gtp-capture --features tether --test gphoto_settings_hardware -- --ignored --nocapture`, and record here the name, value, writable flag and choices of the three settings on the D600: ISO ___, shutter speed ___, aperture ___. With `GTP_GPHOTO_SET_ISO=<one of the ISO choices>` it sets the ISO and prints the settings again.
+- [ ] The three selects in the capture view show the D600's values and choices.
+- [ ] Change the ISO and the shutter speed from the app, take a test shot and check its exposure line, then capture a frame and check the exposures of its `capture_info` (`sqlite3 <library folder>/library.db "SELECT id, capture_info FROM frame ORDER BY created_at DESC LIMIT 1;"`): all three shots carry the new settings.
+- [ ] With the camera out of M mode, the shutter speed and aperture selects are greyed (and show their values).
+- [ ] With a manual lens (no electronic contacts), the aperture shows "Set on the lens" (only if such a lens is to hand).
+- [ ] A change attempted while a capture runs is refused: the selects are greyed during a capture, and the camera keeps its settings.

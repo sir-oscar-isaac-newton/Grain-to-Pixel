@@ -19,9 +19,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::Duration;
 
+use gtp_capture::settings::clean_value;
 use gtp_capture::{
-    CameraFinder, CameraInfo, CameraSource, CaptureProfile, CaptureSequence, CapturedFile,
-    LightGuard, LightInfo, LightSource, LightStatus, Pause, PortInfo, ThreadPause, CAPTURE_TIMEOUT,
+    CameraFinder, CameraInfo, CameraSetting, CameraSettingKind, CameraSettings, CameraSource,
+    CaptureProfile, CaptureSequence, CapturedFile, LightGuard, LightInfo, LightSource, LightStatus,
+    Pause, PortInfo, ThreadPause, CAPTURE_TIMEOUT,
 };
 use gtp_core::{
     AppError, ErrorCode, ExposureInfo, FrameId, JobId, JobResult, RollId, TripletChannel,
@@ -136,6 +138,8 @@ enum Known {
 /// A camera the app can use, and the lock that gives one job the camera at a time.
 pub struct CameraSlot {
     known: Known,
+    /// Reads and changes the exposure settings; `None` for a camera that has no such access.
+    settings: Option<Box<dyn CameraSettings>>,
     camera: Mutex<Box<dyn CameraSource + Send>>,
 }
 
@@ -144,6 +148,7 @@ impl CameraSlot {
     pub fn new(info: CameraInfo, camera: Box<dyn CameraSource + Send>) -> Self {
         Self {
             known: Known::Fixed(info),
+            settings: None,
             camera: Mutex::new(camera),
         }
     }
@@ -159,8 +164,25 @@ impl CameraSlot {
                 finder,
                 last: Mutex::new(Vec::new()),
             },
+            settings: None,
             camera: Mutex::new(camera),
         }
+    }
+
+    /// This slot with access to the camera's exposure settings (ISO, shutter speed, aperture).
+    #[must_use]
+    pub fn with_settings(mut self, settings: Box<dyn CameraSettings>) -> Self {
+        self.settings = Some(settings);
+        self
+    }
+
+    fn settings_access(&self) -> Result<&dyn CameraSettings, AppError> {
+        self.settings.as_deref().ok_or_else(|| {
+            AppError::new(
+                ErrorCode::NotFound,
+                "This camera's exposure settings cannot be read or changed from the app.",
+            )
+        })
     }
 
     /// The cameras there are now. A backend that cannot answer (a picture is being taken, or the
@@ -205,6 +227,33 @@ impl CameraSlot {
             Err(TryLockError::WouldBlock) => Err(busy()),
         }
     }
+}
+
+/// `camera_settings`: the camera's ISO, shutter speed and aperture with the choices it allows. A
+/// setting the camera does not have comes back absent, not as an error. Refused while a capture or
+/// a test shot runs (the camera is in use).
+pub fn camera_settings(hardware: &Hardware) -> Result<Vec<CameraSetting>, AppError> {
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    let access = camera.settings_access()?;
+    let _busy = hardware.busy().acquire()?;
+    camera.connect()?;
+    access.settings()
+}
+
+/// `camera_set_setting`: sets one of the three settings to `value`, which must be one of the
+/// camera's choices, and returns the settings as the camera has them afterwards. Refused while a
+/// capture or a test shot runs.
+pub fn camera_set_setting(
+    hardware: &Hardware,
+    kind: CameraSettingKind,
+    value: &str,
+) -> Result<Vec<CameraSetting>, AppError> {
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    let access = camera.settings_access()?;
+    let value = clean_value(value)?;
+    let _busy = hardware.busy().acquire()?;
+    camera.connect()?;
+    access.set_setting(kind, &value)
 }
 
 /// The error when no camera backend exists (a build without the macOS `tether` feature, and not

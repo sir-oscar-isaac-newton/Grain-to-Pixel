@@ -14,7 +14,10 @@ pub mod services;
 pub mod shared_light;
 
 pub use context::{AppContext, ThumbnailRequester};
-pub use gtp_capture::{CameraInfo, CaptureProfile, CaptureProfilePatch, LightInfo, PortInfo};
+pub use gtp_capture::{
+    CameraInfo, CameraSetting, CameraSettingKind, CaptureProfile, CaptureProfilePatch, LightInfo,
+    PortInfo,
+};
 pub use gtp_edit::{frontier_curve, roll_balance, BalanceMethod, FrontierParams};
 pub use gtp_ingest::{
     merge_triplet, DeviceInfo, ScannerSource, TripletCandidate, TripletFile, TripletProblem,

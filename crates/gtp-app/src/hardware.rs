@@ -66,10 +66,12 @@ impl Hardware {
         Self {
             scanner: Some(Arc::new(FixtureSource::new(&dir))),
             light: SharedLight::new(Box::new(FakeLight::new()), fake_ports),
-            camera: Some(Arc::new(CameraSlot::new(
-                fake_camera_info(),
-                Box::new(fake_camera()),
-            ))),
+            camera: Some(Arc::new({
+                let camera = fake_camera();
+                let settings = camera.handle();
+                CameraSlot::new(fake_camera_info(), Box::new(camera))
+                    .with_settings(Box::new(settings))
+            })),
             decoder: Arc::new(FakeRawDecoder),
             busy: BusyFlag::default(),
             fixture_dir: Some(dir),
@@ -112,7 +114,10 @@ fn real_camera() -> Option<Arc<CameraSlot>> {
     match gtp_capture::GphotoCamera::new() {
         Ok(camera) => {
             let finder = Box::new(camera.finder());
-            Some(Arc::new(CameraSlot::with_finder(Box::new(camera), finder)))
+            let settings = Box::new(camera.finder());
+            Some(Arc::new(
+                CameraSlot::with_finder(Box::new(camera), finder).with_settings(settings),
+            ))
         }
         Err(err) => {
             tracing::error!("the camera backend did not start: {err}");

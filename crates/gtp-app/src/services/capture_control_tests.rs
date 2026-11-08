@@ -964,3 +964,119 @@ mod levels {
         assert_eq!(err.code, ErrorCode::NotFound);
     }
 }
+
+// --- the camera's exposure settings (H-16) -------------------------------------------------------
+
+/// A rig whose camera slot gives access to the settings of a fake camera, and that camera's handle.
+fn settings_rig(label: &str) -> (Rig, FakeCameraHandle) {
+    let mut rig = Rig::new(label);
+    let camera = fake_camera().linked_to(rig.light.clone());
+    let handle = camera.handle();
+    rig.hardware.camera = Some(Arc::new(
+        CameraSlot::new(fake_camera_info(), Box::new(camera))
+            .with_settings(Box::new(handle.clone())),
+    ));
+    (rig, handle)
+}
+
+/// Only where there is no backend: with `tether` on macOS, libgphoto2 is the backend and this would
+/// change the ISO of whatever camera is plugged in. The fake camera covers the commands there.
+#[cfg(not(all(target_os = "macos", feature = "tether")))]
+#[test]
+fn without_a_camera_backend_the_settings_commands_say_so() {
+    let real = Hardware::from_vars(None, None);
+    let err = camera_settings(&real).unwrap_err();
+    assert!(err.message.contains("No camera backend"), "{err}");
+    let err = camera_set_setting(&real, CameraSettingKind::Iso, "200").unwrap_err();
+    assert!(err.message.contains("No camera backend"), "{err}");
+}
+
+#[test]
+fn the_settings_are_read_and_a_change_is_trimmed_set_and_answered_with_the_new_settings() {
+    let (rig, handle) = settings_rig("settings-set");
+    let first = camera_settings(&rig.hardware).unwrap();
+    assert_eq!(first.len(), 3);
+    assert_eq!(first[0].kind, CameraSettingKind::Iso);
+    assert_eq!(first[0].value.as_deref(), Some("100"));
+    assert_eq!(first[0].choices, ["100", "200", "400", "800"]);
+
+    let after = camera_set_setting(&rig.hardware, CameraSettingKind::Iso, "  400 ").unwrap();
+    assert_eq!(after[0].value.as_deref(), Some("400"));
+    assert_eq!(camera_settings(&rig.hardware).unwrap(), after);
+    assert_eq!(
+        handle.changes(),
+        [(CameraSettingKind::Iso, "400".to_owned())]
+    );
+    assert!(!rig.hardware.busy().is_busy(), "the flag is released");
+}
+
+#[test]
+fn a_value_that_is_too_long_odd_or_not_offered_never_reaches_the_camera() {
+    let (rig, handle) = settings_rig("settings-bad");
+    for bad in ["", "   ", "1\u{0}00", &"9".repeat(200), "300"] {
+        let err = camera_set_setting(&rig.hardware, CameraSettingKind::Iso, bad).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
+        assert!(err.message.contains("not one the camera offers"), "{err}");
+    }
+    assert!(handle.changes().is_empty());
+}
+
+#[test]
+fn readonly_and_absent_settings_are_reported_and_refused() {
+    let (rig, handle) = settings_rig("settings-readonly");
+    handle.make_setting_readonly(CameraSettingKind::ShutterSpeed);
+    handle.make_setting_absent(CameraSettingKind::Aperture);
+    let got = camera_settings(&rig.hardware).unwrap();
+    assert!(!got[1].writable && got[1].value.is_some());
+    assert_eq!(got[2], CameraSetting::absent(CameraSettingKind::Aperture));
+    let err =
+        camera_set_setting(&rig.hardware, CameraSettingKind::ShutterSpeed, "1/60").unwrap_err();
+    assert!(err.message.contains("M mode"), "{err}");
+    assert!(camera_set_setting(&rig.hardware, CameraSettingKind::Aperture, "8").is_err());
+}
+
+#[test]
+fn the_settings_are_refused_while_a_capture_or_test_shot_holds_the_camera() {
+    let (rig, handle) = settings_rig("settings-busy");
+    let _held = rig.hardware.busy().acquire().unwrap();
+    let read = camera_settings(&rig.hardware).unwrap_err();
+    let set = camera_set_setting(&rig.hardware, CameraSettingKind::Iso, "200").unwrap_err();
+    for err in [read, set] {
+        assert!(err.message.contains("capture is in progress"), "{err}");
+    }
+    assert!(handle.changes().is_empty());
+}
+
+#[test]
+fn a_camera_without_settings_access_says_so_and_errors_come_through_in_words() {
+    let rig = Rig::new("settings-none");
+    let err = camera_settings(&rig.hardware).unwrap_err();
+    assert!(err.message.contains("exposure settings"), "{err}");
+
+    let (rig, handle) = settings_rig("settings-fail");
+    let words = AppError::new(ErrorCode::Io, "The camera is busy. Wait a moment.");
+    handle.fail_settings_with(Some(words.clone()));
+    assert_eq!(camera_settings(&rig.hardware).unwrap_err(), words);
+    assert!(!rig.hardware.busy().is_busy());
+}
+
+#[test]
+fn a_camera_found_through_a_finder_is_connected_before_its_settings_are_used() {
+    let finder = Arc::new(ScriptedFinder::default());
+    let mut rig = Rig::new("settings-found");
+    let camera = fake_camera();
+    let handle = camera.handle();
+    rig.hardware.camera = Some(Arc::new(
+        CameraSlot::with_finder(
+            Box::new(camera),
+            Box::new(SharedFinder(Arc::clone(&finder))),
+        )
+        .with_settings(Box::new(handle)),
+    ));
+    let words = AppError::new(ErrorCode::NotFound, "No camera was found. Connect it.");
+    *finder.connect_error.lock().unwrap() = Some(words.clone());
+    assert_eq!(camera_settings(&rig.hardware).unwrap_err(), words);
+    *finder.connect_error.lock().unwrap() = None;
+    assert_eq!(camera_settings(&rig.hardware).unwrap().len(), 3);
+    assert_eq!(finder.connects.load(Ordering::SeqCst), 2);
+}

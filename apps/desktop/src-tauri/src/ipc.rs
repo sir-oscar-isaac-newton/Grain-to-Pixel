@@ -43,6 +43,8 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::capture::light_set,
             commands::capture::light_off,
             commands::capture::camera_list,
+            commands::capture::camera_settings_get,
+            commands::capture::camera_settings_set,
             commands::capture::capture_profile_get,
             commands::capture::capture_profile_set,
             commands::capture::capture_levels_get,

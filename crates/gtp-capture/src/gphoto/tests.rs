@@ -19,6 +19,7 @@ use crate::camera::{CameraFinder, CameraInfo, CameraSource, CapturedFile};
 use crate::fakes::{no_picture, FakeCamera, FakeLight, LightCommand, Shot};
 use crate::profile::CaptureProfile;
 use crate::sequence::{CaptureSequence, Pause};
+use crate::settings::{CameraSetting, CameraSettingKind, CameraSettings};
 
 const SHORT: Duration = Duration::from_millis(30);
 
@@ -79,6 +80,12 @@ struct Script {
     lists: Mutex<VecDeque<Result<Vec<CameraInfo>, SessionError>>>,
     captures: Mutex<VecDeque<Step>>,
     finished: AtomicUsize,
+    /// What `settings` reads; `set_setting` changes it.
+    settings: Mutex<Vec<CameraSetting>>,
+    /// Makes `settings` and `set_setting` fail once.
+    settings_error: Mutex<Option<SessionError>>,
+    /// Makes `settings` wait at this gate (a camera that stops answering).
+    settings_gate: Mutex<Option<Arc<Gate>>>,
 }
 
 impl Script {
@@ -98,6 +105,18 @@ impl Script {
 
     fn count(&self, entry: &str) -> usize {
         self.log().iter().filter(|e| *e == entry).count()
+    }
+
+    fn current_settings(&self) -> Vec<CameraSetting> {
+        self.settings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn with_settings(self, settings: Vec<CameraSetting>) -> Self {
+        *self.settings.lock().unwrap_or_else(PoisonError::into_inner) = settings;
+        self
     }
 
     fn push_capture(&self, step: Step) {
@@ -152,6 +171,42 @@ impl Session for Scripted {
         result
     }
 
+    fn settings(&mut self) -> Result<Vec<CameraSetting>, SessionError> {
+        self.0.record("settings");
+        let gate = self
+            .0
+            .settings_gate
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(gate) = gate {
+            gate.wait();
+        }
+        if let Some(err) = self
+            .0
+            .settings_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            return Err(err);
+        }
+        Ok(self.0.current_settings())
+    }
+
+    fn set_setting(&mut self, kind: CameraSettingKind, value: &str) -> Result<(), SessionError> {
+        self.0.record(&format!("set {kind:?} {value}"));
+        let mut settings = self
+            .0
+            .settings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(s) = settings.iter_mut().find(|s| s.kind == kind) {
+            s.value = Some(value.to_owned());
+        }
+        Ok(())
+    }
+
     fn close(&mut self) {
         self.0.record("close");
     }
@@ -172,6 +227,7 @@ fn camera(script: &Arc<Script>) -> GphotoCamera {
         Timeouts {
             open: Duration::from_secs(5),
             list: Duration::from_secs(5),
+            settings: Duration::from_secs(5),
         },
     )
 }
@@ -533,6 +589,7 @@ fn a_failed_open_during_a_slow_start_times_out_and_blocks_further_use() {
         Timeouts {
             open: SHORT,
             list: SHORT,
+            settings: SHORT,
         },
     )
     .unwrap();
@@ -543,6 +600,155 @@ fn a_failed_open_during_a_slow_start_times_out_and_blocks_further_use() {
         .contains("did not answer"));
     assert!(camera.is_unusable());
     gate.release();
+}
+
+// --- settings -----------------------------------------------------------------------------------
+
+fn menu(kind: CameraSettingKind, value: &str, choices: &[&str], writable: bool) -> CameraSetting {
+    CameraSetting::from_camera(
+        kind,
+        value,
+        choices.iter().map(|c| (*c).to_owned()),
+        writable,
+    )
+}
+
+fn d600_settings() -> Vec<CameraSetting> {
+    vec![
+        menu(CameraSettingKind::Iso, "100", &["100", "200", "400"], true),
+        menu(
+            CameraSettingKind::ShutterSpeed,
+            "1/100",
+            &["1/60", "1/100", "1/125"],
+            false,
+        ),
+        CameraSetting::absent(CameraSettingKind::Aperture),
+    ]
+}
+
+#[test]
+fn the_settings_are_read_from_the_session_with_the_camera_opened_first() {
+    let script = Arc::new(Script::default().with_settings(d600_settings()));
+    let camera = camera(&script);
+    let got = camera.finder().settings().unwrap();
+    assert_eq!(got, d600_settings());
+    assert_eq!(script.log(), ["open", "settings"]);
+    assert!(camera.is_connected());
+}
+
+#[test]
+fn a_valid_value_is_set_and_the_reply_is_the_settings_read_again() {
+    let script = Arc::new(Script::default().with_settings(d600_settings()));
+    let camera = camera(&script);
+    let after = camera
+        .finder()
+        .set_setting(CameraSettingKind::Iso, " 400 ")
+        .unwrap();
+    assert_eq!(after[0].value.as_deref(), Some("400"));
+    assert_eq!(
+        script.log(),
+        ["open", "settings", "set Iso 400", "settings"]
+    );
+}
+
+#[test]
+fn a_value_that_is_not_a_choice_is_refused_before_anything_is_written() {
+    let script = Arc::new(Script::default().with_settings(d600_settings()));
+    let camera = camera(&script);
+    let err = camera
+        .finder()
+        .set_setting(CameraSettingKind::Iso, "300")
+        .unwrap_err();
+    assert!(err.message.contains("not one the camera offers"), "{err}");
+    assert_eq!(script.log(), ["open", "settings"]);
+}
+
+#[test]
+fn a_readonly_or_absent_setting_is_refused_in_words() {
+    let script = Arc::new(Script::default().with_settings(d600_settings()));
+    let finder = camera(&script).finder();
+    let readonly = finder
+        .set_setting(CameraSettingKind::ShutterSpeed, "1/60")
+        .unwrap_err();
+    assert!(readonly.message.contains("M mode"), "{readonly}");
+    let absent = finder
+        .set_setting(CameraSettingKind::Aperture, "8")
+        .unwrap_err();
+    assert!(absent.message.contains("does not have"), "{absent}");
+    assert_eq!(script.count("settings"), 2);
+    assert!(script.log().iter().all(|e| !e.starts_with("set ")));
+}
+
+#[test]
+fn settings_are_refused_while_a_picture_is_being_taken() {
+    let script = Arc::new(Script::default().with_settings(d600_settings()));
+    let gate = Arc::new(Gate::default());
+    script.push_capture(Step::Hold(Arc::clone(&gate), file(1)));
+    let mut camera = camera(&script);
+    let finder = camera.finder();
+    camera.arm().unwrap();
+    camera.trigger().unwrap();
+    for err in [
+        finder.settings().unwrap_err(),
+        finder
+            .set_setting(CameraSettingKind::Iso, "200")
+            .unwrap_err(),
+    ] {
+        assert!(err.message.contains("being taken"), "{}", err.message);
+    }
+    assert!(!camera.is_unusable());
+    gate.release();
+    camera.wait_for_image(Duration::from_secs(5)).unwrap();
+    assert_eq!(finder.settings().unwrap(), d600_settings());
+}
+
+#[test]
+fn a_settings_call_that_does_not_answer_makes_the_camera_unusable_like_any_other() {
+    let script = Arc::new(Script::default().with_settings(d600_settings()));
+    let gate = Arc::new(Gate::default());
+    *script
+        .settings_gate
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&gate));
+    let camera = camera_with(
+        &script,
+        Timeouts {
+            open: Duration::from_secs(5),
+            list: Duration::from_secs(5),
+            settings: SHORT,
+        },
+    );
+    let finder = camera.finder();
+    let err = finder.settings().unwrap_err();
+    assert!(err.message.contains("did not answer"), "{err}");
+    assert!(camera.is_unusable());
+    assert!(finder
+        .settings()
+        .unwrap_err()
+        .message
+        .contains("stopped answering"));
+    gate.release();
+}
+
+#[test]
+fn a_lost_link_while_reading_settings_closes_the_session_for_the_next_call() {
+    let script = Arc::new(Script::default().with_settings(d600_settings()));
+    *script
+        .settings_error
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) =
+        Some(SessionError::new(SessionErrorKind::Lost, "usb"));
+    let camera = camera(&script);
+    let finder = camera.finder();
+    let err = finder.settings().unwrap_err();
+    assert!(err.message.contains("connection to the camera was lost"));
+    eventually(|| !camera.is_connected());
+    assert!(!camera.is_unusable());
+    assert_eq!(finder.settings().unwrap(), d600_settings());
+    assert_eq!(
+        script.log(),
+        ["open", "settings", "close", "open", "settings"]
+    );
 }
 
 // --- library paths ------------------------------------------------------------------------------

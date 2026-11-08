@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   cameraList,
+  captureLevelsGet,
   captureProfileGet,
   jobCancel,
   lightConnect,
@@ -9,15 +10,21 @@ import {
   onLightStatus,
   settingsGet,
   type CameraInfo,
+  type CaptureLevels,
   type CaptureProfile,
+  type ExposureInfo,
+  type Levels,
 } from '../../shared/ipc';
 import { flagsOf } from '../settings/flags';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import styles from './import.module.css';
 import { LevelSliders } from './capture/LevelSliders';
 import { NextFrameButton } from './capture/NextFrameButton';
+import { SaveLevels } from './capture/SaveLevels';
 import { StatusBar, type LightState } from './capture/StatusBar';
 import { TestShot } from './capture/TestShot';
+
+const sameLevels = (a: Levels, b: Levels) => a.every((v, i) => v === b[i]);
 
 /**
  * Capturing frames with the camera and the Scanlight: status, LED levels, test shots and the Next
@@ -44,16 +51,26 @@ export function CaptureSection() {
 
 function Capture() {
   const { t } = useTranslation();
-  const readOnly = useLibraryStore((s) => s.library?.read_only ?? false);
   const running = useLibraryStore((s) =>
     s.jobs.some((j) => j.kind === 'capture' && j.state === 'running'),
   );
+  const rolls = useLibraryStore((s) => s.rolls);
+  const currentRoll = useLibraryStore((s) => s.rollId);
+  const [chosenRoll, setChosenRoll] = useState<string | null>(null);
+  const rollId = chosenRoll ?? currentRoll ?? rolls[0]?.id ?? null;
+  const roll = rolls.find((r) => r.id === rollId) ?? null;
+  const stock = roll?.film_stock?.trim() || null;
 
   const [light, setLight] = useState<LightState>({ connected: false, status: null });
   const [cameras, setCameras] = useState<CameraInfo[]>([]);
   const [profile, setProfile] = useState<CaptureProfile | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The levels the roll captures with once saved, the working levels the sliders hold (used by the
+  // test shot and Next frame), and the camera settings of the last test shot at those levels.
+  const [saved, setSaved] = useState<CaptureLevels | null>(null);
+  const [levels, setLevels] = useState<Levels | null>(null);
+  const [shotExposure, setShotExposure] = useState<ExposureInfo | null>(null);
 
   const refreshCameras = useCallback(async () => {
     try {
@@ -68,6 +85,34 @@ function Capture() {
     void refreshCameras();
     captureProfileGet().then(setProfile, (e: unknown) => setError(messageOf(e)));
   }, [refreshCameras]);
+
+  // The roll's levels: saved for its film stock, else the default. Choosing a roll starts from
+  // them (unsaved changes to the working levels are dropped).
+  const profileLevels = rollId === null ? (profile?.levels ?? null) : null;
+  useEffect(() => {
+    if (rollId === null) {
+      setSaved(null);
+      setLevels(profileLevels);
+      setShotExposure(null);
+      return;
+    }
+    let alive = true;
+    captureLevelsGet(rollId).then(
+      (resolved) => {
+        if (!alive) return;
+        setSaved(resolved);
+        setLevels(resolved.levels);
+        setShotExposure(null);
+      },
+      (e: unknown) => {
+        if (alive) setError(messageOf(e));
+      },
+    );
+    return () => {
+      alive = false;
+    };
+    // A change of the roll's film stock changes which levels apply.
+  }, [rollId, stock, profileLevels]);
 
   // The light reports every 200 ms while it is connected.
   useEffect(() => {
@@ -141,11 +186,62 @@ function Capture() {
           void refreshCameras();
         }}
       />
-      {profile && (
-        <LevelSliders profile={profile} onSaved={setProfile} disabled={running || readOnly} />
+      {rolls.length === 0 ? (
+        <p role="status">{t('import.files.noRolls')}</p>
+      ) : (
+        <label className={styles.field}>
+          {t('import.files.roll')}
+          <select
+            value={rollId ?? ''}
+            disabled={running}
+            onChange={(e) => setChosenRoll(e.target.value)}
+          >
+            {rolls.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
-      <TestShot disabled={running || !usable} />
-      <NextFrameButton ready={usable} />
+      {levels && (
+        <>
+          <LevelSliders
+            levels={levels}
+            onChange={(next) => {
+              setLevels(next);
+              setShotExposure(null);
+            }}
+            disabled={running}
+          />
+          <p role="status">
+            {saved && sameLevels(levels, saved.levels)
+              ? saved.source === 'stock'
+                ? t('import.capture.levels.source.stock', { stock: saved.stock ?? '' })
+                : t('import.capture.levels.source.default')
+              : t('import.capture.levels.source.changed')}
+          </p>
+        </>
+      )}
+      {levels && (
+        <TestShot
+          disabled={running || !usable}
+          levels={levels}
+          onShot={(exposure) => setShotExposure(exposure)}
+        />
+      )}
+      {levels && (
+        <SaveLevels
+          rollId={rollId}
+          levels={levels}
+          saved={saved}
+          stock={stock}
+          shot={shotExposure ? { exposure: shotExposure } : null}
+          disabled={running}
+          onSaved={setSaved}
+        />
+      )}
+      <NextFrameButton ready={usable} roll={roll} levels={levels} />
     </section>
   );
 }

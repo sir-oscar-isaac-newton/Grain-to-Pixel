@@ -9,6 +9,8 @@ import {
   onCaptureStep,
   type ImportWarning,
   type CaptureStep,
+  type Levels,
+  type Roll,
 } from '../../../shared/ipc';
 import { messageOf, useLibraryStore } from '../../library/library-store';
 import { useThumbnail } from '../../library/use-thumbnail';
@@ -53,6 +55,9 @@ export function warningTexts(warnings: ImportWarning[], t: TFunction): string[] 
       case 'flat_field_skipped':
         texts.set(kind.kind, t('import.capture.warn.flat_field_skipped'));
         break;
+      case 'exposure_differs_from_levels':
+        texts.set(kind.kind, t('import.capture.warn.exposure_differs_from_levels'));
+        break;
       default:
         break;
     }
@@ -91,6 +96,10 @@ function ResultThumbnail({ id }: { id: string }) {
 interface NextFrameButtonProps {
   /** The light and the camera are there and usable. */
   ready: boolean;
+  /** The roll the frame goes into (chosen in the section), or null when there is none. */
+  roll: Roll | null;
+  /** The working levels; null until they are known. */
+  levels: Levels | null;
 }
 
 /**
@@ -98,14 +107,11 @@ interface NextFrameButtonProps {
  * exposures merged and stored in the chosen roll, with the steps while it runs, the result after,
  * and what the capture warned about.
  */
-export function NextFrameButton({ ready }: NextFrameButtonProps) {
+export function NextFrameButton({ ready, roll, levels }: NextFrameButtonProps) {
   const { t } = useTranslation();
-  const rolls = useLibraryStore((s) => s.rolls);
-  const currentRoll = useLibraryStore((s) => s.rollId);
   const readOnly = useLibraryStore((s) => s.library?.read_only ?? false);
   const addJob = useLibraryStore((s) => s.addJob);
 
-  const [chosenRoll, setChosenRoll] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [steps, setSteps] = useState<Steps>({});
@@ -116,9 +122,7 @@ export function NextFrameButton({ ready }: NextFrameButtonProps) {
   const jobState = job?.state;
   const running = starting || jobState === 'running';
 
-  const rollId = chosenRoll ?? currentRoll ?? rolls[0]?.id ?? null;
-  const roll = rolls.find((r) => r.id === rollId) ?? null;
-  const canStart = ready && !running && !readOnly && roll !== null;
+  const canStart = ready && !running && !readOnly && roll !== null && levels !== null;
 
   // The steps of the running capture.
   useEffect(() => {
@@ -168,14 +172,14 @@ export function NextFrameButton({ ready }: NextFrameButtonProps) {
   }, [jobState]);
 
   const start = async () => {
-    if (!roll) return;
+    if (!roll || !levels) return;
     setStarting(true);
     setError(null);
     setResult(null);
     setSteps({});
     rollOfJob.current = roll.id;
     try {
-      const id = await captureTriplet(roll.id);
+      const id = await captureTriplet(roll.id, levels);
       addJob({ id, kind: 'capture', rollName: roll.name, fraction: 0, state: 'running' });
       setJobId(id);
     } catch (e) {
@@ -204,24 +208,6 @@ export function NextFrameButton({ ready }: NextFrameButtonProps) {
 
   return (
     <div className={styles.captureNextBox}>
-      {rolls.length === 0 ? (
-        <p role="status">{t('import.files.noRolls')}</p>
-      ) : (
-        <label className={styles.field}>
-          {t('import.files.roll')}
-          <select
-            value={rollId ?? ''}
-            disabled={running}
-            onChange={(e) => setChosenRoll(e.target.value)}
-          >
-            {rolls.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
       <div className={styles.buttons}>
         <button
           type="button"

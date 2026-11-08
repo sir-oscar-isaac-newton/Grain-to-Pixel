@@ -1,7 +1,13 @@
 import { Histogram } from '@gtp/ui';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { captureTest, type TestShot as Shot, type TripletChannel } from '../../../shared/ipc';
+import {
+  captureTest,
+  type ExposureInfo,
+  type Levels,
+  type TestShot as Shot,
+  type TripletChannel,
+} from '../../../shared/ipc';
 import { messageOf } from '../../library/library-store';
 import styles from '../import.module.css';
 
@@ -15,10 +21,14 @@ const NONE = new Array<number>(256).fill(0);
 interface TestShotProps {
   /** True while a capture runs, or when there is no camera or light to shoot with. */
   disabled: boolean;
+  /** The working levels the test shot is taken at. */
+  levels: Levels;
+  /** Called with the camera settings of each test picture that was taken. */
+  onShot: (exposure: ExposureInfo) => void;
 }
 
 /** One test picture per colour: its histogram and how much of it is clipped. Nothing is stored. */
-export function TestShot({ disabled }: TestShotProps) {
+export function TestShot({ disabled, levels, onShot }: TestShotProps) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState<TripletChannel | null>(null);
   const [shown, setShown] = useState<{ channel: TripletChannel; shot: Shot } | null>(null);
@@ -27,9 +37,12 @@ export function TestShot({ disabled }: TestShotProps) {
   const shoot = (channel: TripletChannel) => {
     setBusy(channel);
     setError(null);
-    captureTest(channel)
+    captureTest(channel, levels)
       .then(
-        (shot) => setShown({ channel, shot }),
+        (shot) => {
+          setShown({ channel, shot });
+          onShot(shot.exposure);
+        },
         (e: unknown) => setError(messageOf(e)),
       )
       .finally(() => setBusy(null));

@@ -6,6 +6,10 @@ import {
   events,
   commands,
   type AppError,
+  type CameraInfo,
+  type CaptureProfile_Serialize,
+  type CaptureProfilePatch_Deserialize,
+  type CaptureStep,
   type ClientLogLevel,
   type Counters,
   type CrashNote,
@@ -18,7 +22,10 @@ import {
   type ImportWarning,
   type LibraryDetails,
   type LibraryInfo,
+  type LightInfo,
+  type LightStatus_Serialize,
   type Look,
+  type PortInfo,
   type Recipe,
   type RollPreviewImage,
   type ScanRequest,
@@ -26,6 +33,7 @@ import {
   type SettingsPatch,
   type SkipReason,
   type SkippedFile,
+  type TestShot,
   type TripletCandidate,
   type TripletChannel,
   type TripletFile,
@@ -38,6 +46,8 @@ import {
 
 export type {
   AppError,
+  CameraInfo,
+  CaptureStep,
   ClientLogLevel,
   Counters,
   CrashNote,
@@ -50,13 +60,16 @@ export type {
   ImportWarning,
   LibraryDetails,
   LibraryInfo,
+  LightInfo,
   Look,
+  PortInfo,
   RollPreviewImage,
   ScanRequest,
   Settings,
   SettingsPatch,
   SkipReason,
   SkippedFile,
+  TestShot,
   TripletCandidate,
   TripletChannel,
   TripletFile,
@@ -297,6 +310,54 @@ export type FrameSummary = FramePage['items'][number];
 /** What the first-run dialog shows about a folder. Nothing is created. */
 export async function folderCheck(path: string): Promise<FolderCheck> {
   return unwrap(await commands.folderCheck(path));
+}
+
+export type CaptureProfile = CaptureProfile_Serialize;
+export type CaptureProfilePatch = CaptureProfilePatch_Deserialize;
+export type LightStatus = LightStatus_Serialize;
+
+/** The serial ports the Scanlight may be on. */
+export async function lightList(): Promise<PortInfo[]> {
+  return unwrap(await commands.lightList());
+}
+
+/** Connects the light on `port`, or finds it by probing the ports; also clears a temperature trip. */
+export async function lightConnect(port: string | null): Promise<LightInfo> {
+  return unwrap(await commands.lightConnect(port));
+}
+
+/** Lights red, green and blue at these levels (0 to 255). */
+export async function lightSet(levels: [number, number, number]): Promise<void> {
+  unwrap(await commands.lightSet(levels));
+}
+
+/** Switches the light off; always allowed. */
+export async function lightOff(): Promise<void> {
+  unwrap(await commands.lightOff());
+}
+
+/** The cameras that can be used now. */
+export async function cameraList(): Promise<CameraInfo[]> {
+  return unwrap(await commands.cameraList());
+}
+
+export async function captureProfileGet(): Promise<CaptureProfile> {
+  return unwrap(await commands.captureProfileGet());
+}
+
+/** Changes the given fields of the capture profile; a refused change rejects with the reason. */
+export async function captureProfileSet(patch: CaptureProfilePatch): Promise<CaptureProfile> {
+  return unwrap(await commands.captureProfileSet(patch));
+}
+
+/** Lights one colour, takes a picture and returns its histogram; stores nothing. */
+export async function captureTest(channel: TripletChannel): Promise<TestShot> {
+  return unwrap(await commands.captureTest(channel));
+}
+
+/** Captures one frame into the roll as a job; the new frame arrives in `job://done`. Returns the job id. */
+export async function captureTriplet(rollId: string): Promise<string> {
+  return unwrap(await commands.captureTriplet(rollId));
 }
 
 /** The scanners that can be used now; fails with the reason (not connected, wrong driver ...) when none. */
@@ -571,4 +632,12 @@ export async function onJobDone(cb: (e: JobDoneEvent) => void): Promise<() => vo
 
 export async function onJobError(cb: (e: JobErrorEvent) => void): Promise<() => void> {
   return events.jobError.listen((event) => cb(event.payload));
+}
+
+export async function onCaptureStep(cb: (e: CaptureStep) => void): Promise<() => void> {
+  return events.captureStep.listen((event) => cb(event.payload));
+}
+
+export async function onLightStatus(cb: (e: LightStatus) => void): Promise<() => void> {
+  return events.lightStatus.listen((event) => cb(event.payload));
 }

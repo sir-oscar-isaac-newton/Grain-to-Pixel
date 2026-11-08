@@ -210,3 +210,17 @@ The camera's own dials are locked while it is tethered, so the capture view read
 - [ ] With the camera out of M mode, the shutter speed and aperture selects are greyed (and show their values).
 - [ ] With a manual lens (no electronic contacts), the aperture shows "Set on the lens" (only if such a lens is to hand).
 - [ ] A change attempted while a capture runs is refused: the selects are greyed during a capture, and the camera keeps its settings.
+
+## Automatic calibration (H-17)
+
+With clear film base framed, `capture_calibrate` takes test shots, one colour at a time, and adjusts that colour's level until the 99.9th percentile of its linear value is 0.90 to 0.97 of full scale (target 0.93), in at most 6 shots per colour. The step is proportional (the light is linear in its level); a clipped shot (0.99 or more) halves the level, or bisects towards the highest level known to be unclipped. It measures the whole frame for now. It fails in words for a colour clipped at level 1, too dark at level 255, or not settled in 6 shots, and warns for a final level below 20. Nothing is saved: the user saves the result with H-15's buttons. The fake hardware (`GTP_FAKE_HW=1`) makes the lit colour's brightness follow the light's level, so a calibration converges there too.
+
+**Hardware checklist for H-17 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
+
+- [ ] Build with `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`.
+- [ ] Frame clear film base (for example the leader) so that it fills the frame, and make sure no bare light leaks past the film's edge: it is brighter than the base and would pull the levels down.
+- [ ] Press Calibrate. Record the levels, the reached values and the shots per colour: red ___ / ___ / ___, green ___ / ___ / ___, blue ___ / ___ / ___.
+- [ ] Take a test shot per colour at the result: the histogram peak sits just below the right edge and the clipped share is about 0.
+- [ ] Try a too-long exposure (a slow shutter speed): the calibration says a colour is clipped even at level 1 and that the exposure is too long.
+- [ ] Try a too-short exposure (a fast shutter speed): the calibration says a colour is too dark even at level 255 and that the exposure is too short.
+- [ ] Save the result for the film stock and check the settings: the sliders read "Levels saved for {stock}" and `settings.json` holds them after a restart.

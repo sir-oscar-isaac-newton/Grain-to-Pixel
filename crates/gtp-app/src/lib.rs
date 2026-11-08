@@ -16,7 +16,7 @@ pub mod shared_light;
 pub use context::{AppContext, ThumbnailRequester};
 pub use gtp_capture::{
     CameraInfo, CameraSetting, CameraSettingKind, CaptureProfile, CaptureProfilePatch, LightInfo,
-    PortInfo,
+    PortInfo, Region,
 };
 pub use gtp_edit::{frontier_curve, roll_balance, BalanceMethod, FrontierParams};
 pub use gtp_ingest::{

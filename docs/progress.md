@@ -722,9 +722,9 @@
       "number": 61,
       "title": "Capture view",
       "branch": "feat/issue-61-capture-view",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 234,
+      "commit": "c5a9607"
     }
   ]
 }

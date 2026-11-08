@@ -716,6 +716,15 @@
       "status": "completed",
       "pr": 231,
       "commit": "c8f97f6"
+    },
+    {
+      "id": "U-10",
+      "number": 61,
+      "title": "Capture view",
+      "branch": "feat/issue-61-capture-view",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

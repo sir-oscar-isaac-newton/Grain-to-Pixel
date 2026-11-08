@@ -1,0 +1,151 @@
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  cameraList,
+  captureProfileGet,
+  jobCancel,
+  lightConnect,
+  lightOff,
+  onLightStatus,
+  settingsGet,
+  type CameraInfo,
+  type CaptureProfile,
+} from '../../shared/ipc';
+import { flagsOf } from '../settings/flags';
+import { messageOf, useLibraryStore } from '../library/library-store';
+import styles from './import.module.css';
+import { LevelSliders } from './capture/LevelSliders';
+import { NextFrameButton } from './capture/NextFrameButton';
+import { StatusBar, type LightState } from './capture/StatusBar';
+import { TestShot } from './capture/TestShot';
+
+/**
+ * Capturing frames with the camera and the Scanlight: status, LED levels, test shots and the Next
+ * frame button. Shown only while the guided capture flag is on.
+ */
+export function CaptureSection() {
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    settingsGet().then(
+      (settings) => {
+        if (alive) setEnabled(flagsOf(settings).guided_capture);
+      },
+      () => {
+        // Unreadable settings leave the flag off.
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return enabled ? <Capture /> : null;
+}
+
+function Capture() {
+  const { t } = useTranslation();
+  const readOnly = useLibraryStore((s) => s.library?.read_only ?? false);
+  const running = useLibraryStore((s) =>
+    s.jobs.some((j) => j.kind === 'capture' && j.state === 'running'),
+  );
+
+  const [light, setLight] = useState<LightState>({ connected: false, status: null });
+  const [cameras, setCameras] = useState<CameraInfo[]>([]);
+  const [profile, setProfile] = useState<CaptureProfile | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshCameras = useCallback(async () => {
+    try {
+      setCameras(await cameraList());
+    } catch (e) {
+      setCameras([]);
+      setError(messageOf(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCameras();
+    captureProfileGet().then(setProfile, (e: unknown) => setError(messageOf(e)));
+  }, [refreshCameras]);
+
+  // The light reports every 200 ms while it is connected.
+  useEffect(() => {
+    let alive = true;
+    let stop: (() => void) | undefined;
+    onLightStatus((status) => setLight({ connected: true, status })).then(
+      (stopListening) => {
+        if (alive) stop = stopListening;
+        else stopListening();
+      },
+      () => {
+        // No backend (tests, plain browser): there are no readings.
+      },
+    );
+    return () => {
+      alive = false;
+      stop?.();
+    };
+  }, []);
+
+  // The light must never be left on when the view closes. A running capture is cancelled first:
+  // otherwise it would light its next colour again after the switch-off.
+  useEffect(
+    () => () => {
+      for (const job of useLibraryStore.getState().jobs) {
+        if (job.kind === 'capture' && job.state === 'running') {
+          jobCancel(job.id).catch(() => {
+            // The job may have just ended; the switch-off below still runs.
+          });
+        }
+      }
+      lightOff().catch(() => {
+        // Switching off is always allowed; nothing more can be done here.
+      });
+    },
+    [],
+  );
+
+  const connect = async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      await lightConnect(null);
+      // Connecting clears a trip; the next reading says how the light is.
+      setLight({ connected: true, status: null });
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setConnecting(false);
+    }
+    await refreshCameras();
+  };
+
+  const usable = light.connected && light.status?.tripped !== true && cameras.length > 0;
+
+  return (
+    <section aria-labelledby="import-capture" className={styles.section}>
+      <h3 id="import-capture" className={styles.heading}>
+        {t('import.capture.heading')}
+      </h3>
+      <p className={styles.muted}>{t('import.capture.intro')}</p>
+      <StatusBar
+        light={light}
+        warnC={profile?.temp_warn_c ?? null}
+        cameras={cameras}
+        busy={connecting || running}
+        error={error}
+        onConnect={() => void connect()}
+        onRefreshCameras={() => {
+          setError(null);
+          void refreshCameras();
+        }}
+      />
+      {profile && (
+        <LevelSliders profile={profile} onSaved={setProfile} disabled={running || readOnly} />
+      )}
+      <TestShot disabled={running || !usable} />
+      <NextFrameButton ready={usable} />
+    </section>
+  );
+}

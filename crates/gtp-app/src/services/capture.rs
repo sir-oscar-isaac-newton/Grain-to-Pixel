@@ -20,9 +20,10 @@ use gtp_capture::{CameraSource, CaptureSequence, CaptureWarning, CapturedFile, L
 use gtp_core::{
     AppError, ErrorCode, FrameId, ImportResult, ImportWarning, ImportWarningKind, Look, RollId,
 };
-use gtp_ingest::merge_triplet;
+use gtp_ingest::{merge_triplet, read_exposure_info};
 use gtp_io::{Limits, RawDecoder};
 
+use super::capture_levels::{exposure_from_exif, CaptureInfo, LevelsUsed};
 use super::import::{clean_up, report_roll_base};
 use super::import_triplets::{store_merged, Target, TripletError};
 use crate::jobs::{JobCtx, LibraryEvents};
@@ -40,7 +41,9 @@ const STORE_STEPS: f32 = 5.0;
 /// Captures one triplet into `roll`: runs `sequence` on `light` and `camera`, then stores the three
 /// pictures as a frame, read by `decoder`. Returns an [`ImportResult`] with the one frame and its
 /// warnings (the merge's, and the sequence's temperature and supply warnings). Ends with
-/// `Cancelled` when cancelled, or with the error that stopped it; nothing is stored then.
+/// `Cancelled` when cancelled, or with the error that stopped it; nothing is stored then. `used`
+/// says which levels `sequence` lights: it is recorded with the frame, and the shots are compared
+/// with the camera settings the saved levels were balanced on (a difference is a warning).
 #[allow(clippy::too_many_arguments)]
 pub fn capture_triplet(
     library: &Library,
@@ -52,6 +55,7 @@ pub fn capture_triplet(
     ctx: &JobCtx,
     events: &dyn LibraryEvents,
     look: Look,
+    used: &LevelsUsed,
 ) -> Result<ImportResult, AppError> {
     let before = library.read(|c| c.get_roll(roll))?;
     let started = Instant::now();
@@ -75,6 +79,7 @@ pub fn capture_triplet(
         decoder,
         ctx,
         &progress,
+        used,
     );
     let (frame, mut warnings) = match stored {
         Ok(stored) => stored,
@@ -116,8 +121,9 @@ fn warning_kind(warning: &CaptureWarning) -> ImportWarningKind {
 }
 
 /// Merges and stores exactly three captured files (red-, green-, blue-lit) as the frame
-/// `frame_id`, with the warnings of the merge. On failure the caller removes the frame's files; the
-/// staging folder is already gone.
+/// `frame_id`, with the warnings of the merge, and records how it was lit. On failure the caller
+/// removes the frame's files; the staging folder is already gone.
+#[allow(clippy::too_many_arguments)]
 fn store_captured(
     library: &Library,
     target: Target,
@@ -126,6 +132,7 @@ fn store_captured(
     decoder: &dyn RawDecoder,
     ctx: &JobCtx,
     progress: &dyn Fn(f32),
+    used: &LevelsUsed,
 ) -> Result<(gtp_core::Frame, Vec<ImportWarningKind>), AppError> {
     if files.len() != 3 {
         return Err(AppError::new(
@@ -137,26 +144,43 @@ fn store_captured(
     let staging = Staging::create(frame_id, files)?;
     let [r, g, b] = &staging.paths;
     let merged = merge_triplet(decoder, r, g, b, &Limits::default())?;
-    store_merged(library, target, merged, [r, g, b], frame_id, ctx, progress).map_err(|err| {
-        match err {
-            TripletError::Stop(err) => err,
-            TripletError::Skip(files) => {
-                let first = files.into_iter().next();
-                AppError::new(
-                    ErrorCode::Io,
-                    "A captured picture could not be stored. Try the frame again.",
+    let info = CaptureInfo::new(
+        used,
+        [r, g, b].map(|path| exposure_from_exif(read_exposure_info(path))),
+    );
+    let json = info.to_json()?;
+    let (frame, mut warnings) = store_merged(
+        library,
+        target,
+        merged,
+        [r, g, b],
+        frame_id,
+        ctx,
+        progress,
+        Some(&json),
+    )
+    .map_err(|err| match err {
+        TripletError::Stop(err) => err,
+        TripletError::Skip(files) => {
+            let first = files.into_iter().next();
+            AppError::new(
+                ErrorCode::Io,
+                "A captured picture could not be stored. Try the frame again.",
+            )
+            .with_details(first.map_or_else(String::new, |f| {
+                format!(
+                    "{}: {:?} {}",
+                    f.path,
+                    f.reason,
+                    f.details.unwrap_or_default()
                 )
-                .with_details(first.map_or_else(String::new, |f| {
-                    format!(
-                        "{}: {:?} {}",
-                        f.path,
-                        f.reason,
-                        f.details.unwrap_or_default()
-                    )
-                }))
-            }
+            }))
         }
-    })
+    })?;
+    if info.exposure_differs(used) {
+        warnings.push(ImportWarningKind::ExposureDiffersFromLevels);
+    }
+    Ok((frame, warnings))
 }
 
 /// The captured files written to a temporary folder for the merge, removed when dropped.
@@ -381,6 +405,7 @@ mod tests {
                 &ctx,
                 &Events::default(),
                 Look::Neutral,
+                &LevelsUsed::manual(CaptureProfile::default().levels),
             )
         }
 
@@ -650,6 +675,7 @@ mod tests {
             &s.decoder,
             &ctx,
             &progress,
+            &LevelsUsed::manual([44, 22, 2]),
         )
         .unwrap_err();
         assert_eq!(err.code, ErrorCode::Cancelled);
@@ -679,6 +705,7 @@ mod tests {
                 &s.decoder,
                 &ctx,
                 &|_| {},
+                &LevelsUsed::manual([44, 22, 2]),
             )
             .unwrap_err();
             assert_eq!(err.code, ErrorCode::InvalidInput, "{count} pictures");

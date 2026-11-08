@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-06",
+  "updated": "2026-11-07",
   "rules": "status is in_progress while the issue's branch exists or its PR is open; completed only after the PR is merged and closed (see docs/workflow.md section 10)",
   "issues": [
     {
@@ -659,9 +659,9 @@
       "number": 10,
       "title": "Spike - libgphoto2 and D600 on macOS",
       "branch": "feat/issue-10-spike-libgphoto2",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 211,
+      "commit": "18a23e8"
     },
     {
       "id": "R-06",
@@ -713,9 +713,45 @@
       "number": 58,
       "title": "GphotoCamera backend (macOS)",
       "branch": "feat/issue-58-gphoto-camera",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 231,
+      "commit": "c8f97f6"
+    },
+    {
+      "id": "U-10",
+      "number": 61,
+      "title": "Capture view",
+      "branch": "feat/issue-61-capture-view",
+      "status": "completed",
+      "pr": 234,
+      "commit": "c5a9607"
+    },
+    {
+      "id": "H-15",
+      "number": 225,
+      "title": "Scanlight levels, global and per film stock",
+      "branch": "feat/issue-225-scanlight-levels",
+      "status": "completed",
+      "pr": 240,
+      "commit": "b26716e"
+    },
+    {
+      "id": "H-16",
+      "number": 236,
+      "title": "Camera exposure settings in the capture view (macOS)",
+      "branch": "feat/issue-236-camera-settings",
+      "status": "completed",
+      "pr": 242,
+      "commit": "e81b952"
+    },
+    {
+      "id": "U-18",
+      "number": 243,
+      "title": "Shutter speeds shown as fractions in the capture view",
+      "branch": "fix/issue-243-shutter-fractions",
+      "status": "completed",
+      "pr": 245,
+      "commit": "1d94093"
     }
   ]
 }

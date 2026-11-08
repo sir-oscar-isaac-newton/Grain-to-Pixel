@@ -165,6 +165,7 @@
     "dismiss": "Dismiss",
     "import": "Import into {{roll}}",
     "scan": "Scan into {{roll}}",
+    "capture": "Capture into {{roll}}",
     "running": "Working",
     "done": "Done",
     "error": "Failed",
@@ -211,7 +212,8 @@
       "flat_field_skipped": "not corrected: the roll’s flat field is for frames of another size",
       "balance_skipped": "no colour balance for the roll: none of the frames in this job had a neutral to judge by",
       "high_temperature": "the light was warm while this frame was taken ({{temp_c}} °C); let it cool if you take many frames in a row",
-      "low_supply": "the light’s supply voltage sagged to {{volts}} V; try another USB port or a powered hub"
+      "low_supply": "the light’s supply voltage sagged to {{volts}} V; try another USB port or a powered hub",
+      "exposure_differs_from_levels": "the camera settings differ from when the light levels were saved"
     }
   },
   "settings": {
@@ -702,6 +704,91 @@
       "previewFailed": "The roll could not be previewed: {{message}}",
       "previewAlt": "The whole roll as the scanner sees it, {{count}} frames side by side",
       "previewCaption": "{{count}} frames found. The lines mark where the frames start if they are evenly spaced."
+    },
+    "capture": {
+      "heading": "Capture with the camera",
+      "intro": "Shoots each frame as a red, green and blue exposure with the Scanlight and the camera, merges them and stores the frame in the chosen roll. The light is switched off when you leave this view.",
+      "light": {
+        "off": "Light not connected",
+        "connected": "Light connected",
+        "connectedTemp": "Light connected, {{temp}} °C",
+        "warm": "Light warm, {{temp}} °C",
+        "tripped": "Light too hot and switched off",
+        "connect": "Connect light",
+        "reconnect": "Reconnect light",
+        "warmHint": "The light is getting warm. Capturing goes on, but let it cool down between rolls.",
+        "lowSupply": "The USB supply of the light is low ({{mv}} mV). Use another port or a powered hub."
+      },
+      "camera": {
+        "found": "Camera: {{name}}",
+        "none": "No camera found",
+        "refresh": "Look for camera again"
+      },
+      "settings": {
+        "heading": "Camera settings",
+        "kind": {
+          "iso": "ISO",
+          "shutter_speed": "Shutter speed",
+          "aperture": "Aperture"
+        },
+        "setOnLens": "Set on the lens",
+        "notAvailable": "Not available",
+        "savedStock": "Levels for {{stock}} were saved at {{exposure}}",
+        "savedDefault": "Default levels were saved at {{exposure}}"
+      },
+      "levels": {
+        "red": "Red level",
+        "green": "Green level",
+        "blue": "Blue level",
+        "source": {
+          "stock": "Levels saved for {{stock}}",
+          "default": "Default levels",
+          "changed": "Changed, not saved"
+        },
+        "saveDefault": "Save as default",
+        "saveStock": "Save for {{stock}}",
+        "needTest": "Take a test shot at these levels to save them.",
+        "saved": "Levels saved.",
+        "exposureDiffers": "The camera settings differ from when these levels were saved."
+      },
+      "test": {
+        "shoot": "Test shot, {{channel}}",
+        "shooting": "Shooting…",
+        "histogram": "Histogram of the {{channel}} test shot",
+        "clipped": "{{pct}} % clipped",
+        "clippedUnknown": "How much is clipped is not known.",
+        "clipWarning": "The {{channel}} test shot is clipped ({{pct}} %). Lower its level."
+      },
+      "next": {
+        "label": "Next frame (Space)",
+        "running": "Capturing…",
+        "cancel": "Cancel",
+        "readOnly": "This library is read-only, so nothing can be captured into it.",
+        "steps": "Steps of this capture",
+        "step": "{{channel}}: {{state}}",
+        "state": {
+          "waiting": "waiting",
+          "lit": "light on",
+          "fired": "picture taken",
+          "received": "picture received"
+        },
+        "failed": "The capture failed.",
+        "cancelled": "The capture was cancelled.",
+        "thumbnail": "The frame that was just captured",
+        "noPreview": "No preview",
+        "stored": "Frame stored.",
+        "counter": "Frame {{count}} on this roll"
+      },
+      "warn": {
+        "temperature": "The light was warm during this frame ({{temp}} °C).",
+        "supply": "The light's USB supply dropped to {{mv}} mV during this frame.",
+        "exposure_time_mismatch": "The three pictures used different shutter times. Set the camera to manual exposure.",
+        "iso_mismatch": "The three pictures used different ISO values. Set the camera to a fixed ISO.",
+        "aperture_mismatch": "The three pictures used different apertures. Set the camera to manual exposure.",
+        "clipped": "The {{channel}} picture is clipped ({{pct}} %). Lower its level.",
+        "flat_field_skipped": "The roll's flat field is for another frame size, so it was not applied.",
+        "exposure_differs_from_levels": "The camera settings differ from when these levels were saved."
+      }
     },
     "channel": {
       "red": "red",

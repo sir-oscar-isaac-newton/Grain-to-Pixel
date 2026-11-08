@@ -12,10 +12,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use gphoto2::error::ErrorKind;
+use gphoto2::widget::RadioWidget;
 use gphoto2::{Camera, Context};
 
 use crate::camera::{CameraInfo, CapturedFile};
 use crate::gphoto::worker::{Session, SessionError, SessionErrorKind};
+use crate::settings::{is_missing_setting, CameraSetting, CameraSettingKind};
 
 /// A NEF of the D600 is about 26 MB; anything this big is not a picture from a camera.
 const MAX_PICTURE_BYTES: u64 = 512 * 1024 * 1024;
@@ -146,12 +148,7 @@ impl Session for GphotoSession {
     }
 
     fn capture(&mut self) -> Result<CapturedFile, SessionError> {
-        let Some(camera) = self.camera.as_ref() else {
-            return Err(SessionError::new(
-                SessionErrorKind::NoCamera,
-                "no camera is open",
-            ));
-        };
+        let camera = open_camera(self.camera.as_ref())?;
         let remote = camera
             .capture_image()
             .try_wait()
@@ -186,9 +183,76 @@ impl Session for GphotoSession {
         Ok(CapturedFile { name, bytes })
     }
 
+    fn settings(&mut self) -> Result<Vec<CameraSetting>, SessionError> {
+        let camera = open_camera(self.camera.as_ref())?;
+        CameraSettingKind::ALL
+            .iter()
+            .map(|kind| read_setting(camera, *kind))
+            .collect()
+    }
+
+    fn set_setting(&mut self, kind: CameraSettingKind, value: &str) -> Result<(), SessionError> {
+        let camera = open_camera(self.camera.as_ref())?;
+        // Read the widget again so that the change is made on what the camera has now.
+        let Some(widget) = fetch_widget(camera, kind)? else {
+            return Err(SessionError::new(
+                SessionErrorKind::Other,
+                format!("the camera has no \"{}\" setting", kind.key()),
+            ));
+        };
+        widget.set_choice(value).map_err(|err| map_error(&err))?;
+        camera
+            .set_config(&widget)
+            .try_wait()
+            .map_err(|err| channel_error(&err))?
+            .map_err(|err| map_error(&err))
+    }
+
     fn close(&mut self) {
         self.camera = None;
     }
+}
+
+fn open_camera(camera: Option<&Camera>) -> Result<&Camera, SessionError> {
+    camera.ok_or_else(|| SessionError::new(SessionErrorKind::NoCamera, "no camera is open"))
+}
+
+/// The menu widget of `kind`, or `None` when the camera does not have that setting (see
+/// [`is_missing_setting`]); a failure of the link is an error.
+fn fetch_widget(
+    camera: &Camera,
+    kind: CameraSettingKind,
+) -> Result<Option<RadioWidget>, SessionError> {
+    let fetched = camera
+        .config_key::<RadioWidget>(kind.key())
+        .try_wait()
+        .map_err(|err| channel_error(&err))?;
+    match fetched {
+        Ok(widget) => Ok(Some(widget)),
+        Err(err) => {
+            let unsupported = matches!(
+                err.kind(),
+                ErrorKind::BadParameters | ErrorKind::NotSupported
+            );
+            if is_missing_setting(unsupported, &err.to_string()) {
+                Ok(None)
+            } else {
+                Err(map_error(&err))
+            }
+        }
+    }
+}
+
+fn read_setting(camera: &Camera, kind: CameraSettingKind) -> Result<CameraSetting, SessionError> {
+    Ok(match fetch_widget(camera, kind)? {
+        Some(widget) => CameraSetting::from_camera(
+            kind,
+            &widget.choice(),
+            widget.choices_iter(),
+            !widget.readonly(),
+        ),
+        None => CameraSetting::absent(kind),
+    })
 }
 
 /// The factory [`crate::GphotoCamera::new`] gives the worker.

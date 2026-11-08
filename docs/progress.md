@@ -752,6 +752,15 @@
       "status": "completed",
       "pr": 245,
       "commit": "1d94093"
+    },
+    {
+      "id": "H-17",
+      "number": 238,
+      "title": "Automatic Scanlight level calibration",
+      "branch": "feat/issue-238-auto-calibration",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

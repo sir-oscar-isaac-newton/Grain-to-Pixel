@@ -979,6 +979,9 @@ fn settings_rig(label: &str) -> (Rig, FakeCameraHandle) {
     (rig, handle)
 }
 
+/// Only where there is no backend: with `tether` on macOS, libgphoto2 is the backend and this would
+/// change the ISO of whatever camera is plugged in. The fake camera covers the commands there.
+#[cfg(not(all(target_os = "macos", feature = "tether")))]
 #[test]
 fn without_a_camera_backend_the_settings_commands_say_so() {
     let real = Hardware::from_vars(None, None);

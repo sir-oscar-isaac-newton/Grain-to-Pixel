@@ -409,6 +409,9 @@ mod tests {
         assert_eq!(steps, 9);
     }
 
+    // Not with `tether` on macOS: libgphoto2 is the backend there, and this would drive whatever
+    // camera is plugged in.
+    #[cfg(not(all(target_os = "macos", feature = "tether")))]
     #[test]
     fn without_a_camera_backend_a_capture_and_a_test_shot_say_so() {
         let f = fixture("no-camera");

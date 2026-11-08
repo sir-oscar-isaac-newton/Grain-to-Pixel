@@ -6,19 +6,31 @@ import {
   events,
   commands,
   type AppError,
+  type CameraInfo,
+  type CameraSetting_Serialize,
+  type CameraSettingKind,
+  type CaptureLevels_Serialize,
+  type CaptureProfile_Serialize,
+  type CaptureProfilePatch_Deserialize,
+  type CaptureStep,
   type ClientLogLevel,
   type Counters,
   type CrashNote,
   type DeviceInfo,
   type ExportedFile,
+  type ExposureInfo_Serialize,
   type FailedExport,
   type FilmFormat,
   type FlatFieldInfo,
   type ImportResult,
   type ImportWarning,
+  type LevelsScope,
   type LibraryDetails,
   type LibraryInfo,
+  type LightInfo,
+  type LightStatus_Serialize,
   type Look,
+  type PortInfo,
   type Recipe,
   type RollPreviewImage,
   type ScanRequest,
@@ -26,6 +38,7 @@ import {
   type SettingsPatch,
   type SkipReason,
   type SkippedFile,
+  type TestShot_Serialize,
   type TripletCandidate,
   type TripletChannel,
   type TripletFile,
@@ -38,6 +51,9 @@ import {
 
 export type {
   AppError,
+  CameraInfo,
+  CameraSettingKind,
+  CaptureStep,
   ClientLogLevel,
   Counters,
   CrashNote,
@@ -48,9 +64,12 @@ export type {
   FlatFieldInfo,
   ImportResult,
   ImportWarning,
+  LevelsScope,
   LibraryDetails,
   LibraryInfo,
+  LightInfo,
   Look,
+  PortInfo,
   RollPreviewImage,
   ScanRequest,
   Settings,
@@ -297,6 +316,94 @@ export type FrameSummary = FramePage['items'][number];
 /** What the first-run dialog shows about a folder. Nothing is created. */
 export async function folderCheck(path: string): Promise<FolderCheck> {
   return unwrap(await commands.folderCheck(path));
+}
+
+export type CameraSetting = CameraSetting_Serialize;
+export type CaptureProfile = CaptureProfile_Serialize;
+export type CaptureLevels = CaptureLevels_Serialize;
+export type ExposureInfo = ExposureInfo_Serialize;
+export type TestShot = TestShot_Serialize;
+export type CaptureProfilePatch = CaptureProfilePatch_Deserialize;
+export type LightStatus = LightStatus_Serialize;
+
+/** The serial ports the Scanlight may be on. */
+export async function lightList(): Promise<PortInfo[]> {
+  return unwrap(await commands.lightList());
+}
+
+/** Connects the light on `port`, or finds it by probing the ports; also clears a temperature trip. */
+export async function lightConnect(port: string | null): Promise<LightInfo> {
+  return unwrap(await commands.lightConnect(port));
+}
+
+/** Lights red, green and blue at these levels (0 to 255). */
+export async function lightSet(levels: [number, number, number]): Promise<void> {
+  unwrap(await commands.lightSet(levels));
+}
+
+/** Switches the light off; always allowed. */
+export async function lightOff(): Promise<void> {
+  unwrap(await commands.lightOff());
+}
+
+/** The cameras that can be used now. */
+export async function cameraList(): Promise<CameraInfo[]> {
+  return unwrap(await commands.cameraList());
+}
+
+/**
+ * The camera's ISO, shutter speed and aperture with the choices it allows. A setting the camera
+ * lacks has no value and no choices. Rejects while a capture runs.
+ */
+export async function cameraSettingsGet(): Promise<CameraSetting[]> {
+  return unwrap(await commands.cameraSettingsGet());
+}
+
+/** Sets one camera setting to one of its choices; returns the settings as the camera has them now. */
+export async function cameraSettingsSet(
+  kind: CameraSettingKind,
+  value: string,
+): Promise<CameraSetting[]> {
+  return unwrap(await commands.cameraSettingsSet(kind, value));
+}
+
+export async function captureProfileGet(): Promise<CaptureProfile> {
+  return unwrap(await commands.captureProfileGet());
+}
+
+/** Changes the given fields of the capture profile; a refused change rejects with the reason. */
+export async function captureProfileSet(patch: CaptureProfilePatch): Promise<CaptureProfile> {
+  return unwrap(await commands.captureProfileSet(patch));
+}
+
+/** The three LED levels (red, green, blue), 0 to 255 each. */
+export type Levels = [number, number, number];
+
+/** The levels the roll captures with: saved for its film stock, else the global default. */
+export async function captureLevelsGet(rollId: string): Promise<CaptureLevels> {
+  return unwrap(await commands.captureLevelsGet(rollId));
+}
+
+/**
+ * Saves levels as the global default or for a film stock, with the camera settings of the test
+ * shot they were balanced on. Returns the levels as they now resolve for that scope.
+ */
+export async function captureLevelsSave(
+  scope: LevelsScope,
+  levels: Levels,
+  exposure: ExposureInfo | null,
+): Promise<CaptureLevels> {
+  return unwrap(await commands.captureLevelsSave(scope, levels, exposure));
+}
+
+/** Lights one colour at its working level, takes a picture and returns its histogram; stores nothing. */
+export async function captureTest(channel: TripletChannel, levels: Levels): Promise<TestShot> {
+  return unwrap(await commands.captureTest(channel, levels));
+}
+
+/** Captures one frame into the roll at the working levels as a job; the frame arrives in `job://done`. Returns the job id. */
+export async function captureTriplet(rollId: string, levels: Levels): Promise<string> {
+  return unwrap(await commands.captureTriplet(rollId, levels));
 }
 
 /** The scanners that can be used now; fails with the reason (not connected, wrong driver ...) when none. */
@@ -571,4 +678,12 @@ export async function onJobDone(cb: (e: JobDoneEvent) => void): Promise<() => vo
 
 export async function onJobError(cb: (e: JobErrorEvent) => void): Promise<() => void> {
   return events.jobError.listen((event) => cb(event.payload));
+}
+
+export async function onCaptureStep(cb: (e: CaptureStep) => void): Promise<() => void> {
+  return events.captureStep.listen((event) => cb(event.payload));
+}
+
+export async function onLightStatus(cb: (e: LightStatus) => void): Promise<() => void> {
+  return events.lightStatus.listen((event) => cb(event.payload));
 }

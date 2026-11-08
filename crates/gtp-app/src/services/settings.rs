@@ -9,8 +9,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use gtp_capture::{CaptureProfile, CaptureProfilePatch};
-use gtp_core::{AppError, ErrorCode, Look};
+use gtp_core::{AppError, ErrorCode, ExposureInfo, Look};
 use serde::{Deserialize, Serialize};
+
+use super::capture_levels::{LevelsScope, SavedLevels};
 
 /// Window sizes accepted, in logical pixels.
 pub const WINDOW_SIDE: std::ops::RangeInclusive<u32> = 200..=16_384;
@@ -84,6 +86,11 @@ pub struct Settings {
     /// `capture_profile_set` (D-04), so they are not part of this type in the bindings.
     #[cfg_attr(feature = "specta", specta(skip))]
     pub capture: CaptureProfile,
+    /// The scanlight levels saved per film stock and the camera settings they were saved with
+    /// (H-15); the global default levels are `capture.levels`. Read and changed through
+    /// `capture_levels_get` and `capture_levels_save`.
+    #[cfg_attr(feature = "specta", specta(skip))]
+    pub saved_levels: SavedLevels,
     /// When the update check last got an answer, in seconds since 1970; none before the first.
     /// Kept by the app, not by a patch, and not shown to the UI.
     #[cfg_attr(feature = "specta", specta(skip))]
@@ -250,7 +257,12 @@ impl SettingsStore {
                         settings.capture = CaptureProfile::default();
                         format!("capture settings invalid ({err}); using the defaults for them")
                     });
-                    (settings, note)
+                    // Likewise for hand-edited saved levels.
+                    let levels_note = settings.saved_levels.validate().err().map(|err| {
+                        settings.saved_levels = SavedLevels::default();
+                        format!("saved levels invalid ({err}); using none")
+                    });
+                    (settings, note.or(levels_note))
                 }
                 Err(err) => {
                     let mut bad = path.as_os_str().to_owned();
@@ -305,6 +317,39 @@ impl SettingsStore {
             Ok(())
         })
         .map(|settings| settings.capture)
+    }
+
+    /// The levels saved per film stock, and the default's camera settings.
+    pub fn saved_levels(&self) -> SavedLevels {
+        self.current
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .saved_levels
+            .clone()
+    }
+
+    /// Saves `levels` as the global default or for a film stock, with the camera settings of the
+    /// test shot they were balanced on. Nothing changes if it is refused or the file cannot be
+    /// written.
+    pub fn save_levels(
+        &self,
+        scope: &LevelsScope,
+        levels: [u8; 3],
+        exposure: Option<ExposureInfo>,
+    ) -> Result<(), AppError> {
+        self.change(|settings| {
+            match scope {
+                LevelsScope::Default => {
+                    settings.capture.levels = levels;
+                    settings.saved_levels.default_exposure = exposure;
+                }
+                LevelsScope::Stock(name) => {
+                    settings.saved_levels.save_stock(name, levels, exposure)?
+                }
+            }
+            Ok(())
+        })
+        .map(|_| ())
     }
 
     /// Records the library opened last.
@@ -702,6 +747,75 @@ mod tests {
         assert!(note.is_none());
         assert_eq!(store.capture_profile().settle_ms, 900);
         assert_eq!(store.capture_profile().levels, [44, 22, 2]);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn an_old_file_without_saved_levels_loads_with_none() {
+        let path = temp_file("levels-old");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"capture": {"levels": [50, 25, 3]}}"#).unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert_eq!(store.saved_levels(), SavedLevels::default());
+        assert_eq!(store.capture_profile().levels, [50, 25, 3]);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn levels_saved_as_default_or_for_a_stock_are_kept_across_a_reload() {
+        let path = temp_file("levels-save");
+        let (store, _) = SettingsStore::load(&path);
+        let exposure = ExposureInfo {
+            iso: Some(200),
+            ..ExposureInfo::default()
+        };
+        store
+            .save_levels(&LevelsScope::Default, [70, 35, 5], Some(exposure))
+            .unwrap();
+        store
+            .save_levels(
+                &LevelsScope::Stock(" Portra 400 ".into()),
+                [90, 40, 6],
+                None,
+            )
+            .unwrap();
+        let (reloaded, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert_eq!(reloaded.capture_profile().levels, [70, 35, 5]);
+        let saved = reloaded.saved_levels();
+        assert_eq!(saved.default_exposure, Some(exposure));
+        assert_eq!(saved.stocks["portra 400"].levels, [90, 40, 6]);
+        assert_eq!(saved.stocks["portra 400"].name, "Portra 400");
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn saving_levels_for_an_empty_stock_changes_and_saves_nothing() {
+        let path = temp_file("levels-refused");
+        let (store, _) = SettingsStore::load(&path);
+        let before = store.get();
+        let err = store
+            .save_levels(&LevelsScope::Stock("  ".into()), [1, 2, 3], None)
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert_eq!(store.get(), before);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn hand_edited_saved_levels_the_app_would_refuse_are_dropped_on_load() {
+        let path = temp_file("levels-bad");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"theme": "dark", "saved_levels": {"stocks": {"wrong": {"name": "Portra", "levels": [1, 2, 3]}}}}"#,
+        )
+        .unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_some_and(|n| n.contains("saved levels invalid")));
+        assert_eq!(store.saved_levels(), SavedLevels::default());
+        assert_eq!(store.get().theme, Theme::Dark);
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

@@ -80,6 +80,9 @@ pub enum ImportWarningKind {
     /// The light's supply voltage sagged while this frame was captured: the lowest reading, in
     /// millivolts (H-08).
     LowSupply { vbus_mv: u32 },
+    /// The camera settings (shutter, ISO or aperture) of this capture differ from those the levels
+    /// in use were saved with (H-15).
+    ExposureDiffersFromLevels,
 }
 
 /// A picked file that was not imported.

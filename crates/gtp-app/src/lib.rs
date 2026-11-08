@@ -14,7 +14,10 @@ pub mod services;
 pub mod shared_light;
 
 pub use context::{AppContext, ThumbnailRequester};
-pub use gtp_capture::{CameraInfo, CaptureProfile, CaptureProfilePatch, LightInfo, PortInfo};
+pub use gtp_capture::{
+    CameraInfo, CameraSetting, CameraSettingKind, CaptureProfile, CaptureProfilePatch, LightInfo,
+    PortInfo,
+};
 pub use gtp_edit::{frontier_curve, roll_balance, BalanceMethod, FrontierParams};
 pub use gtp_ingest::{
     merge_triplet, DeviceInfo, ScannerSource, TripletCandidate, TripletFile, TripletProblem,
@@ -30,6 +33,7 @@ pub use pipeline::{
     STAGE_ORDER,
 };
 pub use services::capture_control::{CameraSlot, CaptureEvents, StepState, TestShot};
+pub use services::capture_levels::{CaptureLevels, LevelsScope, LevelsSource};
 pub use services::counters::Counters;
 pub use services::flat_field::{apply_flat_field, flat_field_from_exposures};
 pub use services::library::{Library, LibraryDetails};

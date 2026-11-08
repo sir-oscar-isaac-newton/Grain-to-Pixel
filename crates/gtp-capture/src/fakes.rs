@@ -10,6 +10,7 @@ use gtp_core::{AppError, ErrorCode};
 
 use crate::camera::{CameraSource, CapturedFile};
 use crate::light::{LightInfo, LightSource, LightStatus};
+use crate::preview::CameraPreview;
 use crate::settings::{check_change, CameraSetting, CameraSettingKind, CameraSettings};
 
 /// A command a [`FakeLight`] received.
@@ -194,6 +195,19 @@ pub enum CameraCall {
 
 type WaitHook = Box<dyn FnMut(usize) + Send>;
 
+/// Makes live-view frame number `n` (from 0).
+type FrameMaker = Arc<dyn Fn(usize) -> Result<Vec<u8>, AppError> + Send + Sync>;
+
+/// The frame a fake camera serves unless told how to make them: the JPEG start and end markers
+/// around the frame's number, so that frames differ. It is not a picture; a fake that has to show
+/// something (`GTP_FAKE_HW=1`) is given a maker of real JPEGs by [`FakeCamera::with_frames`].
+fn placeholder_frame(n: usize) -> Result<Vec<u8>, AppError> {
+    let mut frame = vec![0xFF, 0xD8];
+    frame.extend_from_slice(&n.to_le_bytes());
+    frame.extend_from_slice(&[0xFF, 0xD9]);
+    Ok(frame)
+}
+
 #[derive(Default)]
 struct CameraState {
     shots: VecDeque<Shot>,
@@ -208,6 +222,11 @@ struct CameraState {
     settings: Vec<CameraSetting>,
     fail_settings: Option<AppError>,
     changes: Vec<(CameraSettingKind, String)>,
+    frames: usize,
+    frame_maker: Option<FrameMaker>,
+    fail_preview: Option<AppError>,
+    preview_stops: usize,
+    live_view: bool,
 }
 
 /// What a fake camera offers until a test changes it: ISO 100, 1/100 s and f/8, all writable.
@@ -286,6 +305,26 @@ impl FakeCameraHandle {
         self.state().changes.clone()
     }
 
+    /// Live-view frames served so far.
+    pub fn preview_frames(&self) -> usize {
+        self.state().frames
+    }
+
+    /// Calls of [`CameraPreview::preview_stop`] so far, whether or not live view was on.
+    pub fn preview_stops(&self) -> usize {
+        self.state().preview_stops
+    }
+
+    /// True after a frame was served and until live view is left by a stop or by a capture.
+    pub fn in_live_view(&self) -> bool {
+        self.state().live_view
+    }
+
+    /// Makes frames and stops fail until cleared with `None`.
+    pub fn fail_preview_with(&self, error: Option<AppError>) {
+        self.state().fail_preview = error;
+    }
+
     fn replace_setting(&self, setting: CameraSetting) {
         if let Some(s) = self
             .state()
@@ -318,6 +357,29 @@ impl CameraSettings for FakeCameraHandle {
         }
         state.changes.push((kind, value.to_owned()));
         Ok(state.settings.clone())
+    }
+}
+
+impl CameraPreview for FakeCameraHandle {
+    fn preview_frame(&self) -> Result<Vec<u8>, AppError> {
+        let mut state = self.state();
+        state.fail_preview.clone().map_or(Ok(()), Err)?;
+        let n = state.frames;
+        let frame = match &state.frame_maker {
+            Some(maker) => maker(n)?,
+            None => placeholder_frame(n)?,
+        };
+        state.frames += 1;
+        state.live_view = true;
+        Ok(frame)
+    }
+
+    fn preview_stop(&self) -> Result<(), AppError> {
+        let mut state = self.state();
+        state.preview_stops += 1;
+        state.fail_preview.clone().map_or(Ok(()), Err)?;
+        state.live_view = false;
+        Ok(())
     }
 }
 
@@ -369,6 +431,17 @@ impl FakeCamera {
         self
     }
 
+    /// Serves live-view frames made by `maker` (given the frame's number, from 0) instead of the
+    /// placeholder ones (the camera of `GTP_FAKE_HW=1` serves real JPEGs).
+    #[must_use]
+    pub fn with_frames(
+        self,
+        maker: impl Fn(usize) -> Result<Vec<u8>, AppError> + Send + Sync + 'static,
+    ) -> Self {
+        self.handle.state().frame_maker = Some(Arc::new(maker));
+        self
+    }
+
     /// A handle to read the calls from.
     pub fn handle(&self) -> FakeCameraHandle {
         self.handle.clone()
@@ -390,6 +463,8 @@ impl CameraSource for FakeCamera {
         let mut state = self.handle.state();
         let levels = state.light.as_ref().map(FakeLightHandle::levels);
         state.calls.push(CameraCall::Trigger { levels });
+        // A real camera is taken out of live view before a capture.
+        state.live_view = false;
         state.fail_trigger.clone().map_or(Ok(()), Err)
     }
 
@@ -528,5 +603,42 @@ mod tests {
             ..light.status()
         });
         assert_eq!(light.status().temp_c, Some(80.0));
+    }
+
+    #[test]
+    fn live_view_frames_are_jpeg_markers_that_differ_and_a_capture_or_stop_leaves_live_view() {
+        let mut camera = FakeCamera::new(vec![Shot::File(CapturedFile {
+            name: "a.nef".to_owned(),
+            bytes: vec![1],
+        })]);
+        let handle = camera.handle();
+        assert!(!handle.in_live_view());
+        let first = handle.preview_frame().unwrap();
+        let second = handle.preview_frame().unwrap();
+        for frame in [&first, &second] {
+            assert_eq!(frame[..2], [0xFF, 0xD8]);
+            assert_eq!(frame[frame.len() - 2..], [0xFF, 0xD9]);
+        }
+        assert_ne!(first, second);
+        assert_eq!((handle.preview_frames(), handle.in_live_view()), (2, true));
+        camera.arm().unwrap();
+        camera.trigger().unwrap();
+        assert!(!handle.in_live_view(), "a capture leaves live view");
+        handle.preview_frame().unwrap();
+        handle.preview_stop().unwrap();
+        handle.preview_stop().unwrap();
+        assert_eq!((handle.preview_stops(), handle.in_live_view()), (2, false));
+    }
+
+    #[test]
+    fn frames_can_come_from_a_maker_and_the_preview_can_be_made_to_fail() {
+        let camera = FakeCamera::new(Vec::new()).with_frames(|n| Ok(vec![n as u8]));
+        let handle = camera.handle();
+        assert_eq!(handle.preview_frame().unwrap(), [0]);
+        assert_eq!(handle.preview_frame().unwrap(), [1]);
+        handle.fail_preview_with(Some(unplugged()));
+        assert!(handle.preview_frame().is_err());
+        assert!(handle.preview_stop().is_err());
+        assert_eq!(handle.preview_frames(), 2, "a failed frame is not counted");
     }
 }

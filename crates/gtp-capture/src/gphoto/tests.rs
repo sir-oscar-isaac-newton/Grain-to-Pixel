@@ -17,6 +17,7 @@ use super::worker::{
 };
 use crate::camera::{CameraFinder, CameraInfo, CameraSource, CapturedFile};
 use crate::fakes::{no_picture, FakeCamera, FakeLight, LightCommand, Shot};
+use crate::preview::CameraPreview;
 use crate::profile::CaptureProfile;
 use crate::sequence::{CaptureSequence, Pause};
 use crate::settings::{CameraSetting, CameraSettingKind, CameraSettings};
@@ -86,6 +87,10 @@ struct Script {
     settings_error: Mutex<Option<SessionError>>,
     /// Makes `settings` wait at this gate (a camera that stops answering).
     settings_gate: Mutex<Option<Arc<Gate>>>,
+    /// Makes `preview_frame` fail once.
+    preview_error: Mutex<Option<SessionError>>,
+    /// Makes `leave_live_view` fail once.
+    leave_error: Mutex<Option<SessionError>>,
 }
 
 impl Script {
@@ -207,6 +212,34 @@ impl Session for Scripted {
         Ok(())
     }
 
+    fn preview_frame(&mut self) -> Result<Vec<u8>, SessionError> {
+        self.0.record("preview");
+        if let Some(err) = self
+            .0
+            .preview_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            return Err(err);
+        }
+        Ok(vec![0xFF, 0xD8, 0xFF, 0xD9])
+    }
+
+    fn leave_live_view(&mut self) -> Result<(), SessionError> {
+        self.0.record("leave");
+        match self
+            .0
+            .leave_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
+    }
+
     fn close(&mut self) {
         self.0.record("close");
     }
@@ -228,6 +261,7 @@ fn camera(script: &Arc<Script>) -> GphotoCamera {
             open: Duration::from_secs(5),
             list: Duration::from_secs(5),
             settings: Duration::from_secs(5),
+            preview: Duration::from_secs(5),
         },
     )
 }
@@ -590,6 +624,7 @@ fn a_failed_open_during_a_slow_start_times_out_and_blocks_further_use() {
             open: SHORT,
             list: SHORT,
             settings: SHORT,
+            preview: SHORT,
         },
     )
     .unwrap();
@@ -716,6 +751,7 @@ fn a_settings_call_that_does_not_answer_makes_the_camera_unusable_like_any_other
             open: Duration::from_secs(5),
             list: Duration::from_secs(5),
             settings: SHORT,
+            preview: SHORT,
         },
     );
     let finder = camera.finder();
@@ -749,6 +785,154 @@ fn a_lost_link_while_reading_settings_closes_the_session_for_the_next_call() {
         script.log(),
         ["open", "settings", "close", "open", "settings"]
     );
+}
+
+// --- live view ----------------------------------------------------------------------------------
+
+#[test]
+fn frames_come_from_the_session_with_the_camera_opened_first() {
+    let script = Arc::new(Script::default());
+    let camera = camera(&script);
+    let finder = camera.finder();
+    assert_eq!(finder.preview_frame().unwrap(), [0xFF, 0xD8, 0xFF, 0xD9]);
+    finder.preview_frame().unwrap();
+    assert_eq!(script.log(), ["open", "preview", "preview"]);
+    assert!(camera.is_connected());
+}
+
+#[test]
+fn live_view_is_left_once_before_the_next_capture() {
+    let script = Arc::new(Script::default());
+    script.push_capture(Step::File(file(1)));
+    script.push_capture(Step::File(file(2)));
+    let mut camera = camera(&script);
+    let finder = camera.finder();
+    finder.preview_frame().unwrap();
+    finder.preview_frame().unwrap();
+    shoot(&mut camera, SHORT * 100).unwrap();
+    shoot(&mut camera, SHORT * 100).unwrap();
+    assert_eq!(
+        script.log(),
+        ["open", "preview", "preview", "leave", "capture", "capture"]
+    );
+}
+
+#[test]
+fn a_capture_without_live_view_does_not_touch_it() {
+    let script = Arc::new(Script::default());
+    script.push_capture(Step::File(file(1)));
+    let mut camera = camera(&script);
+    shoot(&mut camera, SHORT * 100).unwrap();
+    assert_eq!(script.log(), ["open", "capture"]);
+}
+
+#[test]
+fn a_stop_leaves_live_view_only_when_it_is_on() {
+    let script = Arc::new(Script::default());
+    script.push_capture(Step::File(file(1)));
+    let mut camera = camera(&script);
+    let finder = camera.finder();
+    finder.preview_stop().unwrap();
+    assert!(script.log().is_empty(), "nothing to leave, nothing asked");
+    finder.preview_frame().unwrap();
+    finder.preview_stop().unwrap();
+    finder.preview_stop().unwrap();
+    shoot(&mut camera, SHORT * 100).unwrap();
+    assert_eq!(script.log(), ["open", "preview", "leave", "capture"]);
+}
+
+#[test]
+fn a_stop_that_fails_is_tried_again_and_a_capture_still_goes_ahead_when_leaving_fails() {
+    let script = Arc::new(Script::default());
+    script.push_capture(Step::File(file(1)));
+    let mut camera = camera(&script);
+    let finder = camera.finder();
+    finder.preview_frame().unwrap();
+    *script
+        .leave_error
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(other("viewfinder"));
+    assert!(finder.preview_stop().is_err());
+    finder.preview_stop().unwrap();
+    assert_eq!(script.count("leave"), 2);
+
+    finder.preview_frame().unwrap();
+    *script
+        .leave_error
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(other("viewfinder"));
+    assert_eq!(
+        shoot(&mut camera, SHORT * 100).unwrap().name,
+        "DSC_0001.NEF"
+    );
+}
+
+#[test]
+fn frames_and_stops_are_refused_while_a_picture_is_being_taken() {
+    let script = Arc::new(Script::default());
+    let gate = Arc::new(Gate::default());
+    script.push_capture(Step::Hold(Arc::clone(&gate), file(1)));
+    let mut camera = camera(&script);
+    let finder = camera.finder();
+    camera.arm().unwrap();
+    camera.trigger().unwrap();
+    for err in [
+        finder.preview_frame().unwrap_err(),
+        finder.preview_stop().unwrap_err(),
+    ] {
+        assert!(err.message.contains("being taken"), "{}", err.message);
+    }
+    assert!(!camera.is_unusable());
+    gate.release();
+    camera.wait_for_image(Duration::from_secs(5)).unwrap();
+    finder.preview_frame().unwrap();
+}
+
+#[test]
+fn a_lost_link_during_live_view_means_the_new_session_is_not_left() {
+    let script = Arc::new(Script::default());
+    script.push_capture(Step::File(file(1)));
+    let mut camera = camera(&script);
+    let finder = camera.finder();
+    finder.preview_frame().unwrap();
+    *script
+        .preview_error
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) =
+        Some(SessionError::new(SessionErrorKind::Lost, "usb"));
+    let err = finder.preview_frame().unwrap_err();
+    assert!(err.message.contains("connection to the camera was lost"));
+    eventually(|| !camera.is_connected());
+    shoot(&mut camera, SHORT * 100).unwrap();
+    assert_eq!(
+        script.log(),
+        ["open", "preview", "preview", "close", "open", "capture"]
+    );
+}
+
+#[test]
+fn a_preview_call_that_does_not_answer_makes_the_camera_unusable() {
+    let script = Arc::new(Script::default());
+    let gate = Arc::new(Gate::default());
+    let slow = Arc::clone(&gate);
+    let factory_script = Arc::clone(&script);
+    let camera = GphotoCamera::with_timeouts(
+        move || {
+            slow.wait();
+            Ok(Box::new(Scripted(Arc::clone(&factory_script))) as Box<dyn Session>)
+        },
+        Timeouts {
+            open: Duration::from_secs(5),
+            list: Duration::from_secs(5),
+            settings: Duration::from_secs(5),
+            preview: SHORT,
+        },
+    )
+    .unwrap();
+    let err = camera.finder().preview_frame().unwrap_err();
+    assert!(err.message.contains("did not answer"), "{err}");
+    assert!(camera.is_unusable());
+    gate.release();
 }
 
 // --- library paths ------------------------------------------------------------------------------

@@ -83,6 +83,24 @@ pub fn camera_settings_set(
     capture::camera_set_setting(&hardware, kind, &value)
 }
 
+/// One live-view frame of the camera as a JPEG, in raw bytes and not JSON (about 7 KB, up to 30
+/// times a second); the first call puts the camera in live view. The light is not touched. Refused
+/// while a capture, a test shot or a calibration runs. Not in the typed bindings (see
+/// `ipc::RAW_COMMANDS`).
+#[tauri::command(async)]
+pub fn camera_preview_frame(hardware: State<'_, Hardware>) -> CmdResult<tauri::ipc::Response> {
+    let bytes = capture::camera_preview_frame(&hardware)?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Leaves the camera's live view; does nothing when it is not in live view or while a capture runs
+/// (a capture leaves live view itself).
+#[tauri::command(async)]
+#[specta::specta]
+pub fn camera_preview_stop(hardware: State<'_, Hardware>) -> CmdResult<()> {
+    capture::camera_preview_stop(&hardware)
+}
+
 /// The capture profile (levels, settle time, temperature limits, camera backend).
 #[tauri::command(async)]
 #[specta::specta]
@@ -306,6 +324,21 @@ mod tests {
             .unwrap_err()
             .message
             .contains("capture is in progress"));
+    }
+
+    #[test]
+    fn the_camera_preview_commands_serve_frames_stop_and_refuse_while_busy_on_the_fakes() {
+        let f = fixture("camera-preview");
+        let hardware = || f.app.state::<Hardware>();
+        camera_preview_frame(hardware()).unwrap();
+        camera_preview_stop(hardware()).unwrap();
+        camera_preview_stop(hardware()).unwrap();
+        let _busy = hardware().busy().acquire().unwrap();
+        let Err(err) = camera_preview_frame(hardware()) else {
+            unreachable!("a frame is refused while the camera is busy");
+        };
+        assert!(err.message.contains("capture is in progress"), "{err}");
+        camera_preview_stop(hardware()).unwrap();
     }
 
     #[test]
@@ -539,6 +572,10 @@ mod tests {
         .unwrap_err();
         assert!(err.message.contains("No camera backend"), "{err}");
         let err = capture::camera_settings(&real).unwrap_err();
+        assert!(err.message.contains("No camera backend"), "{err}");
+        let err = capture::camera_preview_frame(&real).unwrap_err();
+        assert!(err.message.contains("No camera backend"), "{err}");
+        let err = capture::camera_preview_stop(&real).unwrap_err();
         assert!(err.message.contains("No camera backend"), "{err}");
     }
 }

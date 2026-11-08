@@ -1,5 +1,5 @@
 import { Histogram } from '@gtp/ui';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   captureTest,
@@ -25,14 +25,23 @@ interface TestShotProps {
   levels: Levels;
   /** Called with the camera settings of each test picture that was taken. */
   onShot: (exposure: ExposureInfo) => void;
+  /** Called with true when a test shot starts and false when it ends. */
+  onBusyChange: (busy: boolean) => void;
 }
 
 /** One test picture per colour: its histogram and how much of it is clipped. Nothing is stored. */
-export function TestShot({ disabled, levels, onShot }: TestShotProps) {
+export function TestShot({ disabled, levels, onShot, onBusyChange }: TestShotProps) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState<TripletChannel | null>(null);
   const [shown, setShown] = useState<{ channel: TripletChannel; shot: Shot } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const onBusyChangeRef = useRef(onBusyChange);
+  onBusyChangeRef.current = onBusyChange;
+  const shooting = busy !== null;
+  useEffect(() => {
+    onBusyChangeRef.current(shooting);
+  }, [shooting]);
 
   const shoot = (channel: TripletChannel) => {
     setBusy(channel);

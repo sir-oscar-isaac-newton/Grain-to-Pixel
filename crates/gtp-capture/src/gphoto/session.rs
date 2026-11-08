@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use gphoto2::error::ErrorKind;
-use gphoto2::widget::RadioWidget;
+use gphoto2::widget::{RadioWidget, ToggleWidget};
 use gphoto2::{Camera, Context};
 
 use crate::camera::{CameraInfo, CapturedFile};
@@ -21,6 +21,11 @@ use crate::settings::{is_missing_setting, CameraSetting, CameraSettingKind};
 
 /// A NEF of the D600 is about 26 MB; anything this big is not a picture from a camera.
 const MAX_PICTURE_BYTES: u64 = 512 * 1024 * 1024;
+
+/// A live-view frame of the D600 is about 7 KB; anything this big is not a preview.
+const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
+/// The libgphoto2 configuration key that switches live view on Nikon bodies.
+const VIEWFINDER_KEY: &str = "viewfinder";
 
 /// The camera of the session: the binding's context, and the camera once opened.
 pub struct GphotoSession {
@@ -201,6 +206,60 @@ impl Session for GphotoSession {
             ));
         };
         widget.set_choice(value).map_err(|err| map_error(&err))?;
+        camera
+            .set_config(&widget)
+            .try_wait()
+            .map_err(|err| channel_error(&err))?
+            .map_err(|err| map_error(&err))
+    }
+
+    fn preview_frame(&mut self) -> Result<Vec<u8>, SessionError> {
+        let camera = open_camera(self.camera.as_ref())?;
+        let frame = camera
+            .capture_preview()
+            .try_wait()
+            .map_err(|err| channel_error(&err))?
+            .map_err(|err| map_error(&err))?;
+        let bytes = frame
+            .get_data(&self.context)
+            .try_wait()
+            .map_err(|err| channel_error(&err))?
+            .map_err(|err| map_error(&err))?;
+        if bytes.is_empty() || bytes.len() > MAX_FRAME_BYTES {
+            return Err(SessionError::new(
+                SessionErrorKind::Other,
+                format!(
+                    "the live-view frame has an unusable size ({} bytes)",
+                    bytes.len()
+                ),
+            ));
+        }
+        Ok(bytes.into_vec())
+    }
+
+    fn leave_live_view(&mut self) -> Result<(), SessionError> {
+        let camera = open_camera(self.camera.as_ref())?;
+        // Nikon bodies leave live view when `viewfinder` is set to 0. A camera without that widget
+        // (or with another kind of it) has nothing to leave.
+        let fetched = camera
+            .config_key::<ToggleWidget>(VIEWFINDER_KEY)
+            .try_wait()
+            .map_err(|err| channel_error(&err))?;
+        let widget = match fetched {
+            Ok(widget) => widget,
+            Err(err) => {
+                let unsupported = matches!(
+                    err.kind(),
+                    ErrorKind::BadParameters | ErrorKind::NotSupported
+                );
+                return if unsupported || err.to_string().contains("Expected ToggleWidget") {
+                    Ok(())
+                } else {
+                    Err(map_error(&err))
+                };
+            }
+        };
+        widget.set_toggled(false);
         camera
             .set_config(&widget)
             .try_wait()

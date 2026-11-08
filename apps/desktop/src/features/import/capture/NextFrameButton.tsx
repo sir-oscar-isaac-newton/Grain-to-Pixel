@@ -100,6 +100,8 @@ interface NextFrameButtonProps {
   roll: Roll | null;
   /** The working levels; null until they are known. */
   levels: Levels | null;
+  /** Called with true while a capture starts or runs, and false when it is over. */
+  onBusyChange: (busy: boolean) => void;
 }
 
 /**
@@ -107,7 +109,7 @@ interface NextFrameButtonProps {
  * exposures merged and stored in the chosen roll, with the steps while it runs, the result after,
  * and what the capture warned about.
  */
-export function NextFrameButton({ ready, roll, levels }: NextFrameButtonProps) {
+export function NextFrameButton({ ready, roll, levels, onBusyChange }: NextFrameButtonProps) {
   const { t } = useTranslation();
   const readOnly = useLibraryStore((s) => s.library?.read_only ?? false);
   const addJob = useLibraryStore((s) => s.addJob);
@@ -121,6 +123,12 @@ export function NextFrameButton({ ready, roll, levels }: NextFrameButtonProps) {
   const job = useLibraryStore((s) => s.jobs.find((j) => j.id === jobId));
   const jobState = job?.state;
   const running = starting || jobState === 'running';
+
+  const onBusyChangeRef = useRef(onBusyChange);
+  onBusyChangeRef.current = onBusyChange;
+  useEffect(() => {
+    onBusyChangeRef.current(running);
+  }, [running]);
 
   const canStart = ready && !running && !readOnly && roll !== null && levels !== null;
 

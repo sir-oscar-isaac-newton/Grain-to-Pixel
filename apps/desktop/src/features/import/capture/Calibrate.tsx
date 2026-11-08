@@ -26,13 +26,22 @@ interface CalibrateProps {
    * its shots were taken with (they count as the test shot the save needs).
    */
   onCalibrated: (levels: Levels, exposure: ExposureInfo) => void;
+  /** Called with true while a calibration starts or runs, and false when it is over. */
+  onBusyChange: (busy: boolean) => void;
 }
 
 /**
  * Finds the Scanlight level of each colour by itself, on a frame of clear film base. Shows what
  * it is doing, then what it found; the levels go to the sliders and nothing is saved.
  */
-export function Calibrate({ ready, busy, roll, levels, onCalibrated }: CalibrateProps) {
+export function Calibrate({
+  ready,
+  busy,
+  roll,
+  levels,
+  onCalibrated,
+  onBusyChange,
+}: CalibrateProps) {
   const { t } = useTranslation();
   const addJob = useLibraryStore((s) => s.addJob);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -42,6 +51,11 @@ export function Calibrate({ ready, busy, roll, levels, onCalibrated }: Calibrate
   const job = useLibraryStore((s) => s.jobs.find((j) => j.id === jobId));
   const jobState = job?.state;
   const running = starting || jobState === 'running';
+  const onBusyChangeRef = useRef(onBusyChange);
+  onBusyChangeRef.current = onBusyChange;
+  useEffect(() => {
+    onBusyChangeRef.current(running);
+  }, [running]);
   const found = jobState === 'done' ? (job?.calibrated ?? null) : null;
 
   const onCalibratedRef = useRef(onCalibrated);

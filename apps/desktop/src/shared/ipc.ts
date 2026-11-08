@@ -467,6 +467,20 @@ export async function frameThumbnail(id: string): Promise<ArrayBuffer> {
   return invokeRaw('frame_thumbnail', { id });
 }
 
+/**
+ * One live view frame of the camera as JPEG bytes (640 by 424). The first call puts the camera in
+ * live view. Raw-bytes command like `frameThumbnail`; rejects while a capture, test shot or
+ * calibration runs, and when the camera has no live view.
+ */
+export async function cameraPreviewFrame(): Promise<ArrayBuffer> {
+  return invokeRaw('camera_preview_frame', {});
+}
+
+/** Takes the camera out of live view; harmless when it is not in live view or busy. */
+export async function cameraPreviewStop(): Promise<void> {
+  unwrap(await commands.cameraPreviewStop());
+}
+
 /** Calls a raw-bytes command by name; an `AppError` it returns becomes an `IpcError`. */
 async function invokeRaw(command: string, args: Record<string, unknown>): Promise<ArrayBuffer> {
   try {

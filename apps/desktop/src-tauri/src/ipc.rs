@@ -51,6 +51,7 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::capture::capture_levels_save,
             commands::capture::capture_test,
             commands::capture::capture_triplet,
+            commands::capture::capture_calibrate,
             commands::export::export_start,
             commands::develop::develop_open,
             commands::develop::develop_analyze,
@@ -192,6 +193,7 @@ mod tests {
             "captureLevelsSave",
             "captureTest",
             "captureTriplet",
+            "captureCalibrate",
         ] {
             assert!(text.contains(command), "{command} missing from bindings");
         }
@@ -242,6 +244,9 @@ mod tests {
             "CaptureStep",
             "LightStatus",
             "StepState",
+            "CalibrationResult",
+            "CalibrationWarning",
+            "Region",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");
         }

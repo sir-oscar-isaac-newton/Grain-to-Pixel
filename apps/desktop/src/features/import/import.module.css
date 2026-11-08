@@ -254,3 +254,25 @@
   margin: 0;
   font-size: 1rem;
 }
+
+.captureLiveLight {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.captureLiveLight legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.captureLiveLight label {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}

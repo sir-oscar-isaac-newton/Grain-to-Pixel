@@ -210,6 +210,8 @@ function Capture() {
             cameras.length > 0 && (
               <LiveView
                 stopRef={liveStop}
+                levels={levels}
+                lightLost={!light.connected || light.status?.tripped === true}
                 blocked={running || shotBusy || calibrating || capturing}
               />
             )

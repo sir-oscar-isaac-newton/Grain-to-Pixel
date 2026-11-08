@@ -247,4 +247,5 @@ Conclusion: live view over USB is usable for framing and rough focus on the D600
 - [ ] A test shot straight after live view works, and so does a capture (a whole triplet) straight after live view.
 - [ ] Leaving the capture view stops live view.
 - [ ] Live view is refused or stopped while a capture runs, and a capture started while live view is on works without stopping it by hand.
+- [ ] Choose each light colour in the Live view panel: the film shows in that colour, framing and focusing work (green is usually sharpest), Off turns the light off, and starting a test shot turns it off first.
 - [ ] The Scanlight is not lit by live view itself: with the light off, starting live view leaves it off.

@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../test-support';
-import type { ImportWarning, LightStatus } from '../../shared/ipc';
+import { IpcError, type ImportWarning, type LightStatus } from '../../shared/ipc';
 import {
   ipc,
   libraryDetails,
@@ -978,6 +978,145 @@ describe('CaptureSection', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(ipc.cameraPreviewFrame.mock.calls.length).toBe(asked);
       expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1);
+    });
+
+    describe('light control', () => {
+      const choose = (name: string) => screen.getByRole('radio', { name });
+
+      it('sends the levels of each choice', async () => {
+        const { user } = await ready();
+        expect(choose('Off')).toBeChecked();
+        await user.click(choose('Red'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenLastCalledWith([44, 0, 0]));
+        await user.click(choose('Green'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenLastCalledWith([0, 22, 0]));
+        await user.click(choose('Blue'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenLastCalledWith([0, 0, 2]));
+        await user.click(choose('All'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenLastCalledWith([44, 22, 2]));
+        expect(choose('All')).toBeChecked();
+      });
+
+      it('works without live view running', async () => {
+        const { user } = await ready();
+        await user.click(choose('Green'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalled());
+        expect(ipc.cameraPreviewFrame).not.toHaveBeenCalled();
+      });
+
+      it('sends the levels again when a slider moves', async () => {
+        const { user } = await ready();
+        await user.click(choose('Red'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalledTimes(1));
+        screen.getByRole('slider', { name: 'Red level' }).focus();
+        await user.keyboard('{ArrowRight}');
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenLastCalledWith([45, 0, 0]));
+      });
+
+      it('drops a send that a newer one supersedes while it is on its way', async () => {
+        const { user } = await ready();
+        let release: () => void = () => undefined;
+        ipc.lightSet.mockImplementationOnce(
+          () => new Promise<undefined>((resolve) => (release = () => resolve(undefined))),
+        );
+        await user.click(choose('Red'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalledTimes(1));
+        await user.click(choose('Green'));
+        await user.click(choose('Blue'));
+        release();
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalledTimes(2));
+        expect(ipc.lightSet).toHaveBeenLastCalledWith([0, 0, 2]);
+      });
+
+      it('switches the light off on Off', async () => {
+        const { user } = await ready();
+        await user.click(choose('Blue'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalled());
+        await user.click(choose('Off'));
+        await waitFor(() => expect(ipc.lightOff).toHaveBeenCalledTimes(1));
+        expect(choose('Off')).toBeChecked();
+      });
+
+      it('switches the light off when live view is stopped', async () => {
+        const { user } = await ready();
+        await user.click(startLive());
+        await user.click(choose('Green'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalled());
+        await user.click(stopLive());
+        await waitFor(() => expect(ipc.lightOff).toHaveBeenCalledTimes(1));
+        expect(choose('Off')).toBeChecked();
+      });
+
+      it('switches the light off when a frame fails', async () => {
+        const { user } = await ready();
+        await user.click(choose('Green'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalled());
+        state.liveViewFail = 'This camera\u2019s live view is not available from the app.';
+        await user.click(startLive());
+        await screen.findByText(/live view is not available/);
+        await waitFor(() => expect(ipc.lightOff).toHaveBeenCalledTimes(1));
+        expect(choose('Off')).toBeChecked();
+      });
+
+      it('reads Off without a switch-off when a test shot starts, and is disabled meanwhile', async () => {
+        const { user } = await ready();
+        await user.click(choose('Green'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalled());
+        ipc.captureTest.mockImplementationOnce(() => new Promise(() => undefined));
+        await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+        await waitFor(() => expect(choose('Off')).toBeChecked());
+        expect(choose('Red')).toBeDisabled();
+        expect(ipc.lightOff).not.toHaveBeenCalled();
+      });
+
+      it('reads Off without a switch-off when a capture starts', async () => {
+        const { user } = await ready();
+        await user.click(choose('All'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalled());
+        await startCapture(user);
+        expect(choose('Off')).toBeChecked();
+        expect(choose('Red')).toBeDisabled();
+        expect(ipc.lightOff).not.toHaveBeenCalled();
+      });
+
+      it('switches the light off after stopping live view when the view closes', async () => {
+        const { user, unmount } = await ready();
+        await user.click(startLive());
+        await user.click(choose('Red'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalled());
+        unmount();
+        expect(ipc.lightOff).toHaveBeenCalledTimes(1);
+        const stopOrder = vi.mocked(ipc.cameraPreviewStop).mock.invocationCallOrder[0] ?? Infinity;
+        const offOrder = vi.mocked(ipc.lightOff).mock.invocationCallOrder[0] ?? -Infinity;
+        expect(stopOrder).toBeLessThan(offOrder);
+      });
+
+      it('shows the message of a refusal and returns to Off', async () => {
+        const { user } = await ready();
+        ipc.lightSet.mockRejectedValueOnce(
+          new IpcError({ code: 'Internal', message: 'The light is too hot.' }),
+        );
+        await user.click(choose('Red'));
+        expect(await screen.findByRole('alert')).toHaveTextContent('The light is too hot.');
+        expect(choose('Off')).toBeChecked();
+      });
+
+      it('reads Off when the light trips', async () => {
+        const { user } = await ready();
+        await user.click(choose('Red'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalled());
+        emitLight(reading({ tripped: true }));
+        await waitFor(() => expect(choose('Off')).toBeChecked());
+      });
+
+      it('has no accessibility violations with the light on', async () => {
+        const { user, container } = await ready();
+        await user.click(startLive());
+        await user.click(choose('Green'));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenCalled());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        await expectNoA11yViolations(container);
+      });
     });
 
     it('is not offered with the folder camera backend', async () => {

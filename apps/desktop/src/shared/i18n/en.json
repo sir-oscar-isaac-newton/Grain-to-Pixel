@@ -756,7 +756,15 @@
         "heading": "Live view",
         "start": "Start live view",
         "stop": "Stop live view",
-        "help": "Live view does not turn the light on: choose a colour and level with the light controls.",
+        "help": "Live view does not turn the light on by itself: choose a colour here.",
+        "light": {
+          "legend": "Light",
+          "off": "Off",
+          "red": "Red",
+          "green": "Green",
+          "blue": "Blue",
+          "all": "All"
+        },
         "idle": "Live view is off.",
         "waiting": "Waiting for the first picture…",
         "imageAlt": "Live view of the camera",

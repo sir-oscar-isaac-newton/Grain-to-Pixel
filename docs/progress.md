@@ -159,7 +159,7 @@
     {
       "id": "Q-01",
       "number": 23,
-      "title": "Golden-image harness and ΔE2000",
+      "title": "Golden-image harness and Î”E2000",
       "branch": "feat/issue-23-golden-image-harness-and-delta-e2000",
       "status": "completed",
       "pr": 115,
@@ -761,6 +761,15 @@
       "status": "completed",
       "pr": 247,
       "commit": "3750b9e"
+    },
+    {
+      "id": "H-14",
+      "number": 212,
+      "title": "Live preview of the camera in the capture view",
+      "branch": "feat/issue-212-live-preview",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

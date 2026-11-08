@@ -20,6 +20,25 @@ What the LGPL-2.1 gives you, in short (not legal advice):
 - **You may rebuild the app with a modified `rawler`.** The app's source and `Cargo.lock` are public, and [rebuild-with-rawler.md](rebuild-with-rawler.md) says how, with a Cargo `[patch]` entry. The app's licence allows modifying the app for your own use and reverse-engineering it to debug such changes.
 - **Any change to `rawler` itself** that is passed on is under the LGPL-2.1.
 
+## Camera control (macOS)
+
+On macOS the app drives the camera through libgphoto2. The crates `gphoto2` 3.4.1 and `libgphoto2_sys` 1.2.3 are under the LGPL-2.1 and are compiled into the app, as `rawler` is. libgphoto2 and the libraries it needs (libtool's libltdl, libexif, libusb, gettext's libintl and libjpeg-turbo) ship beside the app as separate dynamic libraries; each one's licence is named in `gphoto-libraries.txt`, and libjpeg-turbo is not under the LGPL. The full licence texts are in [third-party-licenses.txt](third-party-licenses.txt). The Windows app contains none of this.
+
+What their licences give you, in short (not legal advice):
+
+**For the two crates (compiled into the app, as `rawler`):**
+
+- **The source of the exact versions used** is attached to every release as `gphoto2-<version>.crate` and `libgphoto2_sys-<version>.crate` (verified against the checksums in `Cargo.lock`, by `tools/scripts/release/gphoto-crates-source.mjs`), and is at https://crates.io/crates/gphoto2 and https://crates.io/crates/libgphoto2_sys.
+- **You may rebuild the app with modified crates.** The app's source and `Cargo.lock` are public, and [rebuild-with-rawler.md](rebuild-with-rawler.md) says how (a Cargo `[patch]` entry, built with `--features tether` on macOS). The app's licence allows modifying the app for your own use and reverse-engineering it to debug such changes.
+- **Any change to the crates themselves** that is passed on is under the LGPL-2.1.
+
+**For the libraries beside them (separate dynamic libraries):**
+
+- **The source of the exact versions used** is attached to every release (draft and published) as the archives `libgphoto2-*.tar.bz2`, `libtool-*.tar.xz`, `libexif-*.tar.bz2`, `libusb-*.tar.bz2`, `libjpeg-turbo-*.tar.gz` and `gettext-*.tar.gz`, with `gphoto-libraries.txt` (name, version, licence, source address and SHA-256 of each; the archives are checked against the checksums Homebrew publishes). `tools/scripts/release/gphoto-source.mjs` fetches them.
+- **You may replace the libraries.** They are separate files in the app: put your own build in `Grain to Pixel.app/Contents/Frameworks/gphoto` (keep the file names) and sign the app again, ad hoc, with `codesign --force --deep --sign - "Grain to Pixel.app"`.
+- **Any change to these libraries themselves** that is passed on is under their licence.
+
+
 ## Mozilla Public License 2.0 crates
 
 These crates are under the Mozilla Public License, version 2.0 (MPL-2.0), and are used unmodified, linked into the app through the Tauri web view stack. The licence text is in [third-party-licenses.txt](third-party-licenses.txt); their source is at the addresses below and on crates.io, under the version in `Cargo.lock`.

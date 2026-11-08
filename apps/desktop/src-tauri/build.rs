@@ -24,5 +24,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             manifest.display()
         );
     }
+
+    // The macOS build with libgphoto2 gets its library paths rewritten after linking
+    // (tools/scripts/release/bundle-libgphoto2.sh); leave room in the headers for that.
+    if std::env::var_os("CARGO_FEATURE_TETHER").is_some()
+        && std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+    {
+        println!("cargo::rustc-link-arg=-Wl,-headerpad_max_install_names");
+    }
     Ok(())
 }

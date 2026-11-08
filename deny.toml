@@ -50,6 +50,21 @@ allow = ["IJG"]
 crate = "rawler"
 allow = ["LGPL-2.1"]
 
+# The `gphoto2` crate and its `libgphoto2_sys` bindings (H-09, ADR 0004 amendment 9) are LGPL-2.1.
+# Like rawler they are Rust crates and so compiled (statically) into the app, only in macOS builds
+# with the `tether` feature (a macOS-only optional dependency of gtp-capture, never in the Windows
+# build). The libgphoto2 libraries they load are separate LGPL-2.1 dylibs. The obligations (notice,
+# source of the pinned crate versions, the means to rebuild with a modified crate) are met in
+# docs/third-party-notices.md, docs/rebuild-with-rawler.md and the release workflow, as for rawler.
+# Allowed for these two crates only.
+[[licenses.exceptions]]
+crate = "gphoto2"
+allow = ["LGPL-2.1-only"]
+
+[[licenses.exceptions]]
+crate = "libgphoto2_sys"
+allow = ["LGPL-2.1-only"]
+
 [licenses.private]
 # Workspace crates are `publish = false` and carry no public licence.
 ignore = true

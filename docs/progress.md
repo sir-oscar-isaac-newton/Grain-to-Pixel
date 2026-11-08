@@ -707,6 +707,15 @@
       "status": "completed",
       "pr": 229,
       "commit": "4cab72b"
+    },
+    {
+      "id": "H-09",
+      "number": 58,
+      "title": "GphotoCamera backend (macOS)",
+      "branch": "feat/issue-58-gphoto-camera",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 
-import { crateUrl, matchesChecksum, rawlerLock } from './rawler-source.mjs';
+import { crateUrl, matchesChecksum, packageLock, rawlerLock } from './rawler-source.mjs';
 
 const sum = 'a'.repeat(64);
 const lock = (extra = '') => `[[package]]
@@ -24,6 +24,25 @@ version = "1.0.0"
 test('the rawler version and checksum are read from Cargo.lock', () => {
   assert.deepEqual(rawlerLock(lock()), { version: '0.8.0', checksum: sum });
   assert.deepEqual(rawlerLock(lock().replace(/\n/g, '\r\n')), { version: '0.8.0', checksum: sum });
+});
+
+test('any registry package is found by its exact name', () => {
+  const two = `[[package]]
+name = "gphoto2"
+version = "3.4.1"
+checksum = "${'c'.repeat(64)}"
+
+[[package]]
+name = "libgphoto2_sys"
+version = "1.2.3"
+checksum = "${'d'.repeat(64)}"
+`;
+  assert.deepEqual(packageLock(two, 'gphoto2'), { version: '3.4.1', checksum: 'c'.repeat(64) });
+  assert.deepEqual(packageLock(two, 'libgphoto2_sys'), {
+    version: '1.2.3',
+    checksum: 'd'.repeat(64),
+  });
+  assert.equal(packageLock(two, 'gphoto'), null);
 });
 
 test('a lock without rawler, or without its checksum, gives nothing', () => {

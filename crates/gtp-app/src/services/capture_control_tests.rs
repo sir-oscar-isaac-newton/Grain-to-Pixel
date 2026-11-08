@@ -261,6 +261,7 @@ fn assert_too_hot<T: std::fmt::Debug>(result: Result<T, AppError>) {
     assert!(err.message.contains("too hot"), "{err}");
 }
 
+#[cfg(not(all(target_os = "macos", feature = "tether")))]
 fn assert_no_camera<T: std::fmt::Debug>(result: Result<T, AppError>) {
     let err = result.unwrap_err();
     assert!(err.message.contains("No camera backend"), "{err}");
@@ -551,15 +552,25 @@ fn the_busy_flag_is_released_after_success_error_and_panic() {
 }
 
 #[test]
-fn without_fake_hardware_there_is_no_camera_but_the_light_still_answers() {
+fn without_fake_hardware_the_light_still_answers() {
     let hardware = Hardware::from_vars(None, None);
-    assert!(camera_list(&hardware).is_empty());
     // Nothing is connected: switching off is fine, lighting is an error in words.
     light_off(&hardware).unwrap();
     let err = light_set(&hardware, [1, 0, 0], 55.0).unwrap_err();
     assert!(err.message.contains("not connected"), "{err}");
     assert!(!hardware.busy().is_busy());
+}
 
+/// Builds without a camera backend refuse up front. With `tether` on macOS, libgphoto2 is the
+/// backend and would drive whatever camera is plugged in, so this is not run there: an absent
+/// camera with a backend is covered by
+/// `an_absent_or_held_camera_fails_a_test_shot_and_a_capture_in_words_before_any_light`, and the
+/// real camera by the ignored `gphoto_hardware` test.
+#[cfg(not(all(target_os = "macos", feature = "tether")))]
+#[test]
+fn without_a_camera_backend_a_test_shot_and_a_capture_are_refused() {
+    let hardware = Hardware::from_vars(None, None);
+    assert!(camera_list(&hardware).is_empty());
     let rig = Rig::new("no-camera");
     assert_no_camera(test_shot(
         rig.ctx(),
@@ -633,4 +644,86 @@ fn light_set_needs_a_connected_light_with_a_current_reading_under_the_limit() {
     // All zeros are always allowed, whatever the light says.
     set([0; 3]).unwrap();
     assert!(!hw.busy().is_busy());
+}
+
+/// A finder that answers from a script: what the list gives, and whether `connect` fails.
+#[derive(Default)]
+struct ScriptedFinder {
+    lists: Mutex<std::collections::VecDeque<Result<Vec<CameraInfo>, AppError>>>,
+    connect_error: Mutex<Option<AppError>>,
+    connects: std::sync::atomic::AtomicUsize,
+}
+
+struct SharedFinder(Arc<ScriptedFinder>);
+
+impl CameraFinder for SharedFinder {
+    fn list(&self) -> Result<Vec<CameraInfo>, AppError> {
+        self.0
+            .lists
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(Ok(vec![]))
+    }
+
+    fn connect(&self) -> Result<CameraInfo, AppError> {
+        self.0.connects.fetch_add(1, Ordering::SeqCst);
+        match self.0.connect_error.lock().unwrap().clone() {
+            Some(err) => Err(err),
+            None => Ok(fake_camera_info()),
+        }
+    }
+}
+
+/// A rig whose camera is found through `finder` (the camera itself is the fake one).
+fn found_rig(label: &str, finder: &Arc<ScriptedFinder>) -> Rig {
+    let mut rig = Rig::new(label);
+    let camera = Box::new(fake_camera().linked_to(rig.light.clone()));
+    rig.hardware.camera = Some(Arc::new(CameraSlot::with_finder(
+        camera,
+        Box::new(SharedFinder(Arc::clone(finder))),
+    )));
+    rig
+}
+
+#[test]
+fn a_camera_found_later_is_listed_and_the_last_list_stands_when_the_backend_cannot_answer() {
+    let finder = Arc::new(ScriptedFinder::default());
+    let rig = found_rig("finder-list", &finder);
+    // Not plugged in at start: an empty list, not an error.
+    assert!(camera_list(&rig.hardware).is_empty());
+    finder
+        .lists
+        .lock()
+        .unwrap()
+        .extend([Ok(vec![fake_camera_info()]), Err(busy())]);
+    assert_eq!(camera_list(&rig.hardware), [fake_camera_info()]);
+    // A picture is being taken: the backend refuses, the last list is kept.
+    assert_eq!(camera_list(&rig.hardware), [fake_camera_info()]);
+}
+
+#[test]
+fn an_absent_or_held_camera_fails_a_test_shot_and_a_capture_in_words_before_any_light() {
+    let finder = Arc::new(ScriptedFinder::default());
+    let rig = found_rig("finder-absent", &finder);
+    let words = AppError::new(ErrorCode::NotFound, "No camera was found. Connect it.");
+    *finder.connect_error.lock().unwrap() = Some(words.clone());
+
+    assert_eq!(rig.test(TripletChannel::Red).unwrap_err(), words);
+    rig.start().unwrap();
+    match rig.outcome() {
+        Outcome::Error(err) => assert_eq!(err, words),
+        Outcome::Done(_) => panic!("a capture without a camera must fail"),
+    }
+    assert!(rig.lit_levels().is_empty(), "no light without a camera");
+    assert_eq!(rig.frames(), 0);
+    assert!(!rig.hardware.busy().is_busy());
+
+    // Plugged in now: the same commands find it and work, with no restart.
+    *finder.connect_error.lock().unwrap() = None;
+    rig.test(TripletChannel::Red).unwrap();
+    rig.start().unwrap();
+    assert!(matches!(rig.outcome(), Outcome::Done(_)));
+    assert_eq!(rig.frames(), 1);
+    assert!(finder.connects.load(Ordering::SeqCst) >= 4);
 }

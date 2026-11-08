@@ -13,6 +13,8 @@ specta = [
     "gtp-core/specta",
     "gtp-ingest/specta",
 ]
+# The libgphoto2 camera on macOS (see gtp-capture); on other targets it changes nothing.
+tether = ["gtp-capture/tether"]
 
 [dependencies]
 gtp-capture = { version = "0.0.0", path = "../gtp-capture" }

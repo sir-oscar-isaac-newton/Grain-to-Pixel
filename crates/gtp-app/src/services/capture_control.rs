@@ -16,12 +16,12 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::Duration;
 
 use gtp_capture::{
-    CameraInfo, CameraSource, CaptureSequence, CapturedFile, LightGuard, LightInfo, LightSource,
-    LightStatus, Pause, PortInfo, ThreadPause, CAPTURE_TIMEOUT,
+    CameraFinder, CameraInfo, CameraSource, CaptureSequence, CapturedFile, LightGuard, LightInfo,
+    LightSource, LightStatus, Pause, PortInfo, ThreadPause, CAPTURE_TIMEOUT,
 };
 use gtp_core::{AppError, ErrorCode, FrameId, JobId, JobResult, RollId, TripletChannel};
 use gtp_ingest::CLIP_LEVEL;
@@ -113,9 +113,21 @@ fn busy() -> AppError {
     )
 }
 
+/// How a slot knows which camera there is.
+enum Known {
+    /// A camera that is always there (the fake one): listed as given.
+    Fixed(CameraInfo),
+    /// A camera found when it is needed (libgphoto2): the finder asks the backend, and the last
+    /// list it gave is kept for the moments the backend cannot be asked (a picture is being taken).
+    Found {
+        finder: Box<dyn CameraFinder>,
+        last: Mutex<Vec<CameraInfo>>,
+    },
+}
+
 /// A camera the app can use, and the lock that gives one job the camera at a time.
 pub struct CameraSlot {
-    info: CameraInfo,
+    known: Known,
     camera: Mutex<Box<dyn CameraSource + Send>>,
 }
 
@@ -123,14 +135,58 @@ impl CameraSlot {
     /// A slot holding `camera`, listed as `info`.
     pub fn new(info: CameraInfo, camera: Box<dyn CameraSource + Send>) -> Self {
         Self {
-            info,
+            known: Known::Fixed(info),
             camera: Mutex::new(camera),
         }
     }
 
-    /// How the camera is listed.
-    pub fn info(&self) -> &CameraInfo {
-        &self.info
+    /// A slot whose camera may be plugged in after the app started: `finder` lists it and opens it
+    /// when a capture or the list needs it.
+    pub fn with_finder(
+        camera: Box<dyn CameraSource + Send>,
+        finder: Box<dyn CameraFinder>,
+    ) -> Self {
+        Self {
+            known: Known::Found {
+                finder,
+                last: Mutex::new(Vec::new()),
+            },
+            camera: Mutex::new(camera),
+        }
+    }
+
+    /// The cameras there are now. A backend that cannot answer (a picture is being taken, or the
+    /// camera gave up) gives the last list, and the reason is logged; the capture commands report
+    /// it in words when they need the camera.
+    pub fn list(&self) -> Vec<CameraInfo> {
+        match &self.known {
+            Known::Fixed(info) => vec![info.clone()],
+            Known::Found { finder, last } => {
+                let mut last = last.lock().unwrap_or_else(PoisonError::into_inner);
+                match finder.list() {
+                    Ok(cameras) => *last = cameras,
+                    Err(err) => tracing::warn!("the camera list could not be refreshed: {err}"),
+                }
+                last.clone()
+            }
+        }
+    }
+
+    /// Makes sure the camera is found and open before a job takes it. A camera that is always
+    /// there needs nothing; otherwise the error says in words what is wrong (none plugged in,
+    /// macOS holding it, a camera that stopped answering).
+    fn connect(&self) -> Result<(), AppError> {
+        match &self.known {
+            Known::Fixed(_) => Ok(()),
+            Known::Found { finder, last } => {
+                let info = finder.connect()?;
+                let mut last = last.lock().unwrap_or_else(PoisonError::into_inner);
+                if !last.contains(&info) {
+                    *last = vec![info];
+                }
+                Ok(())
+            }
+        }
     }
 
     /// The camera for one job; never waits (the busy flag already serialises the jobs).
@@ -143,7 +199,8 @@ impl CameraSlot {
     }
 }
 
-/// The error when no camera backend exists (everything but `GTP_FAKE_HW=1`, until H-09 and H-10).
+/// The error when no camera backend exists (a build without the macOS `tether` feature, and not
+/// `GTP_FAKE_HW=1`, until the watched-folder backend of H-10).
 fn no_camera() -> AppError {
     AppError::new(
         ErrorCode::NotFound,
@@ -203,13 +260,15 @@ pub fn light_off(hardware: &Hardware) -> Result<(), AppError> {
     hardware.light.off()
 }
 
-/// `camera_list`: the cameras that can be used (none without `GTP_FAKE_HW=1`).
+/// `camera_list`: the cameras that can be used. With `GTP_FAKE_HW=1` the fake one; on macOS with
+/// the `tether` feature the cameras libgphoto2 sees now (so one plugged in after the app started
+/// shows up, and asking again also revives a camera that stopped answering); otherwise none.
 pub fn camera_list(hardware: &Hardware) -> Vec<CameraInfo> {
     hardware
         .camera
-        .iter()
-        .map(|slot| slot.info.clone())
-        .collect()
+        .as_ref()
+        .map(|slot| slot.list())
+        .unwrap_or_default()
 }
 
 impl Hardware {
@@ -298,6 +357,9 @@ pub fn start_triplet(
         // Held until the job ends, also by a panic.
         let _busy = busy;
         let sequence = CaptureSequence::new(profile);
+        // A camera plugged in after the app started is found here; an absent or held one fails
+        // the job with words, before any light is lit.
+        camera.connect()?;
         let mut cam = camera.take()?;
         let mut stepped = StepCamera {
             inner: &mut **cam,
@@ -348,6 +410,7 @@ pub fn test_shot(
     let _busy = hardware.busy().acquire()?;
     let profile = ctx.settings().capture_profile();
     let file = {
+        camera.connect()?;
         let mut cam = camera.take()?;
         shoot(&profile, channel, &hardware.light, &mut **cam, events)?
     };

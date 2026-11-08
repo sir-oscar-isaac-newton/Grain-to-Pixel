@@ -6,9 +6,9 @@ edition.workspace = true
 publish = false
 
 [features]
-# Tethered capture from a camera. Nothing is behind it yet; the macOS installer is built with it
+# Tethered capture from a camera: the libgphoto2 backend (macOS). The macOS installer is built with it
 # on and the Windows installer without (specification section 15, docs/install.md).
-tether = []
+tether = ["gtp-app/tether"]
 
 [lib]
 name = "grain_to_pixel_desktop_lib"

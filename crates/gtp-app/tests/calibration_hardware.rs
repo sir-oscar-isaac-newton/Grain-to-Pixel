@@ -13,6 +13,9 @@
 //! The camera must be switched on and free of macOS's own camera helper (log other accounts out,
 //! quit Photos and Image Capture). Nothing is saved.
 #![cfg(all(feature = "tether", target_os = "macos"))]
+// Test code (convention: tests may unwrap); clippy.toml only exempts `#[test]` functions, not the
+// helpers around them.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;

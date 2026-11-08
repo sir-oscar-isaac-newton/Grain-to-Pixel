@@ -220,7 +220,7 @@ With clear film base framed, `capture_calibrate` takes test shots, one colour at
 - [x] With the camera and the light connected and clear film base framed, run the ignored test: `cargo test -p gtp-app --features tether --test calibration_hardware -- --ignored --nocapture` (optional `GTP_SCANLIGHT_PORT`, `GTP_CALIBRATE_LEVELS=r,g,b`); it prints the levels, reached values and shots per colour and leaves the light off.
 - [x] Build with `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`.
 - [x] Frame clear film base (for example the leader) so that it fills the frame, and make sure no bare light leaks past the film's edge: it is brighter than the base and would pull the levels down.
-- [x] Press Calibrate. Record the levels, the reached values and the shots per colour: red ___ / ___ / ___, green ___ / ___ / ___, blue ___ / ___ / ___.
+- [x] Press Calibrate. Record the levels, the reached values and the shots per colour: red ___ / ___ / ___, green ___ / ___ / ___, blue ___ / ___ / ___. Recorded on the D600 with clear film base: levels red 246, green 168, blue 156, no coarse warning. On the bare light (no film) at the same shutter speed: red 151 (0.919, 3 shots), green 29 (0.915, 3 shots), blue 2 (0.886, 1 shot, coarse).
 - [x] Take a test shot per colour at the result: the histogram peak sits just below the right edge and the clipped share is about 0.
 - [x] Try a too-long exposure (a slow shutter speed): the calibration says a colour is clipped even at level 1 and that the exposure is too long.
 - [x] Try a too-short exposure (a fast shutter speed): the calibration says a colour is too dark even at level 255 and that the exposure is too short.

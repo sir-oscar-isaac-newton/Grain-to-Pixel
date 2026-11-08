@@ -237,3 +237,14 @@ With clear film base framed, `capture_calibrate` takes test shots, one colour at
 - `gphoto2 --capture-image-and-download` straight after live view gave a normal NEF (24.6 MB), so leaving live view before a capture works.
 
 Conclusion: live view over USB is usable for framing and rough focus on the D600; the rest of H-14 goes ahead. Fine focus needs a zoomed view, which is not part of H-14. Windows does not get live view in H-14 (it waits for R-04).
+
+**Hardware checklist for H-14** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
+
+- [ ] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
+- [ ] With the light on through the app's own controls, Start live view shows the film and the picture keeps updating.
+- [ ] The frame rate the view shows is about 30 frames per second.
+- [ ] Stop leaves live view (the camera's own screen is back to normal and the camera answers the settings again).
+- [ ] A test shot straight after live view works, and so does a capture (a whole triplet) straight after live view.
+- [ ] Leaving the capture view stops live view.
+- [ ] Live view is refused or stopped while a capture runs, and a capture started while live view is on works without stopping it by hand.
+- [ ] The Scanlight is not lit by live view itself: with the light off, starting live view leaves it off.

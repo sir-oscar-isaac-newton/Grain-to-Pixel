@@ -559,13 +559,27 @@ describe('CaptureSection', () => {
       await ready();
       const iso = await screen.findByRole('combobox', { name: 'ISO' });
       expect(iso).toHaveValue('100');
-      expect(select('Shutter speed')).toHaveValue('1/100');
+      expect(select('Shutter speed')).toHaveValue('0.0100s');
       expect(select('Aperture')).toHaveValue('8');
       const options = (el: HTMLElement) =>
         Array.from(el.querySelectorAll('option')).map((o) => o.textContent);
       expect(options(iso)).toEqual(['100', '200', '400', '800']);
       expect(options(select('Aperture'))).toEqual(['5.6', '8', '11']);
       expect(ipc.cameraSettingsGet).toHaveBeenCalled();
+    });
+
+    it('shows shutter speeds as fractions and sends the raw choice of the camera', async () => {
+      const { user } = await ready();
+      const shutter = await screen.findByRole('combobox', { name: 'Shutter speed' });
+      expect(Array.from(shutter.querySelectorAll('option')).map((o) => o.textContent)).toEqual([
+        '1/250 s',
+        '1/100 s',
+        '1/60 s',
+        '1/50 s',
+      ]);
+      expect(screen.getByRole('option', { name: '1/50 s' })).toHaveValue('0.0200s');
+      await user.selectOptions(shutter, '0.0200s');
+      expect(ipc.cameraSettingsSet).toHaveBeenCalledWith('shutter_speed', '0.0200s');
     });
 
     it('sets a change on the camera and shows what the camera answers', async () => {
@@ -583,11 +597,11 @@ describe('CaptureSection', () => {
       ipc.cameraSettingsSet.mockImplementationOnce(async () => {
         const settings = state.cameraSettings.map((s) => ({ ...s }));
         const shutter = settings.find((s) => s.kind === 'shutter_speed');
-        if (shutter) shutter.value = '1/250';
+        if (shutter) shutter.value = '0.0040s';
         return settings;
       });
       await user.selectOptions(select('Aperture'), '11');
-      await waitFor(() => expect(select('Shutter speed')).toHaveValue('1/250'));
+      await waitFor(() => expect(select('Shutter speed')).toHaveValue('0.0040s'));
     });
 
     it('says the aperture is set on the lens when the camera has none to set', async () => {
@@ -612,7 +626,7 @@ describe('CaptureSection', () => {
       await ready();
       await screen.findByRole('combobox', { name: 'ISO' });
       expect(select('Shutter speed')).toBeDisabled();
-      expect(select('Shutter speed')).toHaveValue('1/100');
+      expect(select('Shutter speed')).toHaveValue('0.0100s');
       expect(select('ISO')).toBeEnabled();
     });
 

@@ -109,6 +109,18 @@ export const commands = {
 	lightOff: () => typedError<null, AppError_Serialize>(__TAURI_INVOKE("light_off")),
 	/**  The cameras that can be used (none until a camera backend exists, except with `GTP_FAKE_HW=1`). */
 	cameraList: () => typedError<CameraInfo[], AppError_Serialize>(__TAURI_INVOKE("camera_list")),
+	/**
+	 *  The camera's ISO, shutter speed and aperture with the choices it allows. A setting the camera
+	 *  lacks comes back absent (no value, no choices, not writable). Refused while a capture or a
+	 *  test shot runs.
+	 */
+	cameraSettingsGet: () => typedError<CameraSetting_Serialize[], AppError_Serialize>(__TAURI_INVOKE("camera_settings_get")),
+	/**
+	 *  Sets one camera setting to one of its choices and returns the settings as the camera has them
+	 *  afterwards. Refused while a capture or a test shot runs, and for a value the camera does not
+	 *  offer or a setting it does not let change now.
+	 */
+	cameraSettingsSet: (kind: CameraSettingKind, value: string) => typedError<CameraSetting_Serialize[], AppError_Serialize>(__TAURI_INVOKE("camera_settings_set", { kind, value })),
 	/**  The capture profile (levels, settle time, temperature limits, camera backend). */
 	captureProfileGet: () => typedError<CaptureProfile_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_profile_get")),
 	/**
@@ -312,6 +324,56 @@ export type CameraInfo = {
 	id: string,
 	/**  The name to show. */
 	name: string,
+};
+
+/**  A setting as the camera has it now. */
+export type CameraSetting = CameraSetting_Serialize | CameraSetting_Deserialize;
+
+/**  One of the settings the capture view shows. */
+export type CameraSettingKind = 
+/**  The sensor sensitivity. */
+"iso" | 
+/**  The exposure time. */
+"shutter_speed" | 
+/**  The lens aperture (f-number). */
+"aperture";
+
+/**  A setting as the camera has it now. */
+export type CameraSetting_Deserialize = {
+	/**  Which setting this is. */
+	kind: CameraSettingKind,
+	/**
+	 *  The current value as the camera words it (`"100"`, `"1/100"`, `"8"`); `None` when the
+	 *  camera has no such setting.
+	 */
+	value?: string | null,
+	/**  The values the camera allows now, in its order. Empty when the setting is absent. */
+	choices: string[],
+	/**
+	 *  False when the camera has no such setting or does not let it be changed now (the shutter
+	 *  speed and aperture only change in M mode, and a lens without electronic contacts has no
+	 *  aperture to set).
+	 */
+	writable: boolean,
+};
+
+/**  A setting as the camera has it now. */
+export type CameraSetting_Serialize = {
+	/**  Which setting this is. */
+	kind: CameraSettingKind,
+	/**
+	 *  The current value as the camera words it (`"100"`, `"1/100"`, `"8"`); `None` when the
+	 *  camera has no such setting.
+	 */
+	value: string | null,
+	/**  The values the camera allows now, in its order. Empty when the setting is absent. */
+	choices: string[],
+	/**
+	 *  False when the camera has no such setting or does not let it be changed now (the shutter
+	 *  speed and aperture only change in M mode, and a lens without electronic contacts has no
+	 *  aperture to set).
+	 */
+	writable: boolean,
 };
 
 /**  The levels a roll captures with, and what they were saved with. */

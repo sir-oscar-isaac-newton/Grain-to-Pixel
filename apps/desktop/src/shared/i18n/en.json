@@ -775,7 +775,7 @@
         },
         "result_one": "{{channel}} {{level}}: {{reached}} of full scale in {{count}} shot",
         "result_other": "{{channel}} {{level}}: {{reached}} of full scale in {{count}} shots",
-        "coarse": "{{channel}} ended at level {{level}}, where one step is a big change. A shorter shutter speed lets the light run at a higher level."
+        "coarse": "{{channel}} ended at level {{level}}, where one step is a big change, so it can't be set finely. This is normal when one colour of the light is much stronger than the others."
       },
       "next": {
         "label": "Next frame (Space)",

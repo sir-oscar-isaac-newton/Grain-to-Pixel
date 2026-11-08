@@ -240,12 +240,12 @@ Conclusion: live view over USB is usable for framing and rough focus on the D600
 
 **Hardware checklist for H-14** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
 
-- [ ] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
-- [ ] With the light on through the app's own controls, Start live view shows the film and the picture keeps updating.
-- [ ] The frame rate the view shows is about 30 frames per second.
-- [ ] Stop leaves live view (the camera's own screen is back to normal and the camera answers the settings again).
-- [ ] A test shot straight after live view works, and so does a capture (a whole triplet) straight after live view.
-- [ ] Leaving the capture view stops live view.
-- [ ] Live view is refused or stopped while a capture runs, and a capture started while live view is on works without stopping it by hand.
-- [ ] Choose each light colour in the Live view panel: the film shows in that colour, framing and focusing work (green is usually sharpest), Off turns the light off, and starting a test shot turns it off first.
-- [ ] The Scanlight is not lit by live view itself: with the light off, starting live view leaves it off.
+- [x] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
+- [x] With the light on through the app's own controls, Start live view shows the film and the picture keeps updating.
+- [x] The frame rate the view shows is about 30 frames per second.
+- [x] Stop leaves live view (the camera's own screen is back to normal and the camera answers the settings again).
+- [x] A test shot straight after live view works, and so does a capture (a whole triplet) straight after live view.
+- [x] Leaving the capture view stops live view.
+- [x] Live view is refused or stopped while a capture runs, and a capture started while live view is on works without stopping it by hand.
+- [x] Choose each light colour in the Live view panel: the film shows in that colour, framing and focusing work (green is usually sharpest), Off turns the light off, and starting a test shot turns it off first.
+- [x] The Scanlight is not lit by live view itself: with the light off, starting live view leaves it off.

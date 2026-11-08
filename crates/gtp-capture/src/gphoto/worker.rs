@@ -17,6 +17,7 @@ use std::time::Duration;
 use gtp_core::{AppError, ErrorCode};
 
 use crate::camera::{CameraFinder, CameraInfo, CameraSource, CapturedFile};
+use crate::preview::CameraPreview;
 use crate::settings::{
     check_change, clean_value, CameraSetting, CameraSettingKind, CameraSettings,
 };
@@ -41,6 +42,12 @@ pub trait Session {
     /// Writes one setting. The worker has already checked that `value` is one of the choices of a
     /// writable setting and reads the settings again afterwards.
     fn set_setting(&mut self, kind: CameraSettingKind, value: &str) -> Result<(), SessionError>;
+    /// Reads one live-view frame as JPEG, putting the camera in live view if it needs that.
+    /// Called with the camera open.
+    fn preview_frame(&mut self) -> Result<Vec<u8>, SessionError>;
+    /// Leaves live view (a camera that has no live-view switch is left as it is). The worker calls
+    /// it only after a frame was read, before a capture and on a stop.
+    fn leave_live_view(&mut self) -> Result<(), SessionError>;
     /// Lets go of the camera (after a lost link, or when the worker ends).
     fn close(&mut self);
 }
@@ -126,6 +133,8 @@ pub struct Timeouts {
     pub list: Duration,
     /// Reading or changing the exposure settings.
     pub settings: Duration,
+    /// Reading one live-view frame, or leaving live view.
+    pub preview: Duration,
 }
 
 impl Default for Timeouts {
@@ -134,6 +143,7 @@ impl Default for Timeouts {
             open: Duration::from_secs(20),
             list: Duration::from_secs(10),
             settings: Duration::from_secs(10),
+            preview: Duration::from_secs(5),
         }
     }
 }
@@ -167,6 +177,8 @@ enum Request {
     Capture(Reply<CapturedFile>),
     Settings(Reply<Vec<CameraSetting>>),
     SetSetting(CameraSettingKind, String, Reply<Vec<CameraSetting>>),
+    Preview(Reply<Vec<u8>>),
+    PreviewStop(Reply<()>),
 }
 
 /// What the camera object and its worker both see; one per worker thread.
@@ -291,6 +303,18 @@ impl Hub {
         )
     }
 
+    /// One live-view frame. Refused while a picture is being taken.
+    fn preview_frame(&self) -> Result<Vec<u8>, AppError> {
+        self.refuse_while_busy()?;
+        self.ask(Request::Preview, self.timeouts.preview)
+    }
+
+    /// Leaves live view (nothing happens when the camera is not in it).
+    fn preview_stop(&self) -> Result<(), AppError> {
+        self.refuse_while_busy()?;
+        self.ask(Request::PreviewStop, self.timeouts.preview)
+    }
+
     /// Drops the current worker (it ends when its call returns, if it is stuck in one) and starts
     /// a new one. A new worker's first call still waits behind a call libgphoto2 never returned
     /// from, since the binding runs every call on one thread; it then times out and the app needs
@@ -334,6 +358,9 @@ type SessionSlot = Result<Box<dyn Session>, SessionError>;
 fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
     let mut session: SessionSlot = factory();
     let mut opened: Option<CameraInfo> = None;
+    // True from the first live-view frame until live view is left; the camera may be in live view
+    // while it is set.
+    let mut live_view = false;
     while let Ok(request) = incoming.recv() {
         if state.unusable() {
             // Abandoned while it was stuck: whatever it was asked since is moot.
@@ -346,16 +373,53 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
                 deliver(&reply, result);
             }
             Request::Capture(reply) => {
-                let result = ensure_open(&mut session, &mut opened, state)
-                    .and_then(|_| with(&mut session, |s| s.capture()));
-                drop_if_lost(&result, &mut session, &mut opened, state);
+                let result = ensure_open(&mut session, &mut opened, state).and_then(|_| {
+                    if live_view {
+                        // A capture straight after live view needs it left first. If leaving
+                        // fails the capture is still tried: its own error says what is wrong.
+                        if let Err(err) = with(&mut session, |s| s.leave_live_view()) {
+                            tracing::warn!("could not leave live view before a capture: {err:?}");
+                        }
+                        live_view = false;
+                    }
+                    with(&mut session, |s| s.capture())
+                });
+                if drop_if_lost(&result, &mut session, &mut opened, state) {
+                    live_view = false;
+                }
                 state.in_flight.fetch_sub(1, Ordering::SeqCst);
                 deliver(&reply, result);
             }
             Request::Settings(reply) => {
                 let result = ensure_open(&mut session, &mut opened, state)
                     .and_then(|_| with(&mut session, |s| s.settings()));
-                drop_if_lost(&result, &mut session, &mut opened, state);
+                let _ = drop_if_lost(&result, &mut session, &mut opened, state);
+                deliver(&reply, result);
+            }
+            Request::Preview(reply) => {
+                let result = ensure_open(&mut session, &mut opened, state).and_then(|_| {
+                    live_view = true;
+                    with(&mut session, |s| s.preview_frame())
+                });
+                if drop_if_lost(&result, &mut session, &mut opened, state) {
+                    live_view = false;
+                }
+                deliver(&reply, result);
+            }
+            Request::PreviewStop(reply) => {
+                let result = if live_view {
+                    let left = ensure_open(&mut session, &mut opened, state)
+                        .and_then(|_| with(&mut session, |s| s.leave_live_view()));
+                    if left.is_ok() {
+                        live_view = false;
+                    }
+                    left
+                } else {
+                    Ok(())
+                };
+                if drop_if_lost(&result, &mut session, &mut opened, state) {
+                    live_view = false;
+                }
                 deliver(&reply, result);
             }
             Request::SetSetting(kind, value, reply) => {
@@ -365,7 +429,7 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
                         s.settings()
                     })
                 });
-                drop_if_lost(&result, &mut session, &mut opened, state);
+                let _ = drop_if_lost(&result, &mut session, &mut opened, state);
                 deliver(&reply, result);
             }
         }
@@ -373,13 +437,14 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
     close(&mut session);
 }
 
-/// After a failure that says the link is gone, closes the session so the next request opens it again.
+/// After a failure that says the link is gone, closes the session so the next request opens it
+/// again; returns whether it did (a new session is not in live view).
 fn drop_if_lost<T>(
     result: &Result<T, SessionError>,
     session: &mut SessionSlot,
     opened: &mut Option<CameraInfo>,
     state: &LinkState,
-) {
+) -> bool {
     if let Err(err) = result {
         if matches!(
             err.effective_kind(),
@@ -388,8 +453,10 @@ fn drop_if_lost<T>(
             close(session);
             *opened = None;
             state.connected.store(false, Ordering::SeqCst);
+            return true;
         }
     }
+    false
 }
 
 fn close(session: &mut SessionSlot) {
@@ -574,5 +641,15 @@ impl CameraSettings for GphotoFinder {
         value: &str,
     ) -> Result<Vec<CameraSetting>, AppError> {
         self.hub.set_setting(kind, value)
+    }
+}
+
+impl CameraPreview for GphotoFinder {
+    fn preview_frame(&self) -> Result<Vec<u8>, AppError> {
+        self.hub.preview_frame()
+    }
+
+    fn preview_stop(&self) -> Result<(), AppError> {
+        self.hub.preview_stop()
     }
 }

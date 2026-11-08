@@ -14,8 +14,9 @@ use std::path::Path;
 // `gtp-capture` (the shell depends on `gtp-app` only).
 use gtp_capture::{CameraInfo, CaptureProfile, CapturedFile, FakeCamera};
 pub use gtp_capture::{FakeLight, FakeLightHandle, LightInfo, LightSource, LightStatus};
-use gtp_core::{AppError, ErrorCode};
-use gtp_io::{Cfa, Limits, RawDecoder, RawLinear};
+use gtp_core::recipe::OutputSpace;
+use gtp_core::{AppError, ErrorCode, ImageF32};
+use gtp_io::{encode_jpeg_bytes, Cfa, Limits, RawDecoder, RawLinear};
 
 /// Width and height of the synthetic exposures.
 const WIDTH: u32 = 192;
@@ -35,12 +36,55 @@ pub fn fake_camera_info() -> CameraInfo {
     }
 }
 
-/// A fake camera that delivers the same small picture for every shot.
+/// A fake camera that delivers the same small picture for every shot and serves live-view frames
+/// ([`fake_preview_frame`]).
 pub fn fake_camera() -> FakeCamera {
-    FakeCamera::new(Vec::new()).repeating(CapturedFile {
-        name: "FAKE_0001.NEF".to_owned(),
-        bytes: b"grain to pixel fake picture".to_vec(),
-    })
+    FakeCamera::new(Vec::new())
+        .repeating(CapturedFile {
+            name: "FAKE_0001.NEF".to_owned(),
+            bytes: b"grain to pixel fake picture".to_vec(),
+        })
+        .with_frames(fake_preview_frame)
+}
+
+/// The size of a live-view frame of the D600 (and of the fake's).
+pub const PREVIEW_WIDTH: u32 = 640;
+/// See [`PREVIEW_WIDTH`].
+pub const PREVIEW_HEIGHT: u32 = 424;
+/// How far the bar of a fake frame moves from one frame to the next, in pixels.
+const BAR_STEP_PX: usize = 16;
+const BAR_WIDTH_PX: usize = 24;
+/// The counter at the top of a frame: this many squares, one per bit of the frame number.
+const COUNTER_BITS: usize = 16;
+const COUNTER_SQUARE_PX: usize = 20;
+
+/// Frame number `n` of the fake live view, as JPEG bytes: a grey gradient with a bright bar that
+/// moves right (and wraps) by a few pixels each frame, and at the top a row of squares that show
+/// `n` in binary, so that every frame differs and the view visibly updates.
+pub fn fake_preview_frame(n: usize) -> Result<Vec<u8>, AppError> {
+    let (w, h) = (PREVIEW_WIDTH as usize, PREVIEW_HEIGHT as usize);
+    let bar_x = (n * BAR_STEP_PX) % w;
+    let mut data = Vec::with_capacity(w * h * 3);
+    for y in 0..h {
+        for x in 0..w {
+            let counter_bit = (y < COUNTER_SQUARE_PX && x < COUNTER_BITS * COUNTER_SQUARE_PX)
+                .then_some((x / COUNTER_SQUARE_PX, x % COUNTER_SQUARE_PX));
+            let value = if let Some((bit, within)) = counter_bit {
+                if within < 2 || (n >> bit) & 1 == 1 {
+                    0.9
+                } else {
+                    0.05
+                }
+            } else if (x + w - bar_x) % w < BAR_WIDTH_PX {
+                0.8
+            } else {
+                0.05 + 0.25 * (x + y) as f32 / (w + h) as f32
+            };
+            data.extend_from_slice(&[value, value, value]);
+        }
+    }
+    let image = ImageF32::new(PREVIEW_WIDTH, PREVIEW_HEIGHT, 3, data)?;
+    encode_jpeg_bytes(&image, OutputSpace::Srgb, 80)
 }
 
 /// Reads the staged pictures of the fake camera: the channel comes from the first letter of the
@@ -205,6 +249,24 @@ mod tests {
         }
         light.set_levels([255, 0, 0]).unwrap();
         assert!(peak("r-FAKE_0001.NEF", 0) <= 1.0, "clipped at white");
+    }
+
+    #[test]
+    fn the_fake_live_view_frames_are_640_by_424_jpegs_that_differ_from_frame_to_frame() {
+        let frames: Vec<Vec<u8>> = (0..4).map(|n| fake_preview_frame(n).unwrap()).collect();
+        for frame in &frames {
+            assert_eq!(frame[..2], [0xFF, 0xD8]);
+            assert_eq!(frame[frame.len() - 2..], [0xFF, 0xD9]);
+            let mut decoder = jpeg_decoder::Decoder::new(frame.as_slice());
+            let pixels = decoder.decode().unwrap();
+            let info = decoder.info().unwrap();
+            assert_eq!((info.width, info.height), (640, 424));
+            assert_eq!(pixels.len(), 640 * 424 * 3);
+        }
+        for pair in frames.windows(2) {
+            assert_ne!(pair[0], pair[1]);
+        }
+        assert_ne!(frames[0], fake_preview_frame(40).unwrap(), "the bar wraps");
     }
 
     #[test]

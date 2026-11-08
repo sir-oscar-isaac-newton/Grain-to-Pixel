@@ -22,9 +22,9 @@ use std::time::Duration;
 use gtp_capture::calibration::{calibrate, percentile, PERCENTILE};
 use gtp_capture::settings::clean_value;
 use gtp_capture::{
-    CameraFinder, CameraInfo, CameraSetting, CameraSettingKind, CameraSettings, CameraSource,
-    CaptureProfile, CaptureSequence, CapturedFile, ChannelMeter, LightGuard, LightInfo,
-    LightSource, LightStatus, Pause, PortInfo, Region, ThreadPause, CAPTURE_TIMEOUT,
+    CameraFinder, CameraInfo, CameraPreview, CameraSetting, CameraSettingKind, CameraSettings,
+    CameraSource, CaptureProfile, CaptureSequence, CapturedFile, ChannelMeter, LightGuard,
+    LightInfo, LightSource, LightStatus, Pause, PortInfo, Region, ThreadPause, CAPTURE_TIMEOUT,
 };
 use gtp_core::ImageF32;
 use gtp_core::{
@@ -142,6 +142,8 @@ pub struct CameraSlot {
     known: Known,
     /// Reads and changes the exposure settings; `None` for a camera that has no such access.
     settings: Option<Box<dyn CameraSettings>>,
+    /// Reads live-view frames; `None` for a camera that has no live view.
+    preview: Option<Box<dyn CameraPreview>>,
     camera: Mutex<Box<dyn CameraSource + Send>>,
 }
 
@@ -151,6 +153,7 @@ impl CameraSlot {
         Self {
             known: Known::Fixed(info),
             settings: None,
+            preview: None,
             camera: Mutex::new(camera),
         }
     }
@@ -167,6 +170,7 @@ impl CameraSlot {
                 last: Mutex::new(Vec::new()),
             },
             settings: None,
+            preview: None,
             camera: Mutex::new(camera),
         }
     }
@@ -176,6 +180,22 @@ impl CameraSlot {
     pub fn with_settings(mut self, settings: Box<dyn CameraSettings>) -> Self {
         self.settings = Some(settings);
         self
+    }
+
+    /// This slot with access to the camera's live view.
+    #[must_use]
+    pub fn with_preview(mut self, preview: Box<dyn CameraPreview>) -> Self {
+        self.preview = Some(preview);
+        self
+    }
+
+    fn preview_access(&self) -> Result<&dyn CameraPreview, AppError> {
+        self.preview.as_deref().ok_or_else(|| {
+            AppError::new(
+                ErrorCode::NotFound,
+                "This camera's live view is not available from the app.",
+            )
+        })
     }
 
     fn settings_access(&self) -> Result<&dyn CameraSettings, AppError> {
@@ -256,6 +276,33 @@ pub fn camera_set_setting(
     let _busy = hardware.busy().acquire()?;
     camera.connect()?;
     access.set_setting(kind, &value)
+}
+
+/// `camera_preview_frame`: one live-view frame of the camera as JPEG bytes; the first one puts the
+/// camera in live view. The light is never touched: the view shows what the controls have lit.
+/// Refused while a capture, a test shot or a calibration runs. It only looks at the busy flag and
+/// does not take it, so a frame never makes a light command or a capture start fail with "in
+/// progress" (the view asks about 30 times a second); a capture that starts between two frames
+/// leaves live view itself, and a frame asked for during it is refused by the camera backend.
+pub fn camera_preview_frame(hardware: &Hardware) -> Result<Vec<u8>, AppError> {
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    let access = camera.preview_access()?;
+    if hardware.busy().is_busy() {
+        return Err(busy());
+    }
+    access.preview_frame()
+}
+
+/// `camera_preview_stop`: leaves live view. Does nothing when the camera is not in live view, and
+/// succeeds without doing anything while a capture, a test shot or a calibration runs: those leave
+/// live view themselves before they take a picture, so there is nothing left to stop.
+pub fn camera_preview_stop(hardware: &Hardware) -> Result<(), AppError> {
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    let access = camera.preview_access()?;
+    if hardware.busy().is_busy() {
+        return Ok(());
+    }
+    access.preview_stop()
 }
 
 /// The error when no camera backend exists (a build without the macOS `tether` feature, and not

@@ -70,9 +70,10 @@ impl Hardware {
             light: SharedLight::new(Box::new(fake_light), fake_ports),
             camera: Some(Arc::new({
                 let camera = fake_camera();
-                let settings = camera.handle();
+                let handle = camera.handle();
                 CameraSlot::new(fake_camera_info(), Box::new(camera))
-                    .with_settings(Box::new(settings))
+                    .with_settings(Box::new(handle.clone()))
+                    .with_preview(Box::new(handle))
             })),
             decoder: Arc::new(decoder),
             busy: BusyFlag::default(),
@@ -117,8 +118,11 @@ fn real_camera() -> Option<Arc<CameraSlot>> {
         Ok(camera) => {
             let finder = Box::new(camera.finder());
             let settings = Box::new(camera.finder());
+            let preview = Box::new(camera.finder());
             Some(Arc::new(
-                CameraSlot::with_finder(Box::new(camera), finder).with_settings(settings),
+                CameraSlot::with_finder(Box::new(camera), finder)
+                    .with_settings(settings)
+                    .with_preview(preview),
             ))
         }
         Err(err) => {

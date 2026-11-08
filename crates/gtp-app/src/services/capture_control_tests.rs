@@ -1279,3 +1279,86 @@ fn a_calibration_without_a_camera_backend_says_so() {
         None,
     ));
 }
+
+// --- the camera's live view (H-14) ------------------------------------------------------------
+
+/// A rig whose camera slot gives access to the live view of a fake camera, and that camera's handle.
+fn preview_rig(label: &str) -> (Rig, FakeCameraHandle) {
+    let mut rig = Rig::new(label);
+    let camera = fake_camera().linked_to(rig.light.clone());
+    let handle = camera.handle();
+    rig.hardware.camera = Some(Arc::new(
+        CameraSlot::new(fake_camera_info(), Box::new(camera))
+            .with_preview(Box::new(handle.clone())),
+    ));
+    (rig, handle)
+}
+
+/// Only where there is no backend (see the settings test above).
+#[cfg(not(all(target_os = "macos", feature = "tether")))]
+#[test]
+fn without_a_camera_backend_the_preview_commands_say_so() {
+    let real = Hardware::from_vars(None, None);
+    assert_no_camera(camera_preview_frame(&real));
+    assert_no_camera(camera_preview_stop(&real));
+}
+
+#[test]
+fn a_camera_without_live_view_says_so() {
+    let rig = Rig::new("preview-none");
+    let err = camera_preview_frame(&rig.hardware).unwrap_err();
+    assert!(err.message.contains("live view"), "{err}");
+    assert!(camera_preview_stop(&rig.hardware).is_err());
+}
+
+#[test]
+fn frames_come_from_the_camera_stop_leaves_live_view_and_the_light_is_never_touched() {
+    let (rig, handle) = preview_rig("preview-frames");
+    let first = camera_preview_frame(&rig.hardware).unwrap();
+    let second = camera_preview_frame(&rig.hardware).unwrap();
+    assert_ne!(first, second);
+    assert!(handle.in_live_view());
+    camera_preview_stop(&rig.hardware).unwrap();
+    assert!(!handle.in_live_view());
+    assert_eq!(handle.preview_frames(), 2);
+    assert!(rig.light.commands().is_empty(), "the preview never lights");
+    assert!(
+        !rig.hardware.busy().is_busy(),
+        "a frame does not hold the flag"
+    );
+}
+
+#[test]
+fn a_frame_is_refused_while_a_capture_runs_and_a_stop_then_does_nothing() {
+    let (rig, handle) = preview_rig("preview-busy");
+    camera_preview_frame(&rig.hardware).unwrap();
+    let _held = rig.hardware.busy().acquire().unwrap();
+    assert_busy(camera_preview_frame(&rig.hardware));
+    camera_preview_stop(&rig.hardware).unwrap();
+    assert_eq!(
+        handle.preview_stops(),
+        0,
+        "the capture leaves live view itself"
+    );
+    assert_eq!(handle.preview_frames(), 1);
+}
+
+#[test]
+fn preview_errors_come_through_in_words_and_free_the_flag() {
+    let (rig, handle) = preview_rig("preview-fail");
+    let words = AppError::new(ErrorCode::Io, "The camera is busy. Wait a moment.");
+    handle.fail_preview_with(Some(words.clone()));
+    assert_eq!(camera_preview_frame(&rig.hardware).unwrap_err(), words);
+    assert_eq!(camera_preview_stop(&rig.hardware).unwrap_err(), words);
+    assert!(!rig.hardware.busy().is_busy());
+}
+
+#[test]
+fn the_fake_hardware_serves_jpeg_frames_that_change() {
+    let hardware = Hardware::from_vars(Some("1"), None);
+    let first = camera_preview_frame(&hardware).unwrap();
+    let second = camera_preview_frame(&hardware).unwrap();
+    assert_eq!(first[..2], [0xFF, 0xD8]);
+    assert_ne!(first, second);
+    camera_preview_stop(&hardware).unwrap();
+}

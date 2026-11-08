@@ -13,6 +13,7 @@ pub mod camera;
 pub mod fakes;
 pub mod gphoto;
 pub mod light;
+pub mod preview;
 pub mod profile;
 pub mod scanlight;
 pub mod sequence;
@@ -25,6 +26,7 @@ pub use fakes::{
 };
 pub use gphoto::{configure_library_paths, GphotoCamera, GphotoFinder};
 pub use light::{LightInfo, LightSource, LightStatus, PortInfo};
+pub use preview::CameraPreview;
 pub use profile::{
     CameraBackend, CaptureProfile, CaptureProfilePatch, MAX_SETTLE_MS, VBUS_WARN_MV,
 };

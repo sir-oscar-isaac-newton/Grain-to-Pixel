@@ -2026,3 +2026,26 @@ ROUTES: capture_calibrate(RollId, region) -> JobId; capture_levels_get(); captur
 MIGRATIONS: the next free number: levels per film stock, and the levels used on a captured frame.
 TESTS: on fakes: convergence, the fixed shot limit, the three failure messages, resolution order, nothing saved without confirmation; an ignored test for real hardware.
 NOTES: Levels only avoid clipping and use the sensor's range; this is not colour calibration, film-base normalization still handles the colour. A per-roll override can come later if stocks vary between rolls. GitHub issue: #225.
+## H-16
+title: Camera exposure settings in the capture view (macOS)
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: H-09, U-10
+needs: hw, mac
+adr: no
+spec: specification section 6.1 and 7
+desc: The capture view shows and changes the camera's ISO, shutter speed and aperture through libgphoto2, so all three exposures of a frame share the same settings while the camera's own controls are locked by tethering. The app does not remember the settings; it shows and changes what is on the camera now.
+ac:
+- ISO, shutter speed and aperture are read from the camera and shown with the choices it allows
+- Changing one in the capture view sets it on the camera, and is refused while a capture runs
+- With a lens without electronic contacts the aperture shows "set on the lens"
+- The three exposures of a frame captured after a change carry the new settings in their EXIF (human verifies on the D600)
+- Unit, command and component tests; axe clean
+tech:
+FILES: crates/gtp-capture (GphotoCamera reads and sets ISO, shutter speed and aperture through libgphoto2's camera configuration, Nikon widget names iso, shutterspeed and f-number, with the choices the camera allows, on the worker thread that owns the camera; the fake camera gains the same settings), apps/desktop/src-tauri commands, apps/desktop/src/features/import/capture (three selects in the status area, disabled during a capture; a lens without electronic contacts reports no aperture and the select shows "set on the lens").
+ROUTES: camera_settings_get (current value and allowed choices of each setting); camera_settings_set (change one setting); both refused while a capture runs.
+MIGRATIONS: none.
+TESTS: worker and fake camera tests, command tests, component tests with mocked ipc, axe.
+NOTES: Out of scope: remembering settings in the capture profile, live view, autofocus, other camera settings. The real run on the D600 is the human's; prepare exact steps and a checklist and never tick them.

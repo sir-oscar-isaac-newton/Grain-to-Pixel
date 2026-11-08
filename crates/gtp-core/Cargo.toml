@@ -15,7 +15,7 @@ testing = []
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 specta = { version = "=2.0.0-rc.26", optional = true, features = ["derive"] }
-ulid = "1"
+ulid = "3"
 
 [dev-dependencies]
 gtp-core = { path = ".", version = "0.0.0", features = ["testing"] }

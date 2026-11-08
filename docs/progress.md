@@ -659,9 +659,9 @@
       "number": 10,
       "title": "Spike - libgphoto2 and D600 on macOS",
       "branch": "feat/issue-10-spike-libgphoto2",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 211,
+      "commit": "18a23e8"
     },
     {
       "id": "R-06",
@@ -713,9 +713,9 @@
       "number": 58,
       "title": "GphotoCamera backend (macOS)",
       "branch": "feat/issue-58-gphoto-camera",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 231,
+      "commit": "c8f97f6"
     }
   ]
 }

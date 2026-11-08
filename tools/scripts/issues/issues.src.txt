@@ -2018,7 +2018,7 @@ ac:
 - Saved levels remember the shutter, ISO and aperture of the test shot they were saved after, and the app warns when a capture's differ
 - ADR 0004 amendment 5 is corrected to say its levels were measured with no film in the gate; the method is recorded in docs/research/scanlight-capture.md
 tech:
-FILES: crates/gtp-capture (calibration loop, against the CameraSource and LightSource traits), crates/gtp-app/src/services/capture.rs, apps/desktop/src-tauri commands, apps/desktop/src/features/import/capture.
+FILES: crates/gtp-app (settings: saved levels beside the capture profile; services/capture.rs and capture_control.rs), crates/gtp-catalog (capture_info on a frame), apps/desktop/src-tauri commands, apps/desktop/src/features/import/capture.
 ROUTES: capture_levels_get(RollId); capture_levels_save(scope, levels, exposure); capture_test and capture_triplet take the working levels.
 MIGRATIONS: the next free number: capture_info on a captured frame (levels used, their source, and the shots' shutter, ISO and aperture).
 TESTS: resolution order, stock-key matching, capture_info on a captured frame, the exposure warning, nothing saved without an explicit save, components.

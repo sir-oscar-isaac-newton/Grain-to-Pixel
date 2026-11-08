@@ -15,6 +15,7 @@ pub mod light;
 pub mod profile;
 pub mod scanlight;
 pub mod sequence;
+pub mod settings;
 
 pub use camera::{CameraFinder, CameraInfo, CameraSource, CapturedFile};
 pub use fakes::{
@@ -30,3 +31,4 @@ pub use sequence::{
     CaptureOutcome, CaptureSequence, CaptureWarning, LightGuard, Pause, ThreadPause,
     CAPTURE_TIMEOUT,
 };
+pub use settings::{CameraSetting, CameraSettingKind, CameraSettings};

@@ -2001,7 +2001,7 @@ MIGRATIONS: none.
 TESTS: the fake camera's frames, preview then capture, the view with mocked ipc, axe, and a hardware checklist for the human.
 NOTES: asked for while R-03 was run. The test to run first, from tools/spikes/gphoto-probe on the Mac with the light on (scanlight-probe hold) in another terminal: gphoto2 --capture-preview --filename preview.jpg --force-overwrite, then gphoto2 --capture-movie=10s. Live view locks the mirror up and costs a few frames a second over USB, so it is for framing and focus, not video. The capture view's test shot (D-04) stays as it is, for the histogram and clipping percentage. A zoomed live view for judging focus is not part of this. GitHub issue: #212.
 ## H-15
-title: Scanlight level calibration, global and per film stock
+title: Scanlight levels, global and per film stock
 milestone: M6
 type: feature
 size: M
@@ -2010,19 +2010,83 @@ deps: H-08, D-04, U-10, H-09
 needs: hw
 adr: yes
 spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md
-desc: The light's levels per colour must be set so a negative's film base does not clip, and they differ per film. The default levels 44, 22, 2 were measured on the bare light with no film in the gate, so they are starting values only. Add saved levels, globally and per film stock, and an automatic calibration that finds them from test shots of the film.
+desc: The light's levels per colour must be set so a negative's film base does not clip, and they differ per film. The default levels 44, 22, 2 were measured on the bare light with no film in the gate, so they are starting values only. Add saved levels, globally and per film stock, set by hand with the sliders and test shot of U-10, recorded with each captured frame. Automatic calibration is H-17.
 ac:
 - Levels resolve from the roll's film stock (the existing film_stock field), then the global default; a roll with no stock uses the global default
 - The levels used are recorded with each captured frame
-- Automatic calibration: with clear film base framed, each colour is test-shot and its level adjusted until the brightest pixels of that channel sit just below clipping, within a fixed number of shots
+- The sliders hold working levels that the test shot and Next frame use; they are saved only by an explicit save, as the global default or for the roll's film stock
+- Saved levels remember the shutter, ISO and aperture of the test shot they were saved after, and the app warns when a capture's differ
+- ADR 0004 amendment 5 is corrected to say its levels were measured with no film in the gate; the method is recorded in docs/research/scanlight-capture.md
+tech:
+FILES: crates/gtp-app (settings: saved levels beside the capture profile; services/capture.rs and capture_control.rs), crates/gtp-catalog (capture_info on a frame), apps/desktop/src-tauri commands, apps/desktop/src/features/import/capture.
+ROUTES: capture_levels_get(RollId); capture_levels_save(scope, levels, exposure); capture_test and capture_triplet take the working levels.
+MIGRATIONS: the next free number: capture_info on a captured frame (levels used, their source, and the shots' shutter, ISO and aperture).
+TESTS: resolution order, stock-key matching, capture_info on a captured frame, the exposure warning, nothing saved without an explicit save, components.
+NOTES: Levels only avoid clipping and use the sensor's range; this is not colour calibration, film-base normalization still handles the colour. GitHub issue: #225. Automatic calibration: H-17.
+## H-16
+title: Camera exposure settings in the capture view (macOS)
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: H-09, U-10
+needs: hw, mac
+adr: no
+spec: specification section 6.1 and 7
+desc: The capture view shows and changes the camera's ISO, shutter speed and aperture through libgphoto2, so all three exposures of a frame share the same settings while the camera's own controls are locked by tethering. The app does not remember the settings; it shows and changes what is on the camera now.
+ac:
+- ISO, shutter speed and aperture are read from the camera and shown with the choices it allows
+- Changing one in the capture view sets it on the camera, and is refused while a capture runs
+- With a lens without electronic contacts the aperture shows "set on the lens"
+- The three exposures of a frame captured after a change carry the new settings in their EXIF (human verifies on the D600)
+- Unit, command and component tests; axe clean
+tech:
+FILES: crates/gtp-capture (GphotoCamera reads and sets ISO, shutter speed and aperture through libgphoto2's camera configuration, Nikon widget names iso, shutterspeed and f-number, with the choices the camera allows, on the worker thread that owns the camera; the fake camera gains the same settings), apps/desktop/src-tauri commands, apps/desktop/src/features/import/capture (three selects in the status area, disabled during a capture; a lens without electronic contacts reports no aperture and the select shows "set on the lens").
+ROUTES: camera_settings_get (current value and allowed choices of each setting); camera_settings_set (change one setting); both refused while a capture runs.
+MIGRATIONS: none.
+TESTS: worker and fake camera tests, command tests, component tests with mocked ipc, axe.
+NOTES: Out of scope: remembering settings in the capture profile, live view, autofocus, other camera settings. The real run on the D600 is the human's; prepare exact steps and a checklist and never tick them.
+## H-17
+title: Automatic Scanlight level calibration
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: H-15
+needs: hw, mac
+adr: no
+spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md
+desc: With clear film base framed, each colour is test-shot and its level adjusted until the brightest pixels of that channel sit just below clipping, and the user reviews the result and saves it with H-15's save, as the global default or for the roll's film stock.
+ac:
+- Automatic calibration: with clear film base framed (an optional area, the whole frame by default), each colour is test-shot and its level adjusted until the brightest pixels of that channel sit just below clipping, within a fixed number of shots
 - The user reviews the result and saves it as the global default or for that film stock; nothing is saved without that step
 - When calibration cannot succeed it says so in words: clipped at level 1 (exposure too long), too dark at level 255 (exposure too short), and a warning below a set level where one step is too coarse
-- Saved levels remember the shutter, ISO and aperture they were made with, and the app warns when a capture's differ
-- Levels can still be set by hand with the sliders and test shot of U-10, and saved the same way
-- ADR 0004 amendment 5 is corrected to say its levels were measured with no film in the gate; the method and the numbers are recorded in docs/research/scanlight-capture.md
+- Tests on fakes: convergence, the fixed shot limit, the three failure messages, nothing saved without confirmation; an ignored test for real hardware
 tech:
-FILES: crates/gtp-capture (calibration loop, against the CameraSource and LightSource traits), crates/gtp-catalog (saved levels), crates/gtp-app/src/services/capture.rs, apps/desktop/src-tauri commands, apps/desktop/src/features/import/capture.
-ROUTES: capture_calibrate(RollId, region) -> JobId; capture_levels_get(); capture_levels_save(scope, levels).
-MIGRATIONS: the next free number: levels per film stock, and the levels used on a captured frame.
-TESTS: on fakes: convergence, the fixed shot limit, the three failure messages, resolution order, nothing saved without confirmation; an ignored test for real hardware.
-NOTES: Levels only avoid clipping and use the sensor's range; this is not colour calibration, film-base normalization still handles the colour. A per-roll override can come later if stocks vary between rolls. GitHub issue: #225.
+FILES: crates/gtp-capture (calibration loop against the CameraSource and LightSource traits), crates/gtp-app/src/services/capture_control.rs, apps/desktop/src-tauri commands, apps/desktop/src/features/import/capture.
+ROUTES: capture_calibrate(RollId, region) -> JobId
+MIGRATIONS: none
+TESTS: as in ac
+NOTES: the 99.9th percentile of the channel in the area, a proportional step (the light is linear in its level), a target of about 0.90 to 0.97 of full scale and at most 6 shots per colour; the human runs the real calibration on the Mac.
+
+## U-18
+title: Shutter speeds shown as fractions in the capture view
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: H-16
+adr: no
+spec: specification section 7
+desc: The shutter speed select of H-16 shows the camera's own text, such as 0.0200s, which is hard to read. Show each speed the way a camera does (1/50 s, 1.3 s), while the value sent to the camera stays the camera's own choice.
+ac:
+- Speeds below 0.4 s are shown as fractions snapped to the nearest standard third-stop value (0.0200s as 1/50 s, 0.0166s as 1/60 s, 0.0002s as 1/4000 s)
+- Speeds from 0.4 s up are shown in seconds without trailing zeros (0.4 s, 1 s, 1.3 s, 30 s); Bulb and anything unreadable are shown as the camera gives them
+- The value sent with camera_settings_set is unchanged: the camera's own choice
+- Unit tests over the 53 D600 choices and a component test of the select; axe clean
+tech:
+FILES: apps/desktop/src/features/import/capture (a label function next to formatExposure, used by the shutter select in CameraSettings.tsx).
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the D600 gives each speed rounded to four decimals, so 1/4000 s arrives as 0.0002s and must be snapped, not inverted. No hardware check: the choices were recorded on the D600 during H-16.

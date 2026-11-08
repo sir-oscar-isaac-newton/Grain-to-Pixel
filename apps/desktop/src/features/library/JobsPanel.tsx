@@ -125,7 +125,9 @@ export function describeJob(job: JobRow, t: TFunction, language: string): Progre
           ? t('jobs.verify')
           : job.kind === 'scan'
             ? t('jobs.scan', { roll: job.rollName })
-            : t('jobs.import', { roll: job.rollName }),
+            : job.kind === 'capture'
+              ? t('jobs.capture', { roll: job.rollName })
+              : t('jobs.import', { roll: job.rollName }),
     fraction: job.fraction,
     state: job.state,
     stateLabel: t(`jobs.${job.state}`),

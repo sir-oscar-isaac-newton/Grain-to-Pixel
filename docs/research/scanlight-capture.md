@@ -151,4 +151,62 @@ Results on the author's M1 Pro MacBook with the D600 on USB (2026-11-03 and 04);
 3. Claim error: log in a second account, open Photos there (or open Image Capture here), plug the camera in again and run the test of step 2. It must fail at the camera with the words about logging out other accounts and quitting Photos and Image Capture, not with `Could not claim the USB device`. The light must stay dark (the camera is opened before anything is lit). Record the message shown.
 4. Absent camera: unplug the camera and run step 2. It must fail with "No camera was found..." and the light stays dark. Plug it in again and run once more without restarting anything else: it works (the camera is found when needed).
 5. The bundle: `brew install libgphoto2 pkgconf`, then `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, then `bash tools/scripts/release/bundle-libgphoto2.sh verify "target/release/bundle/macos/Grain to Pixel.app"`: it ends with "carries libgphoto2 and nothing points into Homebrew" and lists seven libraries. Report its output, and whether the build itself ran the script (the "libraries in" lines, and `Contents/Frameworks/gphoto` inside the app) and signed without a complaint about the nested files. Open the app from the dmg: the log says the drivers are taken from the app bundle.
-6. The capture in the app (not before U-10): reported under U-10.
+6. The capture in the app: see "Capture view (U-10)" below.
+
+## Capture view (U-10)
+
+The Capture section of the Import view (shown while the `guided_capture` flag is on) is `apps/desktop/src/features/import/CaptureSection.tsx`. Status badges for the light and the camera, a slider per colour for the LED level (the working levels; since H-15 they are kept only by an explicit save, and they never light the light), a test shot per colour with its histogram and a warning above 0.1 % clipped, and the large Next frame button (also the Space key) that runs `capture_triplet`, shows the steps, the stored frame, the roll's frame counter and warnings (warm light, low supply, EXIF mismatch, clipping). Leaving the view calls `light_off`.
+
+**Hardware checklist for U-10 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
+
+- [ ] Open the Import view and press Connect light: the badge shows the light connected with its temperature, updating about every second.
+- [ ] The camera badge names the D600; unplug it and press Look for camera again: "No camera found"; plug it in again and it is named again.
+- [ ] A test shot for each colour shows a histogram in that colour and a clipped percentage; a test shot above 0.1 % clipped shows the warning. The light is dark afterwards.
+- [ ] The sliders change the working levels and the next test shot reflects them (saving them is H-15, below).
+- [ ] Next frame (button) stores a frame in the chosen roll: steps go through red, green and blue, the thumbnail and "Frame N on this roll" appear, and the frame opens in Develop.
+- [ ] Next frame with the Space key (focus not in a button, field or slider) does the same; Space during a capture does nothing.
+- [ ] Time from pressing Next frame to the stored frame, excluding exposure time (budget 15 s): ______ s.
+- [ ] Cancel during a capture stops it and the light is dark.
+- [ ] The light is dark after leaving the Import view (look at it) and after closing the app. Also leave the view in the middle of a capture: the capture is cancelled and the light stays dark.
+- [ ] If practical: let the light heat past the abort temperature (or cover it): the badge turns to "too hot and switched off", Next frame is off, and Reconnect light brings it back once it has cooled.
+- [ ] Warnings: with a too-bright level, the clipping warning names the colour. (An EXIF mismatch cannot be forced on the rig: the camera's controls are locked while tethered, and auto ISO gave the same ISO to all three shots. The app reads ISO, shutter time and aperture from the D600's NEFs, checked on the private samples, and the mismatch warning has a unit test.)
+
+## Saved levels (H-15)
+
+The levels 44, 22 and 2 of ADR 0004 amendment 5 were measured on the bare light with no film in the gate. Film absorbs the three colours very differently, so each stock needs levels of its own. Automatic calibration is H-17; H-15 is the manual method and where its result is kept.
+
+**Method.** Put the clear film base of the stock in the gate (an unexposed leader or the rebate). Move the sliders and take a test shot per colour until each channel's histogram has its peak just below the right edge, with less than 0.1 % clipped. Then save the levels: **Save for {stock}** when the roll has a film stock, or **Save as default**. A save is possible only after a test shot at the levels as they now stand, and keeps that shot's shutter time, ISO and aperture (from its EXIF) with the levels.
+
+**Resolution.** A roll's levels come from its film stock (the stock text of the roll, compared trimmed and without case), then the global default. A roll with no stock, or a stock with no saved levels, uses the default. The sliders start from these when a roll is chosen; changes stay working levels (the line under the sliders says "Changed, not saved") until saved. They live in `settings.json` (`capture.levels` and `saved_levels`), not in the library, so they follow the lamp and the camera.
+
+**What a capture records.** `frame.capture_info` (JSON, null for imported and scanned frames): `{ "v": 1, "levels": [r, g, b], "source": "stock" | "default" | "manual", "stock": name or null, "exposure": [red, green, blue shots, each with exposure_time, iso, f_number] }`. `source` is `stock` or `default` when the levels used equal the roll's saved levels, `manual` otherwise.
+
+**Exposure warning.** If the levels were saved with camera settings and any of the three shots differs in shutter time, ISO or aperture, the capture warns that the camera settings differ from when the levels were saved. It is not raised for manual levels or when either side lacks a setting.
+
+**Hardware checklist for H-15 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
+
+- [ ] Save as default: set the sliders, take a test shot, press Save as default; the line under the sliders reads "Default levels".
+- [ ] Save for a stock: give a roll a film stock (Library, roll editor), choose it in the Import view, change the sliders, take a test shot and press Save for {stock}; the line reads "Levels saved for {stock}".
+- [ ] Capture on a roll with that stock uses its levels, and a roll with another stock (or none) uses the default (look at the sliders after choosing each roll, and at the light colours' brightness).
+- [ ] The capture records its levels: with the library closed or from another shell, run `sqlite3 <library folder>/library.db "SELECT id, capture_info FROM frame ORDER BY created_at DESC LIMIT 3;"`; the newest frame shows the levels, `"source":"stock"` (or `"default"`) and the three exposures.
+- [ ] Change the ISO or the shutter time on the camera between saving and capturing (the controls are locked while tethered: unplug the camera, change it, plug it in again and press Look for camera again): the capture shows the warning "The camera settings differ from when these levels were saved." Put the settings back: no warning.
+- [ ] Restart the app: the saved levels (default and per stock) are the same.
+
+## Camera settings (H-16)
+
+The camera's own dials are locked while it is tethered, so the capture view reads and sets the exposure itself. Three libgphoto2 configuration keys, each read as a menu (`RadioWidget`): `iso` (ISO), `shutterspeed` (shutter speed) and `f-number` (aperture). The values are the camera's own words (`"100"`, `"1/100"`, `"8"`) and the choices are its list in its order; both are bounded (at most 200 choices, each at most 32 characters, control characters dropped) because they come from a device.
+
+**Absent and readonly.** A key the driver lacks (libgphoto2 answers "bad parameters" or "not supported") or one that is not a menu is an absent setting: no value, no choices, not writable, and not an error. The view then says "Set on the lens" for the aperture (a lens without electronic contacts has no aperture to set) and "Not available" for the others. A readonly widget (the D600 only lets shutter speed and aperture change in M mode) keeps its value and choices but is not writable: the select is greyed. A real I/O failure is an error in words, with the usual link-loss handling.
+
+**Setting.** The worker reads the settings, refuses a value that is not one of the choices of a writable setting before anything is written, then sets the menu value and writes that single widget, and answers with the settings read again (a change of one setting can alter what another allows). Reading and changing go through the worker like every other call, with a 10 s timeout that marks the camera unusable like the others, and are refused while a capture is in flight and while the app's busy flag is held (a capture or a test shot).
+
+**Saved levels.** One line under the settings says what the roll's saved levels were taken at ("Levels for {stock} were saved at 1/100 s, ISO 100, f/8"). It is not compared live with the settings; the capture's own warning (H-15) still does that.
+
+**Hardware checklist for H-16 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
+
+- [ ] Run the ignored test, `cargo test -p gtp-capture --features tether --test gphoto_settings_hardware -- --ignored --nocapture`, and record here the name, value, writable flag and choices of the three settings on the D600: ISO ___, shutter speed ___, aperture ___. With `GTP_GPHOTO_SET_ISO=<one of the ISO choices>` it sets the ISO and prints the settings again.
+- [ ] The three selects in the capture view show the D600's values and choices.
+- [ ] Change the ISO and the shutter speed from the app, take a test shot and check its exposure line, then capture a frame and check the exposures of its `capture_info` (`sqlite3 <library folder>/library.db "SELECT id, capture_info FROM frame ORDER BY created_at DESC LIMIT 1;"`): all three shots carry the new settings.
+- [ ] With the camera out of M mode, the shutter speed and aperture selects are greyed (and show their values).
+- [ ] With a manual lens (no electronic contacts), the aperture shows "Set on the lens" (only if such a lens is to hand).
+- [ ] A change attempted while a capture runs is refused: the selects are greyed during a capture, and the camera keeps its settings.

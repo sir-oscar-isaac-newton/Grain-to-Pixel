@@ -25,7 +25,7 @@ export type JobState = 'running' | 'done' | 'error' | 'cancelled';
 /** A background job started from this screen (an import, an export or a verify), as the progress list shows it. */
 export interface JobRow {
   id: string;
-  kind: 'import' | 'scan' | 'export' | 'verify';
+  kind: 'import' | 'scan' | 'capture' | 'export' | 'verify';
   /** An import or a scan: the roll the frames go into. An export: empty. */
   rollName: string;
   /** An export: how many frames were asked for, and the folder they go to. */

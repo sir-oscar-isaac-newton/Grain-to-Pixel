@@ -10,6 +10,7 @@ use gtp_core::{AppError, ErrorCode};
 
 use crate::camera::{CameraSource, CapturedFile};
 use crate::light::{LightInfo, LightSource, LightStatus};
+use crate::settings::{check_change, CameraSetting, CameraSettingKind, CameraSettings};
 
 /// A command a [`FakeLight`] received.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,6 +189,34 @@ struct CameraState {
     light: Option<FakeLightHandle>,
     waits: usize,
     on_wait: Option<WaitHook>,
+    settings: Vec<CameraSetting>,
+    fail_settings: Option<AppError>,
+    changes: Vec<(CameraSettingKind, String)>,
+}
+
+/// What a fake camera offers until a test changes it: ISO 100, 1/100 s and f/8, all writable.
+fn default_settings() -> Vec<CameraSetting> {
+    let list = |values: &[&str]| values.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
+    vec![
+        CameraSetting::from_camera(
+            CameraSettingKind::Iso,
+            "100",
+            list(&["100", "200", "400", "800"]),
+            true,
+        ),
+        CameraSetting::from_camera(
+            CameraSettingKind::ShutterSpeed,
+            "1/100",
+            list(&["1/60", "1/100", "1/125", "1/250"]),
+            true,
+        ),
+        CameraSetting::from_camera(
+            CameraSettingKind::Aperture,
+            "8",
+            list(&["5.6", "8", "11"]),
+            true,
+        ),
+    ]
 }
 
 /// A handle on a [`FakeCamera`], still usable after the camera was moved into a `Box`.
@@ -218,6 +247,62 @@ impl FakeCameraHandle {
     pub fn fail_trigger_with(&self, error: Option<AppError>) {
         self.state().fail_trigger = error;
     }
+
+    /// Makes the camera lack `kind` (a lens without electronic contacts has no aperture).
+    pub fn make_setting_absent(&self, kind: CameraSettingKind) {
+        self.replace_setting(CameraSetting::absent(kind));
+    }
+
+    /// Makes `kind` readonly (shutter speed and aperture outside M mode), keeping its choices.
+    pub fn make_setting_readonly(&self, kind: CameraSettingKind) {
+        if let Some(s) = self.state().settings.iter_mut().find(|s| s.kind == kind) {
+            s.writable = false;
+        }
+    }
+
+    /// Makes reading and changing the settings fail until cleared with `None`.
+    pub fn fail_settings_with(&self, error: Option<AppError>) {
+        self.state().fail_settings = error;
+    }
+
+    /// Every change made so far through [`CameraSettings::set_setting`], in order.
+    pub fn changes(&self) -> Vec<(CameraSettingKind, String)> {
+        self.state().changes.clone()
+    }
+
+    fn replace_setting(&self, setting: CameraSetting) {
+        if let Some(s) = self
+            .state()
+            .settings
+            .iter_mut()
+            .find(|s| s.kind == setting.kind)
+        {
+            *s = setting;
+        }
+    }
+}
+
+impl CameraSettings for FakeCameraHandle {
+    fn settings(&self) -> Result<Vec<CameraSetting>, AppError> {
+        let state = self.state();
+        state.fail_settings.clone().map_or(Ok(()), Err)?;
+        Ok(state.settings.clone())
+    }
+
+    fn set_setting(
+        &self,
+        kind: CameraSettingKind,
+        value: &str,
+    ) -> Result<Vec<CameraSetting>, AppError> {
+        let mut state = self.state();
+        state.fail_settings.clone().map_or(Ok(()), Err)?;
+        check_change(&state.settings, kind, value)?;
+        if let Some(s) = state.settings.iter_mut().find(|s| s.kind == kind) {
+            s.value = Some(value.to_owned());
+        }
+        state.changes.push((kind, value.to_owned()));
+        Ok(state.settings.clone())
+    }
 }
 
 /// A camera that delivers scripted pictures and records its calls. With no shots left it fails
@@ -234,6 +319,7 @@ impl FakeCamera {
             let mut state = handle.state();
             state.connected = true;
             state.shots = shots.into();
+            state.settings = default_settings();
         }
         Self { handle }
     }
@@ -370,6 +456,38 @@ mod tests {
         }
         let mut empty = FakeCamera::new(vec![]);
         assert_eq!(empty.wait_for_image(timeout).unwrap_err(), no_picture());
+    }
+
+    #[test]
+    fn the_fake_camera_offers_settings_and_changes_them_within_their_choices() {
+        let camera = FakeCamera::new(vec![]);
+        let handle = camera.handle();
+        let first = handle.settings().unwrap();
+        assert_eq!(first.len(), 3);
+        assert_eq!(first[0].value.as_deref(), Some("100"));
+        let after = handle.set_setting(CameraSettingKind::Iso, "400").unwrap();
+        assert_eq!(after[0].value.as_deref(), Some("400"));
+        assert_eq!(handle.settings().unwrap(), after);
+        assert!(handle.set_setting(CameraSettingKind::Iso, "401").is_err());
+        assert_eq!(
+            handle.changes(),
+            [(CameraSettingKind::Iso, "400".to_owned())]
+        );
+
+        handle.make_setting_readonly(CameraSettingKind::ShutterSpeed);
+        assert!(handle
+            .set_setting(CameraSettingKind::ShutterSpeed, "1/60")
+            .is_err());
+        handle.make_setting_absent(CameraSettingKind::Aperture);
+        assert_eq!(
+            handle.settings().unwrap()[2],
+            CameraSetting::absent(CameraSettingKind::Aperture)
+        );
+        handle.fail_settings_with(Some(unplugged()));
+        assert!(handle.settings().is_err());
+        assert!(handle.set_setting(CameraSettingKind::Iso, "200").is_err());
+        handle.fail_settings_with(None);
+        assert!(handle.settings().is_ok());
     }
 
     #[test]

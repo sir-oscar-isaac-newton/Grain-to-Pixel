@@ -731,9 +731,9 @@
       "number": 225,
       "title": "Scanlight levels, global and per film stock",
       "branch": "feat/issue-225-scanlight-levels",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 240,
+      "commit": "b26716e"
     }
   ]
 }

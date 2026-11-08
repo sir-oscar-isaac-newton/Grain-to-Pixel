@@ -151,4 +151,22 @@ Results on the author's M1 Pro MacBook with the D600 on USB (2026-11-03 and 04);
 3. Claim error: log in a second account, open Photos there (or open Image Capture here), plug the camera in again and run the test of step 2. It must fail at the camera with the words about logging out other accounts and quitting Photos and Image Capture, not with `Could not claim the USB device`. The light must stay dark (the camera is opened before anything is lit). Record the message shown.
 4. Absent camera: unplug the camera and run step 2. It must fail with "No camera was found..." and the light stays dark. Plug it in again and run once more without restarting anything else: it works (the camera is found when needed).
 5. The bundle: `brew install libgphoto2 pkgconf`, then `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, then `bash tools/scripts/release/bundle-libgphoto2.sh verify "target/release/bundle/macos/Grain to Pixel.app"`: it ends with "carries libgphoto2 and nothing points into Homebrew" and lists seven libraries. Report its output, and whether the build itself ran the script (the "libraries in" lines, and `Contents/Frameworks/gphoto` inside the app) and signed without a complaint about the nested files. Open the app from the dmg: the log says the drivers are taken from the app bundle.
-6. The capture in the app (not before U-10): reported under U-10.
+6. The capture in the app: see "Capture view (U-10)" below.
+
+## Capture view (U-10)
+
+The Capture section of the Import view (shown while the `guided_capture` flag is on) is `apps/desktop/src/features/import/CaptureSection.tsx`. Status badges for the light and the camera, a slider per colour for the LED level (saved when released, never lights the light), a test shot per colour with its histogram and a warning above 0.1 % clipped, and the large Next frame button (also the Space key) that runs `capture_triplet`, shows the steps, the stored frame, the roll's frame counter and warnings (warm light, low supply, EXIF mismatch, clipping). Leaving the view calls `light_off`.
+
+**Hardware checklist for U-10 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
+
+- [ ] Open the Import view and press Connect light: the badge shows the light connected with its temperature, updating about every second.
+- [ ] The camera badge names the D600; unplug it and press Look for camera again: "No camera found"; plug it in again and it is named again.
+- [ ] A test shot for each colour shows a histogram in that colour and a clipped percentage; a test shot above 0.1 % clipped shows the warning. The light is dark afterwards.
+- [ ] The sliders change the levels, the next test shot reflects them, and they are the same after restarting the app.
+- [ ] Next frame (button) stores a frame in the chosen roll: steps go through red, green and blue, the thumbnail and "Frame N on this roll" appear, and the frame opens in Develop.
+- [ ] Next frame with the Space key (focus not in a button, field or slider) does the same; Space during a capture does nothing.
+- [ ] Time from pressing Next frame to the stored frame, excluding exposure time (budget 15 s): ______ s.
+- [ ] Cancel during a capture stops it and the light is dark.
+- [ ] The light is dark after leaving the Import view (look at it) and after closing the app. Also leave the view in the middle of a capture: the capture is cancelled and the light stays dark.
+- [ ] If practical: let the light heat past the abort temperature (or cover it): the badge turns to "too hot and switched off", Next frame is off, and Reconnect light brings it back once it has cooled.
+- [ ] Warnings: with a too-bright level, the clipping warning names the colour. (An EXIF mismatch cannot be forced on the rig: the camera's controls are locked while tethered, and auto ISO gave the same ISO to all three shots. The app reads ISO, shutter time and aperture from the D600's NEFs, checked on the private samples, and the mismatch warning has a unit test.)

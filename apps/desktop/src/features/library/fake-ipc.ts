@@ -3,6 +3,9 @@
 import { vi } from 'vitest';
 import type {
   AppError,
+  CameraInfo,
+  CaptureProfile,
+  CaptureStep,
   Counters,
   DeviceInfo,
   FolderCheck,
@@ -10,6 +13,8 @@ import type {
   FrameSummary,
   ImportResult,
   LibraryDetails,
+  LightInfo,
+  LightStatus,
   Look,
   Preview,
   Recipe,
@@ -18,6 +23,7 @@ import type {
   ScanRequest,
   SearchQuery,
   Tag,
+  TestShot,
   TripletCandidate,
   UpdateOutcome,
   VerifyResult,
@@ -260,6 +266,28 @@ export const state = {
   /** What 	riplet_group answers. */
   triplets: [] as TripletCandidate[],
   tripletsFail: null as string | null,
+  /** What camera_list answers, or the message it fails with. */
+  cameras: [{ id: 'cam:1', name: 'Nikon D600' }] as CameraInfo[],
+  camerasFail: null as string | null,
+  /** What light_connect answers, or the message it fails with. */
+  light: { port: 'COM3', hardware_id: 2, firmware_id: 1, recognised: true } as LightInfo,
+  lightFail: null as string | null,
+  /** The capture profile, and the message a change of it is refused with. */
+  profile: {
+    levels: [44, 22, 2],
+    settle_ms: 300,
+    temp_warn_c: 45,
+    temp_abort_c: 60,
+    camera_backend: 'gphoto',
+    watch_folder: null,
+  } as CaptureProfile,
+  profileRefused: null as string | null,
+  /** What capture_test answers, or the message it fails with. */
+  testShot: { histogram: new Array(256).fill(0), clipped_pct: 0 } as TestShot,
+  testFail: null as string | null,
+  /** The id capture_triplet answers, or the message it fails with. */
+  captureJob: 'job-capture-1' as string,
+  captureFail: null as string | null,
 };
 
 export const listeners = {
@@ -275,6 +303,8 @@ export const listeners = {
     }) => void
   >,
   error: [] as Array<(e: { id: string; error: AppError }) => void>,
+  step: [] as Array<(e: CaptureStep) => void>,
+  light: [] as Array<(e: LightStatus) => void>,
 };
 
 function subscribe<T>(list: T[], cb: T) {
@@ -620,6 +650,36 @@ export const ipc = {
   }),
   scanPreviewCancel: vi.fn(async () => true),
   jobCancel: vi.fn(async () => true),
+  lightList: vi.fn(async () => []),
+  lightConnect: vi.fn(async (port: string | null): Promise<LightInfo> => {
+    void port;
+    if (state.lightFail) throw new IpcError({ code: 'Internal', message: state.lightFail });
+    return { ...state.light };
+  }),
+  lightSet: vi.fn(async () => undefined),
+  lightOff: vi.fn(async () => undefined),
+  cameraList: vi.fn(async (): Promise<CameraInfo[]> => {
+    if (state.camerasFail) throw new IpcError({ code: 'Internal', message: state.camerasFail });
+    return [...state.cameras];
+  }),
+  captureProfileGet: vi.fn(async (): Promise<CaptureProfile> => ({ ...state.profile })),
+  captureProfileSet: vi.fn(async (patch: { levels?: [number, number, number] | null }) => {
+    if (state.profileRefused) {
+      throw new IpcError({ code: 'InvalidInput', message: state.profileRefused });
+    }
+    state.profile = { ...state.profile, levels: patch.levels ?? state.profile.levels };
+    return { ...state.profile };
+  }),
+  captureTest: vi.fn(async (channel: string): Promise<TestShot> => {
+    void channel;
+    if (state.testFail) throw new IpcError({ code: 'Internal', message: state.testFail });
+    return { ...state.testShot };
+  }),
+  captureTriplet: vi.fn(async (rollId: string): Promise<string> => {
+    void rollId;
+    if (state.captureFail) throw new IpcError({ code: 'Internal', message: state.captureFail });
+    return state.captureJob;
+  }),
   onLibraryChanged: vi.fn((cb: (roll: string | null, frameIds: string[]) => void) =>
     subscribe(listeners.changed, cb),
   ),
@@ -628,6 +688,8 @@ export const ipc = {
   ),
   onJobDone: vi.fn((cb: (typeof listeners.done)[number]) => subscribe(listeners.done, cb)),
   onJobError: vi.fn((cb: (typeof listeners.error)[number]) => subscribe(listeners.error, cb)),
+  onCaptureStep: vi.fn((cb: (typeof listeners.step)[number]) => subscribe(listeners.step, cb)),
+  onLightStatus: vi.fn((cb: (typeof listeners.light)[number]) => subscribe(listeners.light, cb)),
 };
 
 /** Forgets everything and clears the call history; call before each test. */
@@ -686,6 +748,25 @@ export function resetFake() {
   state.previewFail = null;
   state.triplets = [];
   state.tripletsFail = null;
+  state.cameras = [{ id: 'cam:1', name: 'Nikon D600' }];
+  state.camerasFail = null;
+  state.light = { port: 'COM3', hardware_id: 2, firmware_id: 1, recognised: true };
+  state.lightFail = null;
+  state.profile = {
+    levels: [44, 22, 2],
+    settle_ms: 300,
+    temp_warn_c: 45,
+    temp_abort_c: 60,
+    camera_backend: 'gphoto',
+    watch_folder: null,
+  } as CaptureProfile;
+  state.profileRefused = null;
+  state.testShot = { histogram: new Array(256).fill(0), clipped_pct: 0 };
+  state.testFail = null;
+  state.captureJob = 'job-capture-1';
+  state.captureFail = null;
+  listeners.step.length = 0;
+  listeners.light.length = 0;
   listeners.changed.length = 0;
   listeners.progress.length = 0;
   listeners.done.length = 0;

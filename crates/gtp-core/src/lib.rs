@@ -15,8 +15,9 @@ pub use error::{AppError, ErrorCode};
 pub use ids::{FrameId, JobId, RollId, TagId};
 pub use image::ImageF32;
 pub use job::{
-    ExportResult, ExportedFile, FailedExport, ImportResult, ImportWarning, ImportWarningKind,
-    JobResult, SkipReason, SkippedFile, VerifyProblem, VerifyReason, VerifyResult,
+    CalibrationResult, CalibrationWarning, ExportResult, ExportedFile, FailedExport, ImportResult,
+    ImportWarning, ImportWarningKind, JobResult, SkipReason, SkippedFile, VerifyProblem,
+    VerifyReason, VerifyResult,
 };
 pub use look::Look;
 pub use model::{

@@ -1243,7 +1243,10 @@ fn a_captured_frame_keeps_how_it_was_lit_and_other_frames_have_none() {
     let captured = cat
         .insert_captured_frame(&frame(r.id, 1), &[], &recipe, info)
         .unwrap();
-    assert_eq!(cat.capture_info(captured.id).unwrap().as_deref(), Some(info));
+    assert_eq!(
+        cat.capture_info(captured.id).unwrap().as_deref(),
+        Some(info)
+    );
     let imported = cat
         .insert_imported_frame(&frame(r.id, 1), &[], &recipe)
         .unwrap();

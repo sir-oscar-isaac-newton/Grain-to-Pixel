@@ -290,6 +290,8 @@ export const state = {
   /** What camera_settings_get answers (a set changes it), and the messages the two fail with. */
   cameraSettings: defaultCameraSettings(),
   cameraSettingsFail: null as string | null,
+  /** The message camera_preview_frame fails with, or null for frames. */
+  liveViewFail: null as string | null,
   cameraSettingsSetFail: null as string | null,
   /** What light_connect answers, or the message it fails with. */
   light: { port: 'COM3', hardware_id: 2, firmware_id: 1, recognised: true } as LightInfo,
@@ -629,6 +631,13 @@ export const ipc = {
     if (state.noThumb.has(id)) throw new IpcError({ code: 'NotFound', message: 'no thumbnail' });
     return new Uint8Array([0xff, 0xd8, 1, 2, 3]).buffer;
   }),
+  cameraPreviewFrame: vi.fn(async () => {
+    if (state.liveViewFail) throw new IpcError({ code: 'Internal', message: state.liveViewFail });
+    // Yields like a real round trip, so a loop cannot starve the test.
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    return new Uint8Array([0xff, 0xd8, 4, 5, 6]).buffer;
+  }),
+  cameraPreviewStop: vi.fn(async () => undefined),
   importFiles: vi.fn(async (paths: string[], roll: string, kind: string) => {
     void [paths, roll, kind];
     return 'job-1';
@@ -854,6 +863,7 @@ export function resetFake() {
   state.camerasFail = null;
   state.cameraSettings = defaultCameraSettings();
   state.cameraSettingsFail = null;
+  state.liveViewFail = null;
   state.cameraSettingsSetFail = null;
   state.light = { port: 'COM3', hardware_id: 2, firmware_id: 1, recognised: true };
   state.lightFail = null;

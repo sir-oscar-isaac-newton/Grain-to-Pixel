@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   cameraList,
@@ -22,6 +22,7 @@ import { Calibrate } from './capture/Calibrate';
 import { CameraSettings } from './capture/CameraSettings';
 import { formatExposure } from './capture/exposure';
 import { LevelSliders } from './capture/LevelSliders';
+import { LiveView } from './capture/LiveView';
 import { NextFrameButton } from './capture/NextFrameButton';
 import { SaveLevels } from './capture/SaveLevels';
 import { StatusBar, type LightState } from './capture/StatusBar';
@@ -78,6 +79,12 @@ function Capture() {
   const [shotExposure, setShotExposure] = useState<ExposureInfo | null>(null);
   // True while a change of a camera setting is on its way to the camera.
   const [settingsChanging, setSettingsChanging] = useState(false);
+  // True while a test shot, a calibration or a capture starts or runs: they take over the camera,
+  // so live view stops and cannot start.
+  const [shotBusy, setShotBusy] = useState(false);
+  const [calibrating, setCalibrating] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const liveStop = useRef<(() => void) | null>(null);
 
   const refreshCameras = useCallback(async () => {
     try {
@@ -144,6 +151,8 @@ function Capture() {
   // otherwise it would light its next colour again after the switch-off.
   useEffect(
     () => () => {
+      // Live view first: stops its loop, then takes the camera out of live view.
+      liveStop.current?.();
       for (const job of useLibraryStore.getState().jobs) {
         if ((job.kind === 'capture' || job.kind === 'calibration') && job.state === 'running') {
           jobCancel(job.id).catch(() => {
@@ -194,6 +203,21 @@ function Capture() {
           void refreshCameras();
         }}
       />
+      {profile && (
+        <div className={styles.captureLive}>
+          <h4 className={styles.subheading}>{t('import.capture.liveView.heading')}</h4>
+          {profile.camera_backend === 'gphoto' ? (
+            cameras.length > 0 && (
+              <LiveView
+                stopRef={liveStop}
+                blocked={running || shotBusy || calibrating || capturing}
+              />
+            )
+          ) : (
+            <p className={styles.muted}>{t('import.capture.liveView.macOnly')}</p>
+          )}
+        </div>
+      )}
       <CameraSettings cameras={cameras} running={running} onChanging={setSettingsChanging} />
       {savedExposure && (
         <p className={styles.muted}>
@@ -247,6 +271,7 @@ function Capture() {
           disabled={running || !usable || settingsChanging}
           levels={levels}
           onShot={(exposure) => setShotExposure(exposure)}
+          onBusyChange={setShotBusy}
         />
       )}
       {levels && (
@@ -255,6 +280,7 @@ function Capture() {
           busy={running}
           roll={roll}
           levels={levels}
+          onBusyChange={setCalibrating}
           onCalibrated={(found, exposure) => {
             setLevels(found);
             setShotExposure(exposure);
@@ -276,6 +302,7 @@ function Capture() {
         ready={usable && !settingsChanging && !running}
         roll={roll}
         levels={levels}
+        onBusyChange={setCapturing}
       />
     </section>
   );

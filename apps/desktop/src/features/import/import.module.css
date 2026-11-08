@@ -220,3 +220,37 @@
   margin: 0;
   padding-left: var(--space-4);
 }
+
+.captureLive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.captureLive p {
+  margin: 0;
+}
+
+.captureLiveFrame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 32rem;
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  background: var(--surface-2, #8882);
+  border: 1px solid var(--border, #8884);
+  border-radius: 4px;
+}
+
+.captureLiveFrame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.subheading {
+  margin: 0;
+  font-size: 1rem;
+}

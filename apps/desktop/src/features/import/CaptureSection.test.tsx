@@ -855,6 +855,146 @@ describe('CaptureSection', () => {
     });
   });
 
+  describe('live view', () => {
+    let urls: string[];
+    let revoked: string[];
+    beforeEach(() => {
+      urls = [];
+      revoked = [];
+      URL.createObjectURL = vi.fn(() => {
+        const url = `blob:frame-${urls.length}`;
+        urls.push(url);
+        return url;
+      });
+      URL.revokeObjectURL = vi.fn((url: string) => {
+        revoked.push(url);
+      });
+    });
+
+    const startLive = () => screen.getByRole('button', { name: 'Start live view' });
+    const stopLive = () => screen.getByRole('button', { name: 'Stop live view' });
+
+    it('shows frames and keeps asking for the next one', async () => {
+      const { user } = await ready();
+      await user.click(startLive());
+      const image = await screen.findByRole('img', { name: 'Live view of the camera' });
+      expect(image.getAttribute('src')).toMatch(/^blob:/);
+      await waitFor(() => expect(ipc.cameraPreviewFrame.mock.calls.length).toBeGreaterThan(2));
+      expect(await screen.findByText(/^\d+ frames\/s$/)).toBeInTheDocument();
+      expect(screen.getByText(/Live view does not turn the light on/)).toBeInTheDocument();
+    });
+
+    it('asks for one frame at a time', async () => {
+      const { user } = await ready();
+      let open = 0;
+      let most = 0;
+      ipc.cameraPreviewFrame.mockImplementation(async () => {
+        open += 1;
+        most = Math.max(most, open);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        open -= 1;
+        return new Uint8Array([0xff, 0xd8]).buffer;
+      });
+      await user.click(startLive());
+      await waitFor(() => expect(ipc.cameraPreviewFrame.mock.calls.length).toBeGreaterThan(3));
+      expect(most).toBe(1);
+    });
+
+    it('stops on the Stop button, leaves live view and releases the pictures', async () => {
+      const { user } = await ready();
+      await user.click(startLive());
+      await screen.findByRole('img', { name: 'Live view of the camera' });
+      await user.click(stopLive());
+      expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1);
+      const asked = ipc.cameraPreviewFrame.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(ipc.cameraPreviewFrame.mock.calls.length).toBeLessThanOrEqual(asked);
+      expect(
+        screen.queryByRole('img', { name: 'Live view of the camera' }),
+      ).not.toBeInTheDocument();
+      expect(startLive()).toBeEnabled();
+      expect([...revoked].sort()).toEqual([...urls].sort());
+    });
+
+    it('stops when a test shot starts', async () => {
+      const { user } = await ready();
+      await user.click(startLive());
+      await screen.findByRole('img', { name: 'Live view of the camera' });
+      await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+      await waitFor(() => expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1));
+      expect(startLive()).toBeInTheDocument();
+    });
+
+    it('stops when a capture starts', async () => {
+      const { user } = await ready();
+      await user.click(startLive());
+      await screen.findByRole('img', { name: 'Live view of the camera' });
+      await startCapture(user);
+      expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1);
+      expect(startLive()).toBeDisabled();
+    });
+
+    it('stops when a calibration starts', async () => {
+      const { user } = await ready();
+      await user.click(startLive());
+      await screen.findByRole('img', { name: 'Live view of the camera' });
+      await startCalibration(user);
+      expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1);
+      expect(startLive()).toBeDisabled();
+    });
+
+    it('cannot start while a capture runs', async () => {
+      const { user } = await ready();
+      await startCapture(user);
+      expect(startLive()).toBeDisabled();
+    });
+
+    it('stops before the light goes off when the view closes', async () => {
+      const { user, unmount } = await ready();
+      await user.click(startLive());
+      await screen.findByRole('img', { name: 'Live view of the camera' });
+      unmount();
+      expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1);
+      const stopOrder = vi.mocked(ipc.cameraPreviewStop).mock.invocationCallOrder[0] ?? Infinity;
+      const offOrder = vi.mocked(ipc.lightOff).mock.invocationCallOrder[0] ?? -Infinity;
+      expect(stopOrder).toBeLessThan(offOrder);
+      expect([...revoked].sort()).toEqual([...urls].sort());
+    });
+
+    it('does not touch live view on close when it never ran', async () => {
+      const { unmount } = await ready();
+      unmount();
+      expect(ipc.cameraPreviewStop).not.toHaveBeenCalled();
+      expect(ipc.cameraPreviewFrame).not.toHaveBeenCalled();
+    });
+
+    it('stops and says why when a frame fails', async () => {
+      const { user } = await ready();
+      state.liveViewFail = 'A capture is in progress. Wait until it is done.';
+      await user.click(startLive());
+      expect(await screen.findByRole('alert')).toHaveTextContent('A capture is in progress.');
+      expect(startLive()).toBeEnabled();
+      const asked = ipc.cameraPreviewFrame.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(ipc.cameraPreviewFrame.mock.calls.length).toBe(asked);
+      expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not offered with the folder camera backend', async () => {
+      state.profile = { ...state.profile, camera_backend: 'folder' };
+      await ready();
+      expect(screen.getByText('Live view is available on macOS only for now.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Start live view' })).not.toBeInTheDocument();
+    });
+
+    it('has no accessibility violations while running', async () => {
+      const { user, container } = await ready();
+      await user.click(startLive());
+      await screen.findByRole('img', { name: 'Live view of the camera' });
+      await expectNoA11yViolations(container);
+    });
+  });
+
   describe('lifetime', () => {
     it('switches the light off when the view closes', async () => {
       const { unmount } = await ready();

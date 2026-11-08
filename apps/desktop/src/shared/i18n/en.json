@@ -752,6 +752,17 @@
         "saved": "Levels saved.",
         "exposureDiffers": "The camera settings differ from when these levels were saved."
       },
+      "liveView": {
+        "heading": "Live view",
+        "start": "Start live view",
+        "stop": "Stop live view",
+        "help": "Live view does not turn the light on: choose a colour and level with the light controls.",
+        "idle": "Live view is off.",
+        "waiting": "Waiting for the first picture…",
+        "imageAlt": "Live view of the camera",
+        "rate": "{{count}} frames/s",
+        "macOnly": "Live view is available on macOS only for now."
+      },
       "test": {
         "shoot": "Test shot, {{channel}}",
         "shooting": "Shooting…",

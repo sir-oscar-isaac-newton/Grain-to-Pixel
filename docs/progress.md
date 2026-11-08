@@ -758,9 +758,9 @@
       "number": 238,
       "title": "Automatic Scanlight level calibration",
       "branch": "feat/issue-238-auto-calibration",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 247,
+      "commit": "3750b9e"
     }
   ]
 }

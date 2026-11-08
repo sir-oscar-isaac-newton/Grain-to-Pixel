@@ -167,8 +167,8 @@ fn a_v3_library_upgrades_with_a_backup_and_keeps_its_rolls() {
     assert_eq!(old.format, FilmFormat::Mm35);
     drop(cat);
 
-    assert_eq!(SCHEMA_VERSION, 8);
-    assert_eq!(user_version(&dir.db()), 8);
+    assert_eq!(SCHEMA_VERSION, 9);
+    assert_eq!(user_version(&dir.db()), 9);
     assert!(!old.has_flat_field, "an existing roll has no flat field");
     let backup = backup_path(&dir.db(), 3);
     assert!(backup.exists());
@@ -214,7 +214,7 @@ fn a_v7_library_upgrades_to_v8_and_its_rolls_have_no_colour_balance() {
     assert!(cat.store_roll_color_balance(id, [1.0, 2.0, 3.0]).unwrap().1);
     drop(cat);
 
-    assert_eq!(user_version(&dir.db()), 8);
+    assert_eq!(user_version(&dir.db()), 9);
     let backup = backup_path(&dir.db(), 7);
     assert_eq!(user_version(&backup), 7, "the backup is the old schema");
     assert!(Connection::open(&backup)
@@ -1188,6 +1188,78 @@ fn several_recipes_are_saved_together_or_not_at_all() {
     assert_eq!(cat.load_recipe(f1.id).unwrap(), Some(recipe));
 
     cat.save_recipes(&[]).unwrap();
+}
+
+#[test]
+fn a_v8_library_upgrades_to_v9_and_its_frames_have_no_capture_info() {
+    let dir = TempDir::new("upgrade-v8");
+    let (roll_id, frame_id) = (RollId::new(), FrameId::new());
+    {
+        let conn = Connection::open(dir.db()).unwrap();
+        for sql in [
+            include_str!("../migrations/0001_init.sql"),
+            include_str!("../migrations/0002_search.sql"),
+            include_str!("../migrations/0003_export_log.sql"),
+            include_str!("../migrations/0004_roll_base_confidence.sql"),
+            include_str!("../migrations/0005_roll_frame_size.sql"),
+            include_str!("../migrations/0006_frame_scan.sql"),
+            include_str!("../migrations/0007_flat_field.sql"),
+            include_str!("../migrations/0008_roll_color_balance.sql"),
+        ] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO roll(id, name, created_at) VALUES (?1, 'Old', '2026-01-01T00:00:00Z')",
+            [roll_id.to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO frame(id, roll_id, index_in_roll, kind, width, height, has_ir, note, created_at)
+             VALUES (?1, ?2, 1, 'RgbTriplet', 10, 10, 0, '', '2026-01-01T00:00:00Z')",
+            [frame_id.to_string(), roll_id.to_string()],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 8).unwrap();
+    }
+    let cat = Catalog::open(&dir.db()).unwrap();
+    assert_eq!(cat.capture_info(frame_id).unwrap(), None);
+    drop(cat);
+    assert_eq!(user_version(&dir.db()), 9);
+    let backup = backup_path(&dir.db(), 8);
+    assert_eq!(user_version(&backup), 8, "the backup is the old schema");
+    assert!(Connection::open(&backup)
+        .unwrap()
+        .prepare("SELECT capture_info FROM frame")
+        .is_err());
+}
+
+#[test]
+fn a_captured_frame_keeps_how_it_was_lit_and_other_frames_have_none() {
+    let dir = TempDir::new("captured");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("Roll")).unwrap();
+    let recipe = Recipe::default();
+    let info = r#"{"v":1,"levels":[44,22,2]}"#;
+    let captured = cat
+        .insert_captured_frame(&frame(r.id, 1), &[], &recipe, info)
+        .unwrap();
+    assert_eq!(cat.capture_info(captured.id).unwrap().as_deref(), Some(info));
+    let imported = cat
+        .insert_imported_frame(&frame(r.id, 1), &[], &recipe)
+        .unwrap();
+    assert_eq!(cat.capture_info(imported.id).unwrap(), None);
+    let scanned = cat
+        .insert_scanned_frame(&frame(r.id, 1), &[], &recipe, 1, "{}")
+        .unwrap();
+    assert_eq!(cat.capture_info(scanned.id).unwrap(), None);
+    assert_eq!(
+        cat.capture_info(FrameId::new()).unwrap_err().code,
+        ErrorCode::NotFound
+    );
+    let err = cat
+        .insert_captured_frame(&frame(RollId::new(), 1), &[], &recipe, info)
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
 }
 
 #[test]

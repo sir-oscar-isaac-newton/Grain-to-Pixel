@@ -59,6 +59,22 @@ impl FakeLightHandle {
             .unwrap_or([0; 3])
     }
 
+    /// The level the light last had for colour `index` (0 red, 1 green, 2 blue) while that colour
+    /// was lit, which survives the switch-off after a shot; 0 if it never was lit.
+    pub fn last_lit_level(&self, index: usize) -> u8 {
+        self.state()
+            .commands
+            .iter()
+            .rev()
+            .find_map(|command| match command {
+                LightCommand::SetLevels(levels) if levels.get(index).is_some_and(|l| *l > 0) => {
+                    Some(levels[index])
+                }
+                _ => None,
+            })
+            .unwrap_or(0)
+    }
+
     /// What `status()` returns from now on (for temperature tests).
     pub fn set_status(&self, status: LightStatus) {
         self.state().status = status;
@@ -409,6 +425,20 @@ pub fn no_picture() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_last_lit_level_survives_a_switch_off_per_colour() {
+        let mut light = FakeLight::new();
+        let handle = light.handle();
+        assert_eq!([0, 1, 2].map(|i| handle.last_lit_level(i)), [0; 3]);
+        light.set_levels([10, 0, 0]).unwrap();
+        light.set_levels([0, 20, 0]).unwrap();
+        light.set_levels([0; 3]).unwrap();
+        assert_eq!([0, 1, 2].map(|i| handle.last_lit_level(i)), [10, 20, 0]);
+        light.set_levels([0, 0, 7]).unwrap();
+        light.set_levels([30, 0, 0]).unwrap();
+        assert_eq!([0, 1, 2].map(|i| handle.last_lit_level(i)), [30, 20, 7]);
+    }
 
     #[test]
     fn the_fake_records_commands_in_order_and_switches_off_when_dropped() {

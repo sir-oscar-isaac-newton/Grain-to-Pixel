@@ -25,6 +25,7 @@ pub enum JobKind {
     Scan,
     Export,
     Capture,
+    Calibration,
     LibraryVerify,
 }
 

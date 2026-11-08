@@ -9,6 +9,7 @@ import {
   tagList,
   type LibraryDetails,
   type Roll,
+  type CalibrationResult,
   type ImportWarning,
   type SkippedFile,
   type ExportedFile,
@@ -25,13 +26,15 @@ export type JobState = 'running' | 'done' | 'error' | 'cancelled';
 /** A background job started from this screen (an import, an export or a verify), as the progress list shows it. */
 export interface JobRow {
   id: string;
-  kind: 'import' | 'scan' | 'capture' | 'export' | 'verify';
+  kind: 'import' | 'scan' | 'capture' | 'calibration' | 'export' | 'verify';
   /** An import or a scan: the roll the frames go into. An export: empty. */
   rollName: string;
   /** An export: how many frames were asked for, and the folder they go to. */
   frames?: number;
   destination?: string;
   fraction: number;
+  /** What the job is doing now, as the backend words it (a calibration: "Red: shot 2, level 120"). */
+  stage?: string;
   state: JobState;
   imported?: number;
   skipped?: SkippedFile[];
@@ -44,6 +47,8 @@ export interface JobRow {
   /** An export: the files written, and the frames that could not be exported. */
   exported?: ExportedFile[];
   failed?: FailedExport[];
+  /** A calibration: the levels it found. */
+  calibrated?: CalibrationResult;
   /** A verify: what it found. */
   verified?: VerifyResult;
   /** The backend's message when the job failed. */

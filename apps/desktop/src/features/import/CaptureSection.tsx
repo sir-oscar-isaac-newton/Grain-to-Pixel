@@ -18,6 +18,7 @@ import {
 import { flagsOf } from '../settings/flags';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import styles from './import.module.css';
+import { Calibrate } from './capture/Calibrate';
 import { CameraSettings } from './capture/CameraSettings';
 import { formatExposure } from './capture/exposure';
 import { LevelSliders } from './capture/LevelSliders';
@@ -25,6 +26,8 @@ import { NextFrameButton } from './capture/NextFrameButton';
 import { SaveLevels } from './capture/SaveLevels';
 import { StatusBar, type LightState } from './capture/StatusBar';
 import { TestShot } from './capture/TestShot';
+
+/** A calibration shoots at the camera's own settings and reports none: it counts as the test shot. */
 
 const sameLevels = (a: Levels, b: Levels) => a.every((v, i) => v === b[i]);
 
@@ -54,7 +57,7 @@ export function CaptureSection() {
 function Capture() {
   const { t } = useTranslation();
   const running = useLibraryStore((s) =>
-    s.jobs.some((j) => j.kind === 'capture' && j.state === 'running'),
+    s.jobs.some((j) => (j.kind === 'capture' || j.kind === 'calibration') && j.state === 'running'),
   );
   const rolls = useLibraryStore((s) => s.rolls);
   const currentRoll = useLibraryStore((s) => s.rollId);
@@ -137,12 +140,12 @@ function Capture() {
     };
   }, []);
 
-  // The light must never be left on when the view closes. A running capture is cancelled first:
+  // The light must never be left on when the view closes. A running capture or calibration is cancelled first:
   // otherwise it would light its next colour again after the switch-off.
   useEffect(
     () => () => {
       for (const job of useLibraryStore.getState().jobs) {
-        if (job.kind === 'capture' && job.state === 'running') {
+        if ((job.kind === 'capture' || job.kind === 'calibration') && job.state === 'running') {
           jobCancel(job.id).catch(() => {
             // The job may have just ended; the switch-off below still runs.
           });
@@ -247,6 +250,18 @@ function Capture() {
         />
       )}
       {levels && (
+        <Calibrate
+          ready={usable && !settingsChanging}
+          busy={running}
+          roll={roll}
+          levels={levels}
+          onCalibrated={(found, exposure) => {
+            setLevels(found);
+            setShotExposure(exposure);
+          }}
+        />
+      )}
+      {levels && (
         <SaveLevels
           rollId={rollId}
           levels={levels}
@@ -257,7 +272,11 @@ function Capture() {
           onSaved={setSaved}
         />
       )}
-      <NextFrameButton ready={usable && !settingsChanging} roll={roll} levels={levels} />
+      <NextFrameButton
+        ready={usable && !settingsChanging && !running}
+        roll={roll}
+        levels={levels}
+      />
     </section>
   );
 }

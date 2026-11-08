@@ -16,6 +16,9 @@ use gtp_capture::{
     configure_library_paths, CameraSetting, CameraSettingKind, CameraSettings, GphotoCamera,
 };
 
+// A hardware test prints what it found for the person running it, as `gphoto_hardware.rs` does
+// from inside its test function.
+#[allow(clippy::print_stdout)]
 fn print(title: &str, settings: &[CameraSetting]) {
     println!("{title}");
     for setting in settings {

@@ -33,6 +33,8 @@ const PEAK: [f32; 3] = [0.8, 0.6, 0.4];
 /// much of it is lost at the corners (the grain scales the brightness, so it adds no mean).
 const GRAIN: f32 = 0.04;
 const GRAIN_LOSS_AT_CORNER: f32 = 0.3;
+/// The width of a grain clump, in photosites.
+const GRAIN_CLUMP: usize = 2;
 
 /// The fake camera's identity in the camera list.
 pub fn fake_camera_info() -> CameraInfo {
@@ -211,7 +213,10 @@ fn decode_lit(path: &Path, scale: f32) -> Result<RawLinear, AppError> {
             let value = if Cfa::RGGB.color_at(x, y) == lit {
                 // A smooth ramp from 30 % to 100 % of the peak, left to right and top to bottom.
                 let ramp = 0.3 + 0.7 * ((x + y) as f32 / (w + h - 2) as f32);
-                let grain = GRAIN * grain_sharpness(x, y) * grain_noise(x, y);
+                // Grain clumps of GRAIN_CLUMP photosites, as real grain spans a few at 1:1 (the
+                // focus check measures on 2 x 2 averages, which smooth single-photosite noise).
+                let grain =
+                    GRAIN * grain_sharpness(x, y) * grain_noise(x / GRAIN_CLUMP, y / GRAIN_CLUMP);
                 (WHITE * (PEAK[lit] * ramp * scale * (1.0 + grain)).min(1.0)).round() as u16
             } else {
                 LEAK
@@ -239,8 +244,9 @@ fn grain_sharpness(x: usize, y: usize) -> f32 {
 
 /// Deterministic noise from -1 to 1 for photosite (`x`, `y`).
 fn grain_noise(x: usize, y: usize) -> f32 {
-    // The murmur3 finalizer on the photosite number.
-    let mut h = (y * WIDTH as usize + x) as u32;
+    // Both coordinates mixed in with their own odd constants, then the murmur3 finalizer (the
+    // finalizer on the plain photosite number left rows of clumps alike).
+    let mut h = (x as u32).wrapping_mul(0x9E37_79B1) ^ (y as u32).wrapping_mul(0x85EB_CA6B);
     h ^= h >> 16;
     h = h.wrapping_mul(0x85EB_CA6B);
     h ^= h >> 13;

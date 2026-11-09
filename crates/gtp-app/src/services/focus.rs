@@ -19,6 +19,13 @@ const CROP_QUALITY: u8 = 90;
 const CROP_PERCENTILE: f32 = 0.995;
 /// A region whose mean is below this (linear, 0 to 1) has no usable sharpness and counts as 0.
 pub const MIN_MEAN: f64 = 1e-4;
+/// Sharpness is measured on 2 x 2 averages of the plane: that halves the sensor's own noise
+/// from one photosite to the next (and the pattern of the demosaicing), which does not change
+/// with focus, and keeps the film's grain, which spans a few pixels at 1:1.
+pub const SHARPNESS_BIN: usize = 2;
+/// The measured ratio is tiny for real pictures (about 0.0001 to 0.003 on the D600), so it is
+/// multiplied by this to read as about 1 to 30.
+pub const SHARPNESS_SCALE: f64 = 10_000.0;
 
 /// Flat: every region is at least this much of the best one.
 pub const FLAT_MIN: f32 = 0.85;
@@ -80,23 +87,40 @@ pub enum FocusPattern {
 }
 
 /// The sharpness of the part of `plane` (one channel, `width` values a row) from `x0, y0` up to
-/// but not including `x1, y1`: the variance of the 4-neighbour Laplacian of the pixels that have
-/// all their neighbours inside the part, divided by the square of their mean. 0 for a part
-/// smaller than 3 x 3 pixels or with a mean near zero.
+/// but not including `x1, y1`: the part is averaged in blocks of [`SHARPNESS_BIN`] x
+/// [`SHARPNESS_BIN`], then the variance of the 4-neighbour Laplacian of the blocks that have all
+/// their neighbours inside the part is divided by the square of their mean and multiplied by
+/// [`SHARPNESS_SCALE`]. 0 for a part smaller than 3 x 3 blocks or with a mean near zero.
 pub fn region_sharpness(
     plane: &[f32],
     width: usize,
     (x0, y0, x1, y1): (usize, usize, usize, usize),
 ) -> f32 {
-    if x1 < x0 + 3 || y1 < y0 + 3 {
+    let bin = SHARPNESS_BIN;
+    // The blocks start on a multiple of the bin, so every region averages the same photosites of
+    // the colour filter's 2 x 2 pattern (a region starting on an odd row would read softer).
+    let (x0, y0) = (x0.div_ceil(bin) * bin, y0.div_ceil(bin) * bin);
+    let (bw, bh) = ((x1.saturating_sub(x0)) / bin, (y1.saturating_sub(y0)) / bin);
+    if bw < 3 || bh < 3 {
         return 0.0;
     }
+    let mut blocks = vec![0.0f32; bw * bh];
+    let share = 1.0 / (bin * bin) as f32;
+    for (by, block_row) in blocks.chunks_exact_mut(bw).enumerate() {
+        for dy in 0..bin {
+            let start = (y0 + by * bin + dy) * width + x0;
+            let row = &plane[start..start + bw * bin];
+            for (block, pixels) in block_row.iter_mut().zip(row.chunks_exact(bin)) {
+                *block += pixels.iter().sum::<f32>() * share;
+            }
+        }
+    }
     let (mut sum_value, mut sum_lap, mut sum_lap_sq, mut count) = (0.0f64, 0.0f64, 0.0f64, 0u64);
-    for y in y0 + 1..y1 - 1 {
-        let above = &plane[(y - 1) * width + x0..(y - 1) * width + x1];
-        let row = &plane[y * width + x0..y * width + x1];
-        let below = &plane[(y + 1) * width + x0..(y + 1) * width + x1];
-        for x in 1..row.len() - 1 {
+    for y in 1..bh - 1 {
+        let above = &blocks[(y - 1) * bw..y * bw];
+        let row = &blocks[y * bw..(y + 1) * bw];
+        let below = &blocks[(y + 1) * bw..(y + 2) * bw];
+        for x in 1..bw - 1 {
             let lap = above[x] + below[x] + row[x - 1] + row[x + 1] - 4.0 * row[x];
             let lap = f64::from(lap);
             sum_value += f64::from(row[x]);
@@ -111,7 +135,7 @@ pub fn region_sharpness(
         return 0.0;
     }
     let variance = (sum_lap_sq / n - (sum_lap / n).powi(2)).max(0.0);
-    (variance / (mean * mean)) as f32
+    (SHARPNESS_SCALE * variance / (mean * mean)) as f32
 }
 
 /// The sharpness of each of the 3 x 3 equal regions of `plane`, as measured (not relative).

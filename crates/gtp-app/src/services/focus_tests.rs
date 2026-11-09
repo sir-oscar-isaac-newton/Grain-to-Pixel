@@ -58,6 +58,57 @@ fn a_sharp_texture_scores_higher_than_a_blurred_one() {
     assert!(score(&soft) > 2.0 * score(&softer));
 }
 
+/// Film grain as it lands on the sensor at 1:1: clumps a few pixels wide (the noise averaged over
+/// `grain` pixels, then blurred by `defocus` more), with the sensor's own noise of each photosite
+/// on top, which does not change with focus.
+fn grain_with_sensor_noise(grain: usize, defocus: usize, sensor: f32) -> ImageF32 {
+    let clumps = plane(1.0, |_, _| grain);
+    let blurred = if defocus == 0 {
+        clumps.data.clone()
+    } else {
+        let mut out = Vec::with_capacity(SIDE * SIDE);
+        for y in 0..SIDE {
+            for x in 0..SIDE {
+                let (mut sum, mut n) = (0.0, 0.0);
+                for yy in y.saturating_sub(defocus)..(y + defocus + 1).min(SIDE) {
+                    for xx in x.saturating_sub(defocus)..(x + defocus + 1).min(SIDE) {
+                        sum += clumps.data[yy * SIDE + xx];
+                        n += 1.0;
+                    }
+                }
+                out.push(sum / n);
+            }
+        }
+        out
+    };
+    let data = blurred
+        .iter()
+        .enumerate()
+        .map(|(i, v)| 0.4 * (v + sensor * noise(i % SIDE + 7919, i / SIDE + 104_729)))
+        .collect();
+    ImageF32::new(SIDE as u32, SIDE as u32, 1, data).unwrap()
+}
+
+#[test]
+fn grain_in_focus_still_scores_clearly_higher_through_the_sensor_noise() {
+    let score = |p: &ImageF32| region_sharpness(&p.data, SIDE, (0, 0, SIDE, SIDE));
+    // Grain clumps about 3 pixels wide, sensor noise of 2 % of the brightness.
+    let focused = score(&grain_with_sensor_noise(1, 0, 0.02));
+    let soft = score(&grain_with_sensor_noise(1, 2, 0.02));
+    let softer = score(&grain_with_sensor_noise(1, 4, 0.02));
+    assert!(focused > 1.5 * soft, "{focused} {soft}");
+    assert!(soft > softer, "{soft} {softer}");
+}
+
+#[test]
+fn a_real_looking_picture_reads_as_a_number_above_one() {
+    // The measured ratio of a real picture is about 0.0001 to 0.003; the scale makes it readable
+    // with one decimal (the D600 checks all read 0.0 before it).
+    let faint = grain_with_sensor_noise(2, 1, 0.01);
+    let value = region_sharpness(&faint.data, SIDE, (0, 0, SIDE, SIDE));
+    assert!(value >= 1.0, "{value}");
+}
+
 #[test]
 fn sharpness_does_not_depend_on_the_brightness() {
     let base = plane(0.4, |_, _| 0);

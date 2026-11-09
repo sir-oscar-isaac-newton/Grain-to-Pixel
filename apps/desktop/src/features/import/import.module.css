@@ -276,3 +276,53 @@
   gap: var(--space-1);
   align-items: center;
 }
+
+.captureLiveFrame {
+  position: relative;
+}
+
+.captureLiveOverlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.captureLivePick {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  cursor: crosshair;
+  background: transparent;
+  border: 0;
+}
+
+.captureLiveMarker {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  pointer-events: none;
+  border: 2px solid #ff0;
+  border-radius: 50%;
+}
+
+.captureLiveAids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.captureLiveSharpness {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.captureLiveMove {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}

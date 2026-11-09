@@ -213,6 +213,7 @@ function Capture() {
                 levels={levels}
                 lightLost={!light.connected || light.status?.tripped === true}
                 blocked={running || shotBusy || calibrating || capturing}
+                settingsChanging={settingsChanging}
               />
             )
           ) : (

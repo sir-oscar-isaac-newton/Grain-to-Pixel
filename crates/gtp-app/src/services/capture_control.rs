@@ -24,7 +24,8 @@ use gtp_capture::settings::clean_value;
 use gtp_capture::{
     CameraFinder, CameraInfo, CameraPreview, CameraSetting, CameraSettingKind, CameraSettings,
     CameraSource, CaptureProfile, CaptureSequence, CapturedFile, ChannelMeter, LightGuard,
-    LightInfo, LightSource, LightStatus, Pause, PortInfo, Region, ThreadPause, CAPTURE_TIMEOUT,
+    LightInfo, LightSource, LightStatus, Pause, PortInfo, Region, ThreadPause, ZoomStep,
+    CAPTURE_TIMEOUT,
 };
 use gtp_core::ImageF32;
 use gtp_core::{
@@ -303,6 +304,40 @@ pub fn camera_preview_stop(hardware: &Hardware) -> Result<(), AppError> {
         return Ok(());
     }
     access.preview_stop()
+}
+
+/// `camera_preview_zoom_steps` (H-18): the zoom steps of the camera's live view, whole frame
+/// first; empty when the camera has no zoom. Like a frame it only looks at the busy flag.
+pub fn camera_preview_zoom_steps(hardware: &Hardware) -> Result<Vec<ZoomStep>, AppError> {
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    let access = camera.preview_access()?;
+    if hardware.busy().is_busy() {
+        return Err(busy());
+    }
+    access.preview_zoom_steps()
+}
+
+/// `camera_preview_set_zoom` (H-18): sets the live-view zoom to one of the steps (anything else is
+/// refused); puts the camera in live view if it is not in it. The zoom goes back to the whole frame
+/// when live view is left. Refused while a capture runs; it does not take the busy flag.
+pub fn camera_preview_set_zoom(hardware: &Hardware, value: &str) -> Result<(), AppError> {
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    let access = camera.preview_access()?;
+    if hardware.busy().is_busy() {
+        return Err(busy());
+    }
+    access.set_preview_zoom(value)
+}
+
+/// `camera_preview_set_area` (H-18): moves the zoomed area to the point (`x`, `y`) of the frame, as
+/// fractions from 0 to 1. Refused while a capture runs; it does not take the busy flag.
+pub fn camera_preview_set_area(hardware: &Hardware, x: f32, y: f32) -> Result<(), AppError> {
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    let access = camera.preview_access()?;
+    if hardware.busy().is_busy() {
+        return Err(busy());
+    }
+    access.set_preview_area(x, y)
 }
 
 /// The error when no camera backend exists (a build without the macOS `tether` feature, and not

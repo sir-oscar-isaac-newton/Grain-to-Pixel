@@ -10,7 +10,7 @@ use gtp_core::{AppError, ErrorCode};
 
 use crate::camera::{CameraSource, CapturedFile};
 use crate::light::{LightInfo, LightSource, LightStatus};
-use crate::preview::CameraPreview;
+use crate::preview::{check_area, check_zoom, zoom_steps_from_choices, CameraPreview, ZoomStep};
 use crate::settings::{check_change, CameraSetting, CameraSettingKind, CameraSettings};
 
 /// A command a [`FakeLight`] received.
@@ -195,8 +195,20 @@ pub enum CameraCall {
 
 type WaitHook = Box<dyn FnMut(usize) + Send>;
 
-/// Makes live-view frame number `n` (from 0).
-type FrameMaker = Arc<dyn Fn(usize) -> Result<Vec<u8>, AppError> + Send + Sync>;
+/// How the fake's live view is set when a frame is made: the zoom step and the zoomed area.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreviewView {
+    /// The zoom choice now (`"Entire Display"` until one is set).
+    pub zoom: String,
+    /// The point of the frame last given to `set_preview_area`, as fractions; `None` until then.
+    pub area: Option<(f32, f32)>,
+}
+
+/// The choices of the fake's live-view zoom, whole frame first.
+pub const FAKE_ZOOM_CHOICES: [&str; 5] = ["Entire Display", "25%", "50%", "100%", "200%"];
+
+/// Makes live-view frame number `n` (from 0) for the view the camera is set to.
+type FrameMaker = Arc<dyn Fn(usize, &PreviewView) -> Result<Vec<u8>, AppError> + Send + Sync>;
 
 /// The frame a fake camera serves unless told how to make them: the JPEG start and end markers
 /// around the frame's number, so that frames differ. It is not a picture; a fake that has to show
@@ -227,6 +239,28 @@ struct CameraState {
     fail_preview: Option<AppError>,
     preview_stops: usize,
     live_view: bool,
+    zoom: String,
+    area: Option<(f32, f32)>,
+    prohibit: Option<String>,
+}
+
+impl CameraState {
+    fn view(&self) -> PreviewView {
+        PreviewView {
+            zoom: self.zoom.clone(),
+            area: self.area,
+        }
+    }
+
+    fn zoom_steps() -> Vec<ZoomStep> {
+        zoom_steps_from_choices(FAKE_ZOOM_CHOICES.map(str::to_owned))
+    }
+
+    /// What leaving live view does to the zoom, as on the camera: back to the whole frame.
+    fn leave_live_view(&mut self) {
+        self.live_view = false;
+        FAKE_ZOOM_CHOICES[0].clone_into(&mut self.zoom);
+    }
 }
 
 /// What a fake camera offers until a test changes it: ISO 100, 1/100 s and f/8, all writable.
@@ -320,6 +354,22 @@ impl FakeCameraHandle {
         self.state().live_view
     }
 
+    /// The live-view zoom now (`"Entire Display"` when unzoomed).
+    pub fn preview_zoom(&self) -> String {
+        self.state().zoom.clone()
+    }
+
+    /// The point of the frame last given to `set_preview_area`, as fractions (kept when live view
+    /// is left, as on the camera).
+    pub fn preview_area(&self) -> Option<(f32, f32)> {
+        self.state().area
+    }
+
+    /// Makes `preview_prohibit` answer with this condition until cleared with `None`.
+    pub fn set_prohibit(&self, reason: Option<&str>) {
+        self.state().prohibit = reason.map(str::to_owned);
+    }
+
     /// Makes frames and stops fail until cleared with `None`.
     pub fn fail_preview_with(&self, error: Option<AppError>) {
         self.state().fail_preview = error;
@@ -366,7 +416,7 @@ impl CameraPreview for FakeCameraHandle {
         state.fail_preview.clone().map_or(Ok(()), Err)?;
         let n = state.frames;
         let frame = match &state.frame_maker {
-            Some(maker) => maker(n)?,
+            Some(maker) => maker(n, &state.view())?,
             None => placeholder_frame(n)?,
         };
         state.frames += 1;
@@ -378,8 +428,35 @@ impl CameraPreview for FakeCameraHandle {
         let mut state = self.state();
         state.preview_stops += 1;
         state.fail_preview.clone().map_or(Ok(()), Err)?;
-        state.live_view = false;
+        state.leave_live_view();
         Ok(())
+    }
+
+    fn preview_zoom_steps(&self) -> Result<Vec<ZoomStep>, AppError> {
+        self.state().fail_preview.clone().map_or(Ok(()), Err)?;
+        Ok(CameraState::zoom_steps())
+    }
+
+    fn set_preview_zoom(&self, value: &str) -> Result<(), AppError> {
+        let mut state = self.state();
+        state.fail_preview.clone().map_or(Ok(()), Err)?;
+        let value = check_zoom(&CameraState::zoom_steps(), value)?;
+        state.live_view = true;
+        state.zoom = value;
+        Ok(())
+    }
+
+    fn set_preview_area(&self, x: f32, y: f32) -> Result<(), AppError> {
+        check_area(x, y)?;
+        let mut state = self.state();
+        state.fail_preview.clone().map_or(Ok(()), Err)?;
+        state.live_view = true;
+        state.area = Some((x, y));
+        Ok(())
+    }
+
+    fn preview_prohibit(&self) -> Result<Option<String>, AppError> {
+        Ok(self.state().prohibit.clone())
     }
 }
 
@@ -398,6 +475,7 @@ impl FakeCamera {
             state.connected = true;
             state.shots = shots.into();
             state.settings = default_settings();
+            FAKE_ZOOM_CHOICES[0].clone_into(&mut state.zoom);
         }
         Self { handle }
     }
@@ -431,12 +509,13 @@ impl FakeCamera {
         self
     }
 
-    /// Serves live-view frames made by `maker` (given the frame's number, from 0) instead of the
-    /// placeholder ones (the camera of `GTP_FAKE_HW=1` serves real JPEGs).
+    /// Serves live-view frames made by `maker` (given the frame's number, from 0, and the zoom and
+    /// area the camera is set to) instead of the placeholder ones (the camera of `GTP_FAKE_HW=1`
+    /// serves real JPEGs).
     #[must_use]
     pub fn with_frames(
         self,
-        maker: impl Fn(usize) -> Result<Vec<u8>, AppError> + Send + Sync + 'static,
+        maker: impl Fn(usize, &PreviewView) -> Result<Vec<u8>, AppError> + Send + Sync + 'static,
     ) -> Self {
         self.handle.state().frame_maker = Some(Arc::new(maker));
         self
@@ -463,8 +542,8 @@ impl CameraSource for FakeCamera {
         let mut state = self.handle.state();
         let levels = state.light.as_ref().map(FakeLightHandle::levels);
         state.calls.push(CameraCall::Trigger { levels });
-        // A real camera is taken out of live view before a capture.
-        state.live_view = false;
+        // A real camera is taken out of live view (and its zoom reset) before a capture.
+        state.leave_live_view();
         state.fail_trigger.clone().map_or(Ok(()), Err)
     }
 
@@ -631,8 +710,69 @@ mod tests {
     }
 
     #[test]
+    fn the_fake_offers_zoom_steps_records_zoom_and_area_and_resets_the_zoom_on_leaving() {
+        let mut camera = FakeCamera::new(vec![Shot::File(CapturedFile {
+            name: "a.nef".to_owned(),
+            bytes: vec![1],
+        })])
+        .with_frames(|_, view| Ok(format!("{}|{:?}", view.zoom, view.area).into_bytes()));
+        let handle = camera.handle();
+        let steps = handle.preview_zoom_steps().unwrap();
+        let labels: Vec<&str> = steps.iter().map(|s| s.label.as_str()).collect();
+        assert_eq!(labels, ["Whole frame", "25%", "50%", "100%", "200%"]);
+        assert_eq!(steps[0].value, "Entire Display");
+
+        assert_eq!(handle.preview_zoom(), "Entire Display");
+        assert_eq!(handle.preview_area(), None);
+        handle.set_preview_zoom("100%").unwrap();
+        assert!(handle.in_live_view(), "the zoom starts live view");
+        handle.set_preview_area(0.25, 0.75).unwrap();
+        assert_eq!(handle.preview_zoom(), "100%");
+        assert_eq!(handle.preview_area(), Some((0.25, 0.75)));
+        assert_eq!(handle.preview_frame().unwrap(), b"100%|Some((0.25, 0.75))");
+
+        assert!(handle.set_preview_zoom("300%").is_err());
+        assert!(handle.set_preview_area(1.5, 0.5).is_err());
+        assert!(handle.set_preview_area(f32::NAN, 0.5).is_err());
+        assert_eq!(
+            handle.preview_zoom(),
+            "100%",
+            "a refused value changes nothing"
+        );
+        assert_eq!(handle.preview_area(), Some((0.25, 0.75)));
+
+        handle.preview_stop().unwrap();
+        assert_eq!(handle.preview_zoom(), "Entire Display");
+        assert_eq!(handle.preview_area(), Some((0.25, 0.75)), "the area stays");
+        handle.set_preview_zoom("200%").unwrap();
+        camera.arm().unwrap();
+        camera.trigger().unwrap();
+        assert_eq!(
+            handle.preview_zoom(),
+            "Entire Display",
+            "a capture resets it too"
+        );
+        assert!(crate::preview::is_whole_frame(&handle.preview_zoom()));
+    }
+
+    #[test]
+    fn the_prohibit_condition_and_failures_can_be_scripted() {
+        let handle = FakeCamera::new(Vec::new()).handle();
+        assert_eq!(handle.preview_prohibit().unwrap(), None);
+        handle.set_prohibit(Some("Sequence error"));
+        assert_eq!(
+            handle.preview_prohibit().unwrap().as_deref(),
+            Some("Sequence error")
+        );
+        handle.fail_preview_with(Some(unplugged()));
+        assert!(handle.preview_zoom_steps().is_err());
+        assert!(handle.set_preview_zoom("100%").is_err());
+        assert!(handle.set_preview_area(0.5, 0.5).is_err());
+    }
+
+    #[test]
     fn frames_can_come_from_a_maker_and_the_preview_can_be_made_to_fail() {
-        let camera = FakeCamera::new(Vec::new()).with_frames(|n| Ok(vec![n as u8]));
+        let camera = FakeCamera::new(Vec::new()).with_frames(|n, _| Ok(vec![n as u8]));
         let handle = camera.handle();
         assert_eq!(handle.preview_frame().unwrap(), [0]);
         assert_eq!(handle.preview_frame().unwrap(), [1]);

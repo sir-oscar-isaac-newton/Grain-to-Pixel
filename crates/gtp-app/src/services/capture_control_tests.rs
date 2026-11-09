@@ -1362,3 +1362,88 @@ fn the_fake_hardware_serves_jpeg_frames_that_change() {
     assert_ne!(first, second);
     camera_preview_stop(&hardware).unwrap();
 }
+
+// --- focus aids: the zoomed live view (H-18) -----------------------------------------------------
+
+/// Only where there is no backend (see the settings test above).
+#[cfg(not(all(target_os = "macos", feature = "tether")))]
+#[test]
+fn without_a_camera_backend_the_zoom_commands_say_so() {
+    let real = Hardware::from_vars(None, None);
+    assert_no_camera(camera_preview_zoom_steps(&real));
+    assert_no_camera(camera_preview_set_zoom(&real, "100%"));
+    assert_no_camera(camera_preview_set_area(&real, 0.5, 0.5));
+}
+
+#[test]
+fn a_camera_without_live_view_refuses_the_zoom_commands_in_words() {
+    let rig = Rig::new("zoom-none");
+    for err in [
+        camera_preview_zoom_steps(&rig.hardware).unwrap_err(),
+        camera_preview_set_zoom(&rig.hardware, "100%").unwrap_err(),
+        camera_preview_set_area(&rig.hardware, 0.5, 0.5).unwrap_err(),
+    ] {
+        assert!(err.message.contains("live view"), "{err}");
+    }
+}
+
+#[test]
+fn the_zoom_steps_are_offered_set_and_the_area_moved_without_touching_the_light() {
+    let (rig, handle) = preview_rig("zoom-set");
+    let steps = camera_preview_zoom_steps(&rig.hardware).unwrap();
+    assert_eq!(steps.len(), 5);
+    assert_eq!(steps[0].label, "Whole frame");
+    camera_preview_set_zoom(&rig.hardware, &steps[3].value).unwrap();
+    camera_preview_set_area(&rig.hardware, 0.25, 0.75).unwrap();
+    assert_eq!(handle.preview_zoom(), "100%");
+    assert_eq!(handle.preview_area(), Some((0.25, 0.75)));
+    assert!(handle.in_live_view());
+    let err = camera_preview_set_zoom(&rig.hardware, "300%").unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidInput);
+    let err = camera_preview_set_area(&rig.hardware, 2.0, 0.5).unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidInput);
+    assert_eq!(handle.preview_zoom(), "100%");
+    camera_preview_stop(&rig.hardware).unwrap();
+    assert_eq!(handle.preview_zoom(), "Entire Display", "leaving resets it");
+    assert!(rig.light.commands().is_empty(), "the zoom never lights");
+    assert!(!rig.hardware.busy().is_busy(), "no command holds the flag");
+}
+
+#[test]
+fn the_zoom_commands_are_refused_while_a_capture_runs() {
+    let (rig, handle) = preview_rig("zoom-busy");
+    let _held = rig.hardware.busy().acquire().unwrap();
+    assert_busy(camera_preview_zoom_steps(&rig.hardware));
+    assert_busy(camera_preview_set_zoom(&rig.hardware, "100%"));
+    assert_busy(camera_preview_set_area(&rig.hardware, 0.5, 0.5));
+    assert_eq!(handle.preview_zoom(), "Entire Display");
+    assert_eq!(handle.preview_area(), None);
+}
+
+#[test]
+fn zoom_errors_come_through_in_words() {
+    let (rig, handle) = preview_rig("zoom-fail");
+    let words = AppError::new(ErrorCode::Io, "The camera is busy. Wait a moment.");
+    handle.fail_preview_with(Some(words.clone()));
+    assert_eq!(camera_preview_zoom_steps(&rig.hardware).unwrap_err(), words);
+    assert_eq!(
+        camera_preview_set_zoom(&rig.hardware, "100%").unwrap_err(),
+        words
+    );
+    assert_eq!(
+        camera_preview_set_area(&rig.hardware, 0.5, 0.5).unwrap_err(),
+        words
+    );
+}
+
+#[test]
+fn the_fake_hardware_zooms_and_its_frames_show_it() {
+    let hardware = Hardware::from_vars(Some("1"), None);
+    let whole_frame = camera_preview_frame(&hardware).unwrap();
+    let steps = camera_preview_zoom_steps(&hardware).unwrap();
+    assert_eq!(steps.len(), 5);
+    camera_preview_set_zoom(&hardware, "200%").unwrap();
+    camera_preview_set_area(&hardware, 0.2, 0.2).unwrap();
+    assert_ne!(camera_preview_frame(&hardware).unwrap(), whole_frame);
+    camera_preview_stop(&hardware).unwrap();
+}

@@ -31,6 +31,7 @@ import type {
   TripletCandidate,
   UpdateOutcome,
   VerifyResult,
+  ZoomStep,
 } from '../../shared/ipc';
 
 export class IpcError extends Error {
@@ -292,6 +293,14 @@ export const state = {
   cameraSettingsFail: null as string | null,
   /** The message camera_preview_frame fails with, or null for frames. */
   liveViewFail: null as string | null,
+  /** The zoom steps of the live view, whole frame first; empty for a camera without zoom. */
+  zoomSteps: [
+    { value: '0', label: 'Whole frame' },
+    { value: '2', label: '25 %' },
+    { value: '4', label: '50 %' },
+    { value: '6', label: '100 %' },
+    { value: '7', label: '200 %' },
+  ] as ZoomStep[],
   cameraSettingsSetFail: null as string | null,
   /** What light_connect answers, or the message it fails with. */
   light: { port: 'COM3', hardware_id: 2, firmware_id: 1, recognised: true } as LightInfo,
@@ -638,6 +647,15 @@ export const ipc = {
     return new Uint8Array([0xff, 0xd8, 4, 5, 6]).buffer;
   }),
   cameraPreviewStop: vi.fn(async () => undefined),
+  cameraPreviewZoomSteps: vi.fn(async (): Promise<ZoomStep[]> =>
+    state.zoomSteps.map((s) => ({ ...s })),
+  ),
+  cameraPreviewSetZoom: vi.fn(async (value: string) => {
+    void value;
+  }),
+  cameraPreviewSetArea: vi.fn(async (x: number, y: number) => {
+    void [x, y];
+  }),
   importFiles: vi.fn(async (paths: string[], roll: string, kind: string) => {
     void [paths, roll, kind];
     return 'job-1';
@@ -864,6 +882,13 @@ export function resetFake() {
   state.cameraSettings = defaultCameraSettings();
   state.cameraSettingsFail = null;
   state.liveViewFail = null;
+  state.zoomSteps = [
+    { value: '0', label: 'Whole frame' },
+    { value: '2', label: '25 %' },
+    { value: '4', label: '50 %' },
+    { value: '6', label: '100 %' },
+    { value: '7', label: '200 %' },
+  ];
   state.cameraSettingsSetFail = null;
   state.light = { port: 'COM3', hardware_id: 2, firmware_id: 1, recognised: true };
   state.lightFail = null;

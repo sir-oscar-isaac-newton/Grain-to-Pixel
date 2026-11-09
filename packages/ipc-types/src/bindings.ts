@@ -126,6 +126,18 @@ export const commands = {
 	 *  (a capture leaves live view itself).
 	 */
 	cameraPreviewStop: () => typedError<null, AppError_Serialize>(__TAURI_INVOKE("camera_preview_stop")),
+	/**
+	 *  The zoom steps of the camera's live view, whole frame first (`value` is what to set, `label`
+	 *  what to show); empty when the camera has no zoom. Refused while a capture runs.
+	 */
+	cameraPreviewZoomSteps: () => typedError<ZoomStep[], AppError_Serialize>(__TAURI_INVOKE("camera_preview_zoom_steps")),
+	/**
+	 *  Sets the live-view zoom to one of the steps (anything else is refused), putting the camera in
+	 *  live view if it is not in it. The zoom goes back to the whole frame when live view is left.
+	 */
+	cameraPreviewSetZoom: (value: string) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("camera_preview_set_zoom", { value })),
+	/**  Moves the zoomed area to the point (`x`, `y`) of the frame, each a fraction from 0 to 1. */
+	cameraPreviewSetArea: (x: number | null, y: number | null) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("camera_preview_set_area", { x, y })),
 	/**  The capture profile (levels, settle time, temperature limits, camera backend). */
 	captureProfileGet: () => typedError<CaptureProfile_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_profile_get")),
 	/**
@@ -2260,6 +2272,14 @@ export type VerifyResult_Serialize = {
 export type WindowSize = {
 	width: number,
 	height: number,
+};
+
+/**  One zoom step of the camera's live view. */
+export type ZoomStep = {
+	/**  The camera's own choice (`"100%"`, `"Entire Display"`), which is what is set. */
+	value: string,
+	/**  The words for the user: `"Whole frame"` for the unzoomed view, otherwise the choice. */
+	label: string,
 };
 
 /* Tauri Specta runtime */

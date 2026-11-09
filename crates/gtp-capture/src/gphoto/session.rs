@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use gphoto2::error::ErrorKind;
-use gphoto2::widget::{RadioWidget, ToggleWidget};
+use gphoto2::widget::{RadioWidget, TextWidget, ToggleWidget};
 use gphoto2::{Camera, Context};
 
 use crate::camera::{CameraInfo, CapturedFile};
@@ -26,6 +26,12 @@ const MAX_PICTURE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
 /// The libgphoto2 configuration key that switches live view on Nikon bodies.
 const VIEWFINDER_KEY: &str = "viewfinder";
+/// The keys of the live-view zoom (H-18), moving the zoomed area, the image size and the reason
+/// live view cannot start, on Nikon bodies (tested on a D600).
+const ZOOM_KEY: &str = "liveviewimagezoomratio";
+const AREA_KEY: &str = "changeafarea";
+const IMAGE_SIZE_KEY: &str = "imagesize";
+const PROHIBIT_KEY: &str = "liveviewprohibit";
 
 /// The camera of the session: the binding's context, and the camera once opened.
 pub struct GphotoSession {
@@ -267,8 +273,93 @@ impl Session for GphotoSession {
             .map_err(|err| map_error(&err))
     }
 
+    fn preview_zoom_choices(&mut self) -> Result<Vec<String>, SessionError> {
+        let camera = open_camera(self.camera.as_ref())?;
+        Ok(match fetch_radio(camera, ZOOM_KEY)? {
+            Some(widget) => widget.choices_iter().collect(),
+            None => Vec::new(),
+        })
+    }
+
+    fn set_preview_zoom(&mut self, value: &str) -> Result<(), SessionError> {
+        let camera = open_camera(self.camera.as_ref())?;
+        let Some(widget) = fetch_radio(camera, ZOOM_KEY)? else {
+            return Err(missing_key(ZOOM_KEY));
+        };
+        widget.set_choice(value).map_err(|err| map_error(&err))?;
+        camera
+            .set_config(&widget)
+            .try_wait()
+            .map_err(|err| channel_error(&err))?
+            .map_err(|err| map_error(&err))
+    }
+
+    fn image_size(&mut self) -> Result<Option<String>, SessionError> {
+        let camera = open_camera(self.camera.as_ref())?;
+        Ok(fetch_radio(camera, IMAGE_SIZE_KEY)?.map(|widget| widget.choice()))
+    }
+
+    fn set_preview_area(&mut self, area: &str) -> Result<(), SessionError> {
+        let camera = open_camera(self.camera.as_ref())?;
+        let Some(widget) = fetch_text(camera, AREA_KEY)? else {
+            return Err(missing_key(AREA_KEY));
+        };
+        widget.set_value(area).map_err(|err| map_error(&err))?;
+        camera
+            .set_config(&widget)
+            .try_wait()
+            .map_err(|err| channel_error(&err))?
+            .map_err(|err| map_error(&err))
+    }
+
+    fn preview_prohibit(&mut self) -> Result<Option<String>, SessionError> {
+        let camera = open_camera(self.camera.as_ref())?;
+        Ok(fetch_text(camera, PROHIBIT_KEY)?.map(|widget| widget.value()))
+    }
+
     fn close(&mut self) {
         self.camera = None;
+    }
+}
+
+fn missing_key(key: &str) -> SessionError {
+    SessionError::new(
+        SessionErrorKind::Other,
+        format!("the camera has no \"{key}\" setting"),
+    )
+}
+
+/// True when failing to read a key means the camera does not have it as that kind of widget.
+fn is_missing_key(err: &gphoto2::Error, expected: &str) -> bool {
+    matches!(
+        err.kind(),
+        ErrorKind::BadParameters | ErrorKind::NotSupported
+    ) || err.to_string().contains(expected)
+}
+
+/// The menu widget for `key`, or `None` when the camera lacks it or has it as another kind.
+fn fetch_radio(camera: &Camera, key: &str) -> Result<Option<RadioWidget>, SessionError> {
+    let fetched = camera
+        .config_key::<RadioWidget>(key)
+        .try_wait()
+        .map_err(|err| channel_error(&err))?;
+    match fetched {
+        Ok(widget) => Ok(Some(widget)),
+        Err(err) if is_missing_key(&err, "Expected RadioWidget") => Ok(None),
+        Err(err) => Err(map_error(&err)),
+    }
+}
+
+/// The text widget for `key`, or `None` when the camera lacks it or has it as another kind.
+fn fetch_text(camera: &Camera, key: &str) -> Result<Option<TextWidget>, SessionError> {
+    let fetched = camera
+        .config_key::<TextWidget>(key)
+        .try_wait()
+        .map_err(|err| channel_error(&err))?;
+    match fetched {
+        Ok(widget) => Ok(Some(widget)),
+        Err(err) if is_missing_key(&err, "Expected TextWidget") => Ok(None),
+        Err(err) => Err(map_error(&err)),
     }
 }
 

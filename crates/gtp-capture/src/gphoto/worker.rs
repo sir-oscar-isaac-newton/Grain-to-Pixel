@@ -17,7 +17,10 @@ use std::time::Duration;
 use gtp_core::{AppError, ErrorCode};
 
 use crate::camera::{CameraFinder, CameraInfo, CameraSource, CapturedFile};
-use crate::preview::CameraPreview;
+use crate::preview::{
+    area_text, check_area, check_zoom, is_whole_frame, prohibit_reason, zoom_steps_from_choices,
+    CameraPreview, ZoomStep,
+};
 use crate::settings::{
     check_change, clean_value, CameraSetting, CameraSettingKind, CameraSettings,
 };
@@ -48,6 +51,18 @@ pub trait Session {
     /// Leaves live view (a camera that has no live-view switch is left as it is). The worker calls
     /// it only after a frame was read, before a capture and on a stop.
     fn leave_live_view(&mut self) -> Result<(), SessionError>;
+    /// The choices of the live-view zoom as the camera lists them (unknown ones included); empty
+    /// when the camera has no such setting. Called with the camera open.
+    fn preview_zoom_choices(&mut self) -> Result<Vec<String>, SessionError>;
+    /// Sets the live-view zoom to one of its choices. The worker has already checked the choice
+    /// and put the camera in live view (the camera refuses the zoom outside it).
+    fn set_preview_zoom(&mut self, value: &str) -> Result<(), SessionError>;
+    /// The camera's image size as it words it (`"6016x4016"`), or `None` when it has none.
+    fn image_size(&mut self) -> Result<Option<String>, SessionError>;
+    /// Moves the zoomed area; `area` is the camera's own text, `"{X}x{Y}"`. Needs live view.
+    fn set_preview_area(&mut self, area: &str) -> Result<(), SessionError>;
+    /// The camera's `liveviewprohibit` text as it is, or `None` when the camera has none.
+    fn preview_prohibit(&mut self) -> Result<Option<String>, SessionError>;
     /// Lets go of the camera (after a lost link, or when the worker ends).
     fn close(&mut self);
 }
@@ -74,6 +89,9 @@ pub struct SessionError {
     pub kind: SessionErrorKind,
     /// The technical text (goes into `details`, never into the message).
     pub message: String,
+    /// The condition the camera gave for refusing to start live view ("Sequence error"), which
+    /// goes into the message in words.
+    pub prohibit: Option<String>,
 }
 
 impl SessionError {
@@ -82,7 +100,15 @@ impl SessionError {
         Self {
             kind,
             message: message.into(),
+            prohibit: None,
         }
+    }
+
+    /// The same failure with the condition the camera named for not starting live view.
+    #[must_use]
+    pub fn with_prohibit(mut self, reason: String) -> Self {
+        self.prohibit = Some(reason);
+        self
     }
 
     /// The kind after looking at the text too: a claim failure is recognised by its message even
@@ -97,6 +123,12 @@ impl SessionError {
 
     /// The error the user sees, in words, with the library's text as details.
     pub fn into_app_error(self) -> AppError {
+        if let Some(reason) = &self.prohibit {
+            let words = format!(
+                "Live view cannot start: {reason}. Switch the camera off and on, then try again."
+            );
+            return AppError::new(ErrorCode::Io, words).with_details(self.message);
+        }
         let (code, words) = match self.effective_kind() {
             SessionErrorKind::Claim => (
                 ErrorCode::Io,
@@ -179,6 +211,10 @@ enum Request {
     SetSetting(CameraSettingKind, String, Reply<Vec<CameraSetting>>),
     Preview(Reply<Vec<u8>>),
     PreviewStop(Reply<()>),
+    PreviewZoomSteps(Reply<Vec<ZoomStep>>),
+    PreviewZoom(String, Reply<()>),
+    PreviewArea(f32, f32, Reply<()>),
+    PreviewProhibit(Reply<Option<String>>),
 }
 
 /// What the camera object and its worker both see; one per worker thread.
@@ -315,6 +351,39 @@ impl Hub {
         self.ask(Request::PreviewStop, self.timeouts.preview)
     }
 
+    /// The zoom steps of the live view (empty when the camera has none).
+    fn preview_zoom_steps(&self) -> Result<Vec<ZoomStep>, AppError> {
+        self.refuse_while_busy()?;
+        self.ask(Request::PreviewZoomSteps, self.timeouts.preview)
+    }
+
+    /// Sets the zoom after checking that `value` is one of the steps now. Nothing is written when
+    /// the check fails.
+    fn set_preview_zoom(&self, value: &str) -> Result<(), AppError> {
+        let steps = self.preview_zoom_steps()?;
+        let value = check_zoom(&steps, value)?;
+        self.ask(
+            |reply| Request::PreviewZoom(value, reply),
+            self.timeouts.preview,
+        )
+    }
+
+    /// Moves the zoomed area to a point of the frame.
+    fn set_preview_area(&self, x: f32, y: f32) -> Result<(), AppError> {
+        check_area(x, y)?;
+        self.refuse_while_busy()?;
+        self.ask(
+            |reply| Request::PreviewArea(x, y, reply),
+            self.timeouts.preview,
+        )
+    }
+
+    /// The condition that stops live view from starting, if the camera names one.
+    fn preview_prohibit(&self) -> Result<Option<String>, AppError> {
+        self.refuse_while_busy()?;
+        self.ask(Request::PreviewProhibit, self.timeouts.preview)
+    }
+
     /// Drops the current worker (it ends when its call returns, if it is stuck in one) and starts
     /// a new one. A new worker's first call still waits behind a call libgphoto2 never returned
     /// from, since the binding runs every call on one thread; it then times out and the app needs
@@ -361,6 +430,8 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
     // True from the first live-view frame until live view is left; the camera may be in live view
     // while it is set.
     let mut live_view = false;
+    // True while the live-view zoom was set to something other than the whole frame.
+    let mut zoomed = false;
     while let Ok(request) = incoming.recv() {
         if state.unusable() {
             // Abandoned while it was stuck: whatever it was asked since is moot.
@@ -377,7 +448,7 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
                     if live_view {
                         // A capture straight after live view needs it left first. If leaving
                         // fails the capture is still tried: its own error says what is wrong.
-                        if let Err(err) = with(&mut session, |s| s.leave_live_view()) {
+                        if let Err(err) = leave(&mut session, &mut zoomed) {
                             tracing::warn!("could not leave live view before a capture: {err:?}");
                         }
                         live_view = false;
@@ -386,6 +457,7 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
                 });
                 if drop_if_lost(&result, &mut session, &mut opened, state) {
                     live_view = false;
+                    zoomed = false;
                 }
                 state.in_flight.fetch_sub(1, Ordering::SeqCst);
                 deliver(&reply, result);
@@ -397,19 +469,18 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
                 deliver(&reply, result);
             }
             Request::Preview(reply) => {
-                let result = ensure_open(&mut session, &mut opened, state).and_then(|_| {
-                    live_view = true;
-                    with(&mut session, |s| s.preview_frame())
-                });
+                let result = ensure_open(&mut session, &mut opened, state)
+                    .and_then(|_| read_frame(&mut session, &mut live_view));
                 if drop_if_lost(&result, &mut session, &mut opened, state) {
                     live_view = false;
+                    zoomed = false;
                 }
                 deliver(&reply, result);
             }
             Request::PreviewStop(reply) => {
                 let result = if live_view {
                     let left = ensure_open(&mut session, &mut opened, state)
-                        .and_then(|_| with(&mut session, |s| s.leave_live_view()));
+                        .and_then(|_| leave(&mut session, &mut zoomed));
                     if left.is_ok() {
                         live_view = false;
                     }
@@ -419,11 +490,62 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
                 };
                 if drop_if_lost(&result, &mut session, &mut opened, state) {
                     live_view = false;
+                    zoomed = false;
                 }
+                deliver(&reply, result);
+            }
+            Request::PreviewZoomSteps(reply) => {
+                let result = ensure_open(&mut session, &mut opened, state)
+                    .and_then(|_| zoom_steps(&mut session));
+                let _ = drop_if_lost(&result, &mut session, &mut opened, state);
+                deliver(&reply, result);
+            }
+            Request::PreviewZoom(value, reply) => {
+                let result = ensure_open(&mut session, &mut opened, state).and_then(|_| {
+                    start_live_view(&mut session, &mut live_view)?;
+                    with(&mut session, |s| s.set_preview_zoom(&value))?;
+                    zoomed = !is_whole_frame(&value);
+                    Ok(())
+                });
+                if drop_if_lost(&result, &mut session, &mut opened, state) {
+                    live_view = false;
+                    zoomed = false;
+                }
+                deliver(&reply, result);
+            }
+            Request::PreviewArea(x, y, reply) => {
+                let result = ensure_open(&mut session, &mut opened, state).and_then(|_| {
+                    start_live_view(&mut session, &mut live_view)?;
+                    // A camera that does not report its size gets the D600's.
+                    let size = with(&mut session, |s| s.image_size()).unwrap_or(None);
+                    let text = area_text(x, y, size.as_deref());
+                    with(&mut session, |s| s.set_preview_area(&text))
+                });
+                if drop_if_lost(&result, &mut session, &mut opened, state) {
+                    live_view = false;
+                    zoomed = false;
+                }
+                deliver(&reply, result);
+            }
+            Request::PreviewProhibit(reply) => {
+                let result = ensure_open(&mut session, &mut opened, state).and_then(|_| {
+                    with(&mut session, |s| s.preview_prohibit())
+                        .map(|text| text.and_then(|text| prohibit_reason(&text)))
+                });
+                let _ = drop_if_lost(&result, &mut session, &mut opened, state);
                 deliver(&reply, result);
             }
             Request::SetSetting(kind, value, reply) => {
                 let result = ensure_open(&mut session, &mut opened, state).and_then(|_| {
+                    if live_view {
+                        // The D600 froze (dark, its switch dead until the battery came out) when
+                        // a setting was changed in live view, so live view is left first; the
+                        // next frame starts it again, unzoomed.
+                        if let Err(err) = leave(&mut session, &mut zoomed) {
+                            tracing::warn!("could not leave live view before a setting: {err:?}");
+                        }
+                        live_view = false;
+                    }
                     with(&mut session, |s| {
                         s.set_setting(kind, &value)?;
                         s.settings()
@@ -435,6 +557,69 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
         }
     }
     close(&mut session);
+}
+
+/// Reads one frame. When that starts live view and fails, the camera is asked why, and the
+/// condition it names goes into the error.
+fn read_frame(session: &mut SessionSlot, live_view: &mut bool) -> Result<Vec<u8>, SessionError> {
+    let starting = !*live_view;
+    *live_view = true;
+    let result = with(session, |s| s.preview_frame());
+    match result {
+        Err(err) if starting => Err(explain_prohibit(session, err)),
+        other => other,
+    }
+}
+
+/// Puts the camera in live view if the worker has not (the zoom and the area only work in it), by
+/// reading one frame and dropping it.
+fn start_live_view(session: &mut SessionSlot, live_view: &mut bool) -> Result<(), SessionError> {
+    if !*live_view {
+        read_frame(session, live_view)?;
+    }
+    Ok(())
+}
+
+/// `err` with the condition the camera names for not starting live view, when `err` is the kind a
+/// refusal comes as and the camera names one. A failure of the link is left as it is.
+fn explain_prohibit(session: &mut SessionSlot, err: SessionError) -> SessionError {
+    if !matches!(
+        err.effective_kind(),
+        SessionErrorKind::Other | SessionErrorKind::Busy
+    ) {
+        return err;
+    }
+    match with(session, |s| s.preview_prohibit()) {
+        Ok(Some(text)) => match prohibit_reason(&text) {
+            Some(reason) => err.with_prohibit(reason),
+            None => err,
+        },
+        _ => err,
+    }
+}
+
+/// The zoom steps the camera offers now.
+fn zoom_steps(session: &mut SessionSlot) -> Result<Vec<ZoomStep>, SessionError> {
+    with(session, |s| s.preview_zoom_choices()).map(zoom_steps_from_choices)
+}
+
+/// Leaves live view, setting the zoom back to the whole frame first when it was zoomed, so that
+/// the next live view starts unzoomed. A failure of that reset is only logged, like the
+/// viewfinder step of the capture.
+fn leave(session: &mut SessionSlot, zoomed: &mut bool) -> Result<(), SessionError> {
+    if *zoomed {
+        let reset = zoom_steps(session).and_then(|steps| {
+            match steps.iter().find(|step| is_whole_frame(&step.value)) {
+                Some(step) => with(session, |s| s.set_preview_zoom(&step.value)),
+                None => Ok(()),
+            }
+        });
+        if let Err(err) = reset {
+            tracing::warn!("could not reset the live-view zoom: {err:?}");
+        }
+        *zoomed = false;
+    }
+    with(session, |s| s.leave_live_view())
 }
 
 /// After a failure that says the link is gone, closes the session so the next request opens it
@@ -651,5 +836,21 @@ impl CameraPreview for GphotoFinder {
 
     fn preview_stop(&self) -> Result<(), AppError> {
         self.hub.preview_stop()
+    }
+
+    fn preview_zoom_steps(&self) -> Result<Vec<ZoomStep>, AppError> {
+        self.hub.preview_zoom_steps()
+    }
+
+    fn set_preview_zoom(&self, value: &str) -> Result<(), AppError> {
+        self.hub.set_preview_zoom(value)
+    }
+
+    fn set_preview_area(&self, x: f32, y: f32) -> Result<(), AppError> {
+        self.hub.set_preview_area(x, y)
+    }
+
+    fn preview_prohibit(&self) -> Result<Option<String>, AppError> {
+        self.hub.preview_prohibit()
     }
 }

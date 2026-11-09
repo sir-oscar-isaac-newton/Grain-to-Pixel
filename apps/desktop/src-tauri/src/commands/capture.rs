@@ -7,7 +7,7 @@ use gtp_app::services::capture_control as capture;
 use gtp_app::services::capture_levels::{self, CaptureLevels, LevelsScope};
 use gtp_app::{
     AppContext, CameraInfo, CameraSetting, CameraSettingKind, CaptureProfile, CaptureProfilePatch,
-    Hardware, JobManager, LightInfo, PortInfo, Region, TestShot,
+    Hardware, JobManager, LightInfo, PortInfo, Region, TestShot, ZoomStep,
 };
 use gtp_core::{ExposureInfo, JobId, RollId, TripletChannel};
 use tauri::State;
@@ -99,6 +99,29 @@ pub fn camera_preview_frame(hardware: State<'_, Hardware>) -> CmdResult<tauri::i
 #[specta::specta]
 pub fn camera_preview_stop(hardware: State<'_, Hardware>) -> CmdResult<()> {
     capture::camera_preview_stop(&hardware)
+}
+
+/// The zoom steps of the camera's live view, whole frame first (`value` is what to set, `label`
+/// what to show); empty when the camera has no zoom. Refused while a capture runs.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn camera_preview_zoom_steps(hardware: State<'_, Hardware>) -> CmdResult<Vec<ZoomStep>> {
+    capture::camera_preview_zoom_steps(&hardware)
+}
+
+/// Sets the live-view zoom to one of the steps (anything else is refused), putting the camera in
+/// live view if it is not in it. The zoom goes back to the whole frame when live view is left.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn camera_preview_set_zoom(hardware: State<'_, Hardware>, value: String) -> CmdResult<()> {
+    capture::camera_preview_set_zoom(&hardware, &value)
+}
+
+/// Moves the zoomed area to the point (`x`, `y`) of the frame, each a fraction from 0 to 1.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn camera_preview_set_area(hardware: State<'_, Hardware>, x: f32, y: f32) -> CmdResult<()> {
+    capture::camera_preview_set_area(&hardware, x, y)
 }
 
 /// The capture profile (levels, settle time, temperature limits, camera backend).
@@ -342,6 +365,34 @@ mod tests {
     }
 
     #[test]
+    fn the_camera_zoom_commands_offer_steps_set_zoom_and_area_and_refuse_bad_input_or_busy() {
+        let f = fixture("camera-zoom");
+        let hardware = || f.app.state::<Hardware>();
+        let steps = camera_preview_zoom_steps(hardware()).unwrap();
+        let json = serde_json::to_value(&steps).unwrap();
+        assert_eq!(json[0]["label"], "Whole frame");
+        assert_eq!(
+            json[3],
+            serde_json::json!({"value": "100%", "label": "100%"})
+        );
+        camera_preview_set_zoom(hardware(), steps[3].value.clone()).unwrap();
+        camera_preview_set_area(hardware(), 0.3, 0.6).unwrap();
+        let err = camera_preview_set_zoom(hardware(), "300%".into()).unwrap_err();
+        assert!(err.message.contains("not one the camera offers"), "{err}");
+        let err = camera_preview_set_area(hardware(), 1.5, 0.5).unwrap_err();
+        assert!(err.message.contains("between 0 and 1"), "{err}");
+        camera_preview_stop(hardware()).unwrap();
+        let _busy = hardware().busy().acquire().unwrap();
+        for err in [
+            camera_preview_zoom_steps(hardware()).unwrap_err(),
+            camera_preview_set_zoom(hardware(), "100%".into()).unwrap_err(),
+            camera_preview_set_area(hardware(), 0.5, 0.5).unwrap_err(),
+        ] {
+            assert!(err.message.contains("capture is in progress"), "{err}");
+        }
+    }
+
+    #[test]
     fn the_profile_is_read_changed_validated_and_kept() {
         let f = fixture("profile");
         let ctx = || f.app.state::<AppContext>();
@@ -576,6 +627,12 @@ mod tests {
         let err = capture::camera_preview_frame(&real).unwrap_err();
         assert!(err.message.contains("No camera backend"), "{err}");
         let err = capture::camera_preview_stop(&real).unwrap_err();
+        assert!(err.message.contains("No camera backend"), "{err}");
+        let err = capture::camera_preview_zoom_steps(&real).unwrap_err();
+        assert!(err.message.contains("No camera backend"), "{err}");
+        let err = capture::camera_preview_set_zoom(&real, "100%").unwrap_err();
+        assert!(err.message.contains("No camera backend"), "{err}");
+        let err = capture::camera_preview_set_area(&real, 0.5, 0.5).unwrap_err();
         assert!(err.message.contains("No camera backend"), "{err}");
     }
 }

@@ -249,3 +249,30 @@ Conclusion: live view over USB is usable for framing and rough focus on the D600
 - [x] Live view is refused or stopped while a capture runs, and a capture started while live view is on works without stopping it by hand.
 - [x] Choose each light colour in the Live view panel: the film shows in that colour, framing and focusing work (green is usually sharpest), Off turns the light off, and starting a test shot turns it off first.
 - [x] The Scanlight is not lit by live view itself: with the light off, starting live view leaves it off.
+
+## Focus aids (H-18)
+
+**The zoom test on the D600 (2026-11-08, gphoto2 command line, Grain to Pixel closed, the light on, a negative in the gate).**
+
+- `gphoto2 --list-config` offers `/main/capturesettings/liveviewimagezoomratio` (radio: 0 Entire Display, 2 25%, 4 50%, 6 100%, 7 200%; 1, 3 and 5 are shown as "Unknown value"), `/main/actions/changeafarea` (text, `XxY`, current `0x0`), `/main/capturesettings/liveviewsize` (QVGA, VGA; VGA is set) and `/main/status/liveviewprohibit` (read-only text).
+- The zoom and the area work only while live view is on ("Not in Liveview", "changeafarea works only in LiveView mode" otherwise), so they are set in the same session as the frames.
+- At 50 %, 100 % and 200 % the frames are magnified, and the grain is visible at 100 % and 200 %. The camera then reports "In enlarged liveview".
+- `changeafarea` moves the zoomed area, set before or during the zoom: `4500x3000`, `1000x700` and `100x100` each show a different part of the film. The units are not confirmed (most likely sensor pixels, 6016 x 4016); the app's checklist confirms them by pointing at a spot.
+- Once, live view refused to start with `liveviewprohibit` = "Sequence error" after earlier runs; switching the camera off and on cleared it. The app should show that condition in words.
+- gphoto2 note: in one run `--filename` applies to every frame, so a time pattern (`z-%H%M%S.jpg`) is needed to keep them apart.
+
+Conclusion: the zoom and moving the zoomed area go ahead in H-18.
+
+**Hardware checklist for H-18** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
+
+- [x] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
+- [x] The zoom steps offered are Whole frame, 25 %, 50 %, 100 % and 200 %.
+- [x] At 100 % and 200 % the grain shows.
+- [x] Clicking a spot on the whole-frame view and then zooming shows that spot (this confirms the units of the zoomed area).
+- [x] Peaking outlines the edges, and its sensitivity changes how much it outlines.
+- [x] The sharpness number rises to a peak as the focus ring passes best focus, and the best mark holds that peak.
+- [x] A test shot, and a capture, straight after a zoomed live view work, and the next live view starts unzoomed.
+- [x] With the camera in a state that prohibits live view, the message names the reason. (Neither Bulb nor a camera without a memory card stops the D600's live view, so no refusal could be produced on demand; the message is covered by the worker tests and by the "Sequence error" seen with gphoto2.)
+- [x] Change the ISO, the shutter speed and the aperture while live view runs (also zoomed): live view goes on at the whole frame, the camera takes the new setting, and the camera does not freeze in the next minutes.
+
+**Observation during the H-18 checks (2026-11-08).** The D600 froze several times: it went dark and its power switch did nothing until the battery was taken out (a moment in the charger, then back in). It never happened before live view, the battery was not low, and it happened after **a camera setting (ISO, shutter speed or aperture) was changed while live view was on**; the camera then froze while it sat idle. Fix: the camera worker leaves live view (and its zoom) before it changes a setting, as it already did before a capture, and the next frame starts live view again at the whole frame; the Live view panel goes back to the whole frame with it. A dummy battery on mains power (EP-5B type) is on order for long sessions anyway.

@@ -12,7 +12,7 @@ use std::path::Path;
 
 // Re-exported so that the tests of the desktop shell can script a light without a dependency on
 // `gtp-capture` (the shell depends on `gtp-app` only).
-use gtp_capture::{CameraInfo, CaptureProfile, CapturedFile, FakeCamera};
+use gtp_capture::{CameraInfo, CaptureProfile, CapturedFile, FakeCamera, PreviewView};
 pub use gtp_capture::{FakeLight, FakeLightHandle, LightInfo, LightSource, LightStatus};
 use gtp_core::recipe::OutputSpace;
 use gtp_core::{AppError, ErrorCode, ImageF32};
@@ -58,12 +58,57 @@ const BAR_WIDTH_PX: usize = 24;
 const COUNTER_BITS: usize = 16;
 const COUNTER_SQUARE_PX: usize = 20;
 
-/// Frame number `n` of the fake live view, as JPEG bytes: a grey gradient with a bright bar that
-/// moves right (and wraps) by a few pixels each frame, and at the top a row of squares that show
-/// `n` in binary, so that every frame differs and the view visibly updates.
-pub fn fake_preview_frame(n: usize) -> Result<Vec<u8>, AppError> {
+/// How many times the fake magnifies its picture at a zoom of 100 %; the other steps in
+/// proportion (25 % a quarter of it, 200 % twice), roughly what the D600's 640 px frame shows of
+/// its 6016 px sensor.
+const MAGNIFY_AT_100: f32 = 9.0;
+/// The squares at the bottom of a zoomed frame, one per 25 % of zoom, that tell the step.
+const ZOOM_SQUARE_PX: usize = 20;
+/// The grid of the fake picture, in picture pixels, so that magnification shows.
+const GRID_PX: f32 = 16.0;
+
+/// The zoom as a percentage (`"100%"` is 100); 0 for the whole frame or a choice that is none.
+fn zoom_percent(zoom: &str) -> f32 {
+    zoom.trim().trim_end_matches('%').parse().unwrap_or(0.0)
+}
+
+/// How many times `zoom` magnifies the frame: 1 for the whole frame.
+fn magnification(zoom: &str) -> f32 {
+    (zoom_percent(zoom) / 100.0 * MAGNIFY_AT_100).max(1.0)
+}
+
+/// The brightness of the fake picture at picture point (`sx`, `sy`): a grey gradient, a faint
+/// grid, and a bright bar that starts at `bar_x`.
+fn picture_value(sx: f32, sy: f32, bar_x: f32) -> f32 {
+    let (w, h) = (PREVIEW_WIDTH as f32, PREVIEW_HEIGHT as f32);
+    if (sx + w - bar_x).rem_euclid(w) < BAR_WIDTH_PX as f32 {
+        return 0.8;
+    }
+    let grid = if sx.rem_euclid(GRID_PX) < 1.0 || sy.rem_euclid(GRID_PX) < 1.0 {
+        0.1
+    } else {
+        0.0
+    };
+    0.05 + 0.25 * (sx.max(0.0) + sy.max(0.0)) / (w + h) + grid
+}
+
+/// Frame number `n` of the fake live view, as JPEG bytes: a grey gradient with a faint grid and a
+/// bright bar that moves right (and wraps) by a few pixels each frame, and at the top a row of
+/// squares that show `n` in binary, so that every frame differs and the view visibly updates.
+/// When `view` is zoomed, the picture is magnified around the area (the middle until one is set),
+/// and a row of squares at the bottom, one per 25 % of the zoom, tells the step.
+pub fn fake_preview_frame(n: usize, view: &PreviewView) -> Result<Vec<u8>, AppError> {
     let (w, h) = (PREVIEW_WIDTH as usize, PREVIEW_HEIGHT as usize);
-    let bar_x = (n * BAR_STEP_PX) % w;
+    let bar_x = ((n * BAR_STEP_PX) % w) as f32;
+    let factor = magnification(&view.zoom);
+    let zoomed = factor > 1.0;
+    let (ax, ay) = view.area.unwrap_or((0.5, 0.5));
+    let (centre_x, centre_y) = (ax * w as f32, ay * h as f32);
+    let zoom_squares = if zoomed {
+        (zoom_percent(&view.zoom) / 25.0) as usize
+    } else {
+        0
+    };
     let mut data = Vec::with_capacity(w * h * 3);
     for y in 0..h {
         for x in 0..w {
@@ -75,10 +120,14 @@ pub fn fake_preview_frame(n: usize) -> Result<Vec<u8>, AppError> {
                 } else {
                     0.05
                 }
-            } else if (x + w - bar_x) % w < BAR_WIDTH_PX {
-                0.8
+            } else if y >= h - ZOOM_SQUARE_PX && x < zoom_squares * ZOOM_SQUARE_PX {
+                0.95
+            } else if zoomed {
+                let sx = centre_x + (x as f32 - w as f32 / 2.0) / factor;
+                let sy = centre_y + (y as f32 - h as f32 / 2.0) / factor;
+                picture_value(sx, sy, bar_x)
             } else {
-                0.05 + 0.25 * (x + y) as f32 / (w + h) as f32
+                picture_value(x as f32, y as f32, bar_x)
             };
             data.extend_from_slice(&[value, value, value]);
         }
@@ -177,7 +226,7 @@ fn decode_lit(path: &Path, scale: f32) -> Result<RawLinear, AppError> {
 mod tests {
     use std::time::Duration;
 
-    use gtp_capture::CameraSource;
+    use gtp_capture::{CameraPreview, CameraSource};
     use gtp_io::demosaic_channel;
 
     use super::*;
@@ -253,7 +302,9 @@ mod tests {
 
     #[test]
     fn the_fake_live_view_frames_are_640_by_424_jpegs_that_differ_from_frame_to_frame() {
-        let frames: Vec<Vec<u8>> = (0..4).map(|n| fake_preview_frame(n).unwrap()).collect();
+        let frames: Vec<Vec<u8>> = (0..4)
+            .map(|n| fake_preview_frame(n, &whole()).unwrap())
+            .collect();
         for frame in &frames {
             assert_eq!(frame[..2], [0xFF, 0xD8]);
             assert_eq!(frame[frame.len() - 2..], [0xFF, 0xD9]);
@@ -266,7 +317,80 @@ mod tests {
         for pair in frames.windows(2) {
             assert_ne!(pair[0], pair[1]);
         }
-        assert_ne!(frames[0], fake_preview_frame(40).unwrap(), "the bar wraps");
+        assert_ne!(
+            frames[0],
+            fake_preview_frame(40, &whole()).unwrap(),
+            "the bar wraps"
+        );
+    }
+
+    fn whole() -> PreviewView {
+        PreviewView {
+            zoom: "Entire Display".to_owned(),
+            area: None,
+        }
+    }
+
+    /// The grey values of a frame, three channels to one.
+    fn grey(frame: &[u8]) -> Vec<u8> {
+        let pixels = jpeg_decoder::Decoder::new(frame).decode().unwrap();
+        pixels.chunks(3).map(|p| p[0]).collect()
+    }
+
+    #[test]
+    fn a_zoomed_frame_is_magnified_around_the_area_and_labelled() {
+        let frame = |zoom: &str, area| {
+            let view = PreviewView {
+                zoom: zoom.to_owned(),
+                area,
+            };
+            grey(&fake_preview_frame(20, &view).unwrap())
+        };
+        let whole_frame = frame("Entire Display", None);
+        let at_100 = frame("100%", None);
+        assert_ne!(whole_frame, at_100);
+        assert_ne!(at_100, frame("200%", None), "each step differs");
+        assert_ne!(
+            at_100,
+            frame("100%", Some((0.1, 0.9))),
+            "the area moves the view"
+        );
+        // Magnified: the grid lines of the picture are further apart on screen, so a row crosses
+        // fewer edges than at the whole frame.
+        let w = PREVIEW_WIDTH as usize;
+        let row = PREVIEW_HEIGHT as usize / 2;
+        let edges = |g: &[u8]| {
+            g[row * w + 100..row * w + 500]
+                .windows(2)
+                .filter(|p| p[0].abs_diff(p[1]) > 8)
+                .count()
+        };
+        assert!(edges(&at_100) < edges(&whole_frame));
+        // The label: one square per 25 % at the bottom left.
+        let bottom = (PREVIEW_HEIGHT as usize - 5) * w;
+        let bright = |g: &[u8]| g[bottom..bottom + 200].iter().filter(|v| **v > 200).count();
+        assert_eq!(bright(&whole_frame), 0);
+        assert!(bright(&frame("200%", None)) > bright(&at_100));
+    }
+
+    #[test]
+    fn the_zoom_choices_of_the_fake_camera_magnify_in_proportion() {
+        assert_eq!(magnification("Entire Display"), 1.0);
+        assert_eq!(magnification("25%"), 2.25);
+        assert_eq!(magnification("200%"), 2.0 * magnification("100%"));
+        assert_eq!(magnification("nonsense"), 1.0);
+    }
+
+    #[test]
+    fn the_fake_camera_hands_its_view_to_the_frames() {
+        let camera = fake_camera();
+        let handle = camera.handle();
+        let whole_frame = handle.preview_frame().unwrap();
+        handle.set_preview_zoom("100%").unwrap();
+        handle.set_preview_area(0.2, 0.8).unwrap();
+        assert_ne!(handle.preview_frame().unwrap(), whole_frame);
+        handle.preview_stop().unwrap();
+        assert_eq!(grey(&handle.preview_frame().unwrap()).len(), 640 * 424);
     }
 
     #[test]

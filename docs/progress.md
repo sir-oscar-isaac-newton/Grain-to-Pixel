@@ -770,6 +770,15 @@
       "status": "completed",
       "pr": 252,
       "commit": "e547f66"
+    },
+    {
+      "id": "H-18",
+      "number": 253,
+      "title": "Focus aids in the live view",
+      "branch": "feat/issue-253-focus-aids",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

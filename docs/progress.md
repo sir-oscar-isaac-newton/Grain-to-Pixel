@@ -797,6 +797,15 @@
       "status": "in_progress",
       "pr": null,
       "commit": null
+    },
+    {
+      "id": "T-09",
+      "number": 262,
+      "title": "Clear the SQLite advisory RUSTSEC-2026-0459",
+      "branch": "chore/issue-262-sqlite-advisory",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

@@ -290,3 +290,5 @@ The focus check is one real picture taken with the chosen light colour and level
 - [x] With film in the holder the map and the hint show the film's shape, against the reference (try a deliberately bowed strip if possible).
 - [x] Clearing the reference works: the next map is no longer against it.
 - [x] A focus check is refused while a capture runs.
+
+**Measured on the D600 (2026-11-08), after the sharpness fix.** Green, film in the holder: 47.4 in focus, 10 with the focus ring clearly off, so the number follows focus by a factor of about 5. One check takes about 2 seconds, from the press to the result (one shot, the download, the decode and one pass over the 24 MP plane). Before the fix every check read 0.0: the unscaled ratio of a real picture is about 0.0001 to 0.003, and the panel shows one decimal.

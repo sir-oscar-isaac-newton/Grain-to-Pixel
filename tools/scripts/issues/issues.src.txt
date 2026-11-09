@@ -1549,6 +1549,29 @@ MIGRATIONS: none.
 TESTS: the title check on a Dependabot PR and on a long human title; the script run on an open Dependabot PR.
 NOTES: a workflow that commits the notices was rejected: a push with the workflow token does not start CI again, so the required checks would stay on the old commit. Seen on PRs 218, 220 and 233.
 
+## T-09
+title: Clear the SQLite advisory RUSTSEC-2026-0459
+milestone: M0
+type: chore
+size: S
+estimate: 0.5d
+deps: T-03
+adr: no
+spec: convention section 8
+desc: cargo deny in CI now fails on every pull request with RUSTSEC-2026-0459 (CVE-2026-119375). libsqlite3-sys 0.38.2 bundles a SQLite older than 3.54.0 that can return uninitialised page-cache memory when a database is opened with a -wal file of a different page size. It is fixed in libsqlite3-sys 0.39.0 and later. crates/gtp-catalog uses rusqlite 0.40 (feature bundled) because rusqlite_migration 2.6 is built against it. The exposure is low: the app opens only its own library, and the flaw needs a database and a -wal file written by a less trusted party. Clear the advisory so CI is green again.
+ac:
+- cargo deny check passes
+- cargo test --workspace passes on Windows and macOS (CI)
+- The catalog's migration tests pass unchanged
+- docs/third-party-licenses.txt is regenerated with pnpm gen:notices if the dependency set changed
+- If the fallback is used, the ignore in deny.toml names the advisory ID, the reason, and the condition for removing it
+tech:
+FILES: crates/gtp-catalog/Cargo.toml, Cargo.lock, deny.toml (fallback only), docs/third-party-licenses.txt (if the dependency set changed).
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: cargo deny check; the workspace tests; the catalog's migration tests unchanged.
+NOTES: first choice is to move rusqlite to a version that pulls libsqlite3-sys 0.39.0 or later (the 0.41 line), if rusqlite_migration builds with it and the build still has one sqlite3 link. The fallback is to ignore this one advisory in deny.toml, with the reason written next to it and a note to remove the ignore once rusqlite_migration supports the fixed version. Use the fallback only with the human's approval at that point.
+
 ## U-13
 title: Customizable keyboard shortcuts
 milestone: M3
@@ -1881,6 +1904,31 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: manifest parsing for both kinds, matching by name, an 8-bit reference, a synthetic LS-50 pair through the report with a ΔE of about 0, and an ignored run on the author's 12 pairs.
 NOTES: asked for after the author pointed out that Nikon Scan positives exist for the LS-50 negatives in samples/private, beside the Trichroma Lab exports. It builds on the report of Q-02 and waits for that pull request to be merged. Whether the Film log look or a later look should be compared with Nikon Scan's rendition is for the author to judge from the report. GitHub issue: #190.
+
+## Q-10
+title: Bring the plan in line with the hardware findings
+milestone: M6
+type: docs
+size: M
+estimate: 1d
+deps: T-09
+adr: no
+spec: specification sections 6.1, 16, 17 and 18; docs/research/scanlight-capture.md; decisions/0004
+desc: A review of the plan on 2026-11-09 against docs/research/scanlight-capture.md found issue texts, spec sections and bookkeeping that no longer match what the hardware showed. The human decided on 2026-11-09: Windows capture is not required for v0.1.0; the thermal limits (warn at 45 °C, abort at 55 °C) are approved; the flag experimental_auto_levels is removed; the flag dev_overlay stays (building it is a separate later issue). Make the plan say so.
+ac:
+- In issues.src.txt: P-16 is marked superseded by P-21 (ADR 0010) and closed; R-04 and H-10 are rewritten for digiCamControl firing the camera over USB instead of the Scanlight shutter pulse, and R-04 must find out how the app asks digiCamControl to take a shot; R-02 is rewritten to what remains (the Windows serial retest with another cable and port, the packet captures saved under samples/public/scanlight/, the light recorded as V4 rev A); Q-04 depends on H-13 and H-20; Q-07 has a CHANGELOG.md criterion
+- The build check passes and the GitHub issues are updated to match; P-16 is closed on GitHub with a note pointing to P-21
+- The spec has no remaining mention of rev B or the shutter pulse as the way the camera is fired (sections 6.1, 16, 17, 18 use rev A and the USB trigger); it says Windows capture is not required for v0.1.0, states the thermal limits as approved, marks the default levels 44/22/2 as bare-light values, and has the right count of runtime flags
+- experimental_auto_levels appears nowhere in apps/ or crates/ or the spec; it is gone from the Settings view, the settings service and the fakes, with tests updated, and the workspace tests pass
+- ADR 0004 carries an amendment recording the two decisions (Windows capture is not a release gate; the thermal limits are approved), and its status in decisions/README.md matches
+- docs/progress.md records T-08 as completed (PR 250) and pnpm -s check:progress passes
+- The hardware checklists in docs/research/scanlight-capture.md that still have unticked boxes are listed in the pull request; no checklist box was ticked by the change (the human ticks them)
+tech:
+FILES: tools/scripts/issues/issues.src.txt (and the files it generates), docs/specification.md, apps/desktop/src (Settings view, flag tests), crates/gtp-app (settings service and fakes), decisions/0004-*.md, decisions/README.md, docs/progress.md.
+ROUTES: none new.
+MIGRATIONS: none.
+TESTS: the flag removal updates the Settings view and settings service tests; the workspace tests, pnpm -s check:progress and the issues build check pass.
+NOTES: out of scope: building the dev overlay, the frame delete and note UI, any new feature. dev_overlay stays as a flag. Updating the GitHub issues and closing P-16 is done by the human's upload step, not by this change.
 
 ## P-21
 title: Flat-field correction for camera triplets

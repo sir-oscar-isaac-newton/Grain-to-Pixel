@@ -273,3 +273,5 @@ Conclusion: the zoom and moving the zoomed area go ahead in H-18.
 - [x] The sharpness number rises to a peak as the focus ring passes best focus, and the best mark holds that peak.
 - [x] A test shot, and a capture, straight after a zoomed live view work, and the next live view starts unzoomed.
 - [x] With the camera in a state that prohibits live view, the message names the reason.
+
+**Observation during the H-18 checks (2026-11-08).** The D600 froze several times during the live view sessions: it went dark and its power switch did nothing until the battery was taken out (a moment in the charger, then back in). The cause is not known yet: most likely the battery under the load of live view over USB, possibly the camera's firmware hanging on USB commands. A dummy battery on mains power (EP-5B type) is on order; if the camera still freezes with it, the app's live view needs to be gentler (a pause after a zoom or area change, a lower frame rate, a timeout that stops live view when the camera stops answering).

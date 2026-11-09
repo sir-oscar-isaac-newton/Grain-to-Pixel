@@ -1956,7 +1956,7 @@ FILES: tools/scripts/issues/issues.src.txt (and the files it generates), docs/sp
 ROUTES: none new.
 MIGRATIONS: none.
 TESTS: the flag removal updates the Settings view and settings service tests; the workspace tests, pnpm -s check:progress and the issues build check pass.
-NOTES: out of scope: building the dev overlay, the frame delete and note UI, any new feature. dev_overlay stays as a flag. Updating the GitHub issues and closing P-16 is done by the human's upload step, not by this change.
+NOTES: out of scope: building the dev overlay, the frame delete and note UI, any new feature. dev_overlay stays as a flag. The GitHub issues are updated and P-16 is closed with `gh issue edit` and `gh issue close` after the merge; the upload script only creates issues.
 
 ## P-21
 title: Flat-field correction for camera triplets

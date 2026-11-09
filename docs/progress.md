@@ -785,9 +785,9 @@
       "number": 254,
       "title": "Focus check shot and film flatness map",
       "branch": "feat/issue-254-focus-check",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 258,
+      "commit": "71405d3"
     }
   ]
 }

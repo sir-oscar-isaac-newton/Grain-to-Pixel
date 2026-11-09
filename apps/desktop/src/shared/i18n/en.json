@@ -769,7 +769,30 @@
         "waiting": "Waiting for the first picture…",
         "imageAlt": "Live view of the camera",
         "rate": "{{count}} frames/s",
-        "macOnly": "Live view is available on macOS only for now."
+        "macOnly": "Live view is available on macOS only for now.",
+        "focusPeaking": "Focus peaking",
+        "sensitivity": "Peaking sensitivity",
+        "peakColour": "Peaking colour",
+        "peak": {
+          "red": "Red",
+          "green": "Green",
+          "yellow": "Yellow",
+          "white": "White"
+        },
+        "sharpness": "Sharpness {{value}}",
+        "sharpnessNone": "Sharpness: no reading yet",
+        "sharpnessMeter": "Sharpness now, against the best since live view or the zoom started",
+        "best": "Best {{value}}",
+        "resetBest": "Reset best",
+        "zoom": "Zoom",
+        "wholeFrame": "Whole frame",
+        "areaHint": "Click the picture to choose the spot to zoom to, or move it with the arrows.",
+        "pickArea": "Choose the spot to zoom to (the middle, when pressed with the keyboard)",
+        "move": "Move the zoomed spot",
+        "moveLeft": "Left",
+        "moveRight": "Right",
+        "moveUp": "Up",
+        "moveDown": "Down"
       },
       "test": {
         "shoot": "Test shot, {{channel}}",

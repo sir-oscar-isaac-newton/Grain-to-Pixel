@@ -9,6 +9,7 @@ import {
   type CalibrationResult,
   type CalibrationWarning,
   type CameraInfo,
+  type ZoomStep,
   type CameraSetting_Serialize,
   type CameraSettingKind,
   type CaptureLevels_Serialize,
@@ -56,6 +57,7 @@ export type {
   CalibrationResult,
   CalibrationWarning,
   CameraInfo,
+  ZoomStep,
   CameraSettingKind,
   CaptureStep,
   ClientLogLevel,
@@ -479,6 +481,21 @@ export async function cameraPreviewFrame(): Promise<ArrayBuffer> {
 /** Takes the camera out of live view; harmless when it is not in live view or busy. */
 export async function cameraPreviewStop(): Promise<void> {
   unwrap(await commands.cameraPreviewStop());
+}
+
+/** The zoom steps of the live view, whole frame first; empty when the camera has no zoom. */
+export async function cameraPreviewZoomSteps(): Promise<ZoomStep[]> {
+  return unwrap(await commands.cameraPreviewZoomSteps());
+}
+
+/** Sets the live view zoom to the `value` of one of the steps (starts live view if needed). */
+export async function cameraPreviewSetZoom(value: string): Promise<void> {
+  unwrap(await commands.cameraPreviewSetZoom(value));
+}
+
+/** Moves the zoomed area to a point of the frame, as fractions (0 to 1) of its width and height. */
+export async function cameraPreviewSetArea(x: number, y: number): Promise<void> {
+  unwrap(await commands.cameraPreviewSetArea(x, y));
 }
 
 /** Calls a raw-bytes command by name; an `AppError` it returns becomes an `IpcError`. */

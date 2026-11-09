@@ -1,6 +1,6 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../test-support';
 import { IpcError, type ImportWarning, type LightStatus } from '../../shared/ipc';
 import {
@@ -1116,6 +1116,212 @@ describe('CaptureSection', () => {
         await waitFor(() => expect(ipc.lightSet).toHaveBeenCalled());
         await screen.findByRole('img', { name: 'Live view of the camera' });
         await expectNoA11yViolations(container);
+      });
+    });
+
+    describe('focus aids', () => {
+      // jsdom decodes no images and draws no canvas: a frame is a checkerboard of this contrast.
+      let contrast = 100;
+      const SIZE = { width: 64, height: 48 };
+      const context = {
+        drawImage: vi.fn(),
+        getImageData: vi.fn(() => {
+          const data = new Uint8ClampedArray(SIZE.width * SIZE.height * 4);
+          for (let p = 0; p < SIZE.width * SIZE.height; p += 1) {
+            const x = p % SIZE.width;
+            const y = Math.floor(p / SIZE.width);
+            const v = (x + y) % 2 === 0 ? contrast : 0;
+            data.set([v, v, v, 255], p * 4);
+          }
+          return { data };
+        }),
+        createImageData: vi.fn(() => ({
+          data: new Uint8ClampedArray(SIZE.width * SIZE.height * 4),
+        })),
+        putImageData: vi.fn(),
+        clearRect: vi.fn(),
+      };
+      const realGetContext = HTMLCanvasElement.prototype.getContext;
+      const realBitmap = globalThis.createImageBitmap;
+      const number = (v: number) =>
+        v.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+      beforeEach(() => {
+        contrast = 100;
+        Object.values(context).forEach((fn) => fn.mockClear());
+        HTMLCanvasElement.prototype.getContext = vi.fn(() => context) as never;
+        globalThis.createImageBitmap = vi.fn(async () => ({
+          ...SIZE,
+          close: () => undefined,
+        })) as never;
+      });
+      afterEach(() => {
+        HTMLCanvasElement.prototype.getContext = realGetContext;
+        globalThis.createImageBitmap = realBitmap;
+      });
+
+      const begin = async () => {
+        const view = await ready();
+        await view.user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        return view;
+      };
+
+      it('draws the edges on the overlay only when peaking is on', async () => {
+        const { user } = await begin();
+        await waitFor(() => expect(globalThis.createImageBitmap).toHaveBeenCalled());
+        expect(context.putImageData).not.toHaveBeenCalled();
+        expect(screen.queryByLabelText('Peaking sensitivity')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('checkbox', { name: 'Focus peaking' }));
+        expect(screen.getByLabelText('Peaking sensitivity')).toBeInTheDocument();
+        await waitFor(() => expect(context.putImageData).toHaveBeenCalled());
+        await user.click(screen.getByRole('checkbox', { name: 'Focus peaking' }));
+        await waitFor(() => expect(context.clearRect).toHaveBeenCalled());
+      });
+
+      it('shows the sharpness, the best value, and starts the best again on Reset best', async () => {
+        const { user } = await begin();
+        const sharp = 16 * 100 * 100;
+        expect(await screen.findByText(`Sharpness ${number(sharp)}`)).toBeInTheDocument();
+        expect(screen.getByText(`Best ${number(sharp)}`)).toBeInTheDocument();
+        contrast = 50;
+        const soft = 16 * 50 * 50;
+        expect(await screen.findByText(`Sharpness ${number(soft)}`)).toBeInTheDocument();
+        expect(screen.getByText(`Best ${number(sharp)}`)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Reset best' }));
+        expect(await screen.findByText(`Best ${number(soft)}`)).toBeInTheDocument();
+      });
+
+      it('has no accessibility violations with peaking and the zoom on', async () => {
+        const { user, container } = await begin();
+        await user.click(screen.getByRole('checkbox', { name: 'Focus peaking' }));
+        await screen.findByRole('radio', { name: '100 %' });
+        await user.click(screen.getByRole('radio', { name: '100 %' }));
+        await waitFor(() => expect(screen.getByRole('radio', { name: '100 %' })).toBeChecked());
+        await screen.findByText(/^Best /);
+        await expectNoA11yViolations(container);
+      });
+    });
+
+    describe('zoom', () => {
+      const begin = async () => {
+        const view = await ready();
+        await view.user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        await screen.findByRole('radio', { name: 'Whole frame' });
+        return view;
+      };
+      const pick = () => screen.getByRole('button', { name: /^Choose the spot to zoom to/ });
+
+      it('offers the steps the camera gives, whole frame first', async () => {
+        await begin();
+        expect(
+          screen.getAllByRole('radio', { name: /frame|%/ }).map((r) => r.getAttribute('id')),
+        ).toHaveLength(5);
+        expect(screen.getByRole('radio', { name: 'Whole frame' })).toBeChecked();
+        expect(screen.getByRole('radio', { name: '200 %' })).toBeInTheDocument();
+      });
+
+      it('shows no zoom controls when the camera has no zoom', async () => {
+        state.zoomSteps = [];
+        const { user } = await ready();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        await waitFor(() => expect(ipc.cameraPreviewZoomSteps).toHaveBeenCalled());
+        expect(screen.queryByRole('radio', { name: 'Whole frame' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Left' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /^Choose the spot/ })).not.toBeInTheDocument();
+      });
+
+      it('sets the zoom to the value of the chosen step', async () => {
+        const { user } = await begin();
+        await user.click(screen.getByRole('radio', { name: '100 %' }));
+        await waitFor(() => expect(ipc.cameraPreviewSetZoom).toHaveBeenCalledWith('6'));
+        expect(screen.getByRole('radio', { name: '100 %' })).toBeChecked();
+      });
+
+      it('shows the message when the zoom is refused, and keeps the step', async () => {
+        const { user } = await begin();
+        ipc.cameraPreviewSetZoom.mockRejectedValueOnce(
+          new IpcError({ code: 'Internal', message: 'The camera refused the zoom.' }),
+        );
+        await user.click(screen.getByRole('radio', { name: '50 %' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('The camera refused the zoom.');
+        expect(screen.getByRole('radio', { name: 'Whole frame' })).toBeChecked();
+      });
+
+      it('aims at the spot clicked on the whole frame and marks it', async () => {
+        await begin();
+        const box = { left: 100, top: 50, width: 200, height: 100 } as DOMRect;
+        vi.spyOn(pick(), 'getBoundingClientRect').mockReturnValue(box);
+        fireEvent.click(pick(), { clientX: 150, clientY: 75, detail: 1 });
+        await waitFor(() => expect(ipc.cameraPreviewSetArea).toHaveBeenCalledWith(0.25, 0.25));
+        await waitFor(() =>
+          expect(document.querySelector('[class*="captureLiveMarker"]')).not.toBeNull(),
+        );
+      });
+
+      it('aims at the middle when the button is pressed with the keyboard', async () => {
+        await begin();
+        fireEvent.click(pick(), { detail: 0 });
+        await waitFor(() => expect(ipc.cameraPreviewSetArea).toHaveBeenCalledWith(0.5, 0.5));
+      });
+
+      it('nudges the zoomed spot by a quarter of the view', async () => {
+        const { user } = await begin();
+        await user.click(screen.getByRole('radio', { name: '100 %' }));
+        await waitFor(() => expect(ipc.cameraPreviewSetZoom).toHaveBeenCalled());
+        expect(screen.queryByRole('button', { name: /^Choose the spot/ })).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Right' }));
+        await waitFor(() => expect(ipc.cameraPreviewSetArea).toHaveBeenCalledTimes(1));
+        const step = 0.25 * (1 / (100 * 0.094));
+        const [x1, y1] = ipc.cameraPreviewSetArea.mock.calls[0] ?? [];
+        expect(x1).toBeCloseTo(0.5 + step, 5);
+        expect(y1).toBe(0.5);
+        await user.click(screen.getByRole('button', { name: 'Up' }));
+        await waitFor(() => expect(ipc.cameraPreviewSetArea).toHaveBeenCalledTimes(2));
+        const [x2, y2] = ipc.cameraPreviewSetArea.mock.calls[1] ?? [];
+        expect(x2).toBeCloseTo(0.5 + step, 5);
+        expect(y2).toBeCloseTo(0.5 - step, 5);
+      });
+
+      it('is back at the whole frame after Stop and a new start', async () => {
+        const { user } = await begin();
+        await user.click(screen.getByRole('radio', { name: '50 %' }));
+        await waitFor(() => expect(screen.getByRole('radio', { name: '50 %' })).toBeChecked());
+        await user.click(stopLive());
+        expect(screen.queryByRole('radio', { name: '50 %' })).not.toBeInTheDocument();
+        await user.click(startLive());
+        await screen.findByRole('radio', { name: 'Whole frame' });
+        expect(screen.getByRole('radio', { name: 'Whole frame' })).toBeChecked();
+      });
+
+      it('goes away with live view when a capture starts', async () => {
+        const { user } = await begin();
+        await user.click(screen.getByRole('radio', { name: '25 %' }));
+        await waitFor(() => expect(ipc.cameraPreviewSetZoom).toHaveBeenCalled());
+        await startCapture(user);
+        expect(screen.queryByRole('radio', { name: '25 %' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Left' })).not.toBeInTheDocument();
+        expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1);
+      });
+
+      it('goes back to the whole frame when a frame fails', async () => {
+        const { user } = await begin();
+        await user.click(screen.getByRole('radio', { name: '25 %' }));
+        await waitFor(() => expect(ipc.cameraPreviewSetZoom).toHaveBeenCalled());
+        state.liveViewFail =
+          'Live view cannot start: Sequence error. Switch the camera off and on, then try again.';
+        expect(await screen.findByRole('alert')).toHaveTextContent('Sequence error');
+        expect(screen.queryByRole('radio', { name: '25 %' })).not.toBeInTheDocument();
+      });
+
+      it('leaves live view when the view closes while zoomed', async () => {
+        const { user, unmount } = await begin();
+        await user.click(screen.getByRole('radio', { name: '25 %' }));
+        await waitFor(() => expect(ipc.cameraPreviewSetZoom).toHaveBeenCalled());
+        unmount();
+        expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1);
       });
     });
 

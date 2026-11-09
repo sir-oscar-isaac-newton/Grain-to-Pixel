@@ -163,6 +163,15 @@ export const commands = {
 	 */
 	captureTest: (channel: TripletChannel, levels: [number, number, number]) => typedError<TestShot_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_test", { channel, levels })),
 	/**
+	 *  The focus check (H-19): lights one colour at its level of `levels` (the working levels, 0 to 255
+	 *  each), takes a picture and returns a 1:1 crop of the middle of that colour (a base64 JPEG), its
+	 *  sharpness number and a 3 x 3 map of sharpness over the frame with the pattern it shows (flat,
+	 *  bowed, tilted), against the saved flat reference when there is one. Stores nothing; the light
+	 *  is off afterwards; refused while a capture runs. The reference is saved and cleared with
+	 *  `settings_set` (`focus_reference`, `clear_focus_reference`).
+	 */
+	captureFocusCheck: (channel: TripletChannel, levels: [number, number, number]) => typedError<FocusCheck_Serialize, AppError_Serialize>(__TAURI_INVOKE("capture_focus_check", { channel, levels })),
+	/**
 	 *  Captures one frame into the roll as a job; the new frame arrives in `job://done` like an
 	 *  import's, the steps as `capture://step`. `levels` are the working levels (0 to 255 each). Returns
 	 *  the job id at once.
@@ -947,6 +956,86 @@ export type FlatFieldInfo = {
 	/**  The names of the three files it was made from. */
 	sources: string[],
 };
+
+/**  What a focus check (H-19) measured: one picture with one colour lit. */
+export type FocusCheck = FocusCheck_Serialize | FocusCheck_Deserialize;
+
+/**  What a focus check (H-19) measured: one picture with one colour lit. */
+export type FocusCheck_Deserialize = {
+	/**
+	 *  The middle of the lit channel at full sensor resolution, 1:1, as a grey JPEG in base64
+	 *  (at most 512 x 512 pixels), stretched to its 99.5th percentile.
+	 */
+	crop: string,
+	/**  The crop's width and height in pixels. */
+	crop_width: number,
+	/**  See `crop_width`. */
+	crop_height: number,
+	/**
+	 *  The sharpness number of the crop (the variance of its Laplacian over the square of its
+	 *  mean); higher is sharper, and only comparable between shots of the same scene and light.
+	 */
+	sharpness: number | null,
+	/**
+	 *  The sharpness of 3 x 3 regions of the whole picture (rows from the top, columns from the
+	 *  left), each divided by the best region's, so the best is 1. Against the saved flat
+	 *  reference when `against_reference` is true.
+	 */
+	map: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])],
+	/**  The same map without the reference: this is what "Save as flat reference" saves. */
+	raw_map: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])],
+	/**  What the map shows about how the film lies. */
+	pattern: FocusPattern,
+	/**  The shutter time, ISO and aperture of the picture, as its EXIF says. */
+	exposure: ExposureInfo_Deserialize,
+	/**  Whether `map` and `pattern` are relative to the saved flat reference. */
+	against_reference: boolean,
+};
+
+/**  What a focus check (H-19) measured: one picture with one colour lit. */
+export type FocusCheck_Serialize = {
+	/**
+	 *  The middle of the lit channel at full sensor resolution, 1:1, as a grey JPEG in base64
+	 *  (at most 512 x 512 pixels), stretched to its 99.5th percentile.
+	 */
+	crop: string,
+	/**  The crop's width and height in pixels. */
+	crop_width: number,
+	/**  See `crop_width`. */
+	crop_height: number,
+	/**
+	 *  The sharpness number of the crop (the variance of its Laplacian over the square of its
+	 *  mean); higher is sharper, and only comparable between shots of the same scene and light.
+	 */
+	sharpness: number | null,
+	/**
+	 *  The sharpness of 3 x 3 regions of the whole picture (rows from the top, columns from the
+	 *  left), each divided by the best region's, so the best is 1. Against the saved flat
+	 *  reference when `against_reference` is true.
+	 */
+	map: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])],
+	/**  The same map without the reference: this is what "Save as flat reference" saves. */
+	raw_map: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])],
+	/**  What the map shows about how the film lies. */
+	pattern: FocusPattern,
+	/**  The shutter time, ISO and aperture of the picture, as its EXIF says. */
+	exposure: ExposureInfo_Serialize,
+	/**  Whether `map` and `pattern` are relative to the saved flat reference. */
+	against_reference: boolean,
+};
+
+/**  What the map of sharpness shows about how the film lies. */
+export type FocusPattern = 
+/**  Even sharpness over the frame. */
+{ kind: "flat" } | 
+/**  The middle is sharp and the edges are evenly softer. */
+{ kind: "bowed" } | 
+/**  One side or corner is softer than the opposite one. */
+{ kind: "tilted"; 
+/**  The softer side or corner. */
+side: TiltSide } | 
+/**  None of the above. */
+{ kind: "unclear" };
 
 /**  What the first-run dialog shows about a folder before a library is created or opened there. */
 export type FolderCheck = FolderCheck_Serialize | FolderCheck_Deserialize;
@@ -1871,6 +1960,10 @@ export type SettingsPatch_Deserialize = {
 	flags?: FlagsPatch_Deserialize | null,
 	/**  Replaces all the key bindings (an empty map goes back to the defaults). */
 	keys?: { [key in string]: string } | null,
+	/**  Saves this map as the focus check's flat reference (all nine values finite and above zero). */
+	focus_reference?: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])] | null,
+	/**  Clears the focus check's flat reference. Not together with `focus_reference`. */
+	clear_focus_reference?: boolean | null,
 };
 
 /**  Settings to change; fields left out keep their value. The last library is set by opening one. */
@@ -1881,6 +1974,10 @@ export type SettingsPatch_Serialize = {
 	flags: FlagsPatch_Serialize | null,
 	/**  Replaces all the key bindings (an empty map goes back to the defaults). */
 	keys: { [key in string]: string } | null,
+	/**  Saves this map as the focus check's flat reference (all nine values finite and above zero). */
+	focus_reference: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])] | null,
+	/**  Clears the focus check's flat reference. Not together with `focus_reference`. */
+	clear_focus_reference: boolean | null,
 };
 
 export type Settings_Deserialize = {
@@ -1896,6 +1993,12 @@ export type Settings_Deserialize = {
 	 *  that is not here has its default key, which the UI knows; the app only keeps the shape.
 	 */
 	keys?: { [key in string]: string },
+	/**
+	 *  The flat reference of the focus check (H-19): the 3 x 3 sharpness map of a flat target,
+	 *  relative to its best region, which later maps are divided by to leave what is the film's.
+	 *  Saved and cleared through `settings_set` (`focus_reference`, `clear_focus_reference`).
+	 */
+	focus_reference?: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])] | null,
 };
 
 export type Settings_Serialize = {
@@ -1911,6 +2014,12 @@ export type Settings_Serialize = {
 	 *  that is not here has its default key, which the UI knows; the app only keeps the shape.
 	 */
 	keys: { [key in string]: string },
+	/**
+	 *  The flat reference of the focus check (H-19): the 3 x 3 sharpness map of a flat target,
+	 *  relative to its best region, which later maps are divided by to leave what is the film's.
+	 *  Saved and cleared through `settings_set` (`focus_reference`, `clear_focus_reference`).
+	 */
+	focus_reference: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])] | null,
 };
 
 /**
@@ -2054,6 +2163,25 @@ export type TestShot_Serialize = {
 };
 
 export type Theme = "system" | "light" | "dark";
+
+/**  Which side or corner of the frame is softer. */
+export type TiltSide = 
+/**  The left edge. */
+"left" | 
+/**  The right edge. */
+"right" | 
+/**  The top edge. */
+"top" | 
+/**  The bottom edge. */
+"bottom" | 
+/**  The top left corner. */
+"top_left" | 
+/**  The top right corner. */
+"top_right" | 
+/**  The bottom left corner. */
+"bottom_left" | 
+/**  The bottom right corner. */
+"bottom_right";
 
 /**
  *  Tone sliders. Applied in this order: exposure, contrast, highlights and shadows, whites and

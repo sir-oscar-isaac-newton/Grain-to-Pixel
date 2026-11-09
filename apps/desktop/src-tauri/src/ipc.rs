@@ -54,6 +54,7 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::capture::capture_levels_get,
             commands::capture::capture_levels_save,
             commands::capture::capture_test,
+            commands::capture::capture_focus_check,
             commands::capture::capture_triplet,
             commands::capture::capture_calibrate,
             commands::export::export_start,
@@ -201,6 +202,7 @@ mod tests {
             "captureLevelsGet",
             "captureLevelsSave",
             "captureTest",
+            "captureFocusCheck",
             "captureTriplet",
             "captureCalibrate",
         ] {

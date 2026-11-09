@@ -292,3 +292,15 @@ The focus check is one real picture taken with the chosen light colour and level
 - [x] A focus check is refused while a capture runs.
 
 **Measured on the D600 (2026-11-08), after the sharpness fix.** Green, film in the holder: 47.4 in focus, 10 with the focus ring clearly off, so the number follows focus by a factor of about 5. One check takes about 2 seconds, from the press to the result (one shot, the download, the decode and one pass over the 24 MP plane). Before the fix every check read 0.0: the unscaled ratio of a real picture is about 0.0001 to 0.003, and the panel shows one decimal.
+
+## Calibration area (H-20)
+
+The calibration of H-17 measures the whole frame unless it is given an area. The live view at the whole frame lets the user drag a rectangle on the picture: the app keeps it as fractions of the frame (so the live view's 640 x 424 size does not matter), draws it as an outline, and passes it to the calibration, whose result says whether it measured the area or the whole frame. A click without a drag still aims the zoom. The area is kept while the capture view is open and is not saved.
+
+**Hardware checklist for H-20** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
+
+- [ ] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
+- [ ] Drag an area on the whole-frame live view: the outline shows, and a click without a drag still aims the zoom.
+- [ ] Calibrate with the area over the rebate between two frames: record the levels; they are close to a whole-frame calibration on a leader (record both).
+- [ ] Calibrate with the area over image content: the levels differ.
+- [ ] Clearing the area returns the calibration to the whole frame.

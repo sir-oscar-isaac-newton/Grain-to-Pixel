@@ -14,6 +14,7 @@ import {
 import { messageOf } from '../../library/library-store';
 import styles from '../import.module.css';
 import { canAnalyse, createAnalyser } from './analyse-frame';
+import { areaBetween, areaPercents, DRAG_THRESHOLD_PX, type Area } from './area';
 import {
   MAX_SENSITIVITY,
   MIN_SENSITIVITY,
@@ -61,6 +62,9 @@ const oneDecimal = (value: number) =>
   value.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 interface LiveViewProps {
+  /** The calibration area drawn on the whole frame (kept by the section); null when there is none. */
+  calibrationArea: Area | null;
+  onCalibrationAreaChange: (area: Area) => void;
   /** The working levels of the sliders; null until they are known. */
   levels: Levels | null;
   /** True when the light is not connected or has tripped: it is off then. */
@@ -91,6 +95,8 @@ interface Run {
  * Live view never lights the Scanlight; the light controls do that.
  */
 export function LiveView({
+  calibrationArea,
+  onCalibrationAreaChange,
   levels,
   lightLost,
   blocked,
@@ -103,6 +109,11 @@ export function LiveView({
   const [rate, setRate] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const run = useRef<Run | null>(null);
+  // A press on the picture: where it started, and whether it has moved far enough to be a drag.
+  const press = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
+  const dragged = useRef(false);
+  const [draft, setDraft] = useState<Area | null>(null);
+  const shownArea = draft ?? calibrationArea;
 
   // Focus aids: peaking and the sharpness number come from each frame, the zoom from the camera.
   const [peaking, setPeaking] = useState(false);
@@ -457,13 +468,58 @@ export function LiveView({
           </span>
         )}
         <canvas ref={overlay} className={styles.captureLiveOverlay} aria-hidden="true" />
-        {url && steps.length > 0 && zoomIndex === 0 && (
+        {url && zoomIndex === 0 && (
           <button
             type="button"
             className={styles.captureLivePick}
-            aria-label={t('import.capture.liveView.pickArea')}
+            aria-label={t(
+              steps.length > 0
+                ? 'import.capture.liveView.pickArea'
+                : 'import.capture.liveView.drawArea',
+            )}
             disabled={blocked}
+            onPointerDown={(e) => {
+              press.current = { x: e.clientX, y: e.clientY, dragging: false };
+              dragged.current = false;
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              const start = press.current;
+              if (!start) return;
+              const box = e.currentTarget.getBoundingClientRect();
+              if (!start.dragging) {
+                // Less than a few pixels of movement stays a click.
+                if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_THRESHOLD_PX)
+                  return;
+                start.dragging = true;
+              }
+              if (box.width === 0 || box.height === 0) return;
+              setDraft(
+                areaBetween(
+                  { x: (start.x - box.left) / box.width, y: (start.y - box.top) / box.height },
+                  { x: (e.clientX - box.left) / box.width, y: (e.clientY - box.top) / box.height },
+                ),
+              );
+            }}
+            onPointerUp={() => {
+              const start = press.current;
+              press.current = null;
+              if (!start?.dragging) return;
+              // The click that follows a drag must not aim the zoom.
+              dragged.current = true;
+              if (draft) onCalibrationAreaChange(draft);
+              setDraft(null);
+            }}
+            onPointerCancel={() => {
+              press.current = null;
+              setDraft(null);
+            }}
             onClick={(e) => {
+              if (dragged.current) {
+                dragged.current = false;
+                return;
+              }
+              if (steps.length === 0) return;
               const box = e.currentTarget.getBoundingClientRect();
               // A key press has no position: it points at the middle.
               if (e.detail === 0 || box.width === 0 || box.height === 0) return aim(MIDDLE);
@@ -471,6 +527,24 @@ export function LiveView({
                 x: Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)),
                 y: Math.min(1, Math.max(0, (e.clientY - box.top) / box.height)),
               });
+            }}
+          />
+        )}
+        {url && zoomIndex === 0 && shownArea && (
+          <span
+            className={styles.captureLiveArea}
+            role={draft ? undefined : 'img'}
+            aria-hidden={draft ? true : undefined}
+            aria-label={
+              !draft && calibrationArea
+                ? t('import.capture.liveView.areaLabel', areaPercents(calibrationArea))
+                : undefined
+            }
+            style={{
+              left: `${shownArea.x * 100}%`,
+              top: `${shownArea.y * 100}%`,
+              width: `${shownArea.w * 100}%`,
+              height: `${shownArea.h * 100}%`,
             }}
           />
         )}

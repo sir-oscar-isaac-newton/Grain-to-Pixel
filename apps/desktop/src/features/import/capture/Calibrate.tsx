@@ -9,10 +9,15 @@ import {
 } from '../../../shared/ipc';
 import { messageOf, useLibraryStore } from '../../library/library-store';
 import styles from '../import.module.css';
+import { areaPercents, type Area } from './area';
 
 const CHANNELS = ['red', 'green', 'blue'] as const;
 
 interface CalibrateProps {
+  /** The part of the frame to measure, or null for the whole frame. */
+  area: Area | null;
+  /** Called by the Clear area button. */
+  onClearArea: () => void;
   /** The light and the camera are there and usable, and no camera setting is changing. */
   ready: boolean;
   /** True while any capture or calibration runs (this one included). */
@@ -35,6 +40,8 @@ interface CalibrateProps {
  * it is doing, then what it found; the levels go to the sliders and nothing is saved.
  */
 export function Calibrate({
+  area,
+  onClearArea,
   ready,
   busy,
   roll,
@@ -47,6 +54,8 @@ export function Calibrate({
   const [jobId, setJobId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Whether the last calibration measured an area, for its result.
+  const [usedArea, setUsedArea] = useState(false);
 
   const job = useLibraryStore((s) => s.jobs.find((j) => j.id === jobId));
   const jobState = job?.state;
@@ -78,7 +87,8 @@ export function Calibrate({
     setError(null);
     setJobId(null);
     try {
-      const id = await captureCalibrate(roll.id, levels);
+      setUsedArea(area !== null);
+      const id = await captureCalibrate(roll.id, levels, area);
       addJob({ id, kind: 'calibration', rollName: roll.name, fraction: 0, state: 'running' });
       setJobId(id);
     } catch (e) {
@@ -110,8 +120,16 @@ export function Calibrate({
         )}
       </div>
       <p id="import-calibrate-help" className={styles.muted}>
-        {t('import.capture.calibrate.help')}
+        {t(area ? 'import.capture.calibrate.helpArea' : 'import.capture.calibrate.help')}
       </p>
+      {area && (
+        <div className={styles.buttons}>
+          <p role="status">{t('import.capture.calibrate.area', areaPercents(area))}</p>
+          <button type="button" disabled={running} onClick={onClearArea}>
+            {t('import.capture.calibrate.clearArea')}
+          </button>
+        </div>
+      )}
       {jobState === 'running' && (
         <p role="status">{job?.stage || t('import.capture.calibrate.starting')}</p>
       )}
@@ -119,6 +137,13 @@ export function Calibrate({
       {jobState === 'cancelled' && <p role="status">{t('import.capture.calibrate.cancelled')}</p>}
       {found && (
         <div>
+          <p>
+            {t(
+              usedArea
+                ? 'import.capture.calibrate.measuredArea'
+                : 'import.capture.calibrate.measuredWhole',
+            )}
+          </p>
           <ul className={styles.captureCalibration}>
             {CHANNELS.map((channel, i) => {
               const reached = found.reached[i] ?? null;

@@ -788,6 +788,15 @@
       "status": "completed",
       "pr": 258,
       "commit": "71405d3"
+    },
+    {
+      "id": "H-20",
+      "number": 260,
+      "title": "Choose the calibration area on the live view",
+      "branch": "feat/issue-260-calibration-area",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

@@ -91,6 +91,14 @@ struct Script {
     preview_error: Mutex<Option<SessionError>>,
     /// Makes `leave_live_view` fail once.
     leave_error: Mutex<Option<SessionError>>,
+    /// The live-view zoom choices; `None` is what a D600 lists (with its unknown values).
+    zoom_choices: Mutex<Option<Vec<String>>>,
+    /// Makes `set_preview_zoom` fail once.
+    zoom_error: Mutex<Option<SessionError>>,
+    /// The camera's `imagesize` text; `None` is a camera without one.
+    image_size: Mutex<Option<String>>,
+    /// The camera's `liveviewprohibit` text.
+    prohibit: Mutex<Option<String>>,
 }
 
 impl Script {
@@ -122,6 +130,39 @@ impl Script {
     fn with_settings(self, settings: Vec<CameraSetting>) -> Self {
         *self.settings.lock().unwrap_or_else(PoisonError::into_inner) = settings;
         self
+    }
+
+    fn set_zoom_choices(&self, choices: &[&str]) {
+        *self
+            .zoom_choices
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) =
+            Some(choices.iter().map(|c| (*c).to_owned()).collect());
+    }
+
+    fn set_image_size(&self, size: &str) {
+        *self
+            .image_size
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(size.to_owned());
+    }
+
+    fn set_prohibit(&self, text: &str) {
+        *self.prohibit.lock().unwrap_or_else(PoisonError::into_inner) = Some(text.to_owned());
+    }
+
+    fn fail_next_preview(&self, err: SessionError) {
+        *self
+            .preview_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(err);
+    }
+
+    fn fail_next_zoom(&self, err: SessionError) {
+        *self
+            .zoom_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(err);
     }
 
     fn push_capture(&self, step: Step) {
@@ -238,6 +279,69 @@ impl Session for Scripted {
             Some(err) => Err(err),
             None => Ok(()),
         }
+    }
+
+    fn preview_zoom_choices(&mut self) -> Result<Vec<String>, SessionError> {
+        self.0.record("zoom-choices");
+        Ok(self
+            .0
+            .zoom_choices
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .unwrap_or_else(|| {
+                [
+                    "Entire Display",
+                    "Unknown value 0001",
+                    "25%",
+                    "Unknown value 0003",
+                    "50%",
+                    "Unknown value 0005",
+                    "100%",
+                    "200%",
+                ]
+                .map(str::to_owned)
+                .to_vec()
+            }))
+    }
+
+    fn set_preview_zoom(&mut self, value: &str) -> Result<(), SessionError> {
+        self.0.record(&format!("zoom {value}"));
+        match self
+            .0
+            .zoom_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
+    }
+
+    fn image_size(&mut self) -> Result<Option<String>, SessionError> {
+        self.0.record("size");
+        Ok(self
+            .0
+            .image_size
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone())
+    }
+
+    fn set_preview_area(&mut self, area: &str) -> Result<(), SessionError> {
+        self.0.record(&format!("area {area}"));
+        Ok(())
+    }
+
+    fn preview_prohibit(&mut self) -> Result<Option<String>, SessionError> {
+        self.0.record("prohibit");
+        Ok(self
+            .0
+            .prohibit
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone())
     }
 
     fn close(&mut self) {
@@ -933,6 +1037,260 @@ fn a_preview_call_that_does_not_answer_makes_the_camera_unusable() {
     assert!(err.message.contains("did not answer"), "{err}");
     assert!(camera.is_unusable());
     gate.release();
+}
+
+// --- zoom, area and the reason live view cannot start (H-18) ---------------------------------------
+
+#[test]
+fn the_zoom_steps_leave_out_unknown_values_and_an_absent_widget_gives_none() {
+    let script = Arc::new(Script::default());
+    let camera = camera(&script);
+    let finder = camera.finder();
+    let steps = finder.preview_zoom_steps().unwrap();
+    let pairs: Vec<(&str, &str)> = steps
+        .iter()
+        .map(|s| (s.value.as_str(), s.label.as_str()))
+        .collect();
+    assert_eq!(
+        pairs,
+        [
+            ("Entire Display", "Whole frame"),
+            ("25%", "25%"),
+            ("50%", "50%"),
+            ("100%", "100%"),
+            ("200%", "200%"),
+        ]
+    );
+    assert_eq!(
+        script.log(),
+        ["open", "zoom-choices"],
+        "no live view needed"
+    );
+    script.set_zoom_choices(&[]);
+    assert!(finder.preview_zoom_steps().unwrap().is_empty());
+    let err = finder.set_preview_zoom("100%").unwrap_err();
+    assert!(err.message.contains("no live-view zoom"), "{err}");
+}
+
+#[test]
+fn setting_the_zoom_checks_the_choice_and_starts_live_view_once() {
+    let script = Arc::new(Script::default());
+    let camera = camera(&script);
+    let finder = camera.finder();
+    for bad in ["300%", "Unknown value 0001", ""] {
+        let err = finder.set_preview_zoom(bad).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(err.message.contains("not one the camera offers"), "{err}");
+    }
+    assert_eq!(script.count("preview"), 0, "a refused value starts nothing");
+    assert!(script.log().iter().all(|e| !e.starts_with("zoom ")));
+
+    finder.set_preview_zoom("100%").unwrap();
+    finder.set_preview_zoom("200%").unwrap();
+    let log = script.log();
+    let from = log.iter().position(|e| e == "preview").unwrap();
+    assert_eq!(
+        log[from..],
+        ["preview", "zoom 100%", "zoom-choices", "zoom 200%"]
+    );
+    assert_eq!(script.count("preview"), 1, "live view is started once");
+    // A frame after the zoom is an ordinary frame.
+    finder.preview_frame().unwrap();
+    assert_eq!(script.count("preview"), 2);
+}
+
+#[test]
+fn the_area_is_mapped_to_sensor_pixels_with_or_without_the_image_size() {
+    let script = Arc::new(Script::default());
+    let camera = camera(&script);
+    let finder = camera.finder();
+    finder.set_preview_area(0.5, 0.25).unwrap();
+    script.set_image_size("4000x3000");
+    finder.set_preview_area(0.5, 0.25).unwrap();
+    finder.set_preview_area(1.0, 0.0).unwrap();
+    let areas: Vec<String> = script
+        .log()
+        .into_iter()
+        .filter(|e| e.starts_with("area "))
+        .collect();
+    assert_eq!(areas, ["area 3008x1004", "area 2000x750", "area 3999x0"]);
+    assert_eq!(script.count("preview"), 1, "live view is started once");
+}
+
+#[test]
+fn an_area_that_is_not_a_point_on_the_frame_is_refused_before_the_camera_is_touched() {
+    let script = Arc::new(Script::default());
+    let camera = camera(&script);
+    let finder = camera.finder();
+    for (x, y) in [
+        (-0.1, 0.5),
+        (0.5, 1.1),
+        (f32::NAN, 0.5),
+        (0.5, f32::INFINITY),
+    ] {
+        let err = finder.set_preview_area(x, y).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+    }
+    assert!(script.log().is_empty(), "{:?}", script.log());
+}
+
+#[test]
+fn zoom_and_area_commands_are_refused_while_a_picture_is_being_taken() {
+    let script = Arc::new(Script::default());
+    let gate = Arc::new(Gate::default());
+    script.push_capture(Step::Hold(Arc::clone(&gate), file(1)));
+    let mut camera = camera(&script);
+    let finder = camera.finder();
+    camera.arm().unwrap();
+    camera.trigger().unwrap();
+    for err in [
+        finder.preview_zoom_steps().unwrap_err(),
+        finder.set_preview_zoom("100%").unwrap_err(),
+        finder.set_preview_area(0.5, 0.5).unwrap_err(),
+        finder.preview_prohibit().unwrap_err(),
+    ] {
+        assert!(err.message.contains("being taken"), "{}", err.message);
+    }
+    assert!(!camera.is_unusable());
+    gate.release();
+    camera.wait_for_image(Duration::from_secs(5)).unwrap();
+    assert_eq!(finder.preview_zoom_steps().unwrap().len(), 5);
+}
+
+#[test]
+fn the_prohibit_reason_is_read_without_its_prefix() {
+    let script = Arc::new(Script::default());
+    let camera = camera(&script);
+    let finder = camera.finder();
+    assert_eq!(finder.preview_prohibit().unwrap(), None);
+    script.set_prohibit("Live View prohibit conditions: ");
+    assert_eq!(finder.preview_prohibit().unwrap(), None);
+    script.set_prohibit("Live View prohibit conditions: Sequence error");
+    assert_eq!(
+        finder.preview_prohibit().unwrap().as_deref(),
+        Some("Sequence error")
+    );
+}
+
+#[test]
+fn a_live_view_that_cannot_start_names_the_condition_in_the_error() {
+    let script = Arc::new(Script::default());
+    let camera = camera(&script);
+    let finder = camera.finder();
+    script.set_prohibit("Live View prohibit conditions: Sequence error");
+    script.fail_next_preview(other("Unspecified error"));
+    let err = finder.preview_frame().unwrap_err();
+    assert_eq!(
+        err.message,
+        "Live view cannot start: Sequence error. Switch the camera off and on, then try again."
+    );
+    assert_eq!(err.details.as_deref(), Some("Unspecified error"));
+
+    // Starting through the zoom says the same, and the camera is still usable afterwards.
+    let script = Arc::new(Script::default());
+    let camera = self::camera(&script);
+    let finder = camera.finder();
+    script.set_prohibit("Live View prohibit conditions: Sequence error");
+    script.fail_next_preview(other("Unspecified error"));
+    let err = finder.set_preview_zoom("100%").unwrap_err();
+    assert!(err
+        .message
+        .starts_with("Live view cannot start: Sequence error"));
+    assert!(!camera.is_unusable());
+}
+
+#[test]
+fn a_failed_start_without_a_condition_or_a_failure_in_live_view_keeps_the_ordinary_words() {
+    let script = Arc::new(Script::default());
+    let camera = camera(&script);
+    let finder = camera.finder();
+    script.fail_next_preview(other("Unspecified error"));
+    let err = finder.preview_frame().unwrap_err();
+    assert!(
+        err.message.starts_with("The camera reported an error"),
+        "{err}"
+    );
+
+    // Live view counts as on now (the worker marks it from the first request); a failure in it is
+    // not explained, and the camera is not asked.
+    script.set_prohibit("Live View prohibit conditions: Sequence error");
+    let asked = script.count("prohibit");
+    script.fail_next_preview(other("Unspecified error"));
+    let err = finder.preview_frame().unwrap_err();
+    assert!(
+        err.message.starts_with("The camera reported an error"),
+        "{err}"
+    );
+    assert_eq!(script.count("prohibit"), asked);
+}
+
+#[test]
+fn a_lost_link_while_starting_live_view_is_not_blamed_on_a_condition() {
+    let script = Arc::new(Script::default());
+    let camera = camera(&script);
+    let finder = camera.finder();
+    script.set_prohibit("Live View prohibit conditions: Sequence error");
+    script.fail_next_preview(SessionError::new(SessionErrorKind::Lost, "usb"));
+    let err = finder.preview_frame().unwrap_err();
+    assert!(err.message.contains("connection to the camera was lost"));
+    assert_eq!(script.count("prohibit"), 0);
+}
+
+#[test]
+fn leaving_live_view_resets_a_zoom_first_and_only_a_zoom() {
+    let script = Arc::new(Script::default());
+    script.push_capture(Step::File(file(1)));
+    let mut camera = camera(&script);
+    let finder = camera.finder();
+
+    // A stop after a zoom.
+    finder.set_preview_zoom("100%").unwrap();
+    finder.preview_stop().unwrap();
+    let log = script.log();
+    assert_eq!(
+        log[log.len() - 3..],
+        ["zoom-choices", "zoom Entire Display", "leave"]
+    );
+
+    // The next live view starts unzoomed: leaving it resets nothing.
+    finder.preview_frame().unwrap();
+    finder.preview_stop().unwrap();
+    assert_eq!(script.count("zoom Entire Display"), 1);
+
+    // A capture after a zoom resets it before leaving live view.
+    finder.set_preview_zoom("200%").unwrap();
+    shoot(&mut camera, SHORT * 100).unwrap();
+    let log = script.log();
+    assert_eq!(
+        log[log.len() - 4..],
+        ["zoom-choices", "zoom Entire Display", "leave", "capture"]
+    );
+
+    // Setting the whole frame by hand is not a zoom either.
+    finder.set_preview_zoom("100%").unwrap();
+    finder.set_preview_zoom("Entire Display").unwrap();
+    let before = script.count("zoom Entire Display");
+    finder.preview_stop().unwrap();
+    assert_eq!(script.count("zoom Entire Display"), before);
+}
+
+#[test]
+fn a_zoom_reset_that_fails_does_not_stop_live_view_from_being_left() {
+    let script = Arc::new(Script::default());
+    script.push_capture(Step::File(file(1)));
+    let mut camera = camera(&script);
+    let finder = camera.finder();
+    finder.set_preview_zoom("100%").unwrap();
+    script.fail_next_zoom(other("zoom"));
+    finder.preview_stop().unwrap();
+    assert_eq!(script.count("leave"), 1);
+
+    finder.set_preview_zoom("100%").unwrap();
+    script.fail_next_zoom(other("zoom"));
+    assert_eq!(
+        shoot(&mut camera, SHORT * 100).unwrap().name,
+        "DSC_0001.NEF"
+    );
 }
 
 // --- library paths ------------------------------------------------------------------------------

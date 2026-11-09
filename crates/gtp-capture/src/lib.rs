@@ -22,11 +22,12 @@ pub mod settings;
 pub use calibration::{calibrate, ChannelMeter, Region};
 pub use camera::{CameraFinder, CameraInfo, CameraSource, CapturedFile};
 pub use fakes::{
-    CameraCall, FakeCamera, FakeCameraHandle, FakeLight, FakeLightHandle, LightCommand, Shot,
+    CameraCall, FakeCamera, FakeCameraHandle, FakeLight, FakeLightHandle, LightCommand,
+    PreviewView, Shot,
 };
 pub use gphoto::{configure_library_paths, GphotoCamera, GphotoFinder};
 pub use light::{LightInfo, LightSource, LightStatus, PortInfo};
-pub use preview::CameraPreview;
+pub use preview::{CameraPreview, ZoomStep};
 pub use profile::{
     CameraBackend, CaptureProfile, CaptureProfilePatch, MAX_SETTLE_MS, VBUS_WARN_MV,
 };

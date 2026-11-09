@@ -15,6 +15,13 @@ ignore = [
   # Approved by the owner on 2026-10-29. Remove this entry when specta moves to `pastey` or
   # drops the dependency; re-check on every tauri-specta/specta update.
   { id = "RUSTSEC-2024-0436", reason = "unmaintained proc-macro dependency of specta; no vulnerability" },
+  # The SQLite bundled by `libsqlite3-sys` 0.38 can return stale memory when a database is opened
+  # with a `-wal` file of another page size, written by a less trusted party. The app opens only
+  # its own library. The fix is `libsqlite3-sys` 0.39 (`rusqlite` 0.41), but `rusqlite_migration`
+  # 2.6.0 (the latest) requires `rusqlite` 0.40, and two sqlite3 links cannot be built (T-09).
+  # Approved by the owner on 2026-11-09. Remove this entry and move to `rusqlite` 0.41 or later
+  # as soon as `rusqlite_migration` allows it (issue T-10); check on every rusqlite_migration update.
+  { id = "RUSTSEC-2026-0459", reason = "no fixed rusqlite that rusqlite_migration 2.6 accepts; the app opens only its own library" },
 ]
 
 [licenses]

@@ -1572,6 +1572,29 @@ MIGRATIONS: none.
 TESTS: cargo deny check; the workspace tests; the catalog's migration tests unchanged.
 NOTES: first choice is to move rusqlite to a version that pulls libsqlite3-sys 0.39.0 or later (the 0.41 line), if rusqlite_migration builds with it and the build still has one sqlite3 link. The fallback is to ignore this one advisory in deny.toml, with the reason written next to it and a note to remove the ignore once rusqlite_migration supports the fixed version. Use the fallback only with the human's approval at that point.
 
+## T-10
+title: Remove the SQLite advisory ignore
+milestone: M0
+type: chore
+size: S
+estimate: 0.5d
+deps: T-09
+adr: no
+spec: convention section 8
+desc: T-09 could not move to a fixed SQLite, because rusqlite_migration 2.6.0 requires rusqlite 0.40 and the fix is in rusqlite 0.41 (libsqlite3-sys 0.39). The human approved an ignore for RUSTSEC-2026-0459 in deny.toml on 2026-11-09 and asked for it to be flagged for a later update. This issue is that flag. It waits until a rusqlite_migration release allows rusqlite 0.41 or later.
+ac:
+- A rusqlite_migration release that allows rusqlite 0.41 or later is in use, and rusqlite pulls libsqlite3-sys 0.39.0 or later
+- The ignore for RUSTSEC-2026-0459 and its comment are gone from deny.toml, and cargo deny check passes
+- The build has one rusqlite and one libsqlite3-sys (cargo tree -d)
+- cargo test --workspace passes on Windows and macOS (CI), with the catalog's migration tests unchanged
+- docs/third-party-licenses.txt is regenerated with pnpm gen:notices
+tech:
+FILES: crates/gtp-catalog/Cargo.toml, Cargo.lock, deny.toml, docs/third-party-licenses.txt.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: cargo deny check; the workspace tests; the catalog's migration tests unchanged.
+NOTES: blocked until rusqlite_migration supports rusqlite 0.41. Check on every Dependabot pull request for rusqlite or rusqlite_migration. If no such release comes before v0.1.0, ask the human whether to replace rusqlite_migration with a small migrator in gtp-catalog.
+
 ## U-13
 title: Customizable keyboard shortcuts
 milestone: M3

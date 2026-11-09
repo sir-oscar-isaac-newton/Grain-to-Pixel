@@ -249,3 +249,16 @@ Conclusion: live view over USB is usable for framing and rough focus on the D600
 - [x] Live view is refused or stopped while a capture runs, and a capture started while live view is on works without stopping it by hand.
 - [x] Choose each light colour in the Live view panel: the film shows in that colour, framing and focusing work (green is usually sharpest), Off turns the light off, and starting a test shot turns it off first.
 - [x] The Scanlight is not lit by live view itself: with the light off, starting live view leaves it off.
+
+## Focus aids (H-18)
+
+**The zoom test on the D600 (2026-11-08, gphoto2 command line, Grain to Pixel closed, the light on, a negative in the gate).**
+
+- `gphoto2 --list-config` offers `/main/capturesettings/liveviewimagezoomratio` (radio: 0 Entire Display, 2 25%, 4 50%, 6 100%, 7 200%; 1, 3 and 5 are shown as "Unknown value"), `/main/actions/changeafarea` (text, `XxY`, current `0x0`), `/main/capturesettings/liveviewsize` (QVGA, VGA; VGA is set) and `/main/status/liveviewprohibit` (read-only text).
+- The zoom and the area work only while live view is on ("Not in Liveview", "changeafarea works only in LiveView mode" otherwise), so they are set in the same session as the frames.
+- At 50 %, 100 % and 200 % the frames are magnified, and the grain is visible at 100 % and 200 %. The camera then reports "In enlarged liveview".
+- `changeafarea` moves the zoomed area, set before or during the zoom: `4500x3000`, `1000x700` and `100x100` each show a different part of the film. The units are not confirmed (most likely sensor pixels, 6016 x 4016); the app's checklist confirms them by pointing at a spot.
+- Once, live view refused to start with `liveviewprohibit` = "Sequence error" after earlier runs; switching the camera off and on cleared it. The app should show that condition in words.
+- gphoto2 note: in one run `--filename` applies to every frame, so a time pattern (`z-%H%M%S.jpg`) is needed to keep them apart.
+
+Conclusion: the zoom and moving the zoomed area go ahead in H-18.

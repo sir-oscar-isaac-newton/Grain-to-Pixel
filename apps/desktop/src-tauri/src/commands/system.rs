@@ -178,9 +178,9 @@ mod tests {
     fn the_defaults_are_the_flags_of_the_specification_and_nothing_changed() {
         let defaults = settings_defaults();
         let flags = defaults.flags;
-        // Spec section 10: these three are on, these two off.
+        // Spec section 10: these three are on, the developer overlay off.
         assert!(flags.dust_removal && flags.triplet_import && flags.guided_capture);
-        assert!(!flags.dev_overlay && !flags.experimental_auto_levels);
+        assert!(!flags.dev_overlay);
         assert_eq!(defaults, Settings::default());
         assert_eq!(defaults.last_library, None);
     }

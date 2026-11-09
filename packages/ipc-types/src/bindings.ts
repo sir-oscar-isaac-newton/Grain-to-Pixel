@@ -906,7 +906,6 @@ export type FlagsPatch_Deserialize = {
 	triplet_import?: boolean | null,
 	guided_capture?: boolean | null,
 	dev_overlay?: boolean | null,
-	experimental_auto_levels?: boolean | null,
 	update_check?: boolean | null,
 };
 
@@ -916,7 +915,6 @@ export type FlagsPatch_Serialize = {
 	triplet_import: boolean | null,
 	guided_capture: boolean | null,
 	dev_overlay: boolean | null,
-	experimental_auto_levels: boolean | null,
 	update_check: boolean | null,
 };
 
@@ -929,7 +927,6 @@ export type Flags_Deserialize = {
 	triplet_import?: boolean,
 	guided_capture?: boolean,
 	dev_overlay?: boolean,
-	experimental_auto_levels?: boolean,
 	/**  Ask GitHub Releases for a newer version at launch. The only network call the app makes. */
 	update_check?: boolean,
 };
@@ -943,7 +940,6 @@ export type Flags_Serialize = {
 	triplet_import: boolean,
 	guided_capture: boolean,
 	dev_overlay: boolean,
-	experimental_auto_levels: boolean,
 	/**  Ask GitHub Releases for a newer version at launch. The only network call the app makes. */
 	update_check: boolean,
 };

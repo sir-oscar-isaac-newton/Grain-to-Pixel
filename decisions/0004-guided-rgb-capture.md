@@ -1,6 +1,6 @@
 # 0004. Guided RGB capture: Scanlight serial control and two camera backends
 
-- Status: Accepted for macOS after the spikes R-02 and R-03 (2026-11-04); the Windows capture path is still to be confirmed (R-04, and the Scanlight's serial port on Windows)
+- Status: Accepted for macOS after the spikes R-02 and R-03 (2026-11-04); the Windows capture path is still to be confirmed (R-04, and the Scanlight's serial port on Windows) and is not required for v0.1.0 (amendment of 2026-11-09)
 - Date: 2026-10-29
 
 ## Context
@@ -45,3 +45,10 @@ What the spikes measured on the author's hardware, and what changes in the decis
 8. **Bundling libgphoto2 on macOS: go.** A copy of the gphoto probe with its seven libraries (libgphoto2, libgphoto2_port, libltdl, libexif, libusb, libjpeg, libintl; 2.2 MB with the drivers), `install_name_tool` rewrites to `@loader_path` and ad-hoc signing, and **only two drivers**, the camera driver `ptp2` and the USB port driver `usb1` (about 0.9 MB), took a picture on its own with no path left into Homebrew. libgphoto2 finds its drivers through the `CAMLIBS` and `IOLIBS` environment variables, so the app sets both, before the first context, to folders inside the bundle. The M6 cut line stays as written; its macOS side is cleared.
 9. **Licences.** libgphoto2, libgphoto2_port, libexif, libltdl and libusb are LGPL-2.1 as dynamic libraries, which keeps replacing them simple. The bundle also ships libjpeg (IJG, Zlib and BSD-3-Clause, not LGPL) and libintl (LGPL-2.1). The `gphoto2` and `libgphoto2_sys` crates are LGPL-2.1-only and compiled statically into the macOS app, so they are treated as `rawler` is: the source of the pinned versions is attached to each release, and `docs/rebuild-with-rawler.md` gives a rebuild path with a Cargo `[patch]` entry. `pnpm check:notices` covers Rust crates and npm packages, not dylibs, so the bundled libraries need a manual entry in `docs/third-party-notices.md` and a source offer, as rawler has.
 10. **Not settled.** On the author's Windows PC the Scanlight's serial port opens but stays silent (the official web app fails there too, on a USB 2.0 port as well); it works on the Mac. The Windows capture path needs a Scanlight that answers on Windows before H-07 can be finished there.
+
+## Amendment from the plan review (Q-10; 2026-11-09)
+
+The human decided two things after a review of the plan against the hardware findings above.
+
+11. **Windows capture is not a release gate for v0.1.0.** `WatchedFolder` with digiCamControl (R-04, H-10) and a Scanlight that answers on Windows may follow in a later release. v0.1.0 ships capture on macOS (`GphotoCamera`) and scanner and file import on both systems. The M6 cut line in the Consequences stays as written, but its Windows side no longer blocks the release.
+12. **The thermal limits are approved.** Warn at 45 °C and abort at 55 °C, as proposed in item 4. They stay settings with these defaults.

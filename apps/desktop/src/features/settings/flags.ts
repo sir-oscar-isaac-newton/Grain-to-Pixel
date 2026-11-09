@@ -6,7 +6,6 @@ export const FLAG_NAMES = [
   'triplet_import',
   'guided_capture',
   'dev_overlay',
-  'experimental_auto_levels',
   'update_check',
 ] as const;
 
@@ -21,7 +20,6 @@ export function flagsOf(settings: Settings): FlagValues {
     triplet_import: flags?.triplet_import === true,
     guided_capture: flags?.guided_capture === true,
     dev_overlay: flags?.dev_overlay === true,
-    experimental_auto_levels: flags?.experimental_auto_levels === true,
     update_check: flags?.update_check === true,
   };
 }

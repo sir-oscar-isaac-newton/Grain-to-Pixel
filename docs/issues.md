@@ -183,43 +183,43 @@ Labels: `area:*` (one per issue), `type:*`, `size:S|M` (S = 0.5d, M = 1d), `need
 | 62 | T-05 | Packaging - NSIS and dmg installers | M7 | 1d | T-04 | area:tooling, needs:human |
 | 63 | T-06 | Updater and release pipeline | M7 | 1d | T-05 | area:tooling, needs:human |
 | 64 | D-05 | Diagnostics export and local counters | M7 | 1d | D-03, L-03, P-12 | area:desktop-shell |
-| 65 | Q-04 | Accessibility pass | M7 | 1d | U-10, U-11, U-07 | area:quality, needs:human |
-| 66 | Q-05 | User documentation | M7 | 0.5d | U-10 | area:quality |
-| 67 | Q-06 | Budget and quality verification | M7 | 1d | Q-03, U-10, T-06 | area:quality, needs:data |
-| 68 | Q-07 | Release v0.1.0 | M7 | 0.5d | T-06, D-05, Q-04, Q-05, Q-06 | area:quality, needs:human |
-| 69 | T-07 | Make the Windows WebDriver e2e run on CI runners | M0 | 1d | T-04 | area:tooling |
-| 70 | T-08 | Dependabot pull requests without hand fixes | M0 | 0.5d | T-07 | area:tooling |
-| 71 | T-09 | Clear the SQLite advisory RUSTSEC-2026-0459 | M0 | 0.5d | T-03 | area:tooling |
-| 72 | T-10 | Remove the SQLite advisory ignore | M0 | 0.5d | T-09 | area:tooling |
-| 73 | U-13 | Customizable keyboard shortcuts | M3 | 1d | U-04, U-07 | area:ui |
-| 74 | P-14 | Picker maths - white, black and neutral points | M3 | 0.5d | P-06, P-08 | area:pipeline |
-| 75 | P-15 | Output sharpening | M3 | 0.5d | P-09 | area:pipeline |
-| 76 | P-16 | Flat-field correction for camera copies | M5 | 1d | H-05 | area:pipeline |
-| 77 | P-17 | Develop preview speed for large proxies | M3 | 0.5d | P-11 | area:pipeline |
-| 78 | U-14 | Crop aspect ratio presets and lock | M3 | 0.5d | U-05 | area:ui |
-| 79 | U-15 | Verify library from the UI | M3 | 0.5d | U-07, L-07 | area:ui |
-| 80 | U-16 | Output sharpening controls | M3 | 0.5d | P-15, U-04 | area:ui |
-| 81 | H-11 | Channel check from image colour | M5 | 0.5d | H-04 | area:hardware |
-| 82 | Q-08 | Licence terms and third-party notices | M7 | 0.5d | H-05 | area:quality, needs:human |
-| 83 | P-18 | Frame detection for camera triplets | M5 | 1d | P-07, H-06 | area:pipeline |
-| 84 | U-17 | Film base status and guidance | M5 | 0.5d | P-05, H-06 | area:ui |
-| 85 | P-19 | Cinema log look (Blackmagic Film Gen 5) as a starting point for editing | M5 | 1d | P-05, P-08, P-18 | area:pipeline, adr |
-| 86 | P-20 | Frontier-style look calibrated against reference renders | M5 | 1d | P-19, Q-02 | area:pipeline, adr |
-| 87 | Q-09 | Benchmark LS-50 scans against Nikon Scan positives | M5 | 0.5d | Q-02 | area:quality |
-| 88 | Q-10 | Bring the plan in line with the hardware findings | M6 | 1d | T-09 | area:quality |
-| 89 | P-21 | Flat-field correction for camera triplets | M5 | 1d | H-06, U-09 | area:pipeline, adr |
-| 90 | H-12 | Roll preview from the scanner's framing thumbnail | M4 | 1d | H-02 | area:hardware, needs:hw |
-| 91 | R-06 | Spike - scan at a custom frame position with nkscan | M4 | 0.5d | H-02 | area:research, needs:hw, adr |
-| 92 | H-13 | Roll contact sheet with frame spacing adjustment | M4 | 1d | H-12, H-03, R-06 | area:hardware |
-| 93 | P-22 | Automatic colour balance | M5 | 1d | P-20, P-21, Q-09 | area:pipeline, adr |
-| 94 | H-14 | Live preview of the camera in the capture view | M6 | 1d | H-08, D-04, R-03, U-10 | area:hardware, needs:hw |
-| 95 | H-15 | Scanlight levels, global and per film stock | M6 | 1d | H-08, D-04, U-10, H-09 | area:hardware, needs:hw, adr |
-| 96 | H-16 | Camera exposure settings in the capture view (macOS) | M6 | 1d | H-09, U-10 | area:hardware, needs:hw, needs:mac |
-| 97 | H-17 | Automatic Scanlight level calibration | M6 | 1d | H-15 | area:hardware, needs:hw, needs:mac |
-| 98 | U-18 | Shutter speeds shown as fractions in the capture view | M6 | 0.5d | H-16 | area:ui |
-| 99 | H-18 | Focus aids in the live view | M6 | 1d | H-14 | area:hardware, needs:hw, needs:mac |
-| 100 | H-19 | Focus check shot and film flatness map | M6 | 1d | H-14 | area:hardware, needs:hw, needs:mac |
-| 101 | H-20 | Choose the calibration area on the live view | M6 | 0.5d | H-14, H-17 | area:hardware, needs:hw, needs:mac |
+| 65 | Q-05 | User documentation | M7 | 0.5d | U-10 | area:quality |
+| 66 | Q-06 | Budget and quality verification | M7 | 1d | Q-03, U-10, T-06 | area:quality, needs:data |
+| 67 | T-07 | Make the Windows WebDriver e2e run on CI runners | M0 | 1d | T-04 | area:tooling |
+| 68 | T-08 | Dependabot pull requests without hand fixes | M0 | 0.5d | T-07 | area:tooling |
+| 69 | T-09 | Clear the SQLite advisory RUSTSEC-2026-0459 | M0 | 0.5d | T-03 | area:tooling |
+| 70 | T-10 | Remove the SQLite advisory ignore | M0 | 0.5d | T-09 | area:tooling |
+| 71 | U-13 | Customizable keyboard shortcuts | M3 | 1d | U-04, U-07 | area:ui |
+| 72 | P-14 | Picker maths - white, black and neutral points | M3 | 0.5d | P-06, P-08 | area:pipeline |
+| 73 | P-15 | Output sharpening | M3 | 0.5d | P-09 | area:pipeline |
+| 74 | P-16 | Flat-field correction for camera copies | M5 | 1d | H-05 | area:pipeline |
+| 75 | P-17 | Develop preview speed for large proxies | M3 | 0.5d | P-11 | area:pipeline |
+| 76 | U-14 | Crop aspect ratio presets and lock | M3 | 0.5d | U-05 | area:ui |
+| 77 | U-15 | Verify library from the UI | M3 | 0.5d | U-07, L-07 | area:ui |
+| 78 | U-16 | Output sharpening controls | M3 | 0.5d | P-15, U-04 | area:ui |
+| 79 | H-11 | Channel check from image colour | M5 | 0.5d | H-04 | area:hardware |
+| 80 | Q-08 | Licence terms and third-party notices | M7 | 0.5d | H-05 | area:quality, needs:human |
+| 81 | P-18 | Frame detection for camera triplets | M5 | 1d | P-07, H-06 | area:pipeline |
+| 82 | U-17 | Film base status and guidance | M5 | 0.5d | P-05, H-06 | area:ui |
+| 83 | P-19 | Cinema log look (Blackmagic Film Gen 5) as a starting point for editing | M5 | 1d | P-05, P-08, P-18 | area:pipeline, adr |
+| 84 | P-20 | Frontier-style look calibrated against reference renders | M5 | 1d | P-19, Q-02 | area:pipeline, adr |
+| 85 | Q-09 | Benchmark LS-50 scans against Nikon Scan positives | M5 | 0.5d | Q-02 | area:quality |
+| 86 | Q-10 | Bring the plan in line with the hardware findings | M6 | 1d | T-09 | area:quality |
+| 87 | P-21 | Flat-field correction for camera triplets | M5 | 1d | H-06, U-09 | area:pipeline, adr |
+| 88 | H-12 | Roll preview from the scanner's framing thumbnail | M4 | 1d | H-02 | area:hardware, needs:hw |
+| 89 | R-06 | Spike - scan at a custom frame position with nkscan | M4 | 0.5d | H-02 | area:research, needs:hw, adr |
+| 90 | H-13 | Roll contact sheet with frame spacing adjustment | M4 | 1d | H-12, H-03, R-06 | area:hardware |
+| 91 | P-22 | Automatic colour balance | M5 | 1d | P-20, P-21, Q-09 | area:pipeline, adr |
+| 92 | H-14 | Live preview of the camera in the capture view | M6 | 1d | H-08, D-04, R-03, U-10 | area:hardware, needs:hw |
+| 93 | H-15 | Scanlight levels, global and per film stock | M6 | 1d | H-08, D-04, U-10, H-09 | area:hardware, needs:hw, adr |
+| 94 | H-16 | Camera exposure settings in the capture view (macOS) | M6 | 1d | H-09, U-10 | area:hardware, needs:hw, needs:mac |
+| 95 | H-17 | Automatic Scanlight level calibration | M6 | 1d | H-15 | area:hardware, needs:hw, needs:mac |
+| 96 | U-18 | Shutter speeds shown as fractions in the capture view | M6 | 0.5d | H-16 | area:ui |
+| 97 | H-18 | Focus aids in the live view | M6 | 1d | H-14 | area:hardware, needs:hw, needs:mac |
+| 98 | H-19 | Focus check shot and film flatness map | M6 | 1d | H-14 | area:hardware, needs:hw, needs:mac |
+| 99 | H-20 | Choose the calibration area on the live view | M6 | 0.5d | H-14, H-17 | area:hardware, needs:hw, needs:mac |
+| 100 | Q-04 | Accessibility pass | M7 | 1d | U-10, U-11, U-07, H-13, H-20 | area:quality, needs:human |
+| 101 | Q-07 | Release v0.1.0 | M7 | 0.5d | T-06, D-05, Q-04, Q-05, Q-06 | area:quality, needs:human |
 
 Total estimate: 84.5 days (33 small, 68 medium).
 
@@ -728,15 +728,15 @@ Definition of Done: docs/workflow.md section 11. Update the docs this change mak
 
 **Description**
 
-Confirm the Scanlight V4 binary serial protocol on the real device (rev B), measure timing and temperature, and capture packet recordings to use as test vectors.
+Finish the Scanlight V4 serial spike. On macOS it is done: the light is a V4 rev A (hardware ID 1, firmware ID 0, no SET_FOCUS), colours, timing and temperature are measured, and its shutter pulse does not fire the D600. What remains is the Windows serial retest, with another cable and port, and saving the packet captures as test vectors.
 
 **Acceptance criteria**
 
-- [ ] Serial port opens on macOS and Windows without extra drivers; firmware ID recorded (rev B expected)
-- [ ] Each colour lights alone via SET_COLOR with save flag 0; switch latency and needed settle time recorded
-- [ ] LED_TEMP over a 3-colour sequence recorded and warn/abort limits justified
-- [ ] Pulse length that reliably fires the D600 recorded, with or without SET_FOCUS, using the owned remote cable
-- [ ] Captured packets saved under samples/public/scanlight/ and the research note updated
+- [ ] Serial port opens on macOS without extra drivers and the light is recorded as a V4 rev A, hardware ID 1, firmware ID 0 (met, recorded in the research note); the Windows retest with another cable and another USB port is run and its result recorded, even if the port stays silent
+- [ ] Each colour lights alone via SET_COLOR with save flag 0; switch latency and settle time recorded (met on macOS: 0.5 s is enough)
+- [ ] LED_TEMP over a 3-colour sequence recorded and the warn/abort limits (45 and 55 degrees C) justified (met; the limits are approved, ADR 0004 amendment of 2026-11-09)
+- [ ] The shutter pulse is recorded as not firing the D600 on this rev A light (met by recording that result; the optional retest with a mono-to-stereo adapter is noted and does not block the issue)
+- [ ] Captured packets saved under samples/public/scanlight/ as test vectors and the research note updated
 
 <details><summary>Copy-paste AI prompt</summary>
 
@@ -761,19 +761,19 @@ Spec references: specification section 6.1; ADR 0004; docs/research/scanlight-ca
 Dependencies (must be Done first; if any is not, stop and tell me): T-01 – Initialize Git repository and LFS
 
 DESCRIPTION
-Confirm the Scanlight V4 binary serial protocol on the real device (rev B), measure timing and temperature, and capture packet recordings to use as test vectors.
+Finish the Scanlight V4 serial spike. On macOS it is done: the light is a V4 rev A (hardware ID 1, firmware ID 0, no SET_FOCUS), colours, timing and temperature are measured, and its shutter pulse does not fire the D600. What remains is the Windows serial retest, with another cable and port, and saving the packet captures as test vectors.
 
 TECHNICAL DETAILS
-SCOPE: packet format `0xFE`, header, length, data. Host commands: SET_COLOR (header 0; R, G, B, W, IR, save flag; save always 0), GET_FW_VERSION (2), SHUTTER_PULSE (3; 10 ms units), SET_FOCUS (7; PCB 26a902b). Device packets: LED_TEMP (1, int32 millidegrees C), VBUS (2, mV), FW_VERSION (3). No acks, no VID/PID: probe ports with GET_FW_VERSION. Throwaway script (python/pyserial or Rust) outside crates/.
+SCOPE: packet format `0xFE`, header, length, data. Host commands: SET_COLOR (header 0; R, G, B, W, IR, save flag; save always 0), GET_FW_VERSION (2), SHUTTER_PULSE (3; 10 ms units; does not fire the D600, not used), SET_FOCUS (7; PCB 26a902b only, so absent on this rev A light). Device packets: LED_TEMP (1, int32 millidegrees C), VBUS (2, mV), FW_VERSION (3). No acks, no VID/PID: probe ports with GET_FW_VERSION. Throwaway script (python/pyserial or Rust) outside crates/. The camera is triggered over USB; the Scanlight is used for light only.
 OUTPUT: docs/research/scanlight-capture.md, ADR 0004 amendments, recorded packets as test vectors, follow-up issues. The light must be off at the end of every run.
 PROCESS: assistant prepares commands; human runs; assistant records; hardware items never ticked by the assistant.
 
 ACCEPTANCE CRITERIA
-- Serial port opens on macOS and Windows without extra drivers; firmware ID recorded (rev B expected)
-- Each colour lights alone via SET_COLOR with save flag 0; switch latency and needed settle time recorded
-- LED_TEMP over a 3-colour sequence recorded and warn/abort limits justified
-- Pulse length that reliably fires the D600 recorded, with or without SET_FOCUS, using the owned remote cable
-- Captured packets saved under samples/public/scanlight/ and the research note updated
+- Serial port opens on macOS without extra drivers and the light is recorded as a V4 rev A, hardware ID 1, firmware ID 0 (met, recorded in the research note); the Windows retest with another cable and another USB port is run and its result recorded, even if the port stays silent
+- Each colour lights alone via SET_COLOR with save flag 0; switch latency and settle time recorded (met on macOS: 0.5 s is enough)
+- LED_TEMP over a 3-colour sequence recorded and the warn/abort limits (45 and 55 degrees C) justified (met; the limits are approved, ADR 0004 amendment of 2026-11-09)
+- The shutter pulse is recorded as not firing the D600 on this rev A light (met by recording that result; the optional retest with a mono-to-stereo adapter is noted and does not block the issue)
+- Captured packets saved under samples/public/scanlight/ as test vectors and the research note updated
 
 Needs from the human: real hardware run and report. Prepare exact steps and a checklist; never tick these items yourself.
 Definition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.
@@ -852,12 +852,14 @@ Definition of Done: docs/workflow.md section 11. Update the docs this change mak
 
 **Description**
 
-Confirm the Windows capture path: Scanlight pulse fires the D600, digiCamControl downloads the NEF into a session folder, and the app can watch that folder.
+Confirm the Windows capture path: digiCamControl fires the D600 over USB and writes the NEF into a session folder, and the app can ask it to take a shot and watch that folder. The Scanlight is used for light only; its shutter pulse does not fire the D600 (ADR 0004 amendment). Windows capture is not required for v0.1.0.
 
 **Acceptance criteria**
 
-- [ ] D600 recognized by digiCamControl; pulse-fired shots appear in the chosen folder without digiCamControl triggering them
-- [ ] Typical file write time and partial-file behaviour recorded
+- [ ] D600 recognized by digiCamControl; a shot fired by digiCamControl over USB appears as a NEF in the chosen folder
+- [ ] How the app asks digiCamControl to take a shot is found and recorded (its command line or its remote interface), with the exact command that worked
+- [ ] Typical file write time and partial-file behaviour (temp names, size growth) of the watched folder recorded
+- [ ] Whether digiCamControl offers live view and camera settings that the app could reach is recorded
 - [ ] docs/research/scanlight-capture.md updated
 
 <details><summary>Copy-paste AI prompt</summary>
@@ -883,16 +885,18 @@ Spec references: specification section 6.1
 Dependencies (must be Done first; if any is not, stop and tell me): R-02 – Spike - Scanlight V4 serial control
 
 DESCRIPTION
-Confirm the Windows capture path: Scanlight pulse fires the D600, digiCamControl downloads the NEF into a session folder, and the app can watch that folder.
+Confirm the Windows capture path: digiCamControl fires the D600 over USB and writes the NEF into a session folder, and the app can ask it to take a shot and watch that folder. The Scanlight is used for light only; its shutter pulse does not fire the D600 (ADR 0004 amendment). Windows capture is not required for v0.1.0.
 
 TECHNICAL DETAILS
-SCOPE: configure digiCamControl session folder; fire with SHUTTER_PULSE (length from R-02); observe temp/partial file naming and stable-size timing; note D600 support status of digiCamControl.
-OUTPUT: research note; recommendation for the WatchedFolder file-complete rule.
+SCOPE: configure the digiCamControl session folder; take a shot from the command line and, if it has one, its remote interface, and note which the app can call; observe temp/partial file naming and stable-size timing; check live view and camera settings access; note D600 support status of digiCamControl. No Scanlight pulse is used. The dependency on R-02 is only for the light: a Scanlight that answers on Windows (R-02 retests the serial port with another cable and port); the camera part of this spike does not need the light.
+OUTPUT: research note; recommendation for the WatchedFolder trigger and file-complete rule.
 PROCESS: human runs; assistant records.
 
 ACCEPTANCE CRITERIA
-- D600 recognized by digiCamControl; pulse-fired shots appear in the chosen folder without digiCamControl triggering them
-- Typical file write time and partial-file behaviour recorded
+- D600 recognized by digiCamControl; a shot fired by digiCamControl over USB appears as a NEF in the chosen folder
+- How the app asks digiCamControl to take a shot is found and recorded (its command line or its remote interface), with the exact command that worked
+- Typical file write time and partial-file behaviour (temp names, size growth) of the watched folder recorded
+- Whether digiCamControl offers live view and camera settings that the app could reach is recorded
 - docs/research/scanlight-capture.md updated
 
 Needs from the human: real hardware run and report. Prepare exact steps and a checklist; never tick these items yourself.
@@ -3749,13 +3753,14 @@ Definition of Done: docs/workflow.md section 11. Update the docs this change mak
 
 **Description**
 
-Camera backend that fires the shutter through the Scanlight pulse and waits for NEFs written to a user-selected folder (digiCamControl on Windows).
+Camera backend whose trigger asks digiCamControl to fire the camera (the way R-04 found) and that waits for NEFs written to a user-selected folder (digiCamControl on Windows). The Scanlight is used for light only: no SHUTTER_PULSE, no SET_FOCUS. This backend is not required for v0.1.0.
 
 **Acceptance criteria**
 
-- [ ] trigger sends SHUTTER_PULSE (and SET_FOCUS when the profile enables it); wait_for_image returns the first new .nef whose size is stable for 500 ms
+- [ ] trigger asks digiCamControl to take a shot, as recorded by R-04; wait_for_image returns the first new .nef in the watched folder whose size is stable for 500 ms
 - [ ] Partial or temp files are ignored; timeout returns a clear error
-- [ ] A triplet via pulse + digiCamControl works on Windows (human reports)
+- [ ] A triplet via digiCamControl works on Windows (human reports); this needs a Scanlight that answers on Windows (R-02)
+- [ ] Not required for v0.1.0: the release does not wait for this issue
 
 <details><summary>Copy-paste AI prompt</summary>
 
@@ -3780,7 +3785,7 @@ Spec references: specification section 6.1
 Dependencies (must be Done first; if any is not, stop and tell me): H-08 – Capture orchestrator, CameraSource, FakeCamera and safety; R-04 – Spike - digiCamControl on Windows
 
 DESCRIPTION
-Camera backend that fires the shutter through the Scanlight pulse and waits for NEFs written to a user-selected folder (digiCamControl on Windows).
+Camera backend whose trigger asks digiCamControl to fire the camera (the way R-04 found) and that waits for NEFs written to a user-selected folder (digiCamControl on Windows). The Scanlight is used for light only: no SHUTTER_PULSE, no SET_FOCUS. This backend is not required for v0.1.0.
 
 TECHNICAL DETAILS
 FILES: crates/gtp-capture/src/watched.rs (`WatchedFolder { dir }`, `notify` crate).
@@ -3789,9 +3794,10 @@ ROUTES / MIGRATIONS: none.
 TESTS: temp dir with slow writes, temp-then-rename, partial files, timeout; trait conformance shared with FakeCamera.
 
 ACCEPTANCE CRITERIA
-- trigger sends SHUTTER_PULSE (and SET_FOCUS when the profile enables it); wait_for_image returns the first new .nef whose size is stable for 500 ms
+- trigger asks digiCamControl to take a shot, as recorded by R-04; wait_for_image returns the first new .nef in the watched folder whose size is stable for 500 ms
 - Partial or temp files are ignored; timeout returns a clear error
-- A triplet via pulse + digiCamControl works on Windows (human reports)
+- A triplet via digiCamControl works on Windows (human reports); this needs a Scanlight that answers on Windows (R-02)
+- Not required for v0.1.0: the release does not wait for this issue
 
 Needs from the human: real hardware run and report. Prepare exact steps and a checklist; never tick these items yourself.
 Definition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.
@@ -4102,64 +4108,6 @@ Definition of Done: docs/workflow.md section 11. Update the docs this change mak
 
 </details>
 
-### Q-04 – Accessibility pass
-
-- Milestone: M7 MVP release v0.1.0 | Estimate: 1d (size M) | Type: test
-- Labels: area:quality, type:test, size:M, needs:human
-- Depends on: U-10, U-11, U-07
-- Previous ID: GTP-093 | Spec: specification section 13
-
-**Description**
-
-Audit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views.
-
-**Acceptance criteria**
-
-- [ ] vitest-axe passes for every view
-- [ ] Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected
-- [ ] Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md
-
-<details><summary>Copy-paste AI prompt</summary>
-
-```text
-You are working on the project "Grain to Pixel" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.
-
-PROJECT CONTEXT (from docs/product/idea.md)
-- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).
-- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.
-- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.
-
-TECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)
-- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.
-- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.
-- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.
-- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.
-- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.
-
-ISSUE Q-04 – Accessibility pass
-Milestone: M7 MVP release v0.1.0 | Area: Quality, docs and release verification | Type: test | Size: M (1d)
-Spec references: specification section 13
-Dependencies (must be Done first; if any is not, stop and tell me): U-10 – Capture view; U-11 – Export dialog; U-07 – Settings view and feature flags
-
-DESCRIPTION
-Audit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views.
-
-TECHNICAL DETAILS
-FILES: fixes across apps/desktop/src and packages/ui; docs/research/a11y.md.
-ROUTES / MIGRATIONS: none.
-TESTS: axe for all views, keyboard tests for grid, curve editor and capture view.
-
-ACCEPTANCE CRITERIA
-- vitest-axe passes for every view
-- Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected
-- Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md
-
-Needs from the human: an action only the human can do. Prepare exact steps and a checklist; never tick these items yourself.
-Definition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.
-```
-
-</details>
-
 ### Q-05 – User documentation
 
 - Milestone: M7 MVP release v0.1.0 | Estimate: 0.5d (size S) | Type: docs
@@ -4265,65 +4213,6 @@ ACCEPTANCE CRITERIA
 - Any miss is listed with a proposed issue; a miss blocks the release
 
 Needs from the human: files only the human has. Prepare exact steps and a checklist; never tick these items yourself.
-Definition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.
-```
-
-</details>
-
-### Q-07 – Release v0.1.0
-
-- Milestone: M7 MVP release v0.1.0 | Estimate: 0.5d (size S) | Type: chore
-- Labels: area:quality, type:chore, size:S, needs:human
-- Depends on: T-06, D-05, Q-04, Q-05, Q-06
-- Previous ID: GTP-096 | Spec: specification sections 15 and 16
-
-**Description**
-
-Run the release checklist and prepare v0.1.0; the human tags and publishes.
-
-**Acceptance criteria**
-
-- [ ] All CI gates green on main; cargo deny and audit clean
-- [ ] Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)
-- [ ] Release notes generated from commits; tag command prepared for the human
-- [ ] The human publishes; nothing is tagged or pushed without explicit instruction
-
-<details><summary>Copy-paste AI prompt</summary>
-
-```text
-You are working on the project "Grain to Pixel" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.
-
-PROJECT CONTEXT (from docs/product/idea.md)
-- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).
-- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.
-- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.
-
-TECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)
-- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.
-- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.
-- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.
-- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.
-- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.
-
-ISSUE Q-07 – Release v0.1.0
-Milestone: M7 MVP release v0.1.0 | Area: Quality, docs and release verification | Type: chore | Size: S (0.5d)
-Spec references: specification sections 15 and 16
-Dependencies (must be Done first; if any is not, stop and tell me): T-06 – Updater and release pipeline; D-05 – Diagnostics export and local counters; Q-04 – Accessibility pass; Q-05 – User documentation; Q-06 – Budget and quality verification
-
-DESCRIPTION
-Run the release checklist and prepare v0.1.0; the human tags and publishes.
-
-TECHNICAL DETAILS
-FILES: docs/release-checklist.md, changelog generation config.
-TESTS: checklist run, reported by the human.
-
-ACCEPTANCE CRITERIA
-- All CI gates green on main; cargo deny and audit clean
-- Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)
-- Release notes generated from commits; tag command prepared for the human
-- The human publishes; nothing is tagged or pushed without explicit instruction
-
-Needs from the human: an action only the human can do. Prepare exact steps and a checklist; never tick these items yourself.
 Definition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.
 ```
 
@@ -4764,7 +4653,7 @@ Definition of Done: docs/workflow.md section 11. Update the docs this change mak
 
 **Description**
 
-Correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.
+Superseded by P-21 (ADR 0010); closed without work. Original text: correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.
 
 **Acceptance criteria**
 
@@ -4795,7 +4684,7 @@ Spec references: specification sections 4.2 step 1 and 11
 Dependencies (must be Done first; if any is not, stop and tell me): H-05 – NEF decode and RGB channel merge
 
 DESCRIPTION
-Correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.
+Superseded by P-21 (ADR 0010); closed without work. Original text: correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.
 
 TECHNICAL DETAILS
 FILES: crates/gtp-negative/src/flat_field.rs; storage of the reference follows the capture session design.
@@ -6411,6 +6300,127 @@ Definition of Done: docs/workflow.md section 11. Update the docs this change mak
 
 </details>
 
+### Q-04 – Accessibility pass
+
+- Milestone: M7 MVP release v0.1.0 | Estimate: 1d (size M) | Type: test
+- Labels: area:quality, type:test, size:M, needs:human
+- Depends on: U-10, U-11, U-07, H-13, H-20
+- Previous ID: GTP-093 | Spec: specification section 13
+
+**Description**
+
+Audit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views. It runs after the last issues that change the UI (H-13, H-20).
+
+**Acceptance criteria**
+
+- [ ] vitest-axe passes for every view
+- [ ] Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected
+- [ ] Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md
+
+<details><summary>Copy-paste AI prompt</summary>
+
+```text
+You are working on the project "Grain to Pixel" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.
+
+PROJECT CONTEXT (from docs/product/idea.md)
+- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).
+- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.
+- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.
+
+TECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)
+- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.
+- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.
+- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.
+- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.
+- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.
+
+ISSUE Q-04 – Accessibility pass
+Milestone: M7 MVP release v0.1.0 | Area: Quality, docs and release verification | Type: test | Size: M (1d)
+Spec references: specification section 13
+Dependencies (must be Done first; if any is not, stop and tell me): U-10 – Capture view; U-11 – Export dialog; U-07 – Settings view and feature flags; H-13 – Roll contact sheet with frame spacing adjustment; H-20 – Choose the calibration area on the live view
+
+DESCRIPTION
+Audit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views. It runs after the last issues that change the UI (H-13, H-20).
+
+TECHNICAL DETAILS
+FILES: fixes across apps/desktop/src and packages/ui; docs/research/a11y.md.
+ROUTES / MIGRATIONS: none.
+TESTS: axe for all views, keyboard tests for grid, curve editor and capture view.
+
+ACCEPTANCE CRITERIA
+- vitest-axe passes for every view
+- Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected
+- Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md
+
+Needs from the human: an action only the human can do. Prepare exact steps and a checklist; never tick these items yourself.
+Definition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.
+```
+
+</details>
+
+### Q-07 – Release v0.1.0
+
+- Milestone: M7 MVP release v0.1.0 | Estimate: 0.5d (size S) | Type: chore
+- Labels: area:quality, type:chore, size:S, needs:human
+- Depends on: T-06, D-05, Q-04, Q-05, Q-06
+- Previous ID: GTP-096 | Spec: specification sections 15 and 16
+
+**Description**
+
+Run the release checklist and prepare v0.1.0; the human tags and publishes.
+
+**Acceptance criteria**
+
+- [ ] All CI gates green on main; cargo deny and audit clean
+- [ ] Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)
+- [ ] CHANGELOG.md exists and covers v0.1.0, generated from the conventional commits (specification section 15)
+- [ ] Windows capture (R-04, H-10) is not a gate for v0.1.0
+- [ ] Release notes generated from commits; tag command prepared for the human
+- [ ] The human publishes; nothing is tagged or pushed without explicit instruction
+
+<details><summary>Copy-paste AI prompt</summary>
+
+```text
+You are working on the project "Grain to Pixel" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.
+
+PROJECT CONTEXT (from docs/product/idea.md)
+- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).
+- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.
+- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.
+
+TECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)
+- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.
+- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.
+- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.
+- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.
+- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.
+
+ISSUE Q-07 – Release v0.1.0
+Milestone: M7 MVP release v0.1.0 | Area: Quality, docs and release verification | Type: chore | Size: S (0.5d)
+Spec references: specification sections 15 and 16
+Dependencies (must be Done first; if any is not, stop and tell me): T-06 – Updater and release pipeline; D-05 – Diagnostics export and local counters; Q-04 – Accessibility pass; Q-05 – User documentation; Q-06 – Budget and quality verification
+
+DESCRIPTION
+Run the release checklist and prepare v0.1.0; the human tags and publishes.
+
+TECHNICAL DETAILS
+FILES: docs/release-checklist.md, changelog generation config.
+TESTS: checklist run, reported by the human.
+
+ACCEPTANCE CRITERIA
+- All CI gates green on main; cargo deny and audit clean
+- Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)
+- CHANGELOG.md exists and covers v0.1.0, generated from the conventional commits (specification section 15)
+- Windows capture (R-04, H-10) is not a gate for v0.1.0
+- Release notes generated from commits; tag command prepared for the human
+- The human publishes; nothing is tagged or pushed without explicit instruction
+
+Needs from the human: an action only the human can do. Prepare exact steps and a checklist; never tick these items yourself.
+Definition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.
+```
+
+</details>
+
 ---
 
 ## JSON for bulk import
@@ -6613,13 +6623,13 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
   {
     "id": "R-02",
     "title": "R-02 – Spike - Scanlight V4 serial control",
-    "description": "Confirm the Scanlight V4 binary serial protocol on the real device (rev B), measure timing and temperature, and capture packet recordings to use as test vectors.",
+    "description": "Finish the Scanlight V4 serial spike. On macOS it is done: the light is a V4 rev A (hardware ID 1, firmware ID 0, no SET_FOCUS), colours, timing and temperature are measured, and its shutter pulse does not fire the D600. What remains is the Windows serial retest, with another cable and port, and saving the packet captures as test vectors.",
     "acceptance_criteria": [
-      "Serial port opens on macOS and Windows without extra drivers; firmware ID recorded (rev B expected)",
-      "Each colour lights alone via SET_COLOR with save flag 0; switch latency and needed settle time recorded",
-      "LED_TEMP over a 3-colour sequence recorded and warn/abort limits justified",
-      "Pulse length that reliably fires the D600 recorded, with or without SET_FOCUS, using the owned remote cable",
-      "Captured packets saved under samples/public/scanlight/ and the research note updated"
+      "Serial port opens on macOS without extra drivers and the light is recorded as a V4 rev A, hardware ID 1, firmware ID 0 (met, recorded in the research note); the Windows retest with another cable and another USB port is run and its result recorded, even if the port stays silent",
+      "Each colour lights alone via SET_COLOR with save flag 0; switch latency and settle time recorded (met on macOS: 0.5 s is enough)",
+      "LED_TEMP over a 3-colour sequence recorded and the warn/abort limits (45 and 55 degrees C) justified (met; the limits are approved, ADR 0004 amendment of 2026-11-09)",
+      "The shutter pulse is recorded as not firing the D600 on this rev A light (met by recording that result; the optional retest with a mono-to-stereo adapter is noted and does not block the issue)",
+      "Captured packets saved under samples/public/scanlight/ as test vectors and the research note updated"
     ],
     "estimate": "1d",
     "labels": [
@@ -6633,8 +6643,8 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
     "dependencies": [
       "T-01"
     ],
-    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE R-02 – Spike - Scanlight V4 serial control\nMilestone: M0 Foundations | Area: Research spikes | Type: spike | Size: M (1d)\nSpec references: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md\nDependencies (must be Done first; if any is not, stop and tell me): T-01 – Initialize Git repository and LFS\n\nDESCRIPTION\nConfirm the Scanlight V4 binary serial protocol on the real device (rev B), measure timing and temperature, and capture packet recordings to use as test vectors.\n\nTECHNICAL DETAILS\nSCOPE: packet format `0xFE`, header, length, data. Host commands: SET_COLOR (header 0; R, G, B, W, IR, save flag; save always 0), GET_FW_VERSION (2), SHUTTER_PULSE (3; 10 ms units), SET_FOCUS (7; PCB 26a902b). Device packets: LED_TEMP (1, int32 millidegrees C), VBUS (2, mV), FW_VERSION (3). No acks, no VID/PID: probe ports with GET_FW_VERSION. Throwaway script (python/pyserial or Rust) outside crates/.\nOUTPUT: docs/research/scanlight-capture.md, ADR 0004 amendments, recorded packets as test vectors, follow-up issues. The light must be off at the end of every run.\nPROCESS: assistant prepares commands; human runs; assistant records; hardware items never ticked by the assistant.\n\nACCEPTANCE CRITERIA\n- Serial port opens on macOS and Windows without extra drivers; firmware ID recorded (rev B expected)\n- Each colour lights alone via SET_COLOR with save flag 0; switch latency and needed settle time recorded\n- LED_TEMP over a 3-colour sequence recorded and warn/abort limits justified\n- Pulse length that reliably fires the D600 recorded, with or without SET_FOCUS, using the owned remote cable\n- Captured packets saved under samples/public/scanlight/ and the research note updated\n\nNeeds from the human: real hardware run and report. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
-    "body": "## Description\nConfirm the Scanlight V4 binary serial protocol on the real device (rev B), measure timing and temperature, and capture packet recordings to use as test vectors.\n\n## Acceptance criteria\n- [ ] Serial port opens on macOS and Windows without extra drivers; firmware ID recorded (rev B expected)\n- [ ] Each colour lights alone via SET_COLOR with save flag 0; switch latency and needed settle time recorded\n- [ ] LED_TEMP over a 3-colour sequence recorded and warn/abort limits justified\n- [ ] Pulse length that reliably fires the D600 recorded, with or without SET_FOCUS, using the owned remote cable\n- [ ] Captured packets saved under samples/public/scanlight/ and the research note updated\n\n## Estimate\n1d (size M)\n\n## Dependencies\n- {{dep:T-01}} T-01 – Initialize Git repository and LFS\n\n## References\n- Spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md\n- Milestone: M0 Foundations; area: Research spikes; previous ID: GTP-009"
+    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE R-02 – Spike - Scanlight V4 serial control\nMilestone: M0 Foundations | Area: Research spikes | Type: spike | Size: M (1d)\nSpec references: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md\nDependencies (must be Done first; if any is not, stop and tell me): T-01 – Initialize Git repository and LFS\n\nDESCRIPTION\nFinish the Scanlight V4 serial spike. On macOS it is done: the light is a V4 rev A (hardware ID 1, firmware ID 0, no SET_FOCUS), colours, timing and temperature are measured, and its shutter pulse does not fire the D600. What remains is the Windows serial retest, with another cable and port, and saving the packet captures as test vectors.\n\nTECHNICAL DETAILS\nSCOPE: packet format `0xFE`, header, length, data. Host commands: SET_COLOR (header 0; R, G, B, W, IR, save flag; save always 0), GET_FW_VERSION (2), SHUTTER_PULSE (3; 10 ms units; does not fire the D600, not used), SET_FOCUS (7; PCB 26a902b only, so absent on this rev A light). Device packets: LED_TEMP (1, int32 millidegrees C), VBUS (2, mV), FW_VERSION (3). No acks, no VID/PID: probe ports with GET_FW_VERSION. Throwaway script (python/pyserial or Rust) outside crates/. The camera is triggered over USB; the Scanlight is used for light only.\nOUTPUT: docs/research/scanlight-capture.md, ADR 0004 amendments, recorded packets as test vectors, follow-up issues. The light must be off at the end of every run.\nPROCESS: assistant prepares commands; human runs; assistant records; hardware items never ticked by the assistant.\n\nACCEPTANCE CRITERIA\n- Serial port opens on macOS without extra drivers and the light is recorded as a V4 rev A, hardware ID 1, firmware ID 0 (met, recorded in the research note); the Windows retest with another cable and another USB port is run and its result recorded, even if the port stays silent\n- Each colour lights alone via SET_COLOR with save flag 0; switch latency and settle time recorded (met on macOS: 0.5 s is enough)\n- LED_TEMP over a 3-colour sequence recorded and the warn/abort limits (45 and 55 degrees C) justified (met; the limits are approved, ADR 0004 amendment of 2026-11-09)\n- The shutter pulse is recorded as not firing the D600 on this rev A light (met by recording that result; the optional retest with a mono-to-stereo adapter is noted and does not block the issue)\n- Captured packets saved under samples/public/scanlight/ as test vectors and the research note updated\n\nNeeds from the human: real hardware run and report. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
+    "body": "## Description\nFinish the Scanlight V4 serial spike. On macOS it is done: the light is a V4 rev A (hardware ID 1, firmware ID 0, no SET_FOCUS), colours, timing and temperature are measured, and its shutter pulse does not fire the D600. What remains is the Windows serial retest, with another cable and port, and saving the packet captures as test vectors.\n\n## Acceptance criteria\n- [ ] Serial port opens on macOS without extra drivers and the light is recorded as a V4 rev A, hardware ID 1, firmware ID 0 (met, recorded in the research note); the Windows retest with another cable and another USB port is run and its result recorded, even if the port stays silent\n- [ ] Each colour lights alone via SET_COLOR with save flag 0; switch latency and settle time recorded (met on macOS: 0.5 s is enough)\n- [ ] LED_TEMP over a 3-colour sequence recorded and the warn/abort limits (45 and 55 degrees C) justified (met; the limits are approved, ADR 0004 amendment of 2026-11-09)\n- [ ] The shutter pulse is recorded as not firing the D600 on this rev A light (met by recording that result; the optional retest with a mono-to-stereo adapter is noted and does not block the issue)\n- [ ] Captured packets saved under samples/public/scanlight/ as test vectors and the research note updated\n\n## Estimate\n1d (size M)\n\n## Dependencies\n- {{dep:T-01}} T-01 – Initialize Git repository and LFS\n\n## References\n- Spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md\n- Milestone: M0 Foundations; area: Research spikes; previous ID: GTP-009"
   },
   {
     "id": "R-03",
@@ -6666,10 +6676,12 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
   {
     "id": "R-04",
     "title": "R-04 – Spike - digiCamControl on Windows",
-    "description": "Confirm the Windows capture path: Scanlight pulse fires the D600, digiCamControl downloads the NEF into a session folder, and the app can watch that folder.",
+    "description": "Confirm the Windows capture path: digiCamControl fires the D600 over USB and writes the NEF into a session folder, and the app can ask it to take a shot and watch that folder. The Scanlight is used for light only; its shutter pulse does not fire the D600 (ADR 0004 amendment). Windows capture is not required for v0.1.0.",
     "acceptance_criteria": [
-      "D600 recognized by digiCamControl; pulse-fired shots appear in the chosen folder without digiCamControl triggering them",
-      "Typical file write time and partial-file behaviour recorded",
+      "D600 recognized by digiCamControl; a shot fired by digiCamControl over USB appears as a NEF in the chosen folder",
+      "How the app asks digiCamControl to take a shot is found and recorded (its command line or its remote interface), with the exact command that worked",
+      "Typical file write time and partial-file behaviour (temp names, size growth) of the watched folder recorded",
+      "Whether digiCamControl offers live view and camera settings that the app could reach is recorded",
       "docs/research/scanlight-capture.md updated"
     ],
     "estimate": "0.5d",
@@ -6683,8 +6695,8 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
     "dependencies": [
       "R-02"
     ],
-    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE R-04 – Spike - digiCamControl on Windows\nMilestone: M0 Foundations | Area: Research spikes | Type: spike | Size: S (0.5d)\nSpec references: specification section 6.1\nDependencies (must be Done first; if any is not, stop and tell me): R-02 – Spike - Scanlight V4 serial control\n\nDESCRIPTION\nConfirm the Windows capture path: Scanlight pulse fires the D600, digiCamControl downloads the NEF into a session folder, and the app can watch that folder.\n\nTECHNICAL DETAILS\nSCOPE: configure digiCamControl session folder; fire with SHUTTER_PULSE (length from R-02); observe temp/partial file naming and stable-size timing; note D600 support status of digiCamControl.\nOUTPUT: research note; recommendation for the WatchedFolder file-complete rule.\nPROCESS: human runs; assistant records.\n\nACCEPTANCE CRITERIA\n- D600 recognized by digiCamControl; pulse-fired shots appear in the chosen folder without digiCamControl triggering them\n- Typical file write time and partial-file behaviour recorded\n- docs/research/scanlight-capture.md updated\n\nNeeds from the human: real hardware run and report. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
-    "body": "## Description\nConfirm the Windows capture path: Scanlight pulse fires the D600, digiCamControl downloads the NEF into a session folder, and the app can watch that folder.\n\n## Acceptance criteria\n- [ ] D600 recognized by digiCamControl; pulse-fired shots appear in the chosen folder without digiCamControl triggering them\n- [ ] Typical file write time and partial-file behaviour recorded\n- [ ] docs/research/scanlight-capture.md updated\n\n## Estimate\n0.5d (size S)\n\n## Dependencies\n- {{dep:R-02}} R-02 – Spike - Scanlight V4 serial control\n\n## References\n- Spec: specification section 6.1\n- Milestone: M0 Foundations; area: Research spikes; previous ID: GTP-011"
+    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE R-04 – Spike - digiCamControl on Windows\nMilestone: M0 Foundations | Area: Research spikes | Type: spike | Size: S (0.5d)\nSpec references: specification section 6.1\nDependencies (must be Done first; if any is not, stop and tell me): R-02 – Spike - Scanlight V4 serial control\n\nDESCRIPTION\nConfirm the Windows capture path: digiCamControl fires the D600 over USB and writes the NEF into a session folder, and the app can ask it to take a shot and watch that folder. The Scanlight is used for light only; its shutter pulse does not fire the D600 (ADR 0004 amendment). Windows capture is not required for v0.1.0.\n\nTECHNICAL DETAILS\nSCOPE: configure the digiCamControl session folder; take a shot from the command line and, if it has one, its remote interface, and note which the app can call; observe temp/partial file naming and stable-size timing; check live view and camera settings access; note D600 support status of digiCamControl. No Scanlight pulse is used. The dependency on R-02 is only for the light: a Scanlight that answers on Windows (R-02 retests the serial port with another cable and port); the camera part of this spike does not need the light.\nOUTPUT: research note; recommendation for the WatchedFolder trigger and file-complete rule.\nPROCESS: human runs; assistant records.\n\nACCEPTANCE CRITERIA\n- D600 recognized by digiCamControl; a shot fired by digiCamControl over USB appears as a NEF in the chosen folder\n- How the app asks digiCamControl to take a shot is found and recorded (its command line or its remote interface), with the exact command that worked\n- Typical file write time and partial-file behaviour (temp names, size growth) of the watched folder recorded\n- Whether digiCamControl offers live view and camera settings that the app could reach is recorded\n- docs/research/scanlight-capture.md updated\n\nNeeds from the human: real hardware run and report. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
+    "body": "## Description\nConfirm the Windows capture path: digiCamControl fires the D600 over USB and writes the NEF into a session folder, and the app can ask it to take a shot and watch that folder. The Scanlight is used for light only; its shutter pulse does not fire the D600 (ADR 0004 amendment). Windows capture is not required for v0.1.0.\n\n## Acceptance criteria\n- [ ] D600 recognized by digiCamControl; a shot fired by digiCamControl over USB appears as a NEF in the chosen folder\n- [ ] How the app asks digiCamControl to take a shot is found and recorded (its command line or its remote interface), with the exact command that worked\n- [ ] Typical file write time and partial-file behaviour (temp names, size growth) of the watched folder recorded\n- [ ] Whether digiCamControl offers live view and camera settings that the app could reach is recorded\n- [ ] docs/research/scanlight-capture.md updated\n\n## Estimate\n0.5d (size S)\n\n## Dependencies\n- {{dep:R-02}} R-02 – Spike - Scanlight V4 serial control\n\n## References\n- Spec: specification section 6.1\n- Milestone: M0 Foundations; area: Research spikes; previous ID: GTP-011"
   },
   {
     "id": "R-05",
@@ -7795,11 +7807,12 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
   {
     "id": "H-10",
     "title": "H-10 – WatchedFolder backend",
-    "description": "Camera backend that fires the shutter through the Scanlight pulse and waits for NEFs written to a user-selected folder (digiCamControl on Windows).",
+    "description": "Camera backend whose trigger asks digiCamControl to fire the camera (the way R-04 found) and that waits for NEFs written to a user-selected folder (digiCamControl on Windows). The Scanlight is used for light only: no SHUTTER_PULSE, no SET_FOCUS. This backend is not required for v0.1.0.",
     "acceptance_criteria": [
-      "trigger sends SHUTTER_PULSE (and SET_FOCUS when the profile enables it); wait_for_image returns the first new .nef whose size is stable for 500 ms",
+      "trigger asks digiCamControl to take a shot, as recorded by R-04; wait_for_image returns the first new .nef in the watched folder whose size is stable for 500 ms",
       "Partial or temp files are ignored; timeout returns a clear error",
-      "A triplet via pulse + digiCamControl works on Windows (human reports)"
+      "A triplet via digiCamControl works on Windows (human reports); this needs a Scanlight that answers on Windows (R-02)",
+      "Not required for v0.1.0: the release does not wait for this issue"
     ],
     "estimate": "1d",
     "labels": [
@@ -7813,8 +7826,8 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
       "H-08",
       "R-04"
     ],
-    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE H-10 – WatchedFolder backend\nMilestone: M6 Guided RGB capture | Area: Hardware ingest and capture | Type: feature | Size: M (1d)\nSpec references: specification section 6.1\nDependencies (must be Done first; if any is not, stop and tell me): H-08 – Capture orchestrator, CameraSource, FakeCamera and safety; R-04 – Spike - digiCamControl on Windows\n\nDESCRIPTION\nCamera backend that fires the shutter through the Scanlight pulse and waits for NEFs written to a user-selected folder (digiCamControl on Windows).\n\nTECHNICAL DETAILS\nFILES: crates/gtp-capture/src/watched.rs (`WatchedFolder { dir }`, `notify` crate).\nVALIDATION: watch dir canonicalized and user-selected; files validated like any import.\nROUTES / MIGRATIONS: none.\nTESTS: temp dir with slow writes, temp-then-rename, partial files, timeout; trait conformance shared with FakeCamera.\n\nACCEPTANCE CRITERIA\n- trigger sends SHUTTER_PULSE (and SET_FOCUS when the profile enables it); wait_for_image returns the first new .nef whose size is stable for 500 ms\n- Partial or temp files are ignored; timeout returns a clear error\n- A triplet via pulse + digiCamControl works on Windows (human reports)\n\nNeeds from the human: real hardware run and report. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
-    "body": "## Description\nCamera backend that fires the shutter through the Scanlight pulse and waits for NEFs written to a user-selected folder (digiCamControl on Windows).\n\n## Acceptance criteria\n- [ ] trigger sends SHUTTER_PULSE (and SET_FOCUS when the profile enables it); wait_for_image returns the first new .nef whose size is stable for 500 ms\n- [ ] Partial or temp files are ignored; timeout returns a clear error\n- [ ] A triplet via pulse + digiCamControl works on Windows (human reports)\n\n## Estimate\n1d (size M)\n\n## Dependencies\n- {{dep:H-08}} H-08 – Capture orchestrator, CameraSource, FakeCamera and safety\n- {{dep:R-04}} R-04 – Spike - digiCamControl on Windows\n\n## References\n- Spec: specification section 6.1\n- Milestone: M6 Guided RGB capture; area: Hardware ingest and capture; previous ID: GTP-083"
+    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE H-10 – WatchedFolder backend\nMilestone: M6 Guided RGB capture | Area: Hardware ingest and capture | Type: feature | Size: M (1d)\nSpec references: specification section 6.1\nDependencies (must be Done first; if any is not, stop and tell me): H-08 – Capture orchestrator, CameraSource, FakeCamera and safety; R-04 – Spike - digiCamControl on Windows\n\nDESCRIPTION\nCamera backend whose trigger asks digiCamControl to fire the camera (the way R-04 found) and that waits for NEFs written to a user-selected folder (digiCamControl on Windows). The Scanlight is used for light only: no SHUTTER_PULSE, no SET_FOCUS. This backend is not required for v0.1.0.\n\nTECHNICAL DETAILS\nFILES: crates/gtp-capture/src/watched.rs (`WatchedFolder { dir }`, `notify` crate).\nVALIDATION: watch dir canonicalized and user-selected; files validated like any import.\nROUTES / MIGRATIONS: none.\nTESTS: temp dir with slow writes, temp-then-rename, partial files, timeout; trait conformance shared with FakeCamera.\n\nACCEPTANCE CRITERIA\n- trigger asks digiCamControl to take a shot, as recorded by R-04; wait_for_image returns the first new .nef in the watched folder whose size is stable for 500 ms\n- Partial or temp files are ignored; timeout returns a clear error\n- A triplet via digiCamControl works on Windows (human reports); this needs a Scanlight that answers on Windows (R-02)\n- Not required for v0.1.0: the release does not wait for this issue\n\nNeeds from the human: real hardware run and report. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
+    "body": "## Description\nCamera backend whose trigger asks digiCamControl to fire the camera (the way R-04 found) and that waits for NEFs written to a user-selected folder (digiCamControl on Windows). The Scanlight is used for light only: no SHUTTER_PULSE, no SET_FOCUS. This backend is not required for v0.1.0.\n\n## Acceptance criteria\n- [ ] trigger asks digiCamControl to take a shot, as recorded by R-04; wait_for_image returns the first new .nef in the watched folder whose size is stable for 500 ms\n- [ ] Partial or temp files are ignored; timeout returns a clear error\n- [ ] A triplet via digiCamControl works on Windows (human reports); this needs a Scanlight that answers on Windows (R-02)\n- [ ] Not required for v0.1.0: the release does not wait for this issue\n\n## Estimate\n1d (size M)\n\n## Dependencies\n- {{dep:H-08}} H-08 – Capture orchestrator, CameraSource, FakeCamera and safety\n- {{dep:R-04}} R-04 – Spike - digiCamControl on Windows\n\n## References\n- Spec: specification section 6.1\n- Milestone: M6 Guided RGB capture; area: Hardware ingest and capture; previous ID: GTP-083"
   },
   {
     "id": "D-04",
@@ -7938,31 +7951,6 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
     "body": "## Description\nZip of logs and system info for support, plus local-only activation counters.\n\n## Acceptance criteria\n- [ ] diagnostics_export zips logs, versions, schema version, flags, counters and last job errors; no images and no full paths at info level\n- [ ] Counters first_import_at, first_convert_at, first_export_at, frames_imported, frames_exported, scans_failed increment at the right events, once for first_* values\n- [ ] Settings shows counters and an Export diagnostics button\n\n## Estimate\n1d (size M)\n\n## Dependencies\n- {{dep:D-03}} D-03 – Logging, panic hook and client error reporting\n- {{dep:L-03}} L-03 – Library create/open, folder layout and settings\n- {{dep:P-12}} P-12 – Export job - TIFF16 and JPEG with ICC\n\n## References\n- Spec: specification sections 12 and 14\n- Milestone: M7 MVP release v0.1.0; area: Desktop shell (Tauri); previous ID: GTP-092"
   },
   {
-    "id": "Q-04",
-    "title": "Q-04 – Accessibility pass",
-    "description": "Audit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views.",
-    "acceptance_criteria": [
-      "vitest-axe passes for every view",
-      "Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected",
-      "Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md"
-    ],
-    "estimate": "1d",
-    "labels": [
-      "area:quality",
-      "type:test",
-      "size:M",
-      "needs:human"
-    ],
-    "milestone": "M7 MVP release v0.1.0",
-    "dependencies": [
-      "U-10",
-      "U-11",
-      "U-07"
-    ],
-    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE Q-04 – Accessibility pass\nMilestone: M7 MVP release v0.1.0 | Area: Quality, docs and release verification | Type: test | Size: M (1d)\nSpec references: specification section 13\nDependencies (must be Done first; if any is not, stop and tell me): U-10 – Capture view; U-11 – Export dialog; U-07 – Settings view and feature flags\n\nDESCRIPTION\nAudit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views.\n\nTECHNICAL DETAILS\nFILES: fixes across apps/desktop/src and packages/ui; docs/research/a11y.md.\nROUTES / MIGRATIONS: none.\nTESTS: axe for all views, keyboard tests for grid, curve editor and capture view.\n\nACCEPTANCE CRITERIA\n- vitest-axe passes for every view\n- Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected\n- Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md\n\nNeeds from the human: an action only the human can do. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
-    "body": "## Description\nAudit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views.\n\n## Acceptance criteria\n- [ ] vitest-axe passes for every view\n- [ ] Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected\n- [ ] Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md\n\n## Estimate\n1d (size M)\n\n## Dependencies\n- {{dep:U-10}} U-10 – Capture view\n- {{dep:U-11}} U-11 – Export dialog\n- {{dep:U-07}} U-07 – Settings view and feature flags\n\n## References\n- Spec: specification section 13\n- Milestone: M7 MVP release v0.1.0; area: Quality, docs and release verification; previous ID: GTP-093"
-  },
-  {
     "id": "Q-05",
     "title": "Q-05 – User documentation",
     "description": "User guide for installation, library backup, scanner setup, capture setup and known limitations.",
@@ -8006,34 +7994,6 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
     ],
     "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE Q-06 – Budget and quality verification\nMilestone: M7 MVP release v0.1.0 | Area: Quality, docs and release verification | Type: test | Size: M (1d)\nSpec references: specification sections 1 and 11\nDependencies (must be Done first; if any is not, stop and tell me): Q-03 – Calibrate quality metric and budgets; U-10 – Capture view; T-06 – Updater and release pipeline\n\nDESCRIPTION\nVerify every performance budget and the calibrated quality thresholds on the release candidate.\n\nTECHNICAL DETAILS\nFILES: docs/research/benchmark.md; proposed follow-up issues.\nTESTS: benchmark and manual measurements.\n\nACCEPTANCE CRITERIA\n- tools/benchmark run on the reference machine; every spec section 11 budget and the ΔE2000 thresholds reported in docs/research/benchmark.md\n- Any miss is listed with a proposed issue; a miss blocks the release\n\nNeeds from the human: files only the human has. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
     "body": "## Description\nVerify every performance budget and the calibrated quality thresholds on the release candidate.\n\n## Acceptance criteria\n- [ ] tools/benchmark run on the reference machine; every spec section 11 budget and the ΔE2000 thresholds reported in docs/research/benchmark.md\n- [ ] Any miss is listed with a proposed issue; a miss blocks the release\n\n## Estimate\n1d (size M)\n\n## Dependencies\n- {{dep:Q-03}} Q-03 – Calibrate quality metric and budgets\n- {{dep:U-10}} U-10 – Capture view\n- {{dep:T-06}} T-06 – Updater and release pipeline\n\n## References\n- Spec: specification sections 1 and 11\n- Milestone: M7 MVP release v0.1.0; area: Quality, docs and release verification; previous ID: GTP-095"
-  },
-  {
-    "id": "Q-07",
-    "title": "Q-07 – Release v0.1.0",
-    "description": "Run the release checklist and prepare v0.1.0; the human tags and publishes.",
-    "acceptance_criteria": [
-      "All CI gates green on main; cargo deny and audit clean",
-      "Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)",
-      "Release notes generated from commits; tag command prepared for the human",
-      "The human publishes; nothing is tagged or pushed without explicit instruction"
-    ],
-    "estimate": "0.5d",
-    "labels": [
-      "area:quality",
-      "type:chore",
-      "size:S",
-      "needs:human"
-    ],
-    "milestone": "M7 MVP release v0.1.0",
-    "dependencies": [
-      "T-06",
-      "D-05",
-      "Q-04",
-      "Q-05",
-      "Q-06"
-    ],
-    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE Q-07 – Release v0.1.0\nMilestone: M7 MVP release v0.1.0 | Area: Quality, docs and release verification | Type: chore | Size: S (0.5d)\nSpec references: specification sections 15 and 16\nDependencies (must be Done first; if any is not, stop and tell me): T-06 – Updater and release pipeline; D-05 – Diagnostics export and local counters; Q-04 – Accessibility pass; Q-05 – User documentation; Q-06 – Budget and quality verification\n\nDESCRIPTION\nRun the release checklist and prepare v0.1.0; the human tags and publishes.\n\nTECHNICAL DETAILS\nFILES: docs/release-checklist.md, changelog generation config.\nTESTS: checklist run, reported by the human.\n\nACCEPTANCE CRITERIA\n- All CI gates green on main; cargo deny and audit clean\n- Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)\n- Release notes generated from commits; tag command prepared for the human\n- The human publishes; nothing is tagged or pushed without explicit instruction\n\nNeeds from the human: an action only the human can do. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
-    "body": "## Description\nRun the release checklist and prepare v0.1.0; the human tags and publishes.\n\n## Acceptance criteria\n- [ ] All CI gates green on main; cargo deny and audit clean\n- [ ] Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)\n- [ ] Release notes generated from commits; tag command prepared for the human\n- [ ] The human publishes; nothing is tagged or pushed without explicit instruction\n\n## Estimate\n0.5d (size S)\n\n## Dependencies\n- {{dep:T-06}} T-06 – Updater and release pipeline\n- {{dep:D-05}} D-05 – Diagnostics export and local counters\n- {{dep:Q-04}} Q-04 – Accessibility pass\n- {{dep:Q-05}} Q-05 – User documentation\n- {{dep:Q-06}} Q-06 – Budget and quality verification\n\n## References\n- Spec: specification sections 15 and 16\n- Milestone: M7 MVP release v0.1.0; area: Quality, docs and release verification; previous ID: GTP-096"
   },
   {
     "id": "T-07",
@@ -8200,7 +8160,7 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
   {
     "id": "P-16",
     "title": "P-16 – Flat-field correction for camera copies",
-    "description": "Correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.",
+    "description": "Superseded by P-21 (ADR 0010); closed without work. Original text: correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.",
     "acceptance_criteria": [
       "A reference exposure per colour channel is stored with the roll or capture session",
       "Dividing by the normalized reference makes a synthetic shaded flat field flat within 1 percent; a uniform reference is the identity",
@@ -8216,8 +8176,8 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
     "dependencies": [
       "H-05"
     ],
-    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE P-16 – Flat-field correction for camera copies\nMilestone: M5 RGB triplets (files) | Area: Image pipeline | Type: feature | Size: M (1d)\nSpec references: specification sections 4.2 step 1 and 11\nDependencies (must be Done first; if any is not, stop and tell me): H-05 – NEF decode and RGB channel merge\n\nDESCRIPTION\nCorrect uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.\n\nTECHNICAL DETAILS\nFILES: crates/gtp-negative/src/flat_field.rs; storage of the reference follows the capture session design.\nINTERFACES: `flat_field_correct(&mut ImageF32, &FlatField) -> Result<()>`.\nTESTS: synthetic shading with the P-02 generator, identity, invalid references.\n\nACCEPTANCE CRITERIA\n- A reference exposure per colour channel is stored with the roll or capture session\n- Dividing by the normalized reference makes a synthetic shaded flat field flat within 1 percent; a uniform reference is the identity\n- A reference with zero, negative or non-finite values is rejected with InvalidInput\n\nNeeds from the human: approval of your proposal.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
-    "body": "## Description\nCorrect uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.\n\n## Acceptance criteria\n- [ ] A reference exposure per colour channel is stored with the roll or capture session\n- [ ] Dividing by the normalized reference makes a synthetic shaded flat field flat within 1 percent; a uniform reference is the identity\n- [ ] A reference with zero, negative or non-finite values is rejected with InvalidInput\n\n## Estimate\n1d (size M)\n\n## Dependencies\n- {{dep:H-05}} H-05 – NEF decode and RGB channel merge\n\n## References\n- Spec: specification sections 4.2 step 1 and 11\n- Milestone: M5 RGB triplets (files); area: Image pipeline; previous ID: none"
+    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE P-16 – Flat-field correction for camera copies\nMilestone: M5 RGB triplets (files) | Area: Image pipeline | Type: feature | Size: M (1d)\nSpec references: specification sections 4.2 step 1 and 11\nDependencies (must be Done first; if any is not, stop and tell me): H-05 – NEF decode and RGB channel merge\n\nDESCRIPTION\nSuperseded by P-21 (ADR 0010); closed without work. Original text: correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.\n\nTECHNICAL DETAILS\nFILES: crates/gtp-negative/src/flat_field.rs; storage of the reference follows the capture session design.\nINTERFACES: `flat_field_correct(&mut ImageF32, &FlatField) -> Result<()>`.\nTESTS: synthetic shading with the P-02 generator, identity, invalid references.\n\nACCEPTANCE CRITERIA\n- A reference exposure per colour channel is stored with the roll or capture session\n- Dividing by the normalized reference makes a synthetic shaded flat field flat within 1 percent; a uniform reference is the identity\n- A reference with zero, negative or non-finite values is rejected with InvalidInput\n\nNeeds from the human: approval of your proposal.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
+    "body": "## Description\nSuperseded by P-21 (ADR 0010); closed without work. Original text: correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.\n\n## Acceptance criteria\n- [ ] A reference exposure per colour channel is stored with the roll or capture session\n- [ ] Dividing by the normalized reference makes a synthetic shaded flat field flat within 1 percent; a uniform reference is the identity\n- [ ] A reference with zero, negative or non-finite values is rejected with InvalidInput\n\n## Estimate\n1d (size M)\n\n## Dependencies\n- {{dep:H-05}} H-05 – NEF decode and RGB channel merge\n\n## References\n- Spec: specification sections 4.2 step 1 and 11\n- Milestone: M5 RGB triplets (files); area: Image pipeline; previous ID: none"
   },
   {
     "id": "P-17",
@@ -8858,6 +8818,63 @@ A valid JSON array, in upload order. Fields: `id`, `title`, `description`, `acce
     ],
     "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE H-20 – Choose the calibration area on the live view\nMilestone: M6 Guided RGB capture | Area: Hardware ingest and capture | Type: feature | Size: S (0.5d)\nSpec references: specification section 6.1 and 7; docs/research/scanlight-capture.md\nDependencies (must be Done first; if any is not, stop and tell me): H-14 – Live preview of the camera in the capture view; H-17 – Automatic Scanlight level calibration\n\nDESCRIPTION\nH-17's calibration measures the whole frame, because there was no picture to draw an area on. The live view of H-14 gives one. Let the user drag a rectangle on the whole-frame live view and calibrate on that area only, so clear film base anywhere in the frame (the rebate between frames, the film's edge) can be used instead of a leader that fills the frame.\n\nTECHNICAL DETAILS\nFILES: apps/desktop/src/features/import/capture (LiveView.tsx, Calibrate.tsx, CaptureSection.tsx), en.json, crates/gtp-app (the test only).\nROUTES: none new.\nMIGRATIONS: none.\nTESTS: as in ac.\nNOTES: the area is in fractions of the whole frame, so it does not depend on the live view's 640 x 424 size.\n\nACCEPTANCE CRITERIA\n- In the live view at the whole frame, dragging on the picture draws the calibration area, shown as an outline until it is cleared; a single click still aims the zoom (H-18)\n- Calibrate measures the area when one is set and the whole frame otherwise, and its result says which it used\n- The area is kept while the capture view is open and is not saved\n- No new command: capture_calibrate already takes the area as fractions of the frame, and the D600's live view covers the whole sensor at the same 3:2 shape\n- Tests: drawing and clearing, a click still aiming the zoom, Calibrate sending the area, axe; a backend test that a small area of even base gives the same levels as the whole frame of it; on the D600 (human) an area over the rebate between two frames gives levels close to a whole-frame calibration on a leader, and an area over image content gives different levels\n\nNeeds from the human: real hardware run and report; a macOS check. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
     "body": "## Description\nH-17's calibration measures the whole frame, because there was no picture to draw an area on. The live view of H-14 gives one. Let the user drag a rectangle on the whole-frame live view and calibrate on that area only, so clear film base anywhere in the frame (the rebate between frames, the film's edge) can be used instead of a leader that fills the frame.\n\n## Acceptance criteria\n- [ ] In the live view at the whole frame, dragging on the picture draws the calibration area, shown as an outline until it is cleared; a single click still aims the zoom (H-18)\n- [ ] Calibrate measures the area when one is set and the whole frame otherwise, and its result says which it used\n- [ ] The area is kept while the capture view is open and is not saved\n- [ ] No new command: capture_calibrate already takes the area as fractions of the frame, and the D600's live view covers the whole sensor at the same 3:2 shape\n- [ ] Tests: drawing and clearing, a click still aiming the zoom, Calibrate sending the area, axe; a backend test that a small area of even base gives the same levels as the whole frame of it; on the D600 (human) an area over the rebate between two frames gives levels close to a whole-frame calibration on a leader, and an area over image content gives different levels\n\n## Estimate\n0.5d (size S)\n\n## Dependencies\n- {{dep:H-14}} H-14 – Live preview of the camera in the capture view\n- {{dep:H-17}} H-17 – Automatic Scanlight level calibration\n\n## References\n- Spec: specification section 6.1 and 7; docs/research/scanlight-capture.md\n- Milestone: M6 Guided RGB capture; area: Hardware ingest and capture; previous ID: none"
+  },
+  {
+    "id": "Q-04",
+    "title": "Q-04 – Accessibility pass",
+    "description": "Audit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views. It runs after the last issues that change the UI (H-13, H-20).",
+    "acceptance_criteria": [
+      "vitest-axe passes for every view",
+      "Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected",
+      "Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md"
+    ],
+    "estimate": "1d",
+    "labels": [
+      "area:quality",
+      "type:test",
+      "size:M",
+      "needs:human"
+    ],
+    "milestone": "M7 MVP release v0.1.0",
+    "dependencies": [
+      "U-10",
+      "U-11",
+      "U-07",
+      "H-13",
+      "H-20"
+    ],
+    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE Q-04 – Accessibility pass\nMilestone: M7 MVP release v0.1.0 | Area: Quality, docs and release verification | Type: test | Size: M (1d)\nSpec references: specification section 13\nDependencies (must be Done first; if any is not, stop and tell me): U-10 – Capture view; U-11 – Export dialog; U-07 – Settings view and feature flags; H-13 – Roll contact sheet with frame spacing adjustment; H-20 – Choose the calibration area on the live view\n\nDESCRIPTION\nAudit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views. It runs after the last issues that change the UI (H-13, H-20).\n\nTECHNICAL DETAILS\nFILES: fixes across apps/desktop/src and packages/ui; docs/research/a11y.md.\nROUTES / MIGRATIONS: none.\nTESTS: axe for all views, keyboard tests for grid, curve editor and capture view.\n\nACCEPTANCE CRITERIA\n- vitest-axe passes for every view\n- Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected\n- Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md\n\nNeeds from the human: an action only the human can do. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
+    "body": "## Description\nAudit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views. It runs after the last issues that change the UI (H-13, H-20).\n\n## Acceptance criteria\n- [ ] vitest-axe passes for every view\n- [ ] Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected\n- [ ] Manual NVDA and VoiceOver run reported by the human; checklist in docs/research/a11y.md\n\n## Estimate\n1d (size M)\n\n## Dependencies\n- {{dep:U-10}} U-10 – Capture view\n- {{dep:U-11}} U-11 – Export dialog\n- {{dep:U-07}} U-07 – Settings view and feature flags\n- {{dep:H-13}} H-13 – Roll contact sheet with frame spacing adjustment\n- {{dep:H-20}} H-20 – Choose the calibration area on the live view\n\n## References\n- Spec: specification section 13\n- Milestone: M7 MVP release v0.1.0; area: Quality, docs and release verification; previous ID: GTP-093"
+  },
+  {
+    "id": "Q-07",
+    "title": "Q-07 – Release v0.1.0",
+    "description": "Run the release checklist and prepare v0.1.0; the human tags and publishes.",
+    "acceptance_criteria": [
+      "All CI gates green on main; cargo deny and audit clean",
+      "Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)",
+      "CHANGELOG.md exists and covers v0.1.0, generated from the conventional commits (specification section 15)",
+      "Windows capture (R-04, H-10) is not a gate for v0.1.0",
+      "Release notes generated from commits; tag command prepared for the human",
+      "The human publishes; nothing is tagged or pushed without explicit instruction"
+    ],
+    "estimate": "0.5d",
+    "labels": [
+      "area:quality",
+      "type:chore",
+      "size:S",
+      "needs:human"
+    ],
+    "milestone": "M7 MVP release v0.1.0",
+    "dependencies": [
+      "T-06",
+      "D-05",
+      "Q-04",
+      "Q-05",
+      "Q-06"
+    ],
+    "prompt": "You are working on the project \"Grain to Pixel\" in the repository at the current working directory. Follow docs/workflow.md: read this issue, post a short proposal (understanding, approach, files, tests, docs, risks, open questions) and STOP for my explicit approval before writing code. After approval implement with tests and docs, run the CI gates from docs/workflow.md section 8, open a PR that closes the GitHub issue, then report and ask for the next step.\n\nPROJECT CONTEXT (from docs/product/idea.md)\n- Grain to Pixel is a personal Windows 10/11 and macOS desktop app for close friends only, no monetization: an all-in-one tool to scan, convert, edit and organize film negatives (commercial licences are prohibitive).\n- Core workflow: ingest via Nikon Coolscan LS-50 (RGB + IR; the author's modded scanner scans whole rolls of up to 40 frames) or via separate R/G/B exposures shot with a Nikon D600 (NEF) under a Scanlight V4 light, adding tags -> determine frame area and measure film base -> convert to positive -> edit colour balance, tone, geometry, IR/ICE dust removal -> searchable tagged archive.\n- Non-goals: masking, AI generation, advanced retouching. Success: activation, and results comparable to Nikon Scan 4 / Trichroma Lab. Risk: little colour-negative sample data. Constraint: built with Claude Pro, so keep the session narrow and read only what this issue needs.\n\nTECHNICAL CONTEXT (docs/specification.md, docs/architecture.md, docs/structure.md, docs/convention.md)\n- Stack: Tauri 2; Rust workspace in crates/ (gtp-core, gtp-io, gtp-negative, gtp-edit, gtp-catalog, gtp-ingest, gtp-capture, gtp-app); React 18 + TypeScript (strict) + Vite UI in apps/desktop with Zustand, Radix UI and CSS modules; generated packages/ipc-types (tauri-specta); SQLite catalog (rusqlite bundled, FTS5, forward-only migrations); tracing logs; i18n via t() with en.json only.\n- Architecture: feature crates depend on gtp-core (gtp-ingest also on gtp-io) and never on each other; gtp-app is the application layer that combines them (services, JobManager, pipeline); src-tauri is a thin adapter (validate, call a gtp-app service, map errors to AppError); the UI never touches pixels and receives rendered bytes. Long work runs as cancellable jobs with progress events. Hardware sits behind traits (ScannerSource, LightSource, CameraSource) with fakes.\n- Pipeline (spec 4.2) fixed order: load -> IR dust -> crop -> film-base normalize -> invert -> colour -> tone -> geometry -> output transform; internal f32 linear with Rec.2020 primaries; originals immutable, all edits in the versioned Recipe.\n- Repo layout: apps/desktop (src React UI, src-tauri shell), crates/*, packages/{ipc-types,ui}, tools/{benchmark,scripts}, samples/{public,private}, docs/, decisions/ (ADRs), rules/, prompts/.\n- Conventions: no unwrap/expect/unsafe/println in committed Rust, no console.log or any in TS; validate at boundaries; AppError codes; tracing spans; tests are mandatory (unit, golden, fakes, component); Conventional Commits; performance budgets in spec section 11; security in spec section 9.\n\nISSUE Q-07 – Release v0.1.0\nMilestone: M7 MVP release v0.1.0 | Area: Quality, docs and release verification | Type: chore | Size: S (0.5d)\nSpec references: specification sections 15 and 16\nDependencies (must be Done first; if any is not, stop and tell me): T-06 – Updater and release pipeline; D-05 – Diagnostics export and local counters; Q-04 – Accessibility pass; Q-05 – User documentation; Q-06 – Budget and quality verification\n\nDESCRIPTION\nRun the release checklist and prepare v0.1.0; the human tags and publishes.\n\nTECHNICAL DETAILS\nFILES: docs/release-checklist.md, changelog generation config.\nTESTS: checklist run, reported by the human.\n\nACCEPTANCE CRITERIA\n- All CI gates green on main; cargo deny and audit clean\n- Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)\n- CHANGELOG.md exists and covers v0.1.0, generated from the conventional commits (specification section 15)\n- Windows capture (R-04, H-10) is not a gate for v0.1.0\n- Release notes generated from commits; tag command prepared for the human\n- The human publishes; nothing is tagged or pushed without explicit instruction\n\nNeeds from the human: an action only the human can do. Prepare exact steps and a checklist; never tick these items yourself.\nDefinition of Done: docs/workflow.md section 11. Update the docs this change makes stale. Do not widen scope; propose follow-up issues instead.",
+    "body": "## Description\nRun the release checklist and prepare v0.1.0; the human tags and publishes.\n\n## Acceptance criteria\n- [ ] All CI gates green on main; cargo deny and audit clean\n- [ ] Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)\n- [ ] CHANGELOG.md exists and covers v0.1.0, generated from the conventional commits (specification section 15)\n- [ ] Windows capture (R-04, H-10) is not a gate for v0.1.0\n- [ ] Release notes generated from commits; tag command prepared for the human\n- [ ] The human publishes; nothing is tagged or pushed without explicit instruction\n\n## Estimate\n0.5d (size S)\n\n## Dependencies\n- {{dep:T-06}} T-06 – Updater and release pipeline\n- {{dep:D-05}} D-05 – Diagnostics export and local counters\n- {{dep:Q-04}} Q-04 – Accessibility pass\n- {{dep:Q-05}} Q-05 – User documentation\n- {{dep:Q-06}} Q-06 – Budget and quality verification\n\n## References\n- Spec: specification sections 15 and 16\n- Milestone: M7 MVP release v0.1.0; area: Quality, docs and release verification; previous ID: GTP-096"
   }
 ]
 ```

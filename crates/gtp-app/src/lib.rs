@@ -32,7 +32,7 @@ pub use pipeline::{
     Histogram, LevelsPercentiles, PipelineInput, RenderTarget, Stage, PREVIEW_EDGE, PROXY_EDGE,
     STAGE_ORDER,
 };
-pub use services::capture_control::{CameraSlot, CaptureEvents, StepState, TestShot};
+pub use services::capture_control::{CameraSlot, CaptureEvents, FocusCheck, StepState, TestShot};
 pub use services::capture_levels::{CaptureLevels, LevelsScope, LevelsSource};
 pub use services::counters::Counters;
 pub use services::flat_field::{apply_flat_field, flat_field_from_exposures};

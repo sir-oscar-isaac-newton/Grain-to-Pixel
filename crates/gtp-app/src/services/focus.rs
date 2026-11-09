@@ -107,7 +107,7 @@ pub fn region_sharpness(
     }
     let n = count as f64;
     let mean = sum_value / n;
-    if !(mean >= MIN_MEAN) {
+    if mean.is_nan() || mean < MIN_MEAN {
         return 0.0;
     }
     let variance = (sum_lap_sq / n - (sum_lap / n).powi(2)).max(0.0);

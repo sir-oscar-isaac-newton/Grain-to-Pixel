@@ -1447,3 +1447,212 @@ fn the_fake_hardware_zooms_and_its_frames_show_it() {
     assert_ne!(camera_preview_frame(&hardware).unwrap(), whole_frame);
     camera_preview_stop(&hardware).unwrap();
 }
+
+mod focus_check {
+    use gtp_core::ExposureRatio;
+    use gtp_ingest::testing::tiff_with_exposure;
+
+    use super::*;
+    use crate::services::focus::{FocusPattern, Map};
+    use crate::services::settings::SettingsPatch;
+
+    fn check(rig: &Rig, channel: TripletChannel) -> Result<FocusCheck, AppError> {
+        focus_check(
+            rig.ctx(),
+            &rig.hardware,
+            rig.events.as_ref(),
+            channel,
+            [44, 22, 2],
+        )
+    }
+
+    fn set_reference(rig: &Rig, map: Map) {
+        rig.ctx()
+            .settings()
+            .update(&SettingsPatch {
+                focus_reference: Some(map),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+    }
+
+    /// The pixels and size of the crop, decoded from base64 and JPEG.
+    fn decode_crop(crop: &str) -> (Vec<u8>, (u16, u16)) {
+        const ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut bytes = Vec::new();
+        let (mut acc, mut bits) = (0u32, 0);
+        for c in crop.trim_end_matches('=').chars() {
+            acc = acc << 6 | ALPHABET.find(c).expect("a base64 character") as u32;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                bytes.push((acc >> bits) as u8);
+                acc &= (1 << bits) - 1;
+            }
+        }
+        let mut decoder = jpeg_decoder::Decoder::new(bytes.as_slice());
+        let pixels = decoder.decode().expect("a valid JPEG");
+        let info = decoder.info().unwrap();
+        (pixels, (info.width, info.height))
+    }
+
+    #[test]
+    fn a_focus_check_returns_the_crop_the_map_and_the_pattern_and_leaves_the_light_off() {
+        let rig = Rig::new("focus");
+        let result = check(&rig, TripletChannel::Green).unwrap();
+        // The fake plane is smaller than 512 pixels, so the crop is all of it.
+        assert_eq!((result.crop_width, result.crop_height), (192, 128));
+        let (pixels, size) = decode_crop(&result.crop);
+        assert_eq!(size, (192, 128));
+        assert_eq!(pixels.len(), 192 * 128 * 3);
+        assert!(result.sharpness > 0.0);
+        let best = result.map.iter().flatten().copied().fold(0.0, f32::max);
+        assert_eq!(best, 1.0);
+        assert_eq!(result.map, result.raw_map);
+        assert!(!result.against_reference);
+        // The fake's grain is sharp in the middle and softer at the edges: a mild bowl.
+        assert_eq!(result.pattern, FocusPattern::Bowed, "{:?}", result.map);
+        assert!(result.exposure.is_empty());
+
+        // One picture, one colour, at its own level; the light is off and nothing is stored.
+        assert_eq!(rig.lit_levels(), [[0, 22, 0]]);
+        assert_eq!(rig.light.levels(), [0; 3]);
+        assert_eq!(
+            rig.events.steps(),
+            [
+                (TripletChannel::Green, StepState::Lit),
+                (TripletChannel::Green, StepState::Fired),
+                (TripletChannel::Green, StepState::Received)
+            ]
+        );
+        assert_eq!(rig.frames(), 0, "a focus check stores nothing");
+        assert!(!rig.hardware.busy().is_busy());
+    }
+
+    #[test]
+    fn the_picture_exposure_comes_with_the_check_and_the_levels_are_the_given_ones() {
+        let rig = Rig::build("focus-exif", Arc::new(FakeRawDecoder), |light| {
+            Box::new(
+                FakeCamera::new(Vec::new())
+                    .repeating(CapturedFile {
+                        name: "FAKE_0001.NEF".to_owned(),
+                        bytes: tiff_with_exposure((1, 60), 200, (56, 10)),
+                    })
+                    .linked_to(light),
+            )
+        });
+        let result = focus_check(
+            rig.ctx(),
+            &rig.hardware,
+            rig.events.as_ref(),
+            TripletChannel::Red,
+            [10, 77, 5],
+        )
+        .unwrap();
+        assert_eq!(result.exposure.iso, Some(200));
+        assert_eq!(
+            result.exposure.exposure_time,
+            Some(ExposureRatio { num: 1, den: 60 })
+        );
+        assert_eq!(rig.lit_levels(), [[10, 0, 0]]);
+
+        let err = focus_check(
+            rig.ctx(),
+            &rig.hardware,
+            rig.events.as_ref(),
+            TripletChannel::Red,
+            [0, 256, 0],
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert_eq!(rig.lit_levels().len(), 1, "a refused level lights nothing");
+    }
+
+    #[test]
+    fn a_saved_reference_is_divided_out_and_the_raw_map_is_still_returned() {
+        let rig = Rig::new("focus-reference");
+        let first = check(&rig, TripletChannel::Green).unwrap();
+        // The same picture against its own raw map is flat.
+        set_reference(&rig, first.raw_map);
+        let second = check(&rig, TripletChannel::Green).unwrap();
+        assert!(second.against_reference);
+        assert_eq!(second.raw_map, first.raw_map, "the same fake picture");
+        assert_eq!(second.pattern, FocusPattern::Flat, "{:?}", second.map);
+        assert!(second.map.iter().flatten().all(|v| (*v - 1.0).abs() < 1e-4));
+        // Clearing it brings the bowl back.
+        rig.ctx()
+            .settings()
+            .update(&SettingsPatch {
+                clear_focus_reference: Some(true),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        let third = check(&rig, TripletChannel::Green).unwrap();
+        assert!(!third.against_reference);
+        assert_eq!(third.pattern, FocusPattern::Bowed);
+    }
+
+    struct Unreadable;
+
+    impl RawDecoder for Unreadable {
+        fn decode(&self, _: &std::path::Path, _: &Limits) -> Result<RawLinear, AppError> {
+            Err(AppError::new(ErrorCode::Io, "The picture cannot be read."))
+        }
+    }
+
+    #[test]
+    fn a_focus_check_that_fails_leaves_the_light_off_and_releases_the_flag() {
+        let rig = Rig::build("focus-fail", Arc::new(FakeRawDecoder), |light| {
+            Box::new(FakeCamera::new(vec![Shot::Fail(no_picture())]).linked_to(light))
+        });
+        assert_eq!(check(&rig, TripletChannel::Red).unwrap_err(), no_picture());
+        assert_eq!(rig.light.levels(), [0; 3]);
+        assert!(!rig.hardware.busy().is_busy());
+        assert_eq!(rig.frames(), 0);
+
+        // A picture the decoder cannot read fails the check, with the light off too.
+        let rig = Rig::build("focus-undecodable", Arc::new(Unreadable), |light| {
+            Box::new(fake_camera().linked_to(light))
+        });
+        assert!(check(&rig, TripletChannel::Red).is_err());
+        assert_eq!(rig.light.levels(), [0; 3]);
+        assert!(!rig.hardware.busy().is_busy());
+    }
+
+    #[test]
+    fn a_focus_check_is_refused_while_a_capture_runs_and_lights_nothing() {
+        let rig = Rig::new("focus-busy");
+        let held = rig.hardware.busy().acquire().unwrap();
+        assert_busy(check(&rig, TripletChannel::Green));
+        assert!(rig.lit_levels().is_empty());
+        drop(held);
+        assert!(check(&rig, TripletChannel::Green).is_ok());
+    }
+
+    #[test]
+    fn a_focus_check_refuses_a_light_that_is_hot_or_gone() {
+        let rig = Rig::new("focus-refuse");
+        rig.set_light(Some(56.0), true);
+        assert_too_hot(check(&rig, TripletChannel::Green));
+        rig.set_light(Some(25.0), false);
+        assert!(check(&rig, TripletChannel::Green).is_err());
+        assert!(rig.lit_levels().is_empty());
+        assert!(!rig.hardware.busy().is_busy());
+    }
+
+    /// Only where there is no backend (with `tether` on macOS this would drive the real camera).
+    #[cfg(not(all(target_os = "macos", feature = "tether")))]
+    #[test]
+    fn without_a_camera_backend_a_focus_check_is_refused() {
+        let hardware = Hardware::from_vars(None, None);
+        let rig = Rig::new("focus-no-camera");
+        assert_no_camera(focus_check(
+            rig.ctx(),
+            &hardware,
+            rig.events.as_ref(),
+            TripletChannel::Green,
+            [44, 22, 2],
+        ));
+        assert!(!hardware.busy().is_busy());
+    }
+}

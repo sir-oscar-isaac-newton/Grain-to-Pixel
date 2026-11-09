@@ -7,7 +7,7 @@ use gtp_app::services::capture_control as capture;
 use gtp_app::services::capture_levels::{self, CaptureLevels, LevelsScope};
 use gtp_app::{
     AppContext, CameraInfo, CameraSetting, CameraSettingKind, CaptureProfile, CaptureProfilePatch,
-    Hardware, JobManager, LightInfo, PortInfo, Region, TestShot, ZoomStep,
+    FocusCheck, Hardware, JobManager, LightInfo, PortInfo, Region, TestShot, ZoomStep,
 };
 use gtp_core::{ExposureInfo, JobId, RollId, TripletChannel};
 use tauri::State;
@@ -177,6 +177,24 @@ pub fn capture_test(
     levels: [u32; 3],
 ) -> CmdResult<TestShot> {
     capture::test_shot(&ctx, &hardware, events.0.as_ref(), channel, levels)
+}
+
+/// The focus check (H-19): lights one colour at its level of `levels` (the working levels, 0 to 255
+/// each), takes a picture and returns a 1:1 crop of the middle of that colour (a base64 JPEG), its
+/// sharpness number and a 3 x 3 map of sharpness over the frame with the pattern it shows (flat,
+/// bowed, tilted), against the saved flat reference when there is one. Stores nothing; the light
+/// is off afterwards; refused while a capture runs. The reference is saved and cleared with
+/// `settings_set` (`focus_reference`, `clear_focus_reference`).
+#[tauri::command(async)]
+#[specta::specta]
+pub fn capture_focus_check(
+    ctx: State<'_, AppContext>,
+    hardware: State<'_, Hardware>,
+    events: State<'_, CaptureEventsState>,
+    channel: TripletChannel,
+    levels: [u32; 3],
+) -> CmdResult<FocusCheck> {
+    capture::focus_check(&ctx, &hardware, events.0.as_ref(), channel, levels)
 }
 
 /// Captures one frame into the roll as a job; the new frame arrives in `job://done` like an
@@ -451,6 +469,80 @@ mod tests {
                 ("green".into(), "received".into())
             ]
         );
+    }
+
+    #[test]
+    fn a_focus_check_returns_the_map_and_the_reference_is_saved_and_cleared_through_settings() {
+        use crate::commands::system::settings_set;
+        use gtp_app::services::focus::FocusPattern;
+        use gtp_app::SettingsPatch;
+
+        let f = fixture("focus-check");
+        let check = |f: &Fixture| {
+            capture_focus_check(
+                f.app.state(),
+                f.app.state(),
+                f.app.state(),
+                TripletChannel::Green,
+                [44, 22, 2],
+            )
+            .unwrap()
+        };
+        let first = check(&f);
+        assert_eq!((first.crop_width, first.crop_height), (192, 128));
+        assert!(!first.crop.is_empty() && first.sharpness > 0.0);
+        assert_eq!(first.pattern, FocusPattern::Bowed);
+        assert!(!first.against_reference);
+
+        // Save the raw map as the reference through settings_set: later maps are against it.
+        let saved = settings_set(
+            f.app.state(),
+            SettingsPatch {
+                focus_reference: Some(first.raw_map),
+                ..SettingsPatch::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(saved.focus_reference, Some(first.raw_map));
+        let second = check(&f);
+        assert!(second.against_reference);
+        assert_eq!(second.pattern, FocusPattern::Flat);
+
+        // A bad map is refused and the saved one stays; clearing removes it.
+        let err = settings_set(
+            f.app.state(),
+            SettingsPatch {
+                focus_reference: Some([[0.0; 3]; 3]),
+                ..SettingsPatch::default()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        let cleared = settings_set(
+            f.app.state(),
+            SettingsPatch {
+                clear_focus_reference: Some(true),
+                ..SettingsPatch::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(cleared.focus_reference, None);
+        assert!(!check(&f).against_reference);
+    }
+
+    #[test]
+    fn a_focus_check_is_refused_while_the_hardware_is_busy() {
+        let f = fixture("focus-busy");
+        let _held = f.app.state::<Hardware>().busy().acquire().unwrap();
+        let err = capture_focus_check(
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            TripletChannel::Green,
+            [44, 22, 2],
+        )
+        .unwrap_err();
+        assert!(err.message.contains("capture is in progress"), "{err:?}");
     }
 
     #[test]

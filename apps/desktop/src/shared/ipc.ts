@@ -22,6 +22,8 @@ import {
   type DeviceInfo,
   type ExportedFile,
   type ExposureInfo_Serialize,
+  type FocusCheck_Serialize,
+  type FocusPattern,
   type FailedExport,
   type FilmFormat,
   type FlatFieldInfo,
@@ -329,6 +331,10 @@ export type CaptureProfile = CaptureProfile_Serialize;
 export type CaptureLevels = CaptureLevels_Serialize;
 export type ExposureInfo = ExposureInfo_Serialize;
 export type TestShot = TestShot_Serialize;
+export type FocusCheck = FocusCheck_Serialize;
+export type { FocusPattern };
+/** A 3 x 3 map of sharpness: rows from the top, columns from the left, the best region 1. */
+export type FocusMap = FocusCheck_Serialize['map'];
 export type CaptureProfilePatch = CaptureProfilePatch_Deserialize;
 export type LightStatus = LightStatus_Serialize;
 
@@ -400,6 +406,17 @@ export async function captureLevelsSave(
   exposure: ExposureInfo | null,
 ): Promise<CaptureLevels> {
   return unwrap(await commands.captureLevelsSave(scope, levels, exposure));
+}
+
+/**
+ * Lights one colour, takes one picture and returns a 1:1 crop of its middle, its sharpness number
+ * and a 3 x 3 sharpness map; stores nothing. The light is off afterwards.
+ */
+export async function captureFocusCheck(
+  channel: TripletChannel,
+  levels: Levels,
+): Promise<FocusCheck> {
+  return unwrap(await commands.captureFocusCheck(channel, levels));
 }
 
 /** Lights one colour at its working level, takes a picture and returns its histogram; stores nothing. */

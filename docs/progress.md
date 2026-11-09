@@ -779,6 +779,15 @@
       "status": "completed",
       "pr": 256,
       "commit": "3d912a3"
+    },
+    {
+      "id": "H-19",
+      "number": 254,
+      "title": "Focus check shot and film flatness map",
+      "branch": "feat/issue-254-focus-check",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

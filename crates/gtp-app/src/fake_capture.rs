@@ -6,7 +6,9 @@
 //! capture job stages each picture in a file named for its channel (`r-`, `g-`, `b-`), and
 //! [`FakeRawDecoder`] answers with a deterministic synthetic mosaic for that channel: the lit
 //! colour has a gradient well below the white level (no clipping), the others a dark leak, as in
-//! a real exposure under one LED.
+//! a real exposure under one LED. The lit colour also carries a fine grain, sharp in the middle and
+//! a little softer towards the edges, so the focus check (H-19) has a crop and a map to show (a
+//! mild bowl).
 
 use std::path::Path;
 
@@ -27,6 +29,12 @@ const WHITE: f32 = 10_000.0;
 const LEAK: u16 = 120;
 /// How bright each lit colour gets at the brightest corner, as a fraction of the white level.
 const PEAK: [f32; 3] = [0.8, 0.6, 0.4];
+/// The grain of the lit colour: its size as a fraction of the brightness at the middle, and how
+/// much of it is lost at the corners (the grain scales the brightness, so it adds no mean).
+const GRAIN: f32 = 0.04;
+const GRAIN_LOSS_AT_CORNER: f32 = 0.3;
+/// The width of a grain clump, in photosites.
+const GRAIN_CLUMP: usize = 2;
 
 /// The fake camera's identity in the camera list.
 pub fn fake_camera_info() -> CameraInfo {
@@ -205,7 +213,11 @@ fn decode_lit(path: &Path, scale: f32) -> Result<RawLinear, AppError> {
             let value = if Cfa::RGGB.color_at(x, y) == lit {
                 // A smooth ramp from 30 % to 100 % of the peak, left to right and top to bottom.
                 let ramp = 0.3 + 0.7 * ((x + y) as f32 / (w + h - 2) as f32);
-                (WHITE * (PEAK[lit] * ramp * scale).min(1.0)).round() as u16
+                // Grain clumps of GRAIN_CLUMP photosites, as real grain spans a few at 1:1 (the
+                // focus check measures on 2 x 2 averages, which smooth single-photosite noise).
+                let grain =
+                    GRAIN * grain_sharpness(x, y) * grain_noise(x / GRAIN_CLUMP, y / GRAIN_CLUMP);
+                (WHITE * (PEAK[lit] * ramp * scale * (1.0 + grain)).min(1.0)).round() as u16
             } else {
                 LEAK
             };
@@ -220,6 +232,27 @@ fn decode_lit(path: &Path, scale: f32) -> Result<RawLinear, AppError> {
         white: WHITE,
         data,
     })
+}
+
+/// How much of the grain is kept at photosite (`x`, `y`): all of it at the middle, less towards
+/// the edges (`GRAIN_LOSS_AT_CORNER` lost at a corner).
+fn grain_sharpness(x: usize, y: usize) -> f32 {
+    let dx = 2.0 * x as f32 / (WIDTH - 1) as f32 - 1.0;
+    let dy = 2.0 * y as f32 / (HEIGHT - 1) as f32 - 1.0;
+    1.0 - GRAIN_LOSS_AT_CORNER * (dx * dx + dy * dy) / 2.0
+}
+
+/// Deterministic noise from -1 to 1 for photosite (`x`, `y`).
+fn grain_noise(x: usize, y: usize) -> f32 {
+    // Both coordinates mixed in with their own odd constants, then the murmur3 finalizer (the
+    // finalizer on the plain photosite number left rows of clumps alike).
+    let mut h = (x as u32).wrapping_mul(0x9E37_79B1) ^ (y as u32).wrapping_mul(0x85EB_CA6B);
+    h ^= h >> 16;
+    h = h.wrapping_mul(0x85EB_CA6B);
+    h ^= h >> 13;
+    h = h.wrapping_mul(0xC2B2_AE35);
+    h ^= h >> 16;
+    h as f32 / u32::MAX as f32 * 2.0 - 1.0
 }
 
 #[cfg(test)]

@@ -42,6 +42,7 @@ use crate::services::capture::{capture_triplet, safe_name};
 use crate::services::capture_levels::{
     exposure_from_exif, levels_for_roll, levels_from_wide, LevelsUsed,
 };
+use crate::services::focus::{self, FocusPattern, Map};
 use crate::services::roll_frame;
 use crate::shared_light::{tripped_error, LightReading, SharedLight};
 
@@ -86,6 +87,34 @@ pub struct TestShot {
     /// The shutter time, ISO and aperture of the test picture, as its EXIF says; saved with the
     /// levels so that a capture with other settings can warn.
     pub exposure: ExposureInfo,
+}
+
+/// What a focus check (H-19) measured: one picture with one colour lit.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct FocusCheck {
+    /// The middle of the lit channel at full sensor resolution, 1:1, as a grey JPEG in base64
+    /// (at most 512 x 512 pixels), stretched to its 99.5th percentile.
+    pub crop: String,
+    /// The crop's width and height in pixels.
+    pub crop_width: u32,
+    /// See `crop_width`.
+    pub crop_height: u32,
+    /// The sharpness number of the crop (the variance of its Laplacian over the square of its
+    /// mean); higher is sharper, and only comparable between shots of the same scene and light.
+    pub sharpness: f32,
+    /// The sharpness of 3 x 3 regions of the whole picture (rows from the top, columns from the
+    /// left), each divided by the best region's, so the best is 1. Against the saved flat
+    /// reference when `against_reference` is true.
+    pub map: Map,
+    /// The same map without the reference: this is what "Save as flat reference" saves.
+    pub raw_map: Map,
+    /// What the map shows about how the film lies.
+    pub pattern: FocusPattern,
+    /// The shutter time, ISO and aperture of the picture, as its EXIF says.
+    pub exposure: ExposureInfo,
+    /// Whether `map` and `pattern` are relative to the saved flat reference.
+    pub against_reference: bool,
 }
 
 /// The flag that says the light and the camera are in use.
@@ -670,19 +699,61 @@ pub fn test_shot(
     channel: TripletChannel,
     levels: [u32; 3],
 ) -> Result<TestShot, AppError> {
+    let (_busy, file) = take_picture(ctx, hardware, events, channel, levels)?;
+    measure(&file, channel, hardware.decoder.as_ref())
+}
+
+/// `capture_focus_check` (H-19): lights `channel` alone at its level of `levels` (the working
+/// levels, 0 to 255 each), takes one picture and returns a 1:1 crop of the middle of that
+/// channel's full-resolution plane, its sharpness and a 3 x 3 map of sharpness over the frame
+/// with the pattern it shows, against the saved flat reference when there is one. Same
+/// preconditions as [`test_shot`]: refused while a capture runs, the light off afterwards on every
+/// way out, nothing stored.
+pub fn focus_check(
+    ctx: &AppContext,
+    hardware: &Hardware,
+    events: &dyn CaptureEvents,
+    channel: TripletChannel,
+    levels: [u32; 3],
+) -> Result<FocusCheck, AppError> {
+    let (_busy, file) = take_picture(ctx, hardware, events, channel, levels)?;
+    let (staged, plane) = decode_plane(&file, channel, hardware.decoder.as_ref())?;
+    let exposure = exposure_from_exif(read_exposure_info(&staged.path));
+    let reference = ctx.settings().focus_reference();
+    let analysis = focus::analyse(&plane, reference.as_ref())?;
+    Ok(FocusCheck {
+        crop: focus::base64(&analysis.crop),
+        crop_width: analysis.crop_size.0,
+        crop_height: analysis.crop_size.1,
+        sharpness: analysis.sharpness,
+        map: analysis.map,
+        raw_map: analysis.raw_map,
+        pattern: analysis.pattern,
+        exposure,
+        against_reference: reference.is_some(),
+    })
+}
+
+/// Takes the busy flag, lights `channel` alone at its level of `levels` and takes one picture.
+/// The flag comes back with the picture so that the caller holds it while it measures.
+fn take_picture(
+    ctx: &AppContext,
+    hardware: &Hardware,
+    events: &dyn CaptureEvents,
+    channel: TripletChannel,
+    levels: [u32; 3],
+) -> Result<(BusyGuard, CapturedFile), AppError> {
     let levels = levels_from_wide(levels)?;
     let camera = hardware.camera.clone().ok_or_else(no_camera)?;
-    let _busy = hardware.busy().acquire()?;
+    let busy = hardware.busy().acquire()?;
     let profile = CaptureProfile {
         levels,
         ..ctx.settings().capture_profile()
     };
-    let file = {
-        camera.connect()?;
-        let mut cam = camera.take()?;
-        shoot(&profile, channel, &hardware.light, &mut **cam, events)?
-    };
-    measure(&file, channel, hardware.decoder.as_ref())
+    camera.connect()?;
+    let mut cam = camera.take()?;
+    let file = shoot(&profile, channel, &hardware.light, &mut **cam, events)?;
+    Ok((busy, file))
 }
 
 /// Waits up to `wait` for the light's first temperature reading (it sends one every 200 ms). No

@@ -2160,3 +2160,27 @@ ROUTES: capture_focus_check(channel, levels) -> the crop (raw bytes or an image)
 MIGRATIONS: none (the reference is a 3 x 3 array in settings.json).
 TESTS: as in ac.
 NOTES: the sharpness of a region depends on its content, so the hint does not claim more than the pattern; the reference is per setup and is cleared when the user wants.
+
+## H-20
+title: Choose the calibration area on the live view
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: H-14, H-17
+needs: hw, mac
+adr: no
+spec: specification section 6.1 and 7; docs/research/scanlight-capture.md
+desc: H-17's calibration measures the whole frame, because there was no picture to draw an area on. The live view of H-14 gives one. Let the user drag a rectangle on the whole-frame live view and calibrate on that area only, so clear film base anywhere in the frame (the rebate between frames, the film's edge) can be used instead of a leader that fills the frame.
+ac:
+- In the live view at the whole frame, dragging on the picture draws the calibration area, shown as an outline until it is cleared; a single click still aims the zoom (H-18)
+- Calibrate measures the area when one is set and the whole frame otherwise, and its result says which it used
+- The area is kept while the capture view is open and is not saved
+- No new command: capture_calibrate already takes the area as fractions of the frame, and the D600's live view covers the whole sensor at the same 3:2 shape
+- Tests: drawing and clearing, a click still aiming the zoom, Calibrate sending the area, axe; a backend test that a small area of even base gives the same levels as the whole frame of it; on the D600 (human) an area over the rebate between two frames gives levels close to a whole-frame calibration on a leader, and an area over image content gives different levels
+tech:
+FILES: apps/desktop/src/features/import/capture (LiveView.tsx, Calibrate.tsx, CaptureSection.tsx), en.json, crates/gtp-app (the test only).
+ROUTES: none new.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the area is in fractions of the whole frame, so it does not depend on the live view's 640 x 424 size.

@@ -1316,6 +1316,18 @@ describe('CaptureSection', () => {
         expect(screen.queryByRole('radio', { name: '25 %' })).not.toBeInTheDocument();
       });
 
+      it('goes back to the whole frame when a camera setting changes, and keeps running', async () => {
+        const { user } = await begin();
+        await user.click(screen.getByRole('radio', { name: '100 %' }));
+        await waitFor(() => expect(screen.getByRole('radio', { name: '100 %' })).toBeChecked());
+        await user.selectOptions(await screen.findByRole('combobox', { name: 'ISO' }), '400');
+        await waitFor(() => expect(ipc.cameraSettingsSet).toHaveBeenCalledWith('iso', '400'));
+        await waitFor(() =>
+          expect(screen.getByRole('radio', { name: 'Whole frame' })).toBeChecked(),
+        );
+        expect(stopLive()).toBeInTheDocument();
+      });
+
       it('leaves live view when the view closes while zoomed', async () => {
         const { user, unmount } = await begin();
         await user.click(screen.getByRole('radio', { name: '25 %' }));

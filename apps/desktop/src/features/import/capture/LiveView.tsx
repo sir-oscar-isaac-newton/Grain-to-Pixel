@@ -68,6 +68,12 @@ interface LiveViewProps {
   /** True while a capture, test shot or calibration runs or starts: live view stops and cannot start. */
   blocked: boolean;
   /**
+   * True while a camera setting (ISO, shutter speed, aperture) is being changed. The backend leaves
+   * live view for that and the next frame starts it again at the whole frame, so the zoom here goes
+   * back to the whole frame too.
+   */
+  settingsChanging?: boolean;
+  /**
    * Set to a function that stops the loop and takes the camera out of live view (nothing happens
    * when it is not running). The section calls it first when it closes, before the light goes off:
    * a ref of the panel itself would already be detached by then.
@@ -84,7 +90,13 @@ interface Run {
  * The camera's live view: one frame at a time, the next requested as soon as the last arrived.
  * Live view never lights the Scanlight; the light controls do that.
  */
-export function LiveView({ levels, lightLost, blocked, stopRef }: LiveViewProps) {
+export function LiveView({
+  levels,
+  lightLost,
+  blocked,
+  settingsChanging = false,
+  stopRef,
+}: LiveViewProps) {
   const { t } = useTranslation();
   const [running, setRunning] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
@@ -190,6 +202,14 @@ export function LiveView({ levels, lightLost, blocked, stopRef }: LiveViewProps)
   };
   const haltRef = useRef(halt);
   haltRef.current = halt;
+
+  // A camera setting being changed takes the camera out of live view (and its zoom) for a moment.
+  useEffect(() => {
+    if (!settingsChanging) return;
+    setZoomIndex(0);
+    setArea(null);
+    resetBest();
+  }, [settingsChanging]);
 
   // The section switches the light off itself when it closes, after this.
   stopRef.current = () => haltRef.current(false);

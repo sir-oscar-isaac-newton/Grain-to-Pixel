@@ -537,6 +537,15 @@ fn run(incoming: &Receiver<Request>, state: &LinkState, factory: &Factory) {
             }
             Request::SetSetting(kind, value, reply) => {
                 let result = ensure_open(&mut session, &mut opened, state).and_then(|_| {
+                    if live_view {
+                        // The D600 froze (dark, its switch dead until the battery came out) when
+                        // a setting was changed in live view, so live view is left first; the
+                        // next frame starts it again, unzoomed.
+                        if let Err(err) = leave(&mut session, &mut zoomed) {
+                            tracing::warn!("could not leave live view before a setting: {err:?}");
+                        }
+                        live_view = false;
+                    }
                     with(&mut session, |s| {
                         s.set_setting(kind, &value)?;
                         s.settings()

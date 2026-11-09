@@ -905,6 +905,44 @@ fn frames_come_from_the_session_with_the_camera_opened_first() {
 }
 
 #[test]
+fn live_view_is_left_before_a_setting_is_changed_and_starts_again_with_the_next_frame() {
+    let script = Arc::new(Script::default().with_settings(d600_settings()));
+    let camera = camera(&script);
+    let finder = camera.finder();
+    finder.preview_frame().unwrap();
+    finder.set_setting(CameraSettingKind::Iso, "400").unwrap();
+    finder.preview_frame().unwrap();
+    finder.set_setting(CameraSettingKind::Iso, "200").unwrap();
+    assert_eq!(
+        script.log(),
+        [
+            "open",
+            "preview",
+            "settings",
+            "leave",
+            "set Iso 400",
+            "settings",
+            "preview",
+            "settings",
+            "leave",
+            "set Iso 200",
+            "settings"
+        ]
+    );
+}
+
+#[test]
+fn a_setting_changed_without_live_view_does_not_touch_it() {
+    let script = Arc::new(Script::default().with_settings(d600_settings()));
+    let camera = camera(&script);
+    camera
+        .finder()
+        .set_setting(CameraSettingKind::Iso, "400")
+        .unwrap();
+    assert!(!script.log().iter().any(|entry| entry == "leave"));
+}
+
+#[test]
 fn live_view_is_left_once_before_the_next_capture() {
     let script = Arc::new(Script::default());
     script.push_capture(Step::File(file(1)));

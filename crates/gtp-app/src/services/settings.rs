@@ -13,6 +13,7 @@ use gtp_core::{AppError, ErrorCode, ExposureInfo, Look};
 use serde::{Deserialize, Serialize};
 
 use super::capture_levels::{LevelsScope, SavedLevels};
+use super::focus::{validate_reference, Map};
 
 /// Window sizes accepted, in logical pixels.
 pub const WINDOW_SIDE: std::ops::RangeInclusive<u32> = 200..=16_384;
@@ -95,6 +96,10 @@ pub struct Settings {
     /// Kept by the app, not by a patch, and not shown to the UI.
     #[cfg_attr(feature = "specta", specta(skip))]
     pub last_update_check: Option<u64>,
+    /// The flat reference of the focus check (H-19): the 3 x 3 sharpness map of a flat target,
+    /// relative to its best region, which later maps are divided by to leave what is the film's.
+    /// Saved and cleared through `settings_set` (`focus_reference`, `clear_focus_reference`).
+    pub focus_reference: Option<Map>,
 }
 
 impl Settings {
@@ -122,7 +127,7 @@ pub struct FlagsPatch {
 }
 
 /// Settings to change; fields left out keep their value. The last library is set by opening one.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
 pub struct SettingsPatch {
@@ -132,6 +137,10 @@ pub struct SettingsPatch {
     pub flags: Option<FlagsPatch>,
     /// Replaces all the key bindings (an empty map goes back to the defaults).
     pub keys: Option<BTreeMap<String, String>>,
+    /// Saves this map as the focus check's flat reference (all nine values finite and above zero).
+    pub focus_reference: Option<Map>,
+    /// Clears the focus check's flat reference. Not together with `focus_reference`.
+    pub clear_focus_reference: Option<bool>,
 }
 
 /// Key bindings must be few, with names of a sensible length, and no two actions may share a key
@@ -196,6 +205,20 @@ impl Settings {
         if let Some(keys) = &patch.keys {
             check_keys(keys)?;
             self.keys = keys.clone();
+        }
+        match (&patch.focus_reference, patch.clear_focus_reference) {
+            (Some(_), Some(true)) => {
+                return Err(AppError::new(
+                    ErrorCode::InvalidInput,
+                    "The flat reference cannot be saved and cleared at once.",
+                ));
+            }
+            (Some(map), _) => {
+                validate_reference(map)?;
+                self.focus_reference = Some(*map);
+            }
+            (None, Some(true)) => self.focus_reference = None,
+            (None, _) => {}
         }
         if let Some(f) = patch.flags {
             let flags = &mut self.flags;
@@ -262,7 +285,16 @@ impl SettingsStore {
                         settings.saved_levels = SavedLevels::default();
                         format!("saved levels invalid ({err}); using none")
                     });
-                    (settings, note.or(levels_note))
+                    // And a flat reference that is not finite and above zero.
+                    let reference_note = settings
+                        .focus_reference
+                        .as_ref()
+                        .and_then(|map| validate_reference(map).err())
+                        .map(|err| {
+                            settings.focus_reference = None;
+                            format!("focus reference invalid ({err}); using none")
+                        });
+                    (settings, note.or(levels_note).or(reference_note))
                 }
                 Err(err) => {
                     let mut bad = path.as_os_str().to_owned();
@@ -317,6 +349,14 @@ impl SettingsStore {
             Ok(())
         })
         .map(|settings| settings.capture)
+    }
+
+    /// The flat reference of the focus check, if one is saved.
+    pub fn focus_reference(&self) -> Option<Map> {
+        self.current
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .focus_reference
     }
 
     /// The levels saved per film stock, and the default's camera settings.
@@ -801,6 +841,84 @@ mod tests {
         assert_eq!(err.code, ErrorCode::InvalidInput);
         assert_eq!(store.get(), before);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_focus_reference_is_saved_cleared_validated_and_kept_across_a_reload() {
+        let path = temp_file("focus-reference");
+        let (store, _) = SettingsStore::load(&path);
+        assert_eq!(store.focus_reference(), None);
+        let map = [[0.7, 0.8, 0.7], [0.8, 1.0, 0.8], [0.7, 0.8, 0.7]];
+        let saved = store
+            .update(&SettingsPatch {
+                focus_reference: Some(map),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        assert_eq!(saved.focus_reference, Some(map));
+        let (reloaded, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert_eq!(reloaded.focus_reference(), Some(map));
+
+        // A bad map, or save and clear at once, changes nothing.
+        for patch in [
+            SettingsPatch {
+                focus_reference: Some([[0.0; 3]; 3]),
+                ..SettingsPatch::default()
+            },
+            SettingsPatch {
+                focus_reference: Some([[f32::NAN; 3]; 3]),
+                ..SettingsPatch::default()
+            },
+            SettingsPatch {
+                focus_reference: Some(map),
+                clear_focus_reference: Some(true),
+                ..SettingsPatch::default()
+            },
+        ] {
+            assert_eq!(
+                store.update(&patch).unwrap_err().code,
+                ErrorCode::InvalidInput
+            );
+            assert_eq!(store.focus_reference(), Some(map));
+        }
+
+        // Another change leaves it; clearing removes it, also from the file.
+        store
+            .update(&SettingsPatch {
+                theme: Some(Theme::Dark),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        assert_eq!(store.focus_reference(), Some(map));
+        store
+            .update(&SettingsPatch {
+                clear_focus_reference: Some(true),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        assert_eq!(SettingsStore::load(&path).0.focus_reference(), None);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn an_old_file_has_no_focus_reference_and_a_hand_edited_bad_one_is_dropped() {
+        let path = temp_file("focus-reference-load");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"theme": "dark"}"#).unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert_eq!(store.focus_reference(), None);
+        std::fs::write(
+            &path,
+            r#"{"theme": "dark", "focus_reference": [[1, 1, 1], [1, -2, 1], [1, 1, 1]]}"#,
+        )
+        .unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_some_and(|n| n.contains("focus reference invalid")));
+        assert_eq!(store.focus_reference(), None);
+        assert_eq!(store.get().theme, Theme::Dark);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]

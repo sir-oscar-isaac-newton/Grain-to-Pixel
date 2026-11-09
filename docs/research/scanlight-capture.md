@@ -262,3 +262,14 @@ Conclusion: live view over USB is usable for framing and rough focus on the D600
 - gphoto2 note: in one run `--filename` applies to every frame, so a time pattern (`z-%H%M%S.jpg`) is needed to keep them apart.
 
 Conclusion: the zoom and moving the zoomed area go ahead in H-18.
+
+**Hardware checklist for H-18** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
+
+- [ ] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
+- [ ] The zoom steps offered are Whole frame, 25 %, 50 %, 100 % and 200 %.
+- [ ] At 100 % and 200 % the grain shows.
+- [ ] Clicking a spot on the whole-frame view and then zooming shows that spot (this confirms the units of the zoomed area).
+- [ ] Peaking outlines the edges, and its sensitivity changes how much it outlines.
+- [ ] The sharpness number rises to a peak as the focus ring passes best focus, and the best mark holds that peak.
+- [ ] A test shot, and a capture, straight after a zoomed live view work, and the next live view starts unzoomed.
+- [ ] With the camera in a state that prohibits live view, the message names the reason.

@@ -276,3 +276,17 @@ Conclusion: the zoom and moving the zoomed area go ahead in H-18.
 - [x] Change the ISO, the shutter speed and the aperture while live view runs (also zoomed): live view goes on at the whole frame, the camera takes the new setting, and the camera does not freeze in the next minutes.
 
 **Observation during the H-18 checks (2026-11-08).** The D600 froze several times: it went dark and its power switch did nothing until the battery was taken out (a moment in the charger, then back in). It never happened before live view, the battery was not low, and it happened after **a camera setting (ISO, shutter speed or aperture) was changed while live view was on**; the camera then froze while it sat idle. Fix: the camera worker leaves live view (and its zoom) before it changes a setting, as it already did before a capture, and the next frame starts live view again at the whole frame; the Live view panel goes back to the whole frame with it. A dummy battery on mains power (EP-5B type) is on order for long sessions anyway.
+
+## Focus check and flatness (H-19)
+
+The focus check is one real picture taken with the chosen light colour and level. The app decodes the lit channel at full sensor resolution, shows a 1:1 crop of its middle (512 x 512 pixels) with a sharpness number, and measures a 3 x 3 map of sharpness over the whole frame. The number is the variance of the Laplacian of the linear plane divided by the square of its mean, so it is comparable between shots of the same scene and light, not between scenes. The map says flat, bowed (middle sharp, edges evenly softer), tilted (one side or corner softer) or unclear; a map saved from a flat target is the reference that is divided out of later maps, which removes the lens's own field curvature. The map is fair only on an evenly textured frame (grain in an evenly exposed area, or a flat target such as a printed fine pattern or a graticule slide), and a wide aperture (f/4 to f/5.6) shows the differences best. Thresholds are in `crates/gtp-app/src/services/focus.rs`.
+
+**Hardware checklist for H-19** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
+
+- [ ] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
+- [ ] Focus check with green shows a 1:1 crop with visible grain and a sharpness number, and the light is off afterwards.
+- [ ] Turning the focus ring changes the number, and the best focus gives the highest.
+- [ ] With a flat target (a printed fine pattern or a graticule slide) at a wide aperture (f/4 to f/5.6) the map is close to even; then Save as flat reference.
+- [ ] With film in the holder the map and the hint show the film's shape, against the reference (try a deliberately bowed strip if possible).
+- [ ] Clearing the reference works: the next map is no longer against it.
+- [ ] A focus check is refused while a capture runs.

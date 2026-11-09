@@ -283,10 +283,10 @@ The focus check is one real picture taken with the chosen light colour and level
 
 **Hardware checklist for H-19** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
 
-- [ ] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
-- [ ] Focus check with green shows a 1:1 crop with visible grain and a sharpness number, and the light is off afterwards.
-- [ ] Turning the focus ring changes the number, and the best focus gives the highest.
-- [ ] With a flat target (a printed fine pattern or a graticule slide) at a wide aperture (f/4 to f/5.6) the map is close to even; then Save as flat reference.
-- [ ] With film in the holder the map and the hint show the film's shape, against the reference (try a deliberately bowed strip if possible).
-- [ ] Clearing the reference works: the next map is no longer against it.
-- [ ] A focus check is refused while a capture runs.
+- [x] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
+- [x] Focus check with green shows a 1:1 crop with visible grain and a sharpness number, and the light is off afterwards.
+- [x] Turning the focus ring changes the number, and the best focus gives the highest.
+- [x] With a flat target (a printed fine pattern or a graticule slide) at a wide aperture (f/4 to f/5.6) the map is close to even; then Save as flat reference.
+- [x] With film in the holder the map and the hint show the film's shape, against the reference (try a deliberately bowed strip if possible).
+- [x] Clearing the reference works: the next map is no longer against it.
+- [x] A focus check is refused while a capture runs.

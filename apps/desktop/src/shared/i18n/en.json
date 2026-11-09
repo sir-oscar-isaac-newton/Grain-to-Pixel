@@ -802,6 +802,45 @@
         "clippedUnknown": "How much is clipped is not known.",
         "clipWarning": "The {{channel}} test shot is clipped ({{pct}} %). Lower its level."
       },
+      "focusCheck": {
+        "heading": "Focus check",
+        "label": "Focus check",
+        "running": "Checking…",
+        "taking": "Taking a picture…",
+        "channel": { "red": "Red", "green": "Green", "blue": "Blue" },
+        "help": "Takes one picture in the chosen colour and shows the middle of it at full size, with a sharpness number and a map of how sharp each part of the frame is. Nothing is stored.",
+        "cropAlt": "The middle of the {{channel}} picture at full size",
+        "sharpness": "Sharpness {{value}}.",
+        "sharpnessNone": "Sharpness could not be measured.",
+        "best": "Best so far {{value}}.",
+        "resetBest": "Reset best",
+        "map": "Sharpness of each part of the frame, the sharpest part is 100 %",
+        "mapAgainst": "Sharpness of each part of the frame against the flat reference, the best part is 100 %",
+        "row": { "top": "Top", "middle": "Middle", "bottom": "Bottom" },
+        "column": { "left": "Left", "centre": "Centre", "right": "Right" },
+        "againstReference": "Compared with the flat reference.",
+        "pattern": {
+          "flat": "The film looks flat and square to the camera.",
+          "bowed": "The middle is sharper than the edges: the film is bowed or the holder sags.",
+          "tilted": "The {{side}} is softer: the film or the holder is tilted.",
+          "unclear": "No clear pattern."
+        },
+        "side": {
+          "left": "left side",
+          "right": "right side",
+          "top": "top side",
+          "bottom": "bottom side",
+          "top_left": "top left corner",
+          "top_right": "top right corner",
+          "bottom_left": "bottom left corner",
+          "bottom_right": "bottom right corner"
+        },
+        "caveat": "Fair only on even texture (grain in an evenly exposed area, or a flat target such as a printed fine pattern). A wide aperture (f/4 to f/5.6) shows the differences best.",
+        "aperture": "Aperture used: {{aperture}}.",
+        "saveReference": "Save as flat reference",
+        "referenceSaved": "A flat reference is saved.",
+        "clearReference": "Clear reference"
+      },
       "calibrate": {
         "label": "Calibrate",
         "running": "Calibrating…",

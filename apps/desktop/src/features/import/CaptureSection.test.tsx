@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../test-support';
@@ -981,7 +981,8 @@ describe('CaptureSection', () => {
     });
 
     describe('light control', () => {
-      const choose = (name: string) => screen.getByRole('radio', { name });
+      const choose = (name: string) =>
+        within(screen.getByRole('group', { name: 'Light' })).getByRole('radio', { name });
 
       it('sends the levels of each choice', async () => {
         const { user } = await ready();
@@ -1348,6 +1349,162 @@ describe('CaptureSection', () => {
       const { user, container } = await ready();
       await user.click(startLive());
       await screen.findByRole('img', { name: 'Live view of the camera' });
+      await expectNoA11yViolations(container);
+    });
+  });
+
+  describe('focus check', () => {
+    const checkButton = () => screen.getByRole('button', { name: /^(Focus check|Checking)/ });
+    const colours = () => within(screen.getByRole('group', { name: 'Focus check' }));
+    const run = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(checkButton());
+      return screen.findByRole('img', { name: /full size/ });
+    };
+    const pending = () =>
+      ipc.captureFocusCheck.mockImplementationOnce(() => new Promise(() => undefined));
+    const number = (v: number) =>
+      v.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+    it('takes the check in the chosen colour at the working levels, green by default', async () => {
+      const { user } = await ready();
+      expect(colours().getByRole('radio', { name: 'Green' })).toBeChecked();
+      await run(user);
+      expect(ipc.captureFocusCheck).toHaveBeenLastCalledWith('green', [44, 22, 2]);
+      await user.click(colours().getByRole('radio', { name: 'Blue' }));
+      await run(user);
+      expect(ipc.captureFocusCheck).toHaveBeenLastCalledWith('blue', [44, 22, 2]);
+    });
+
+    it('is busy while the picture is taken and stops live view', async () => {
+      const { user } = await ready();
+      await user.click(screen.getByRole('button', { name: 'Start live view' }));
+      await waitFor(() => expect(ipc.cameraPreviewFrame).toHaveBeenCalled());
+      pending();
+      await user.click(checkButton());
+      expect(await screen.findByText('Taking a picture…')).toBeInTheDocument();
+      expect(checkButton()).toBeDisabled();
+      expect(colours().getByRole('radio', { name: 'Red' })).toBeDisabled();
+      await waitFor(() => expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1));
+      expect(screen.getByRole('button', { name: 'Start live view' })).toBeDisabled();
+    });
+
+    it('shows the crop at full size, the number and the best so far, which can be reset', async () => {
+      const { user } = await ready();
+      const image = await run(user);
+      expect(image).toHaveAttribute('src', 'data:image/jpeg;base64,AAAA');
+      expect(image).toHaveAttribute('width', '512');
+      expect(screen.getByText(new RegExp(`Sharpness ${number(12.34)}\\.`))).toBeInTheDocument();
+      expect(screen.getByText(new RegExp(`Best so far ${number(12.34)}`))).toBeInTheDocument();
+      state.focusCheck = { ...state.focusCheck, sharpness: 5 };
+      await run(user);
+      expect(screen.getByText(new RegExp(`Sharpness ${number(5)}\\.`))).toBeInTheDocument();
+      expect(screen.getByText(new RegExp(`Best so far ${number(12.34)}`))).toBeInTheDocument();
+      await user.click(screen.getAllByRole('button', { name: 'Reset best' }).at(-1) as HTMLElement);
+      expect(screen.queryByText(/Best so far/)).not.toBeInTheDocument();
+    });
+
+    it('shows the map as a table with the share of each part', async () => {
+      const { user } = await ready();
+      await run(user);
+      const table = screen.getByRole('table');
+      expect(within(table).getByRole('columnheader', { name: 'Centre' })).toBeInTheDocument();
+      expect(within(table).getByRole('rowheader', { name: 'Middle' })).toBeInTheDocument();
+      const rows = within(table).getAllByRole('row');
+      expect(
+        within(rows[1] as HTMLElement)
+          .getAllByRole('cell')
+          .map((c) => c.textContent),
+      ).toEqual(['80 %', '90 %', '80 %']);
+      expect(within(rows[2] as HTMLElement).getAllByRole('cell')[1]).toHaveTextContent('100 %');
+    });
+
+    it.each([
+      [{ kind: 'flat' }, 'The film looks flat and square to the camera.'],
+      [
+        { kind: 'bowed' },
+        'The middle is sharper than the edges: the film is bowed or the holder sags.',
+      ],
+      [
+        { kind: 'tilted', side: 'left' },
+        'The left side is softer: the film or the holder is tilted.',
+      ],
+      [
+        { kind: 'tilted', side: 'bottom_right' },
+        'The bottom right corner is softer: the film or the holder is tilted.',
+      ],
+      [{ kind: 'unclear' }, 'No clear pattern.'],
+    ])('names the pattern %j', async (pattern, hint) => {
+      const { user } = await ready();
+      state.focusCheck = { ...state.focusCheck, pattern } as never;
+      await run(user);
+      expect(screen.getByText(hint)).toBeInTheDocument();
+    });
+
+    it('says when the map is fair and the aperture that was used', async () => {
+      const { user } = await ready();
+      await run(user);
+      expect(screen.getByText(/Fair only on even texture/)).toHaveTextContent('f/4 to f/5.6');
+      expect(screen.getByText(/Aperture used: f\/5\.6\./)).toBeInTheDocument();
+    });
+
+    it('saves the map without the reference as the flat reference, and clears it', async () => {
+      const { user } = await ready();
+      await run(user);
+      expect(screen.queryByRole('button', { name: 'Clear reference' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Save as flat reference' }));
+      await waitFor(() =>
+        expect(ipc.settingsSet).toHaveBeenCalledWith({ focus_reference: state.focusCheck.raw_map }),
+      );
+      expect(await screen.findByText('A flat reference is saved.')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Clear reference' }));
+      await waitFor(() =>
+        expect(ipc.settingsSet).toHaveBeenLastCalledWith({ clear_focus_reference: true }),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Clear reference' })).not.toBeInTheDocument(),
+      );
+    });
+
+    it('offers to clear a reference that was saved before', async () => {
+      state.focusReference = state.focusCheck.raw_map;
+      await ready();
+      expect(await screen.findByRole('button', { name: 'Clear reference' })).toBeInTheDocument();
+    });
+
+    it('says when the map is compared with the flat reference', async () => {
+      const { user } = await ready();
+      await run(user);
+      expect(screen.queryByText('Compared with the flat reference.')).not.toBeInTheDocument();
+      state.focusCheck = { ...state.focusCheck, against_reference: true };
+      await run(user);
+      expect(screen.getByText('Compared with the flat reference.')).toBeInTheDocument();
+    });
+
+    it('shows the message when the check fails', async () => {
+      const { user } = await ready();
+      state.focusFail = 'The camera did not answer.';
+      await user.click(checkButton());
+      expect(await screen.findByRole('alert')).toHaveTextContent('The camera did not answer.');
+      expect(checkButton()).toBeEnabled();
+    });
+
+    it('shows the message when the reference cannot be saved', async () => {
+      const { user } = await ready();
+      await run(user);
+      state.settingsRefused = 'Settings are read only.';
+      await user.click(screen.getByRole('button', { name: 'Save as flat reference' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Settings are read only.');
+    });
+
+    it('cannot start while a capture runs', async () => {
+      const { user } = await ready();
+      await startCapture(user);
+      expect(checkButton()).toBeDisabled();
+    });
+
+    it('has no accessibility violations with a result shown', async () => {
+      const { user, container } = await ready();
+      await run(user);
       await expectNoA11yViolations(container);
     });
   });

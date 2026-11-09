@@ -31,6 +31,7 @@ import type {
   TripletCandidate,
   UpdateOutcome,
   VerifyResult,
+  FocusCheck,
   ZoomStep,
 } from '../../shared/ipc';
 
@@ -154,7 +155,30 @@ interface SettingsPatchShape {
   starting_look?: 'neutral' | 'film_log' | 'frontier';
   flags?: Partial<typeof DEFAULT_FLAGS>;
   keys?: Record<string, string>;
+  focus_reference?: FocusCheck['raw_map'];
+  clear_focus_reference?: boolean;
 }
+
+/** The answer of the focus check before a test changes it. */
+export const DEFAULT_FOCUS_CHECK = {
+  crop: 'AAAA',
+  crop_width: 512,
+  crop_height: 512,
+  sharpness: 12.34,
+  map: [
+    [0.8, 0.9, 0.8],
+    [0.9, 1, 0.9],
+    [0.8, 0.9, 0.8],
+  ],
+  raw_map: [
+    [0.7, 0.85, 0.7],
+    [0.85, 1, 0.85],
+    [0.7, 0.85, 0.7],
+  ],
+  pattern: { kind: 'bowed' },
+  exposure: { exposure_time: { num: 1, den: 60 }, iso: 200, f_number: { num: 56, den: 10 } },
+  against_reference: false,
+} as FocusCheck;
 
 /** The feature flags before anyone changes them (spec section 10). */
 export const DEFAULT_FLAGS = {
@@ -326,6 +350,10 @@ export const state = {
   savedDefaultExposure: null as CaptureLevels['exposure'],
   levelsFail: null as string | null,
   testFail: null as string | null,
+  /** What capture_focus_check answers, or the message it fails with; and the saved flat reference. */
+  focusCheck: { ...DEFAULT_FOCUS_CHECK },
+  focusFail: null as string | null,
+  focusReference: null as FocusCheck['raw_map'] | null,
   /** The id capture_triplet answers, or the message it fails with. */
   captureJob: 'job-capture-1' as string,
   captureFail: null as string | null,
@@ -431,6 +459,7 @@ export const ipc = {
       starting_look: state.startingLook,
       flags: { ...state.flags },
       keys: { ...state.keys },
+      focus_reference: state.focusReference,
     };
   }),
   settingsDefaults: vi.fn(async () => ({ last_library: null, flags: { ...DEFAULT_FLAGS } })),
@@ -442,11 +471,14 @@ export const ipc = {
     state.flags = { ...state.flags, ...patch.flags };
     if (patch.keys) state.keys = { ...patch.keys };
     if (patch.starting_look) state.startingLook = patch.starting_look;
+    if (patch.focus_reference) state.focusReference = patch.focus_reference;
+    if (patch.clear_focus_reference) state.focusReference = null;
     return {
       last_library: state.lastLibrary,
       starting_look: state.startingLook,
       flags: { ...state.flags },
       keys: { ...state.keys },
+      focus_reference: state.focusReference,
     };
   }),
   updateCheck: vi.fn<(manual: boolean) => Promise<UpdateOutcome>>(async () => {
@@ -791,6 +823,12 @@ export const ipc = {
       return { ...state.testShot };
     },
   ),
+  captureFocusCheck: vi.fn(async (channel: string, levels?: [number, number, number]) => {
+    void channel;
+    void levels;
+    if (state.focusFail) throw new IpcError({ code: 'Internal', message: state.focusFail });
+    return { ...state.focusCheck };
+  }),
   captureTriplet: vi.fn(
     async (rollId: string, levels?: [number, number, number]): Promise<string> => {
       void rollId;
@@ -910,6 +948,9 @@ export function resetFake() {
   state.savedDefaultExposure = null;
   state.levelsFail = null;
   state.testFail = null;
+  state.focusFail = null;
+  state.focusReference = null;
+  state.focusCheck = { ...DEFAULT_FOCUS_CHECK };
   state.captureJob = 'job-capture-1';
   state.captureFail = null;
   state.calibrationJob = 'job-calibration-1';

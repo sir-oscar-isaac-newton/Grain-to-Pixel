@@ -20,6 +20,7 @@ import { messageOf, useLibraryStore } from '../library/library-store';
 import styles from './import.module.css';
 import { Calibrate } from './capture/Calibrate';
 import { CameraSettings } from './capture/CameraSettings';
+import { FocusCheck } from './capture/FocusCheck';
 import { formatExposure } from './capture/exposure';
 import { LevelSliders } from './capture/LevelSliders';
 import { LiveView } from './capture/LiveView';
@@ -84,6 +85,7 @@ function Capture() {
   const [shotBusy, setShotBusy] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [focusing, setFocusing] = useState(false);
   const liveStop = useRef<(() => void) | null>(null);
 
   const refreshCameras = useCallback(async () => {
@@ -212,7 +214,7 @@ function Capture() {
                 stopRef={liveStop}
                 levels={levels}
                 lightLost={!light.connected || light.status?.tripped === true}
-                blocked={running || shotBusy || calibrating || capturing}
+                blocked={running || shotBusy || calibrating || capturing || focusing}
                 settingsChanging={settingsChanging}
               />
             )
@@ -275,6 +277,13 @@ function Capture() {
           levels={levels}
           onShot={(exposure) => setShotExposure(exposure)}
           onBusyChange={setShotBusy}
+        />
+      )}
+      {levels && (
+        <FocusCheck
+          disabled={running || !usable || settingsChanging}
+          levels={levels}
+          onBusyChange={setFocusing}
         />
       )}
       {levels && (

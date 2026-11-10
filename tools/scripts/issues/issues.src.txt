@@ -2260,3 +2260,124 @@ ROUTES: none new.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: the area is in fractions of the whole frame, so it does not depend on the live view's 640 x 424 size.
+
+## U-19
+title: Delete frames and edit notes in the Library
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: U-01
+adr: no
+spec: specification sections 6 and 7
+desc: The backend can delete frames (frame_delete removes the rows, then the originals and thumbnails) and set a frame's note (frame_set_note), but the Library calls neither. Add both to the Library view, so a bad frame can be removed and a note written without leaving the app.
+ac:
+- One or more selected frames can be deleted from the Library grid, by a menu item and the Delete key
+- A confirmation dialog states the number of frames and that the original files are removed from disk and cannot be restored
+- Files that could not be removed are listed to the user after the delete
+- The grid, the roll's frame count and the selection update without a reload; a frame open in Edit cannot be left pointing at a deleted frame
+- A frame's note can be read and edited in the Library, saves on blur or Enter, and is found by the existing search
+- Component tests cover delete (confirm, cancel, files left) and the note edit; strings are in en.json; axe clean
+tech:
+FILES: apps/desktop/src/features/library (the grid, a confirm dialog, the note field), apps/desktop/src/shared/ipc.ts (wrappers where missing), fake-ipc.ts, en.json.
+ROUTES: none new (frame_delete and frame_set_note exist).
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: out of scope: a recycle bin or undo of delete, pick or reject culling, editing the notes of many frames at once.
+
+## U-20
+title: Pick and reject culling in the Library
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: U-01, U-19
+adr: no
+spec: specification sections 4, 5, 6 and 7
+desc: After scanning a roll, the first job is to choose the frames worth editing. Frames have no pick or reject mark today, and the frame query filters only by roll. Add a flag per frame (none, pick, reject), keys to set it in the Library grid, a filter on it, and a way to export only the picked frames.
+ac:
+- A frame is unflagged, picked or rejected; the flag is stored in the library and survives a restart
+- In the Library grid, P picks, X rejects and U clears the flag of the selected frames; the grid shows the flag on each thumbnail
+- The grid can be filtered to all, picked, rejected or unflagged frames, within a roll or across the library
+- Select rejected selects all rejected frames of the current view, so they can be deleted with the delete of U-19
+- Export can be limited to picked frames
+- A migration test (an old library opens, all frames unflagged), service tests for set and filter, component tests for the keys and the filter; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-catalog (migration, frame repo), crates/gtp-core (the flag type), crates/gtp-app/src/services/roll_frame.rs (set, and the filter on FrameQuery), apps/desktop/src-tauri/src/commands/frame.rs, apps/desktop/src/features/library, the export dialog, en.json, packages/ipc-types.
+ROUTES: frame_set_flag(ids, flag) -> the changed frames; FrameQuery gains an optional flag filter. Approved by the owner on 2026-11-09.
+MIGRATIONS: one column `flag` on `frame` (none, pick, reject; default none). Approved by the owner on 2026-11-09.
+TESTS: as in ac.
+NOTES: out of scope: star ratings, colour labels, flags written into exported files. The specification's domain model, storage and command sections are updated in the same change.
+
+## U-21
+title: Export presets
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: U-11
+adr: no
+spec: specification sections 5, 6 and 7
+desc: Export takes a format, an output colour space, a JPEG quality, a destination folder and a file name template, and they are set anew each time. Let the user save named sets of these options and choose one in the export dialog.
+ac:
+- A preset is a name plus the five export options; presets are saved in settings.json and survive a restart
+- The export dialog has a preset select; choosing one fills all options, and changing an option afterwards marks the preset as modified
+- Save as preset, Update and Delete work from the dialog; names must be unique and not empty
+- The last used preset or options are remembered for the next export
+- Two presets ship as defaults and can be deleted: a full-size 16-bit TIFF for archiving and an sRGB JPEG for sharing
+- A settings file without presets loads with the defaults; service tests for save, update and delete, component tests for the dialog; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-app/src/services/settings.rs (the preset list and the last used options), apps/desktop/src/features (the export dialog), fake-ipc.ts, en.json, packages/ipc-types.
+ROUTES: none new; presets are read and written through the existing settings commands. Approved by the owner on 2026-11-09.
+MIGRATIONS: none (a list in settings.json).
+TESTS: as in ac.
+NOTES: out of scope: resizing on export (the export has no size option; that is its own issue), exporting with several presets in one run, sharing presets between machines.
+
+## U-22
+title: Undo, redo and reset in Develop
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: U-02, U-04
+adr: no
+spec: specification section 7
+desc: The Develop view has no undo or redo, and the only way back from a wrong drag is to repair it by hand. Add an undo history per frame, resets for a panel and for the whole recipe, and a double click that resets a single slider.
+ac:
+- Every committed change to the recipe (a slider released, a curve point dropped, a crop confirmed) is one undo step; a drag is one step, not one per frame of the drag
+- Ctrl/Cmd+Z undoes and Ctrl/Cmd+Shift+Z redoes, with buttons in the view that are disabled when there is nothing to do
+- The history is per frame, holds at least 50 steps, and is dropped when the frame is left; a new change after an undo discards the redo steps
+- A double click on a slider resets that slider to its automatic value, as one undo step; the same is reachable from the keyboard
+- Reset panel returns one panel to its automatic values, and Reset all returns the whole recipe to the automatic conversion; both are single undo steps
+- An undone state is saved the same way as any other change, so the stored recipe always matches what is shown
+- Unit tests for the history (step limit, redo discard, drag as one step) and component tests for the keys, the buttons, the double click and both resets; axe clean
+tech:
+FILES: apps/desktop/src/features/develop (a history hook next to the recipe state, the shared slider component, the panels), en.json.
+ROUTES: none new.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the history lives in the view's memory. Out of scope: a visible history list, history that survives a restart, snapshots or virtual copies, undo in the Library.
+
+## P-23
+title: Metadata in exported files
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: P-12, U-11
+adr: no
+spec: specification sections 6, 7 and 9
+desc: The library holds film stock, camera, box and shot ISO, shooting dates and notes per roll, and a note per frame, but an exported TIFF or JPEG carries none of it. Write this as EXIF into exported files, behind an export option.
+ac:
+- Exported JPEG and TIFF files carry EXIF tags for: software (app name and version), film stock and roll name in the image description, the film camera as make and model text, the shot ISO, and the shooting date when the roll has one
+- The frame's note and the roll's notes are written as the user comment
+- No tag claims the scanning camera's exposure data as the picture's: the D600's shutter, aperture and lens are left out
+- Nothing personal that the user did not enter is written (no machine name, no file paths, no user name)
+- The export option write metadata, on by default, can be switched off in the export dialog, and a file exported with it off has no such tags
+- Tests read the tags back from an exported JPEG and TIFF, with and without the option, and with empty roll fields; bindings regenerated
+tech:
+FILES: crates/gtp-io (the encoders), crates/gtp-app/src/services/export.rs (the option, and the roll and frame data), the export dialog, fake-ipc.ts, en.json, packages/ipc-types.
+ROUTES: none new; ExportOptions gains write_metadata. Approved by the owner on 2026-11-09.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: first check whether the tiff and jpeg-encoder crates already in use can write the tags. A new dependency is not approved yet: propose it to the owner with its licence before adding it (deny.toml, the notices). Out of scope: XMP sidecars, IPTC, GPS, editing metadata per frame beyond the note, writing metadata back into the original scans.

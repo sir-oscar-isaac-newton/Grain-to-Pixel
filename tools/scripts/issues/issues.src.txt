@@ -2332,3 +2332,28 @@ ROUTES: none new; presets are read and written through the existing settings com
 MIGRATIONS: none (a list in settings.json).
 TESTS: as in ac.
 NOTES: out of scope: resizing on export (the export has no size option; that is its own issue), exporting with several presets in one run, sharing presets between machines.
+
+## U-22
+title: Undo, redo and reset in Develop
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: U-02, U-04
+adr: no
+spec: specification section 7
+desc: The Develop view has no undo or redo, and the only way back from a wrong drag is to repair it by hand. Add an undo history per frame, resets for a panel and for the whole recipe, and a double click that resets a single slider.
+ac:
+- Every committed change to the recipe (a slider released, a curve point dropped, a crop confirmed) is one undo step; a drag is one step, not one per frame of the drag
+- Ctrl/Cmd+Z undoes and Ctrl/Cmd+Shift+Z redoes, with buttons in the view that are disabled when there is nothing to do
+- The history is per frame, holds at least 50 steps, and is dropped when the frame is left; a new change after an undo discards the redo steps
+- A double click on a slider resets that slider to its automatic value, as one undo step; the same is reachable from the keyboard
+- Reset panel returns one panel to its automatic values, and Reset all returns the whole recipe to the automatic conversion; both are single undo steps
+- An undone state is saved the same way as any other change, so the stored recipe always matches what is shown
+- Unit tests for the history (step limit, redo discard, drag as one step) and component tests for the keys, the buttons, the double click and both resets; axe clean
+tech:
+FILES: apps/desktop/src/features/develop (a history hook next to the recipe state, the shared slider component, the panels), en.json.
+ROUTES: none new.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the history lives in the view's memory. Out of scope: a visible history list, history that survives a restart, snapshots or virtual copies, undo in the Library.

@@ -135,6 +135,10 @@
                  "number":  48,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/48"
              },
+    "L-01":  {
+                 "number":  26,
+                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/26"
+             },
     "U-14":  {
                  "number":  142,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/142"
@@ -158,10 +162,6 @@
     "U-12":  {
                  "number":  50,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/50"
-             },
-    "Q-08":  {
-                 "number":  174,
-                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/174"
              },
     "D-05":  {
                  "number":  64,
@@ -207,9 +207,9 @@
                  "number":  9,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/9"
              },
-    "U-04":  {
-                 "number":  40,
-                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/40"
+    "Q-08":  {
+                 "number":  174,
+                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/174"
              },
     "U-16":  {
                  "number":  152,
@@ -270,6 +270,10 @@
     "P-22":  {
                  "number":  204,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/204"
+             },
+    "U-22":  {
+                 "number":  272,
+                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/272"
              },
     "U-11":  {
                  "number":  44,
@@ -339,9 +343,9 @@
                  "number":  49,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/49"
              },
-    "L-01":  {
-                 "number":  26,
-                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/26"
+    "U-04":  {
+                 "number":  40,
+                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/40"
              },
     "U-09":  {
                  "number":  55,

@@ -305,7 +305,7 @@ mod tests {
     fn sample_metadata() -> ExportMetadata {
         ExportMetadata {
             software: Some("Grain to Pixel 1.2.3".into()),
-            description: Some("Kodak Portra 400 (box ISO 400), Roll 12".into()),
+            description: Some("Kodak Portra 400 (at ISO 800), Roll 12".into()),
             make: Some("Nikon".into()),
             model: Some("Nikon F3".into()),
             iso: Some(800),
@@ -365,7 +365,7 @@ mod tests {
         );
         assert_eq!(
             text(exif, exif::Tag::ImageDescription).unwrap(),
-            "Kodak Portra 400 (box ISO 400), Roll 12"
+            "Kodak Portra 400 (at ISO 800), Roll 12"
         );
         assert_eq!(text(exif, exif::Tag::Make).unwrap(), "Nikon");
         assert_eq!(text(exif, exif::Tag::Model).unwrap(), "Nikon F3");

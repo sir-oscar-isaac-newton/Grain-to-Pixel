@@ -20,26 +20,25 @@ pub(crate) fn build(roll: &Roll, frame: &Frame, version: &str) -> ExportMetadata
             .and_then(|c| c.split_whitespace().next())
             .map(str::to_owned),
         model: camera.map(str::to_owned),
-        // The speed the film was exposed at; the box speed is in the description only.
+        // The speed the film was exposed at; the box speed is not written.
         iso: roll.iso_shot,
         date_original: roll.shot_from.as_deref().and_then(full_date),
         user_comment: comment(&frame.note, &roll.notes),
     }
 }
 
-/// `Film stock (box ISO 400, shot at ISO 800), Roll name`, leaving out what is empty.
+/// `Film stock (at ISO 800), Roll name`, leaving out what is empty. The speed is the one the film
+/// was shot at; the box speed is not written.
 fn description(roll: &Roll) -> String {
     let stock = roll
         .film_stock
         .as_deref()
         .map(str::trim)
         .unwrap_or_default();
-    let speeds = match (roll.iso_box, roll.iso_shot) {
-        (Some(b), Some(s)) => format!("(box ISO {b}, shot at ISO {s})"),
-        (Some(b), None) => format!("(box ISO {b})"),
-        (None, Some(s)) => format!("(shot at ISO {s})"),
-        (None, None) => String::new(),
-    };
+    let speeds = roll
+        .iso_shot
+        .map(|s| format!("(at ISO {s})"))
+        .unwrap_or_default();
     let film = [stock, speeds.as_str()]
         .iter()
         .filter(|part| !part.is_empty())
@@ -129,7 +128,7 @@ mod tests {
         assert_eq!(m.software.as_deref(), Some("Grain to Pixel 1.2.3"));
         assert_eq!(
             m.description.as_deref(),
-            Some("Kodak Portra 400 (box ISO 400, shot at ISO 800), Roll 12")
+            Some("Kodak Portra 400 (at ISO 800), Roll 12")
         );
         assert_eq!(m.make.as_deref(), Some("Nikon"));
         assert_eq!(m.model.as_deref(), Some("Nikon F3"));
@@ -149,15 +148,12 @@ mod tests {
     fn the_description_variants() {
         let mut r = roll();
         r.iso_shot = None;
-        assert_eq!(description(&r), "Kodak Portra 400 (box ISO 400), Roll 12");
+        assert_eq!(description(&r), "Kodak Portra 400, Roll 12", "no box ISO");
         r.iso_box = None;
         r.iso_shot = Some(800);
-        assert_eq!(
-            description(&r),
-            "Kodak Portra 400 (shot at ISO 800), Roll 12"
-        );
+        assert_eq!(description(&r), "Kodak Portra 400 (at ISO 800), Roll 12");
         r.film_stock = None;
-        assert_eq!(description(&r), "(shot at ISO 800), Roll 12");
+        assert_eq!(description(&r), "(at ISO 800), Roll 12");
         r.iso_shot = None;
         assert_eq!(description(&r), "Roll 12");
         r.film_stock = Some("  ".into());

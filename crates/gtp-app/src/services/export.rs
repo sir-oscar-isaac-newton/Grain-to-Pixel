@@ -690,7 +690,7 @@ mod tests {
             );
             assert_eq!(
                 text(&exif, exif::Tag::ImageDescription).unwrap(),
-                "Kodak Portra 400 (box ISO 400, shot at ISO 800), Roll"
+                "Kodak Portra 400 (at ISO 800), Roll"
             );
             assert_eq!(text(&exif, exif::Tag::Make).unwrap(), "Nikon");
             assert_eq!(text(&exif, exif::Tag::Model).unwrap(), "Nikon F3");

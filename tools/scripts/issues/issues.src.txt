@@ -2357,3 +2357,27 @@ ROUTES: none new.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: the history lives in the view's memory. Out of scope: a visible history list, history that survives a restart, snapshots or virtual copies, undo in the Library.
+
+## P-23
+title: Metadata in exported files
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: P-12, U-11
+adr: no
+spec: specification sections 6, 7 and 9
+desc: The library holds film stock, camera, box and shot ISO, shooting dates and notes per roll, and a note per frame, but an exported TIFF or JPEG carries none of it. Write this as EXIF into exported files, behind an export option.
+ac:
+- Exported JPEG and TIFF files carry EXIF tags for: software (app name and version), film stock and roll name in the image description, the film camera as make and model text, the shot ISO, and the shooting date when the roll has one
+- The frame's note and the roll's notes are written as the user comment
+- No tag claims the scanning camera's exposure data as the picture's: the D600's shutter, aperture and lens are left out
+- Nothing personal that the user did not enter is written (no machine name, no file paths, no user name)
+- The export option write metadata, on by default, can be switched off in the export dialog, and a file exported with it off has no such tags
+- Tests read the tags back from an exported JPEG and TIFF, with and without the option, and with empty roll fields; bindings regenerated
+tech:
+FILES: crates/gtp-io (the encoders), crates/gtp-app/src/services/export.rs (the option, and the roll and frame data), the export dialog, fake-ipc.ts, en.json, packages/ipc-types.
+ROUTES: none new; ExportOptions gains write_metadata. Approved by the owner on 2026-11-09.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: first check whether the tiff and jpeg-encoder crates already in use can write the tags. A new dependency is not approved yet: propose it to the owner with its licence before adding it (deny.toml, the notices). Out of scope: XMP sidecars, IPTC, GPS, editing metadata per frame beyond the note, writing metadata back into the original scans.

@@ -2,7 +2,13 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { ProgressList, Slider } from '@gtp/ui';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { exportStart, jobCancel, pickFolder, type ExportOptions } from '../../shared/ipc';
+import {
+  exportStart,
+  frameList,
+  jobCancel,
+  pickFolder,
+  type ExportOptions,
+} from '../../shared/ipc';
 import { describeJob } from './JobsPanel';
 import styles from './library.module.css';
 import { messageOf, useLibraryStore } from './library-store';
@@ -77,6 +83,29 @@ function problemOf(options: ExportOptions): string | null {
   return null;
 }
 
+const PICKED_PAGE_SIZE = 500;
+/** The picked frames are read in pages of {@link PICKED_PAGE_SIZE}; no real library needs more. */
+const MAX_PICKED_PAGES = 20;
+
+/** The ids of the frames in `frameIds` that are picked (read from the library's picked frames). */
+async function pickedAmong(frameIds: readonly string[]): Promise<string[]> {
+  const wanted = new Set(frameIds);
+  const found = new Set<string>();
+  let seen = 0;
+  for (let page = 0; page < MAX_PICKED_PAGES; page += 1) {
+    const result = await frameList({
+      roll_id: null,
+      flag: 'pick',
+      page,
+      page_size: PICKED_PAGE_SIZE,
+    });
+    for (const frame of result.items) if (wanted.has(frame.id)) found.add(frame.id);
+    seen += result.items.length;
+    if (seen >= result.total || result.items.length === 0) break;
+  }
+  return frameIds.filter((id) => found.has(id));
+}
+
 interface ExportDialogProps {
   /** The frames to export. */
   frameIds: readonly string[];
@@ -102,6 +131,28 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const job = useLibraryStore((s) => s.jobs.find((j) => j.id === jobId));
+
+  // Which of the frames are picked, found once when the dialog opens (null: not known yet, or
+  // not readable; the option is then not offered). The option starts off.
+  const [picked, setPicked] = useState<string[] | null>(null);
+  const [onlyPicked, setOnlyPicked] = useState(false);
+  // The parent passes a new array on every render, so the effect follows the ids' content.
+  const idsKey = frameIds.join(',');
+  useEffect(() => {
+    let alive = true;
+    pickedAmong(idsKey === '' ? [] : idsKey.split(',')).then(
+      (ids) => alive && setPicked(ids),
+      () => {
+        // Without the flags the dialog exports every frame, as before.
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [idsKey]);
+  const offerPicked = picked !== null && picked.length > 0;
+  const limited = offerPicked && onlyPicked;
+  const exported = limited ? picked : frameIds;
 
   // Opening the dialog while an export runs shows that export.
   useEffect(() => {
@@ -131,12 +182,12 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
     try {
       const chosen = { ...options, template: options.template.trim() };
       saveOptions(chosen);
-      const id = await exportStart([...frameIds], chosen);
+      const id = await exportStart([...exported], chosen);
       addJob({
         id,
         kind: 'export',
         rollName: '',
-        frames: frameIds.length,
+        frames: exported.length,
         destination: chosen.dest_dir,
         fraction: 0,
         state: 'running',
@@ -158,7 +209,9 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
         <Dialog.Content className={styles.dialog}>
           <Dialog.Title>{t('export.title')}</Dialog.Title>
           <Dialog.Description>
-            {t('export.description', { count: job?.frames ?? frameIds.length })}
+            {limited && !job
+              ? t('export.descriptionPicked', { count: exported.length })
+              : t('export.description', { count: job?.frames ?? exported.length })}
           </Dialog.Description>
 
           {job ? (
@@ -237,6 +290,17 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
                   step={1}
                   onChange={(jpeg_quality) => change({ jpeg_quality })}
                 />
+              )}
+
+              {offerPicked && (
+                <label className={styles.radio}>
+                  <input
+                    type="checkbox"
+                    checked={onlyPicked}
+                    onChange={(e) => setOnlyPicked(e.target.checked)}
+                  />
+                  {t('export.onlyPicked')}
+                </label>
               )}
 
               <div className={styles.folderRow}>

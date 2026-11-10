@@ -12,6 +12,41 @@ pub enum FrameKind {
     RgbTriplet,
 }
 
+/// The pick or reject mark of a frame (culling after a scan).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "lowercase")]
+pub enum FrameFlag {
+    /// Not judged yet.
+    #[default]
+    None,
+    /// Worth editing and exporting.
+    Pick,
+    /// To be deleted.
+    Reject,
+}
+
+impl FrameFlag {
+    /// The text stored in the library (`"none"`, `"pick"` or `"reject"`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FrameFlag::None => "none",
+            FrameFlag::Pick => "pick",
+            FrameFlag::Reject => "reject",
+        }
+    }
+
+    /// The flag stored as `text`, or `None` when the text is not one of the three.
+    pub fn parse(text: &str) -> Option<FrameFlag> {
+        match text {
+            "none" => Some(FrameFlag::None),
+            "pick" => Some(FrameFlag::Pick),
+            "reject" => Some(FrameFlag::Reject),
+            _ => None,
+        }
+    }
+}
+
 /// One image position on a roll. The pixels live in source files; edits live in the Recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -25,6 +60,9 @@ pub struct Frame {
     pub has_ir: bool,
     #[serde(default)]
     pub note: String,
+    /// The pick or reject mark; not an edit of the picture, so it leaves `edited_at` alone.
+    #[serde(default)]
+    pub flag: FrameFlag,
     /// RFC 3339 timestamps; `edited_at` is `None` until the recipe is first saved.
     pub created_at: String,
     #[serde(default)]
@@ -45,6 +83,26 @@ mod tests {
     }
 
     #[test]
+    fn frame_flags_are_lowercase_words_in_json() {
+        for (flag, text) in [
+            (FrameFlag::None, "none"),
+            (FrameFlag::Pick, "pick"),
+            (FrameFlag::Reject, "reject"),
+        ] {
+            assert_eq!(serde_json::to_string(&flag).unwrap(), format!("\"{text}\""));
+            assert_eq!(
+                serde_json::from_str::<FrameFlag>(&format!("\"{text}\"")).unwrap(),
+                flag
+            );
+            assert_eq!(FrameFlag::parse(text), Some(flag));
+            assert_eq!(flag.as_str(), text);
+        }
+        assert_eq!(FrameFlag::default(), FrameFlag::None);
+        assert!(serde_json::from_str::<FrameFlag>("\"Pick\"").is_err());
+        assert_eq!(FrameFlag::parse("star"), None);
+    }
+
+    #[test]
     fn a_frame_round_trips() {
         let frame = Frame {
             id: FrameId::new(),
@@ -55,6 +113,7 @@ mod tests {
             height: 4016,
             has_ir: false,
             note: String::new(),
+            flag: FrameFlag::Pick,
             created_at: "2026-10-30T10:00:00Z".into(),
             edited_at: Some("2026-10-30T10:00:00Z".into()),
         };

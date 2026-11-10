@@ -19,6 +19,18 @@
     "emptyRoll": "This roll has no frames yet. Use “Import TIFF files…” to add scans.",
     "noRolls": "No rolls yet.",
     "readOnly": "This library was made by a newer version of Grain to Pixel. You can look at it, but not change it.",
+    "selectRejected": "Select rejected",
+    "flag": {
+      "pick": "Picked",
+      "reject": "Rejected"
+    },
+    "flagFilter": {
+      "label": "Show frames by flag",
+      "all": "All frames",
+      "pick": "Picked",
+      "reject": "Rejected",
+      "none": "Unflagged"
+    },
     "grid": {
       "label": "Frames",
       "count_one": "{{count}} frame",
@@ -90,7 +102,10 @@
       "framesDeletedLeft_one": "Frames deleted, but {{count}} file could not be removed: {{files}}",
       "framesDeletedLeft_other": "Frames deleted, but {{count}} files could not be removed: {{files}}",
       "framesDeleteFailed": "The frames could not be deleted: {{message}}",
-      "noteFailed": "The note could not be saved: {{message}}"
+      "noteFailed": "The note could not be saved: {{message}}",
+      "flagFailed": "The flag could not be changed: {{message}}",
+      "noRejected": "No frame in this view is rejected.",
+      "selectRejectedFailed": "The rejected frames could not be read: {{message}}"
     }
   },
   "rollEditor": {
@@ -463,6 +478,9 @@
     "title": "Export",
     "description_one": "Write {{count}} frame at full size, with the colour profile embedded.",
     "description_other": "Write {{count}} frames at full size, with the colour profile embedded.",
+    "descriptionPicked_one": "Write {{count}} picked frame at full size, with the colour profile embedded.",
+    "descriptionPicked_other": "Write {{count}} picked frames at full size, with the colour profile embedded.",
+    "onlyPicked": "Only picked frames",
     "format": "File format",
     "tiff16": "TIFF, 16-bit",
     "tiff16Hint": "Large, full quality, for further editing.",

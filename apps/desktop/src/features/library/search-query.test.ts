@@ -60,4 +60,10 @@ describe('search-query', () => {
     expect(toQuery({ ...NO_FILTERS, iso: '0' }, null).iso).toBeNull();
     expect(toQuery({ ...NO_FILTERS, iso: '4x' }, null).iso).toBeNull();
   });
+
+  it('adds the flag only when one is chosen', () => {
+    expect(toQuery(NO_FILTERS, null)).not.toHaveProperty('flag');
+    expect(toQuery(NO_FILTERS, null, 'all')).not.toHaveProperty('flag');
+    expect(toQuery(NO_FILTERS, null, 'reject').flag).toBe('reject');
+  });
 });

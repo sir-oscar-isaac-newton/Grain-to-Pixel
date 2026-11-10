@@ -27,6 +27,7 @@ import {
   type FailedExport,
   type FilmFormat,
   type FlatFieldInfo,
+  type FrameFlag,
   type ImportResult,
   type ImportWarning,
   type LevelsScope,
@@ -70,6 +71,7 @@ export type {
   FailedExport,
   FilmFormat,
   FlatFieldInfo,
+  FrameFlag,
   ImportResult,
   ImportWarning,
   LevelsScope,
@@ -225,6 +227,11 @@ export async function frameGet(...args: Args<'frameGet'>): Promise<Frame> {
 
 export async function frameSetNote(...args: Args<'frameSetNote'>): Promise<Frame> {
   return unwrap(await commands.frameSetNote(...args));
+}
+
+/** Sets the pick or reject mark of frames and returns the changed frames (unknown ids are skipped). */
+export async function frameSetFlag(...args: Args<'frameSetFlag'>): Promise<FrameSummary[]> {
+  return unwrap(await commands.frameSetFlag(...args));
 }
 
 /** Deletes frames; `files_left` lists files that could not be removed. */

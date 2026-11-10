@@ -13,7 +13,7 @@ import {
   type RefObject,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { FrameSummary } from '../../shared/ipc';
+import type { FrameFlag, FrameSummary } from '../../shared/ipc';
 import styles from './library.module.css';
 import { CELL_GAP, ROW_HEIGHT, columnsFor, rangeBetween, targetIndex } from './grid-navigation';
 import { useLibraryStore } from './library-store';
@@ -62,9 +62,20 @@ const FrameCell = memo(function FrameCell({
       aria-selected={selected}
       data-index={index}
       data-focused={focused ? 'true' : undefined}
+      data-flag={frame.flag}
       className={styles.cell}
     >
       <div className={styles.thumb}>
+        {frame.flag !== 'none' && (
+          <span
+            className={styles.flagMark}
+            data-flag={frame.flag}
+            role="img"
+            aria-label={t(`library.flag.${frame.flag}`)}
+          >
+            {frame.flag === 'pick' ? '✓' : '✕'}
+          </span>
+        )}
         {thumbnail.status === 'ready' ? (
           <img src={thumbnail.url} alt="" draggable={false} className={styles.image} />
         ) : thumbnail.status === 'loading' ? (
@@ -97,6 +108,31 @@ interface FrameGridProps {
   onOpen?: (frame: FrameSummary, index: number) => void;
   /** Called when Delete is pressed with frames selected. */
   onDelete?: () => void;
+  /** Called with the flag when P (pick), X (reject) or U (clear) is pressed with frames selected. */
+  onFlag?: (flag: FrameFlag) => void;
+}
+
+/** The flag a key sets, without modifier keys; undefined for any other key. */
+function flagForKey(event: KeyboardEvent<HTMLElement>): FrameFlag | undefined {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return undefined;
+  switch (event.key.toLowerCase()) {
+    case 'p':
+      return 'pick';
+    case 'x':
+      return 'reject';
+    case 'u':
+      return 'none';
+    default:
+      return undefined;
+  }
+}
+
+/** True when the event comes from a field the user may be typing in. */
+function isTyping(target: EventTarget): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+  );
 }
 
 /**
@@ -112,6 +148,7 @@ export function FrameGrid({
   onTotal,
   onOpen,
   onDelete,
+  onFlag,
 }: FrameGridProps) {
   const { t } = useTranslation();
   const revision = useLibraryStore((s) => s.revision);
@@ -199,6 +236,7 @@ export function FrameGrid({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (isTyping(event.target)) return;
     const ctrl = event.ctrlKey || event.metaKey;
     if (event.key === 'Enter' && onOpen) {
       const frame = frameAt(focus);
@@ -212,6 +250,14 @@ export function FrameGrid({
       if (selected.size > 0) {
         event.preventDefault();
         onDelete();
+      }
+      return;
+    }
+    const flag = onFlag ? flagForKey(event) : undefined;
+    if (flag) {
+      if (selected.size > 0) {
+        event.preventDefault();
+        onFlag?.(flag);
       }
       return;
     }

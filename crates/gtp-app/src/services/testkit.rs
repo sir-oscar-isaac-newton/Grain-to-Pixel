@@ -80,6 +80,7 @@ pub(crate) fn add_frame_params(
                 height,
                 has_ir: scan.ir.is_some(),
                 note: String::new(),
+                flag: gtp_core::FrameFlag::None,
                 created_at: String::new(),
                 edited_at: None,
             })?;
@@ -165,6 +166,7 @@ impl Fixture {
                     height: 10,
                     has_ir: false,
                     note: String::new(),
+                    flag: gtp_core::FrameFlag::None,
                     created_at: String::new(),
                     edited_at: None,
                 })

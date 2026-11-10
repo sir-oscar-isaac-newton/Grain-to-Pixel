@@ -93,6 +93,7 @@ pub fn build(dir: &Path, frames: u32, rolls: u32) -> Result<Built, AppError> {
                     height: 3744,
                     has_ir: true,
                     note: String::new(),
+                    flag: gtp_core::FrameFlag::None,
                     created_at: String::new(),
                     edited_at: None,
                 })
@@ -145,6 +146,7 @@ mod tests {
             &library,
             FrameQuery {
                 roll_id: None,
+                flag: None,
                 page: 0,
                 page_size: 100,
             },
@@ -176,6 +178,7 @@ mod tests {
                     &library,
                     FrameQuery {
                         roll_id: Some(r.id),
+                        flag: None,
                         page: 0,
                         page_size: 50,
                     },

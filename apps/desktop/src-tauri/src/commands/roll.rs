@@ -187,6 +187,7 @@ mod tests {
             app.state(),
             FrameQuery {
                 roll_id: Some(roll.id),
+                flag: None,
                 page: 0,
                 page_size: 50,
             },

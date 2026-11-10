@@ -21,7 +21,7 @@ pub use job::{
 };
 pub use look::Look;
 pub use model::{
-    BaseChange, ExposureInfo, ExposureRatio, FilmFormat, FlatField, Frame, FrameKind, FrameSize,
-    Roll, SearchQuery, SourceFile, SourceRole, Tag, TripletChannel,
+    BaseChange, ExposureInfo, ExposureRatio, FilmFormat, FlatField, Frame, FrameFlag, FrameKind,
+    FrameSize, Roll, SearchQuery, SourceFile, SourceRole, Tag, TripletChannel,
 };
 pub use recipe::{migrate, Recipe, RecipeField};

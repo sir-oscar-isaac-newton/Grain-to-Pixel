@@ -378,6 +378,7 @@ pub(crate) fn store_frame(
         height: rgb.height,
         has_ir: ir.is_some(),
         note: String::new(),
+        flag: gtp_core::FrameFlag::None,
         created_at: String::new(),
         edited_at: None,
     };
@@ -1152,7 +1153,12 @@ mod tests {
         };
         let err = import_tiffs(s.lib(), s.roll, &paths, &ctx, &events).unwrap_err();
         assert_eq!(err.code, ErrorCode::Cancelled);
-        assert_eq!(s.lib().read(|c| c.count_frames(Some(s.roll))).unwrap(), 2);
+        assert_eq!(
+            s.lib()
+                .read(|c| c.count_frames(Some(s.roll), None))
+                .unwrap(),
+            2
+        );
         let originals = s.lib().root().join("originals").join(s.roll.to_string());
         let frame_dirs = std::fs::read_dir(&originals).unwrap().count();
         assert_eq!(frame_dirs, 2, "no folder of an unfinished frame is left");

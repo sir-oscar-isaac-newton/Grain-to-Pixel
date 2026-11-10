@@ -93,6 +93,7 @@ export function makeFrames(rollId: string, count: number, prefix = rollId): Fram
     height: 3744,
     has_ir: true,
     note: '',
+    flag: 'none',
     edited_at: null,
     has_thumb: true,
   }));
@@ -408,6 +409,7 @@ function matching(q: SearchQuery): FrameSummary[] {
     const roll = state.rolls.find((r) => r.id === f.roll_id);
     const names = [...(state.frameTags[f.id] ?? []), ...(state.rollTags[f.roll_id] ?? [])];
     if (q.roll_id && f.roll_id !== q.roll_id) return false;
+    if (q.flag && f.flag !== q.flag) return false;
     if (q.film_stock && keyOf(roll?.film_stock ?? '') !== keyOf(q.film_stock)) return false;
     if (q.camera && keyOf(roll?.camera ?? '') !== keyOf(q.camera)) return false;
     if (q.iso && roll?.iso_box !== q.iso && roll?.iso_shot !== q.iso) return false;
@@ -426,8 +428,15 @@ function matching(q: SearchQuery): FrameSummary[] {
   });
 }
 
-function pageOf(rollId: string | null | undefined, page: number, size: number): FramePage {
-  const all = state.frames.filter((f) => !rollId || f.roll_id === rollId);
+function pageOf(
+  rollId: string | null | undefined,
+  flag: FrameSummary['flag'] | null | undefined,
+  page: number,
+  size: number,
+): FramePage {
+  const all = state.frames.filter(
+    (f) => (!rollId || f.roll_id === rollId) && (!flag || f.flag === flag),
+  );
   return {
     items: all.slice(page * size, page * size + size),
     total: all.length,
@@ -527,8 +536,13 @@ export const ipc = {
     state.frames = state.frames.filter((f) => f.roll_id !== id);
     return { frames_deleted: frames, files_left: [] as string[] };
   }),
-  frameList: vi.fn(async (q: { roll_id?: string | null; page: number; page_size: number }) =>
-    pageOf(q.roll_id, q.page, q.page_size),
+  frameList: vi.fn(
+    async (q: {
+      roll_id?: string | null;
+      flag?: FrameSummary['flag'] | null;
+      page: number;
+      page_size: number;
+    }) => pageOf(q.roll_id, q.flag, q.page, q.page_size),
   ),
   search: vi.fn(async (q: SearchQuery, page: number, size: number): Promise<FramePage> => {
     const all = matching(q);
@@ -643,6 +657,11 @@ export const ipc = {
     const updated = { ...found, note };
     state.frames = state.frames.map((f) => (f.id === id ? updated : f));
     return updated;
+  }),
+  frameSetFlag: vi.fn(async (ids: string[], flag: FrameSummary['flag']) => {
+    const changed = state.frames.filter((f) => ids.includes(f.id)).map((f) => ({ ...f, flag }));
+    state.frames = state.frames.map((f) => changed.find((c) => c.id === f.id) ?? f);
+    return changed;
   }),
   frameDelete: vi.fn(async (ids: string[]) => {
     const gone = state.frames.filter((f) => ids.includes(f.id)).length;

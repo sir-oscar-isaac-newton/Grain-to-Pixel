@@ -17,7 +17,7 @@ import {
   type Tag,
   type VerifyResult,
 } from '../../shared/ipc';
-import { NO_FILTERS, type Filters } from './search-query';
+import { NO_FILTERS, type FlagFilter, type Filters } from './search-query';
 import { resetThumbnails } from './thumbnails';
 
 export type Phase = 'loading' | 'needs-library' | 'ready';
@@ -70,6 +70,8 @@ interface LibraryState {
   /** Every tag of the library, in name order. */
   tags: Tag[];
   filters: Filters;
+  /** Which frames the grid shows by their pick or reject mark. */
+  flagFilter: FlagFilter;
   /** The roll shown, or null for every frame. */
   rollId: string | null;
   /** Bumped when frames were added, changed or removed, so the grid reloads. */
@@ -86,6 +88,7 @@ interface LibraryState {
   reloadRolls: () => Promise<void>;
   reloadTags: () => Promise<void>;
   setFilters: (filters: Filters) => void;
+  setFlagFilter: (flag: FlagFilter) => void;
   selectRoll: (id: string | null) => void;
   setSelected: (ids: Iterable<string>) => void;
   bump: () => void;
@@ -102,6 +105,7 @@ const initial = {
   rolls: [],
   tags: [],
   filters: NO_FILTERS,
+  flagFilter: 'all' as FlagFilter,
   rollId: null,
   revision: 0,
   selected: new Set<string>() as ReadonlySet<string>,
@@ -124,6 +128,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
       startError: null,
       rollId: null,
       filters: NO_FILTERS,
+      flagFilter: 'all',
       tags: [],
       selected: new Set(),
       jobs: [],
@@ -193,6 +198,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
 
     setFilters(filters) {
       set({ filters, selected: new Set() });
+    },
+
+    setFlagFilter(flagFilter) {
+      set({ flagFilter, selected: new Set() });
     },
 
     selectRoll(id) {

@@ -3,7 +3,15 @@ import { useTranslation } from 'react-i18next';
 import { TagChips } from '@gtp/ui';
 import styles from './library.module.css';
 import { useLibraryStore } from './library-store';
-import { NO_FILTERS, activeFilterCount, isFiltered, type Filters } from './search-query';
+import {
+  NO_FILTERS,
+  activeFilterCount,
+  isFiltered,
+  type FlagFilter,
+  type Filters,
+} from './search-query';
+
+const FLAG_FILTERS: readonly FlagFilter[] = ['all', 'pick', 'reject', 'none'];
 
 /** Typing pauses this long before the grid searches. */
 export const SEARCH_DELAY_MS = 250;
@@ -18,6 +26,8 @@ export function SearchBar({ total }: { total: number | null }) {
   const ids = { film: useId(), camera: useId(), panel: useId() };
   const filters = useLibraryStore((s) => s.filters);
   const setFilters = useLibraryStore((s) => s.setFilters);
+  const flagFilter = useLibraryStore((s) => s.flagFilter);
+  const setFlagFilter = useLibraryStore((s) => s.setFlagFilter);
   const rolls = useLibraryStore((s) => s.rolls);
   const tags = useLibraryStore((s) => s.tags);
   const setNotice = useLibraryStore((s) => s.setNotice);
@@ -69,6 +79,17 @@ export function SearchBar({ total }: { total: number | null }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
+        <select
+          aria-label={t('library.flagFilter.label')}
+          value={flagFilter}
+          onChange={(e) => setFlagFilter(e.target.value as FlagFilter)}
+        >
+          {FLAG_FILTERS.map((value) => (
+            <option key={value} value={value}>
+              {t(`library.flagFilter.${value}`)}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           aria-expanded={open}

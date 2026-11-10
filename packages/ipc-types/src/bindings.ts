@@ -53,6 +53,8 @@ export const commands = {
 	frameList: (query: FrameQuery_Deserialize) => typedError<FramePage_Serialize, AppError_Serialize>(__TAURI_INVOKE("frame_list", { query })),
 	frameGet: (id: FrameId) => typedError<Frame_Serialize, AppError_Serialize>(__TAURI_INVOKE("frame_get", { id })),
 	frameSetNote: (id: FrameId, note: string) => typedError<Frame_Serialize, AppError_Serialize>(__TAURI_INVOKE("frame_set_note", { id, note })),
+	/**  Sets the pick or reject mark of frames (unknown ids are skipped) and returns the changed frames. */
+	frameSetFlag: (ids: FrameId[], flag: FrameFlag) => typedError<FrameSummary_Serialize[], AppError_Serialize>(__TAURI_INVOKE("frame_set_flag", { ids, flag })),
 	/**  Deletes frames (unknown ids are skipped), then their originals and thumbnails. */
 	frameDelete: (ids: FrameId[]) => typedError<DeleteReport, AppError_Serialize>(__TAURI_INVOKE("frame_delete", { ids })),
 	/**
@@ -1071,6 +1073,15 @@ export type FolderCheck_Serialize = {
 /**  One image position on a roll. The pixels live in source files; edits live in the Recipe. */
 export type Frame = Frame_Serialize | Frame_Deserialize;
 
+/**  The pick or reject mark of a frame (culling after a scan). */
+export type FrameFlag = 
+/**  Not judged yet. */
+"none" | 
+/**  Worth editing and exporting. */
+"pick" | 
+/**  To be deleted. */
+"reject";
+
 /**  Identifies one frame of a roll. */
 export type FrameId = string;
 
@@ -1105,6 +1116,8 @@ export type FrameQuery = FrameQuery_Serialize | FrameQuery_Deserialize;
 /**  Which frames to list: one roll's or all, a page at a time (pages count from 0). */
 export type FrameQuery_Deserialize = {
 	roll_id?: RollId | null,
+	/**  Only the frames with this pick or reject mark. */
+	flag?: FrameFlag | null,
 	page: number,
 	page_size: number,
 };
@@ -1112,6 +1125,8 @@ export type FrameQuery_Deserialize = {
 /**  Which frames to list: one roll's or all, a page at a time (pages count from 0). */
 export type FrameQuery_Serialize = {
 	roll_id: RollId | null,
+	/**  Only the frames with this pick or reject mark. */
+	flag: FrameFlag | null,
 	page: number,
 	page_size: number,
 };
@@ -1163,6 +1178,7 @@ export type FrameSummary_Deserialize = {
 	height: number,
 	has_ir: boolean,
 	note: string,
+	flag: FrameFlag,
 	edited_at?: string | null,
 	/**  True when the frame's thumbnail file exists. */
 	has_thumb: boolean,
@@ -1178,6 +1194,7 @@ export type FrameSummary_Serialize = {
 	height: number,
 	has_ir: boolean,
 	note: string,
+	flag: FrameFlag,
 	edited_at: string | null,
 	/**  True when the frame's thumbnail file exists. */
 	has_thumb: boolean,
@@ -1193,6 +1210,8 @@ export type Frame_Deserialize = {
 	height: number,
 	has_ir: boolean,
 	note?: string,
+	/**  The pick or reject mark; not an edit of the picture, so it leaves `edited_at` alone. */
+	flag?: FrameFlag,
 	/**  RFC 3339 timestamps; `edited_at` is `None` until the recipe is first saved. */
 	created_at: string,
 	edited_at?: string | null,
@@ -1208,6 +1227,8 @@ export type Frame_Serialize = {
 	height: number,
 	has_ir: boolean,
 	note: string,
+	/**  The pick or reject mark; not an edit of the picture, so it leaves `edited_at` alone. */
+	flag: FrameFlag,
 	/**  RFC 3339 timestamps; `edited_at` is `None` until the recipe is first saved. */
 	created_at: string,
 	edited_at: string | null,
@@ -1894,6 +1915,7 @@ export type ScanRequest = {
  *  - `iso`: the roll's box ISO or shot ISO.
  *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
  *    its shooting dates overlap the range; a roll without dates never matches a date filter.
+ *  - `flag`: the frame's pick or reject mark.
  */
 export type SearchQuery = SearchQuery_Serialize | SearchQuery_Deserialize;
 
@@ -1908,6 +1930,7 @@ export type SearchQuery = SearchQuery_Serialize | SearchQuery_Deserialize;
  *  - `iso`: the roll's box ISO or shot ISO.
  *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
  *    its shooting dates overlap the range; a roll without dates never matches a date filter.
+ *  - `flag`: the frame's pick or reject mark.
  */
 export type SearchQuery_Deserialize = {
 	text?: string | null,
@@ -1918,6 +1941,7 @@ export type SearchQuery_Deserialize = {
 	film_stock?: string | null,
 	camera?: string | null,
 	iso?: number | null,
+	flag?: FrameFlag | null,
 };
 
 /**
@@ -1931,6 +1955,7 @@ export type SearchQuery_Deserialize = {
  *  - `iso`: the roll's box ISO or shot ISO.
  *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
  *    its shooting dates overlap the range; a roll without dates never matches a date filter.
+ *  - `flag`: the frame's pick or reject mark.
  */
 export type SearchQuery_Serialize = {
 	text: string | null,
@@ -1941,6 +1966,7 @@ export type SearchQuery_Serialize = {
 	film_stock: string | null,
 	camera: string | null,
 	iso: number | null,
+	flag: FrameFlag | null,
 };
 
 export type Settings = Settings_Serialize | Settings_Deserialize;

@@ -12,7 +12,7 @@ mod tag;
 pub use channel::TripletChannel;
 pub use exposure::{ExposureInfo, ExposureRatio};
 pub use flat_field::FlatField;
-pub use frame::{Frame, FrameKind};
+pub use frame::{Frame, FrameFlag, FrameKind};
 pub use roll::{
     check_iso, check_shot_range, partial_date_span, BaseChange, FilmFormat, FrameSize, Roll,
     FILM_BASE_MIN_CONFIDENCE, MAX_ISO,

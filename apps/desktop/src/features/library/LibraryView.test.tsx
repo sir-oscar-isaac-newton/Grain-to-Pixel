@@ -169,6 +169,7 @@ describe('LibraryView', () => {
       );
       expect(ipc.frameList).toHaveBeenLastCalledWith({
         roll_id: 'winter',
+        flag: null,
         page: 0,
         page_size: 200,
       });

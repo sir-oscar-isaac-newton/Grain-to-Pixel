@@ -148,6 +148,7 @@ mod tests {
                 height: 10,
                 has_ir: false,
                 note: String::new(),
+                flag: gtp_core::FrameFlag::None,
                 created_at: String::new(),
                 edited_at: None,
             };
@@ -387,6 +388,7 @@ mod tests {
             height: 10,
             has_ir: false,
             note: String::new(),
+            flag: gtp_core::FrameFlag::None,
             created_at: String::new(),
             edited_at: None,
         };

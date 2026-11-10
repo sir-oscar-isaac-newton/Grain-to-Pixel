@@ -8,7 +8,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use rusqlite_migration::{Migrations, M};
 
 /// Forward-only migrations; the database's `user_version` is the number applied.
-const MIGRATION_SQL: [&str; 9] = [
+const MIGRATION_SQL: [&str; 10] = [
     include_str!("../migrations/0001_init.sql"),
     include_str!("../migrations/0002_search.sql"),
     include_str!("../migrations/0003_export_log.sql"),
@@ -18,6 +18,7 @@ const MIGRATION_SQL: [&str; 9] = [
     include_str!("../migrations/0007_flat_field.sql"),
     include_str!("../migrations/0008_roll_color_balance.sql"),
     include_str!("../migrations/0009_frame_capture_info.sql"),
+    include_str!("../migrations/0010_frame_flag.sql"),
 ];
 
 /// The schema version this build writes.

@@ -1,4 +1,7 @@
-import type { SearchQuery } from '../../shared/ipc';
+import type { FrameFlag, SearchQuery } from '../../shared/ipc';
+
+/** The flag filter of the grid: every frame, or only those with one flag (`none` is unflagged). */
+export type FlagFilter = FrameFlag | 'all';
 
 /** What the search bar and its filters hold, as typed. */
 export interface Filters {
@@ -51,7 +54,11 @@ export function activeFilterCount(filters: Filters): number {
 const blank = (value: string): string | null => value.trim() || null;
 
 /** The backend query for the filters, limited to a roll when one is chosen. */
-export function toQuery(filters: Filters, rollId: string | null): SearchQuery {
+export function toQuery(
+  filters: Filters,
+  rollId: string | null,
+  flag: FlagFilter = 'all',
+): SearchQuery {
   const iso = /^\d+$/.test(filters.iso) ? Number(filters.iso) : null;
   return {
     text: blank(filters.text),
@@ -62,5 +69,6 @@ export function toQuery(filters: Filters, rollId: string | null): SearchQuery {
     film_stock: blank(filters.film),
     camera: blank(filters.camera),
     iso: iso && iso > 0 ? iso : null,
+    ...(flag === 'all' ? {} : { flag }),
   };
 }

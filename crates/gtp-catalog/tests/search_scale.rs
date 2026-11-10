@@ -180,7 +180,7 @@ fn search_over_50000_frames_takes_at_most_100_ms() {
     let dir = TempDir::new("50k");
     let (cat, tags) = big_library(&dir);
     assert_eq!(
-        cat.count_frames(None).unwrap() as usize,
+        cat.count_frames(None, None).unwrap() as usize,
         ROLLS * FRAMES_PER_ROLL
     );
 
@@ -278,6 +278,7 @@ fn reading_goes_on_while_another_connection_writes() {
                     height: 100,
                     has_ir: false,
                     note: format!("frame {i}"),
+                    flag: gtp_core::FrameFlag::None,
                     created_at: String::new(),
                     edited_at: None,
                 })

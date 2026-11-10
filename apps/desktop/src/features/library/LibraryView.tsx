@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUiStore } from '../../app/store';
 import { formatBytes } from '../../shared/format';
+import { frameSetFlag, type FrameFlag } from '../../shared/ipc';
 import { ApplySettingsDialog } from './ApplySettingsDialog';
 import { DeleteFramesDialog } from './DeleteFramesDialog';
 import { ExportDialog } from './ExportDialog';
@@ -10,7 +11,7 @@ import { FrameGrid } from './FrameGrid';
 import { FrameNote } from './FrameNote';
 import { JobsPanel } from './JobsPanel';
 import styles from './library.module.css';
-import { useLibraryStore } from './library-store';
+import { messageOf, useLibraryStore } from './library-store';
 import { RollSidebar } from './RollSidebar';
 import { SearchBar } from './SearchBar';
 import { SelectionTags } from './SelectionTags';
@@ -47,7 +48,32 @@ export function LibraryView() {
   const [deleting, setDeleting] = useState(false);
 
   // Nothing typed: the roll's frames in order. Otherwise the search, best match first.
-  const { fetchPage, queryKey, filtered } = useLibraryQuery();
+  const { fetchPage, queryKey, filtered, fetchRejectedIds } = useLibraryQuery();
+  const [selectingRejected, setSelectingRejected] = useState(false);
+
+  const setFlag = (flag: FrameFlag) => {
+    const { selected: ids, bump, setNotice: say } = useLibraryStore.getState();
+    if (ids.size === 0) return;
+    frameSetFlag([...ids], flag).then(
+      () => bump(),
+      (e: unknown) => say({ key: 'library.notice.flagFailed', values: { message: messageOf(e) } }),
+    );
+  };
+
+  const selectRejected = async () => {
+    const { setSelected, setNotice: say } = useLibraryStore.getState();
+    setSelectingRejected(true);
+    try {
+      const ids = await fetchRejectedIds();
+      setSelected(ids);
+      if (ids.length === 0) say({ key: 'library.notice.noRejected' });
+    } catch (e) {
+      say({ key: 'library.notice.selectRejectedFailed', values: { message: messageOf(e) } });
+    } finally {
+      setSelectingRejected(false);
+    }
+  };
+
   const rollHasName = rolls.some((r) => r.id === rollId);
   const emptyText = filtered
     ? t('library.search.noMatches')
@@ -91,6 +117,13 @@ export function LibraryView() {
                 onClick={() => setApplying(true)}
               >
                 {t('apply.open')}
+              </button>
+              <button
+                type="button"
+                disabled={selectingRejected}
+                onClick={() => void selectRejected()}
+              >
+                {t('library.selectRejected')}
               </button>
               <button
                 type="button"
@@ -143,6 +176,7 @@ export function LibraryView() {
               onTotal={setFound}
               onOpen={(frame, index) => openInDevelop(frame.id, index)}
               onDelete={library.read_only ? undefined : () => setDeleting(true)}
+              onFlag={library.read_only ? undefined : setFlag}
             />
           </div>
         </div>

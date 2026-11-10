@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use gtp_core::recipe::BaseSource;
 use gtp_core::{
-    AppError, BaseChange, ErrorCode, FilmFormat, Frame, FrameId, FrameKind, FrameSize, ImageF32,
-    Roll, RollId,
+    AppError, BaseChange, ErrorCode, FilmFormat, Frame, FrameFlag, FrameId, FrameKind, FrameSize,
+    ImageF32, Roll, RollId,
 };
 use gtp_negative::{auto_film_base, BaseEstimate};
 use serde::{Deserialize, Serialize};
@@ -75,6 +75,9 @@ impl RollInput {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct FrameQuery {
     pub roll_id: Option<RollId>,
+    /// Only the frames with this pick or reject mark.
+    #[serde(default)]
+    pub flag: Option<FrameFlag>,
     pub page: u32,
     pub page_size: u32,
 }
@@ -91,6 +94,7 @@ pub struct FrameSummary {
     pub height: u32,
     pub has_ir: bool,
     pub note: String,
+    pub flag: FrameFlag,
     pub edited_at: Option<String>,
     /// True when the frame's thumbnail file exists.
     pub has_thumb: bool,
@@ -303,8 +307,8 @@ pub fn frame_list(library: &Library, query: FrameQuery) -> Result<FramePage, App
     let offset = page_offset(query.page, query.page_size)?;
     let (frames, total) = library.read(|c| {
         Ok((
-            c.list_frames_page(query.roll_id, offset, query.page_size)?,
-            c.count_frames(query.roll_id)?,
+            c.list_frames_page(query.roll_id, query.flag, offset, query.page_size)?,
+            c.count_frames(query.roll_id, query.flag)?,
         ))
     })?;
     let items = frames.into_iter().map(|f| summary(library, f)).collect();
@@ -342,6 +346,17 @@ pub fn frame_set_note(library: &Library, id: FrameId, note: &str) -> Result<Fram
     library.write(|c| c.set_frame_note(id, note))
 }
 
+/// Sets the pick or reject mark of frames (unknown ids are skipped) and returns the changed
+/// frames. A read-only library is refused. The flag does not count as an edit (`edited_at` stays).
+pub fn frame_set_flag(
+    library: &Library,
+    ids: &[FrameId],
+    flag: FrameFlag,
+) -> Result<Vec<FrameSummary>, AppError> {
+    let frames = library.write(|c| c.set_frames_flag(ids, flag))?;
+    Ok(frames.into_iter().map(|f| summary(library, f)).collect())
+}
+
 /// Deletes frames (unknown ids are skipped), then their originals and thumbnails.
 pub fn frame_delete(library: &Library, ids: &[FrameId]) -> Result<DeleteReport, AppError> {
     let (frames, deleted) = library.write(|c| {
@@ -375,6 +390,7 @@ pub(crate) fn summary(library: &Library, f: Frame) -> FrameSummary {
         height: f.height,
         has_ir: f.has_ir,
         note: f.note,
+        flag: f.flag,
         edited_at: f.edited_at,
         has_thumb,
     }
@@ -495,6 +511,7 @@ mod tests {
             height: 66,
             has_ir: true,
             note: String::new(),
+            flag: FrameFlag::None,
             created_at: String::new(),
             edited_at: None,
         };
@@ -799,6 +816,7 @@ mod tests {
         }
         let query = |page, page_size| FrameQuery {
             roll_id: Some(roll.id),
+            flag: None,
             page,
             page_size,
         };
@@ -822,6 +840,73 @@ mod tests {
             frame_get(t.lib(), with_files.id).unwrap().note,
             "lighthouse"
         );
+    }
+
+    #[test]
+    fn frames_are_flagged_and_listed_by_flag() {
+        let t = TempLib::new("flags");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        let f1 = frame_with_files(t.lib(), roll.id, 1);
+        let f2 = frame_with_files(t.lib(), roll.id, 2);
+        let f3 = frame_with_files(t.lib(), roll.id, 3);
+        let query = |flag| FrameQuery {
+            roll_id: Some(roll.id),
+            flag,
+            page: 0,
+            page_size: 50,
+        };
+
+        let changed =
+            frame_set_flag(t.lib(), &[f1.id, FrameId::new(), f3.id], FrameFlag::Pick).unwrap();
+        let ids: Vec<FrameId> = changed.iter().map(|f| f.id).collect();
+        assert_eq!(ids, vec![f1.id, f3.id], "unknown ids are skipped");
+        assert!(changed.iter().all(|f| f.flag == FrameFlag::Pick));
+        assert!(changed[0].has_thumb, "the summary is complete");
+        frame_set_flag(t.lib(), &[f3.id], FrameFlag::Reject).unwrap();
+
+        let ids_of = |flag| -> Vec<FrameId> {
+            frame_list(t.lib(), query(flag))
+                .unwrap()
+                .items
+                .iter()
+                .map(|f| f.id)
+                .collect()
+        };
+        assert_eq!(ids_of(None).len(), 3);
+        assert_eq!(ids_of(Some(FrameFlag::Pick)), vec![f1.id]);
+        assert_eq!(ids_of(Some(FrameFlag::Reject)), vec![f3.id]);
+        assert_eq!(ids_of(Some(FrameFlag::None)), vec![f2.id]);
+        let page = frame_list(t.lib(), query(Some(FrameFlag::Reject))).unwrap();
+        assert_eq!(page.total, 1, "the total follows the filter");
+        assert_eq!(page.items[0].flag, FrameFlag::Reject);
+
+        assert_eq!(frame_get(t.lib(), f1.id).unwrap().flag, FrameFlag::Pick);
+        frame_set_flag(t.lib(), &[f1.id, f3.id], FrameFlag::None).unwrap();
+        assert_eq!(ids_of(Some(FrameFlag::None)).len(), 3);
+    }
+
+    #[test]
+    fn a_frame_query_without_a_flag_still_parses() {
+        let query: FrameQuery =
+            serde_json::from_str(r#"{"roll_id":null,"page":0,"page_size":10}"#).unwrap();
+        assert_eq!(query.flag, None);
+        let query: FrameQuery =
+            serde_json::from_str(r#"{"roll_id":null,"flag":"reject","page":0,"page_size":10}"#)
+                .unwrap();
+        assert_eq!(query.flag, Some(FrameFlag::Reject));
+    }
+
+    #[test]
+    fn flagging_is_refused_in_a_read_only_library() {
+        let mut t = TempLib::new("flag-read-only");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        let frame = frame_with_files(t.lib(), roll.id, 1);
+        t.lib = None;
+        set_schema_version(&t.dir.join(DB_FILE), SCHEMA_VERSION + 1);
+        t.reopen();
+        let err = frame_set_flag(t.lib(), &[frame.id], FrameFlag::Pick).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LibraryTooNew);
+        assert_eq!(frame_get(t.lib(), frame.id).unwrap().flag, FrameFlag::None);
     }
 
     #[test]

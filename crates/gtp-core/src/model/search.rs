@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 use crate::ids::{RollId, TagId};
+use crate::model::FrameFlag;
 
 /// What to look for in the library. Every part is optional and all given parts must match.
 ///
@@ -12,6 +13,7 @@ use crate::ids::{RollId, TagId};
 /// - `iso`: the roll's box ISO or shot ISO.
 /// - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
 ///   its shooting dates overlap the range; a roll without dates never matches a date filter.
+/// - `flag`: the frame's pick or reject mark.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
@@ -24,4 +26,5 @@ pub struct SearchQuery {
     pub film_stock: Option<String>,
     pub camera: Option<String>,
     pub iso: Option<u32>,
+    pub flag: Option<FrameFlag>,
 }

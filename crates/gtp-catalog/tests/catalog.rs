@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use gtp_catalog::{backup_path, Catalog, SCHEMA_VERSION};
 use gtp_core::{
-    BaseChange, ErrorCode, FilmFormat, Frame, FrameId, FrameKind, FrameSize, Recipe, Roll, RollId,
-    SearchQuery, SourceFile, SourceRole,
+    BaseChange, ErrorCode, FilmFormat, Frame, FrameFlag, FrameId, FrameKind, FrameSize, Recipe,
+    Roll, RollId, SearchQuery, SourceFile, SourceRole,
 };
 use rusqlite::Connection;
 
@@ -82,6 +82,7 @@ fn frame(roll: RollId, index: u32) -> Frame {
         height: 3744,
         has_ir: true,
         note: String::new(),
+        flag: FrameFlag::None,
         created_at: String::new(),
         edited_at: None,
     }
@@ -167,8 +168,8 @@ fn a_v3_library_upgrades_with_a_backup_and_keeps_its_rolls() {
     assert_eq!(old.format, FilmFormat::Mm35);
     drop(cat);
 
-    assert_eq!(SCHEMA_VERSION, 9);
-    assert_eq!(user_version(&dir.db()), 9);
+    assert_eq!(SCHEMA_VERSION, 10);
+    assert_eq!(user_version(&dir.db()), 10);
     assert!(!old.has_flat_field, "an existing roll has no flat field");
     let backup = backup_path(&dir.db(), 3);
     assert!(backup.exists());
@@ -214,7 +215,7 @@ fn a_v7_library_upgrades_to_v8_and_its_rolls_have_no_colour_balance() {
     assert!(cat.store_roll_color_balance(id, [1.0, 2.0, 3.0]).unwrap().1);
     drop(cat);
 
-    assert_eq!(user_version(&dir.db()), 9);
+    assert_eq!(user_version(&dir.db()), 10);
     let backup = backup_path(&dir.db(), 7);
     assert_eq!(user_version(&backup), 7, "the backup is the old schema");
     assert!(Connection::open(&backup)
@@ -1224,7 +1225,7 @@ fn a_v8_library_upgrades_to_v9_and_its_frames_have_no_capture_info() {
     let cat = Catalog::open(&dir.db()).unwrap();
     assert_eq!(cat.capture_info(frame_id).unwrap(), None);
     drop(cat);
-    assert_eq!(user_version(&dir.db()), 9);
+    assert_eq!(user_version(&dir.db()), 10);
     let backup = backup_path(&dir.db(), 8);
     assert_eq!(user_version(&backup), 8, "the backup is the old schema");
     assert!(Connection::open(&backup)
@@ -1352,7 +1353,7 @@ fn an_imported_frame_is_numbered_and_stored_with_its_sources_and_recipe() {
             .code,
         ErrorCode::NotFound
     );
-    assert_eq!(cat.count_frames(None).unwrap(), 2);
+    assert_eq!(cat.count_frames(None, None).unwrap(), 2);
 }
 
 #[test]
@@ -1409,7 +1410,7 @@ fn rolls_and_frames_list_in_order_and_meta_round_trips() {
 
     let fb = cat.insert_frame(&frame(b.id, 1)).unwrap();
     let page = |roll, offset, limit| -> Vec<FrameId> {
-        cat.list_frames_page(roll, offset, limit)
+        cat.list_frames_page(roll, None, offset, limit)
             .unwrap()
             .iter()
             .map(|f| f.id)
@@ -1423,9 +1424,9 @@ fn rolls_and_frames_list_in_order_and_meta_round_trips() {
     assert_eq!(page(None, 1, 1), vec![f1.id]);
     assert_eq!(page(Some(a.id), 0, 10), vec![f1.id, f3.id]);
     assert!(page(Some(a.id), 5, 10).is_empty());
-    assert_eq!(cat.count_frames(None).unwrap(), 3);
-    assert_eq!(cat.count_frames(Some(a.id)).unwrap(), 2);
-    assert_eq!(cat.count_frames(Some(RollId::new())).unwrap(), 0);
+    assert_eq!(cat.count_frames(None, None).unwrap(), 3);
+    assert_eq!(cat.count_frames(Some(a.id), None).unwrap(), 2);
+    assert_eq!(cat.count_frames(Some(RollId::new()), None).unwrap(), 0);
 
     assert_eq!(cat.meta_get("library_name").unwrap(), None);
     cat.meta_set("library_name", "Negatives").unwrap();
@@ -1468,4 +1469,187 @@ fn exports_are_logged_per_frame_in_order_and_outlive_the_frame() {
     // The log is kept when the frame is deleted.
     catalog.delete_frames(&[a]).unwrap();
     assert_eq!(catalog.exports_of(a).unwrap().len(), 2);
+}
+
+#[test]
+fn a_v9_library_upgrades_to_v10_and_every_frame_is_unflagged() {
+    let dir = TempDir::new("upgrade-v9");
+    let (roll_id, frame_id) = (RollId::new(), FrameId::new());
+    {
+        let conn = Connection::open(dir.db()).unwrap();
+        for sql in [
+            include_str!("../migrations/0001_init.sql"),
+            include_str!("../migrations/0002_search.sql"),
+            include_str!("../migrations/0003_export_log.sql"),
+            include_str!("../migrations/0004_roll_base_confidence.sql"),
+            include_str!("../migrations/0005_roll_frame_size.sql"),
+            include_str!("../migrations/0006_frame_scan.sql"),
+            include_str!("../migrations/0007_flat_field.sql"),
+            include_str!("../migrations/0008_roll_color_balance.sql"),
+            include_str!("../migrations/0009_frame_capture_info.sql"),
+        ] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO roll(id, name, created_at) VALUES (?1, 'Old', '2026-01-01T00:00:00Z')",
+            [roll_id.to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO frame(id, roll_id, index_in_roll, kind, width, height, has_ir, note,
+                               created_at)
+             VALUES (?1, ?2, 1, 'ScanRgbIr', 10, 10, 1, '', '2026-01-01T00:00:00Z')",
+            [frame_id.to_string(), roll_id.to_string()],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 9).unwrap();
+    }
+    let cat = Catalog::open(&dir.db()).unwrap();
+    assert_eq!(cat.get_frame(frame_id).unwrap().flag, FrameFlag::None);
+    drop(cat);
+    assert_eq!(user_version(&dir.db()), 10);
+    assert_eq!(user_version(&backup_path(&dir.db(), 9)), 9);
+
+    // The column only takes the three words.
+    let conn = Connection::open(dir.db()).unwrap();
+    assert!(conn.execute("UPDATE frame SET flag = 'star'", []).is_err());
+}
+
+#[test]
+fn frames_are_flagged_in_one_go_and_the_flag_is_not_an_edit() {
+    let dir = TempDir::new("flags");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    let f1 = cat.insert_frame(&frame(r.id, 1)).unwrap();
+    let f2 = cat.insert_frame(&frame(r.id, 2)).unwrap();
+    let f3 = cat.insert_frame(&frame(r.id, 3)).unwrap();
+    assert_eq!(f1.flag, FrameFlag::None, "a new frame is unflagged");
+    cat.save_recipe(f2.id, &Recipe::default()).unwrap();
+    let edited_at = cat.get_frame(f2.id).unwrap().edited_at;
+    assert!(edited_at.is_some());
+
+    // Unknown ids are skipped and a repeated id comes back once.
+    let changed = cat
+        .set_frames_flag(&[f2.id, FrameId::new(), f1.id, f2.id], FrameFlag::Pick)
+        .unwrap();
+    let ids: Vec<FrameId> = changed.iter().map(|f| f.id).collect();
+    assert_eq!(ids, vec![f2.id, f1.id]);
+    assert!(changed.iter().all(|f| f.flag == FrameFlag::Pick));
+    assert_eq!(cat.get_frame(f3.id).unwrap().flag, FrameFlag::None);
+    assert_eq!(cat.get_frame(f2.id).unwrap().edited_at, edited_at);
+    assert!(cat.get_frame(f1.id).unwrap().edited_at.is_none());
+
+    cat.set_frames_flag(&[f1.id], FrameFlag::Reject).unwrap();
+    assert_eq!(cat.get_frame(f1.id).unwrap().flag, FrameFlag::Reject);
+    cat.set_frames_flag(&[f1.id, f2.id], FrameFlag::None)
+        .unwrap();
+    let flagged = cat
+        .list_frames(r.id)
+        .unwrap()
+        .iter()
+        .filter(|f| f.flag != FrameFlag::None)
+        .count();
+    assert_eq!(flagged, 0);
+    assert!(cat
+        .set_frames_flag(&[], FrameFlag::Pick)
+        .unwrap()
+        .is_empty());
+
+    // A flag survives a restart.
+    cat.set_frames_flag(&[f3.id], FrameFlag::Reject).unwrap();
+    drop(cat);
+    let cat = Catalog::open(&dir.db()).unwrap();
+    assert_eq!(cat.get_frame(f3.id).unwrap().flag, FrameFlag::Reject);
+}
+
+#[test]
+fn a_flag_text_the_catalog_does_not_know_is_a_database_error() {
+    let dir = TempDir::new("flag-bad");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    let f = cat.insert_frame(&frame(r.id, 1)).unwrap();
+    drop(cat);
+    {
+        // Past the CHECK constraint, as a damaged file could be.
+        let conn = Connection::open(dir.db()).unwrap();
+        conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+            .unwrap();
+        conn.execute("UPDATE frame SET flag = 'star'", []).unwrap();
+    }
+    let cat = Catalog::open(&dir.db()).unwrap();
+    let err = cat.get_frame(f.id).unwrap_err();
+    assert_eq!(err.code, ErrorCode::Db);
+    assert!(err
+        .details
+        .unwrap_or_default()
+        .contains("unknown frame flag"));
+}
+
+#[test]
+fn the_flag_filters_the_frame_pages_and_their_count() {
+    let dir = TempDir::new("flag-list");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let a = cat.insert_roll(&roll("A")).unwrap();
+    let b = cat.insert_roll(&roll("B")).unwrap();
+    let a1 = cat.insert_frame(&frame(a.id, 1)).unwrap();
+    let a2 = cat.insert_frame(&frame(a.id, 2)).unwrap();
+    let a3 = cat.insert_frame(&frame(a.id, 3)).unwrap();
+    let b1 = cat.insert_frame(&frame(b.id, 1)).unwrap();
+    cat.set_frames_flag(&[a1.id, b1.id], FrameFlag::Pick)
+        .unwrap();
+    cat.set_frames_flag(&[a2.id], FrameFlag::Reject).unwrap();
+
+    let page = |roll, flag| -> Vec<FrameId> {
+        cat.list_frames_page(roll, flag, 0, 50)
+            .unwrap()
+            .iter()
+            .map(|f| f.id)
+            .collect()
+    };
+    assert_eq!(page(None, Some(FrameFlag::Pick)), vec![b1.id, a1.id]);
+    assert_eq!(page(Some(a.id), Some(FrameFlag::Pick)), vec![a1.id]);
+    assert_eq!(page(Some(a.id), Some(FrameFlag::Reject)), vec![a2.id]);
+    assert_eq!(page(Some(a.id), Some(FrameFlag::None)), vec![a3.id]);
+    assert_eq!(page(None, None).len(), 4);
+    let count = |roll, flag| cat.count_frames(roll, flag).unwrap();
+    assert_eq!(count(None, Some(FrameFlag::Pick)), 2);
+    assert_eq!(count(Some(a.id), Some(FrameFlag::Pick)), 1);
+    assert_eq!(count(Some(b.id), Some(FrameFlag::Reject)), 0);
+    assert_eq!(count(None, None), 4);
+}
+
+#[test]
+fn the_flag_filters_a_search_alone_and_with_text() {
+    let dir = TempDir::new("flag-search");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let a = cat.insert_roll(&roll("Summer")).unwrap();
+    let f1 = cat.insert_frame(&frame(a.id, 1)).unwrap();
+    let f2 = cat.insert_frame(&frame(a.id, 2)).unwrap();
+    let f3 = cat.insert_frame(&frame(a.id, 3)).unwrap();
+    cat.set_frame_note(f1.id, "harbour").unwrap();
+    cat.set_frame_note(f2.id, "harbour").unwrap();
+    cat.set_frame_note(f3.id, "market").unwrap();
+    cat.set_frames_flag(&[f1.id, f3.id], FrameFlag::Pick)
+        .unwrap();
+    cat.set_frames_flag(&[f2.id], FrameFlag::Reject).unwrap();
+
+    let with = |flag, text: Option<&str>| SearchQuery {
+        flag,
+        text: text.map(str::to_owned),
+        ..SearchQuery::default()
+    };
+    let mut picked = vec![f1.id, f3.id];
+    picked.sort();
+    assert_eq!(found(&cat, &with(Some(FrameFlag::Pick), None)), picked);
+    assert_eq!(
+        found(&cat, &with(Some(FrameFlag::Reject), None)),
+        vec![f2.id]
+    );
+    assert!(found(&cat, &with(Some(FrameFlag::None), None)).is_empty());
+    assert_eq!(
+        found(&cat, &with(Some(FrameFlag::Pick), Some("harbour"))),
+        vec![f1.id]
+    );
+    assert!(found(&cat, &with(Some(FrameFlag::Reject), Some("market"))).is_empty());
+    assert_eq!(found(&cat, &with(None, Some("harbour"))).len(), 2);
 }

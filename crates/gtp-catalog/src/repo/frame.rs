@@ -2,13 +2,17 @@
 
 use rusqlite::{params, OptionalExtension, Row};
 
-use gtp_core::{AppError, ErrorCode, Frame, FrameId, FrameKind, RollId};
+use gtp_core::{AppError, ErrorCode, Frame, FrameFlag, FrameId, FrameKind, RollId};
 
 use super::{check_len, not_found, parse_col, MAX_NOTE_CHARS, NOW};
 use crate::db::db_error;
 use crate::{fts, Catalog};
 
 const COLUMNS: &str =
+    "id, roll_id, index_in_roll, kind, width, height, has_ir, note, created_at, edited_at, flag";
+
+/// The columns an insert sets; the flag starts as the column default (`none`).
+const INSERT_COLUMNS: &str =
     "id, roll_id, index_in_roll, kind, width, height, has_ir, note, created_at, edited_at";
 
 /// The frame columns of COLUMNS, each prefixed with the alias `f`..
@@ -40,6 +44,14 @@ pub(super) fn read(row: &Row<'_>) -> rusqlite::Result<Frame> {
             ))
         }
     };
+    let flag: String = row.get(10)?;
+    let flag = FrameFlag::parse(&flag).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            10,
+            rusqlite::types::Type::Text,
+            format!("unknown frame flag {flag:?}").into(),
+        )
+    })?;
     Ok(Frame {
         id: parse_col(row, 0)?,
         roll_id: parse_col(row, 1)?,
@@ -49,6 +61,7 @@ pub(super) fn read(row: &Row<'_>) -> rusqlite::Result<Frame> {
         height: row.get(5)?,
         has_ir: row.get(6)?,
         note: row.get(7)?,
+        flag,
         created_at: row.get(8)?,
         edited_at: row.get(9)?,
     })
@@ -62,7 +75,7 @@ impl Catalog {
         let tx = self.conn.transaction().map_err(db_error)?;
         tx.execute(
             &format!(
-                "INSERT INTO frame({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, {NOW}, NULL)"
+                "INSERT INTO frame({INSERT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, {NOW}, NULL)"
             ),
             params![
                 frame.id.to_string(),
@@ -116,10 +129,12 @@ impl Catalog {
         frames
     }
 
-    /// One page of frames: those of `roll`, or of every roll (newest roll first), in roll order.
+    /// One page of frames: those of `roll`, or of every roll (newest roll first), in roll order;
+    /// with `flag`, only the frames carrying that mark.
     pub fn list_frames_page(
         &self,
         roll: Option<RollId>,
+        flag: Option<FrameFlag>,
         offset: u32,
         limit: u32,
     ) -> Result<Vec<Frame>, AppError> {
@@ -128,25 +143,39 @@ impl Catalog {
             .conn
             .prepare(&format!(
                 "SELECT {columns} FROM frame f JOIN roll r ON r.id = f.roll_id
-                 WHERE ?1 IS NULL OR f.roll_id = ?1
+                 WHERE (?1 IS NULL OR f.roll_id = ?1) AND (?2 IS NULL OR f.flag = ?2)
                  ORDER BY r.created_at DESC, r.rowid DESC, f.index_in_roll, f.rowid
-                 LIMIT ?2 OFFSET ?3"
+                 LIMIT ?3 OFFSET ?4"
             ))
             .map_err(db_error)?;
         let frames = stmt
-            .query_map(params![roll.map(|r| r.to_string()), limit, offset], read)
+            .query_map(
+                params![
+                    roll.map(|r| r.to_string()),
+                    flag.map(FrameFlag::as_str),
+                    limit,
+                    offset
+                ],
+                read,
+            )
             .map_err(db_error)?
             .collect::<Result<_, _>>()
             .map_err(db_error);
         frames
     }
 
-    /// How many frames `roll` has, or the library when `None`.
-    pub fn count_frames(&self, roll: Option<RollId>) -> Result<u32, AppError> {
+    /// How many frames `roll` has, or the library when `None`; with `flag`, only those carrying
+    /// that mark.
+    pub fn count_frames(
+        &self,
+        roll: Option<RollId>,
+        flag: Option<FrameFlag>,
+    ) -> Result<u32, AppError> {
         self.conn
             .query_row(
-                "SELECT count(*) FROM frame WHERE ?1 IS NULL OR roll_id = ?1",
-                [roll.map(|r| r.to_string())],
+                "SELECT count(*) FROM frame
+                 WHERE (?1 IS NULL OR roll_id = ?1) AND (?2 IS NULL OR flag = ?2)",
+                params![roll.map(|r| r.to_string()), flag.map(FrameFlag::as_str)],
                 |row| row.get(0),
             )
             .map_err(db_error)
@@ -168,6 +197,31 @@ impl Catalog {
         fts::refresh_frame(&tx, id)?;
         tx.commit().map_err(db_error)?;
         self.get_frame(id)
+    }
+
+    /// Sets the pick or reject mark of frames, in one transaction, and returns the frames that
+    /// exist, in the order of `ids` (unknown ids are skipped, a repeated id is returned once).
+    /// A flag is a judgement, not an edit of the picture, so `edited_at` is left unchanged.
+    pub fn set_frames_flag(
+        &mut self,
+        ids: &[FrameId],
+        flag: FrameFlag,
+    ) -> Result<Vec<Frame>, AppError> {
+        let tx = self.conn.transaction().map_err(db_error)?;
+        let mut found: Vec<FrameId> = Vec::new();
+        for id in ids {
+            let changed = tx
+                .execute(
+                    "UPDATE frame SET flag = ?2 WHERE id = ?1",
+                    params![id.to_string(), flag.as_str()],
+                )
+                .map_err(db_error)?;
+            if changed > 0 && !found.contains(id) {
+                found.push(*id);
+            }
+        }
+        tx.commit().map_err(db_error)?;
+        found.into_iter().map(|id| self.get_frame(id)).collect()
     }
 
     /// Deletes frames with their sources, recipes and tag links; unknown ids are skipped. Returns

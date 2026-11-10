@@ -229,6 +229,7 @@ pub(super) fn store_merged(
         height,
         has_ir: false,
         note: String::new(),
+        flag: gtp_core::FrameFlag::None,
         created_at: String::new(),
         edited_at: None,
     };
@@ -738,7 +739,12 @@ mod tests {
         let skipped: Vec<_> = result.skipped.iter().map(|f| f.path.as_str()).collect();
         assert!(skipped.iter().all(|p| p.contains("f1")), "{skipped:?}");
         // No folder or thumbnail is left for the skipped triplet.
-        assert_eq!(s.lib().read(|c| c.count_frames(Some(s.roll))).unwrap(), 2);
+        assert_eq!(
+            s.lib()
+                .read(|c| c.count_frames(Some(s.roll), None))
+                .unwrap(),
+            2
+        );
         let originals = s.lib().root().join("originals").join(s.roll.to_string());
         assert_eq!(std::fs::read_dir(&originals).unwrap().count(), 2);
     }
@@ -780,7 +786,12 @@ mod tests {
         };
         let err = import_triplets(s.lib(), s.roll, &s.files, &s.fake, &ctx, &events).unwrap_err();
         assert_eq!(err.code, ErrorCode::Cancelled);
-        assert_eq!(s.lib().read(|c| c.count_frames(Some(s.roll))).unwrap(), 2);
+        assert_eq!(
+            s.lib()
+                .read(|c| c.count_frames(Some(s.roll), None))
+                .unwrap(),
+            2
+        );
         let originals = s.lib().root().join("originals").join(s.roll.to_string());
         assert_eq!(std::fs::read_dir(&originals).unwrap().count(), 2);
     }
@@ -793,7 +804,12 @@ mod tests {
             let err = run(&s, &paths).unwrap_err();
             assert_eq!(err.code, ErrorCode::InvalidInput, "{n}");
         }
-        assert_eq!(s.lib().read(|c| c.count_frames(Some(s.roll))).unwrap(), 0);
+        assert_eq!(
+            s.lib()
+                .read(|c| c.count_frames(Some(s.roll), None))
+                .unwrap(),
+            0
+        );
     }
 
     #[test]

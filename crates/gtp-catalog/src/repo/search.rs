@@ -96,6 +96,11 @@ fn compile(q: &SearchQuery) -> Result<Compiled, AppError> {
         params.extend(std::iter::repeat_n(Value::Integer(i64::from(iso)), 2));
     }
 
+    if let Some(flag) = q.flag {
+        wh.push("f.flag = ?".into());
+        params.push(Value::Text(flag.as_str().to_owned()));
+    }
+
     let mut tags = q.tags_all.clone();
     tags.sort();
     tags.dedup();

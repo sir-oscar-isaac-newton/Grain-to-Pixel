@@ -2284,3 +2284,27 @@ ROUTES: none new (frame_delete and frame_set_note exist).
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: out of scope: a recycle bin or undo of delete, pick or reject culling, editing the notes of many frames at once.
+
+## U-20
+title: Pick and reject culling in the Library
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: U-01, U-19
+adr: no
+spec: specification sections 4, 5, 6 and 7
+desc: After scanning a roll, the first job is to choose the frames worth editing. Frames have no pick or reject mark today, and the frame query filters only by roll. Add a flag per frame (none, pick, reject), keys to set it in the Library grid, a filter on it, and a way to export only the picked frames.
+ac:
+- A frame is unflagged, picked or rejected; the flag is stored in the library and survives a restart
+- In the Library grid, P picks, X rejects and U clears the flag of the selected frames; the grid shows the flag on each thumbnail
+- The grid can be filtered to all, picked, rejected or unflagged frames, within a roll or across the library
+- Select rejected selects all rejected frames of the current view, so they can be deleted with the delete of U-19
+- Export can be limited to picked frames
+- A migration test (an old library opens, all frames unflagged), service tests for set and filter, component tests for the keys and the filter; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-catalog (migration, frame repo), crates/gtp-core (the flag type), crates/gtp-app/src/services/roll_frame.rs (set, and the filter on FrameQuery), apps/desktop/src-tauri/src/commands/frame.rs, apps/desktop/src/features/library, the export dialog, en.json, packages/ipc-types.
+ROUTES: frame_set_flag(ids, flag) -> the changed frames; FrameQuery gains an optional flag filter. Approved by the owner on 2026-11-09.
+MIGRATIONS: one column `flag` on `frame` (none, pick, reject; default none). Approved by the owner on 2026-11-09.
+TESTS: as in ac.
+NOTES: out of scope: star ratings, colour labels, flags written into exported files. The specification's domain model, storage and command sections are updated in the same change.

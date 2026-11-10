@@ -21,6 +21,7 @@ import {
   type CrashNote,
   type DeviceInfo,
   type ExportedFile,
+  type ExportPreset,
   type ExposureInfo_Serialize,
   type FocusCheck_Serialize,
   type FocusPattern,
@@ -30,6 +31,7 @@ import {
   type FrameFlag,
   type ImportResult,
   type ImportWarning,
+  type LastExport_Serialize,
   type LevelsScope,
   type LibraryDetails,
   type LibraryInfo,
@@ -68,6 +70,7 @@ export type {
   CrashNote,
   DeviceInfo,
   ExportedFile,
+  ExportPreset,
   FailedExport,
   FilmFormat,
   FlatFieldInfo,
@@ -249,6 +252,9 @@ export async function importFiles(...args: Args<'importFiles'>): Promise<Data<'i
 
 /** What to export: format, colour space, JPEG quality, destination folder and naming template. */
 export type ExportOptions = Args<'exportStart'>[1];
+
+/** The options and preset of the export started last, kept in the settings. */
+export type LastExport = LastExport_Serialize;
 
 /**
  * Starts exporting frames at full resolution; returns the job id at once. Progress and the

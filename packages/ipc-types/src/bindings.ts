@@ -812,6 +812,15 @@ export type ExportOptions = {
 	template: string,
 };
 
+/**
+ *  A named set of export options (U-21). The name is plain text the user typed, or one of the two
+ *  built-in names, which are stored as English text and not translated.
+ */
+export type ExportPreset = {
+	name: string,
+	options: ExportOptions,
+};
+
 /**  What an export did. */
 export type ExportResult = ExportResult_Serialize | ExportResult_Deserialize;
 
@@ -1493,6 +1502,21 @@ export type JobResult_Serialize =
 	kind: "Calibrated",
 } & CalibrationResult_Serialize;
 
+/**  The options of the last export started, and the preset they were chosen from, if any. */
+export type LastExport = LastExport_Serialize | LastExport_Deserialize;
+
+/**  The options of the last export started, and the preset they were chosen from, if any. */
+export type LastExport_Deserialize = {
+	options: ExportOptions,
+	preset?: string | null,
+};
+
+/**  The options of the last export started, and the preset they were chosen from, if any. */
+export type LastExport_Serialize = {
+	options: ExportOptions,
+	preset: string | null,
+};
+
 /**  Which end of the levels a picked area sets. */
 export type LevelsPoint = "white" | "black";
 
@@ -2005,6 +2029,13 @@ export type SettingsPatch_Deserialize = {
 	focus_reference?: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])] | null,
 	/**  Clears the focus check's flat reference. Not together with `focus_reference`. */
 	clear_focus_reference?: boolean | null,
+	/**
+	 *  Replaces the whole list of export presets (names are trimmed, and must be unique without
+	 *  regard to case).
+	 */
+	export_presets?: ExportPreset[] | null,
+	/**  Records the options of the export just started and the preset they came from. */
+	last_export?: LastExport_Deserialize | null,
 };
 
 /**  Settings to change; fields left out keep their value. The last library is set by opening one. */
@@ -2019,6 +2050,13 @@ export type SettingsPatch_Serialize = {
 	focus_reference: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])] | null,
 	/**  Clears the focus check's flat reference. Not together with `focus_reference`. */
 	clear_focus_reference: boolean | null,
+	/**
+	 *  Replaces the whole list of export presets (names are trimmed, and must be unique without
+	 *  regard to case).
+	 */
+	export_presets: ExportPreset[] | null,
+	/**  Records the options of the export just started and the preset they came from. */
+	last_export: LastExport_Serialize | null,
 };
 
 export type Settings_Deserialize = {
@@ -2040,6 +2078,13 @@ export type Settings_Deserialize = {
 	 *  Saved and cleared through `settings_set` (`focus_reference`, `clear_focus_reference`).
 	 */
 	focus_reference?: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])] | null,
+	/**
+	 *  The export presets. A file without this key gets the two built-in ones; an empty list stays
+	 *  empty, so deleting both sticks.
+	 */
+	export_presets?: ExportPreset[],
+	/**  What the export dialog starts from: the options of the last export and their preset. */
+	last_export?: LastExport_Deserialize | null,
 };
 
 export type Settings_Serialize = {
@@ -2061,6 +2106,13 @@ export type Settings_Serialize = {
 	 *  Saved and cleared through `settings_set` (`focus_reference`, `clear_focus_reference`).
 	 */
 	focus_reference: [([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)]), ([(number | null), (number | null), (number | null)])] | null,
+	/**
+	 *  The export presets. A file without this key gets the two built-in ones; an empty list stays
+	 *  empty, so deleting both sticks.
+	 */
+	export_presets: ExportPreset[],
+	/**  What the export dialog starts from: the options of the last export and their preset. */
+	last_export: LastExport_Serialize | null,
 };
 
 /**

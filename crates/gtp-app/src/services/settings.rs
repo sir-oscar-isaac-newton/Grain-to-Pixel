@@ -9,10 +9,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use gtp_capture::{CaptureProfile, CaptureProfilePatch};
+use gtp_core::recipe::OutputSpace;
 use gtp_core::{AppError, ErrorCode, ExposureInfo, Look};
 use serde::{Deserialize, Serialize};
 
 use super::capture_levels::{LevelsScope, SavedLevels};
+use super::export::{ExportFormat, ExportOptions};
 use super::focus::{validate_reference, Map};
 
 /// Window sizes accepted, in logical pixels.
@@ -67,7 +69,56 @@ impl Default for Flags {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+/// A named set of export options (U-21). The name is plain text the user typed, or one of the two
+/// built-in names, which are stored as English text and not translated.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ExportPreset {
+    pub name: String,
+    pub options: ExportOptions,
+}
+
+/// The options of the last export started, and the preset they were chosen from, if any.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct LastExport {
+    pub options: ExportOptions,
+    pub preset: Option<String>,
+}
+
+/// The file name template of the built-in presets.
+const DEFAULT_TEMPLATE: &str = "{roll}_{index:03}";
+
+/// The two presets a settings file without any starts with: an archive copy and a copy to share.
+/// Neither names a folder, so choosing one keeps the folder already chosen.
+pub fn default_export_presets() -> Vec<ExportPreset> {
+    let preset = |name: &str, format, space, jpeg_quality| ExportPreset {
+        name: name.to_owned(),
+        options: ExportOptions {
+            format,
+            space,
+            jpeg_quality,
+            dest_dir: String::new(),
+            template: DEFAULT_TEMPLATE.to_owned(),
+        },
+    };
+    vec![
+        preset(
+            "Archive (TIFF 16-bit)",
+            ExportFormat::Tiff16,
+            OutputSpace::Prophoto,
+            92,
+        ),
+        preset(
+            "Share (JPEG sRGB)",
+            ExportFormat::Jpeg,
+            OutputSpace::Srgb,
+            90,
+        ),
+    ]
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
 pub struct Settings {
@@ -98,6 +149,31 @@ pub struct Settings {
     /// relative to its best region, which later maps are divided by to leave what is the film's.
     /// Saved and cleared through `settings_set` (`focus_reference`, `clear_focus_reference`).
     pub focus_reference: Option<Map>,
+    /// The export presets. A file without this key gets the two built-in ones; an empty list stays
+    /// empty, so deleting both sticks.
+    #[serde(default = "default_export_presets")]
+    pub export_presets: Vec<ExportPreset>,
+    /// What the export dialog starts from: the options of the last export and their preset.
+    pub last_export: Option<LastExport>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            last_library: None,
+            window: None,
+            theme: Theme::default(),
+            starting_look: Look::default(),
+            flags: Flags::default(),
+            keys: BTreeMap::new(),
+            capture: CaptureProfile::default(),
+            saved_levels: SavedLevels::default(),
+            last_update_check: None,
+            focus_reference: None,
+            export_presets: default_export_presets(),
+            last_export: None,
+        }
+    }
 }
 
 impl Settings {
@@ -138,6 +214,60 @@ pub struct SettingsPatch {
     pub focus_reference: Option<Map>,
     /// Clears the focus check's flat reference. Not together with `focus_reference`.
     pub clear_focus_reference: Option<bool>,
+    /// Replaces the whole list of export presets (names are trimmed, and must be unique without
+    /// regard to case).
+    pub export_presets: Option<Vec<ExportPreset>>,
+    /// Records the options of the export just started and the preset they came from.
+    pub last_export: Option<LastExport>,
+}
+
+fn check_quality(options: &ExportOptions) -> Result<(), AppError> {
+    if (1..=100).contains(&options.jpeg_quality) {
+        Ok(())
+    } else {
+        Err(
+            AppError::new(ErrorCode::InvalidInput, "JPEG quality runs from 1 to 100.")
+                .with_details(options.jpeg_quality.to_string()),
+        )
+    }
+}
+
+/// The presets with trimmed names, or why they are refused: an empty or repeated name (compared
+/// without case), a quality outside 1 to 100, or a file name template that is empty or names a
+/// folder. The folder may be empty.
+fn checked_presets(presets: &[ExportPreset]) -> Result<Vec<ExportPreset>, AppError> {
+    let invalid = |message: &str, details: String| {
+        AppError::new(ErrorCode::InvalidInput, message).with_details(details)
+    };
+    let mut seen: Vec<String> = Vec::new();
+    let mut checked = Vec::with_capacity(presets.len());
+    for preset in presets {
+        let name = preset.name.trim();
+        if name.is_empty() {
+            return Err(invalid("A preset needs a name.", String::new()));
+        }
+        let key = name.to_lowercase();
+        if seen.contains(&key) {
+            return Err(invalid(
+                "Two presets cannot have the same name.",
+                name.to_owned(),
+            ));
+        }
+        seen.push(key);
+        check_quality(&preset.options)?;
+        let template = &preset.options.template;
+        if template.trim().is_empty() || template.contains(['/', '\\']) {
+            return Err(invalid(
+                "A preset needs a file name without folders.",
+                format!("{name}: {template:?}"),
+            ));
+        }
+        checked.push(ExportPreset {
+            name: name.to_owned(),
+            options: preset.options.clone(),
+        });
+    }
+    Ok(checked)
 }
 
 /// Key bindings must be few, with names of a sensible length, and no two actions may share a key
@@ -216,6 +346,13 @@ impl Settings {
             }
             (None, Some(true)) => self.focus_reference = None,
             (None, _) => {}
+        }
+        if let Some(presets) = &patch.export_presets {
+            self.export_presets = checked_presets(presets)?;
+        }
+        if let Some(last) = &patch.last_export {
+            check_quality(&last.options)?;
+            self.last_export = Some(last.clone());
         }
         if let Some(f) = patch.flags {
             let flags = &mut self.flags;
@@ -949,6 +1086,164 @@ mod tests {
         assert!(note.is_some_and(|n| n.contains("saved levels invalid")));
         assert_eq!(store.saved_levels(), SavedLevels::default());
         assert_eq!(store.get().theme, Theme::Dark);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    fn preset(name: &str, format: ExportFormat) -> ExportPreset {
+        ExportPreset {
+            name: name.to_owned(),
+            options: ExportOptions {
+                format,
+                space: OutputSpace::Srgb,
+                jpeg_quality: 80,
+                dest_dir: "D:/Out".to_owned(),
+                template: "{roll}-{index}".to_owned(),
+            },
+        }
+    }
+
+    fn with_presets(presets: Vec<ExportPreset>) -> SettingsPatch {
+        SettingsPatch {
+            export_presets: Some(presets),
+            ..SettingsPatch::default()
+        }
+    }
+
+    #[test]
+    fn an_old_file_gets_the_two_default_presets_but_an_empty_list_stays_empty() {
+        let path = temp_file("presets-old");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        let presets = store.get().export_presets;
+        assert_eq!(presets, default_export_presets());
+        assert_eq!(Settings::default().export_presets, presets);
+        let names: Vec<&str> = presets.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Archive (TIFF 16-bit)", "Share (JPEG sRGB)"]);
+        assert_eq!(presets[0].options.format, ExportFormat::Tiff16);
+        assert_eq!(presets[0].options.space, OutputSpace::Prophoto);
+        assert_eq!(presets[0].options.jpeg_quality, 92);
+        assert_eq!(presets[1].options.format, ExportFormat::Jpeg);
+        assert_eq!(presets[1].options.space, OutputSpace::Srgb);
+        assert_eq!(presets[1].options.jpeg_quality, 90);
+        assert!(presets.iter().all(|p| p.options.dest_dir.is_empty()));
+        assert!(presets
+            .iter()
+            .all(|p| p.options.template == "{roll}_{index:03}"));
+        assert_eq!(store.get().last_export, None);
+
+        std::fs::write(&path, r#"{"export_presets":[]}"#).unwrap();
+        let (empty, _) = SettingsStore::load(&path);
+        assert!(empty.get().export_presets.is_empty());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn presets_are_saved_updated_and_deleted_through_a_patch_and_kept_across_a_reload() {
+        let path = temp_file("presets-crud");
+        let (store, _) = SettingsStore::load(&path);
+        let mut list = store.get().export_presets;
+        list.push(preset("  Web  ", ExportFormat::Jpeg));
+        let saved = store.update(&with_presets(list)).unwrap();
+        assert_eq!(saved.export_presets.len(), 3);
+        assert_eq!(
+            saved.export_presets[2].name, "Web",
+            "the name is stored trimmed"
+        );
+
+        // Update one, with an empty folder (allowed).
+        let mut changed = saved.export_presets.clone();
+        changed[2].options.jpeg_quality = 70;
+        changed[2].options.dest_dir = String::new();
+        store.update(&with_presets(changed.clone())).unwrap();
+
+        let last = LastExport {
+            options: changed[2].options.clone(),
+            preset: Some("Web".to_owned()),
+        };
+        store
+            .update(&SettingsPatch {
+                last_export: Some(last.clone()),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        let (reloaded, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert_eq!(reloaded.get().export_presets, changed);
+        assert_eq!(reloaded.get().last_export, Some(last));
+
+        // Delete all of them: the empty list sticks after a reload, and last_export is untouched.
+        store.update(&with_presets(Vec::new())).unwrap();
+        let (reloaded, _) = SettingsStore::load(&path);
+        assert!(reloaded.get().export_presets.is_empty());
+        assert!(reloaded.get().last_export.is_some());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn refused_presets_and_last_exports_change_and_save_nothing() {
+        let path = temp_file("presets-refused");
+        let (store, _) = SettingsStore::load(&path);
+        let before = store.get();
+        let with = |edit: fn(&mut ExportPreset)| {
+            let mut p = preset("Web", ExportFormat::Jpeg);
+            edit(&mut p);
+            p
+        };
+        let bad: Vec<Vec<ExportPreset>> = vec![
+            vec![
+                preset("Web", ExportFormat::Jpeg),
+                preset(" web ", ExportFormat::Tiff16),
+            ],
+            vec![preset("   ", ExportFormat::Jpeg)],
+            vec![with(|p| p.options.jpeg_quality = 0)],
+            vec![with(|p| p.options.jpeg_quality = 101)],
+            vec![with(|p| p.options.template = " ".into())],
+            vec![with(|p| p.options.template = "a/b".into())],
+            vec![with(|p| p.options.template = "a\\b".into())],
+        ];
+        for list in bad {
+            let err = store.update(&with_presets(list.clone())).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{list:?}");
+        }
+        let bad_last = SettingsPatch {
+            last_export: Some(LastExport {
+                options: ExportOptions {
+                    jpeg_quality: 0,
+                    ..preset("x", ExportFormat::Jpeg).options
+                },
+                preset: None,
+            }),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(
+            store.update(&bad_last).unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(store.get(), before);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn last_export_keeps_its_folder_and_template_as_given() {
+        let path = temp_file("last-export");
+        let (store, _) = SettingsStore::load(&path);
+        let last = LastExport {
+            options: ExportOptions {
+                template: "a/b".to_owned(),
+                dest_dir: String::new(),
+                ..preset("x", ExportFormat::Jpeg).options
+            },
+            preset: None,
+        };
+        let saved = store
+            .update(&SettingsPatch {
+                last_export: Some(last.clone()),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        assert_eq!(saved.last_export, Some(last));
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

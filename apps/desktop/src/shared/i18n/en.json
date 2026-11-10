@@ -519,7 +519,28 @@
     "runningHint": "Closing this window does not stop the export.",
     "summary_one": "{{count}} file written to {{folder}}.",
     "summary_other": "{{count}} files written to {{folder}}.",
-    "startFailed": "The export could not be started: {{message}}"
+    "startFailed": "The export could not be started: {{message}}",
+    "presets": {
+      "label": "Preset",
+      "none": "No preset",
+      "modified": "{{name}} (modified)",
+      "saveAs": "Save as preset…",
+      "update": "Update",
+      "delete": "Delete",
+      "name": "Preset name",
+      "save": "Save preset",
+      "cancel": "Cancel",
+      "confirmLabel": "Delete preset",
+      "confirmDelete": "Delete the preset “{{name}}”? This cannot be undone.",
+      "confirm": "Delete preset",
+      "keep": "Keep it",
+      "failed": "The presets could not be saved: {{message}}",
+      "loadFailed": "The presets could not be loaded: {{message}}",
+      "errors": {
+        "noName": "Type a name for the preset.",
+        "exists": "A preset with that name already exists."
+      }
+    }
   },
   "develop": {
     "title": "Develop",

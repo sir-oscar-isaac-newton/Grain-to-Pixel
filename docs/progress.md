@@ -848,6 +848,15 @@
       "number": 270,
       "title": "Pick and reject culling in the Library",
       "branch": "feat/issue-270-pick-reject",
+      "status": "completed",
+      "pr": 282,
+      "commit": "c446332"
+    },
+    {
+      "id": "U-22",
+      "number": 272,
+      "title": "Undo, redo and reset in Develop",
+      "branch": "feat/issue-272-develop-undo",
       "status": "in_progress",
       "pr": null,
       "commit": null

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { clampCrop } from './crop';
+import { useHistory } from './use-history';
 import {
   IpcError,
   developAnalyze,
@@ -96,6 +97,8 @@ export interface Develop {
   error: string | null;
   info: DevelopInfo | null;
   recipe: Recipe | null;
+  /** The automatic recipe (what the resets go back to); null until the analysis is done. */
+  auto: Recipe | null;
   /**
    * The picture to show now: the picking view while picking (once it has arrived), else the "before"
    * one when it is on and has arrived, else the edit.
@@ -129,10 +132,19 @@ export interface Develop {
    * {@link DRAG_DELAY_MS}) while `dragging`, at {@link RELEASE_EDGE} at once otherwise. With
    * `preview: false` no preview is asked for (the picture on screen is not the edit, as while the
    * crop is edited on the whole scan); {@link Develop.rerender} draws it afterwards.
+   *
+   * Every call goes through the undo history: a change with `dragging` false is one step, and a run
+   * of `dragging` changes closed by the release is one step (whether or not a preview is asked for).
    */
   setRecipe: (recipe: Recipe, options?: { dragging?: boolean; preview?: boolean }) => void;
   /** Asks for a preview of the recipe as it is now. */
   rerender: () => void;
+  /** The last change is undone (the recipe goes back to what it was; it is previewed and saved). */
+  undo: () => void;
+  /** The last undone change is made again. */
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
   /**
    * Reads the frame's settings again (the roll's film base may have changed) and renders it
    * afresh. The recipe being edited is kept.
@@ -172,6 +184,7 @@ export function useDevelop(frameId: string | null): Develop {
   const pendingSave = useRef<{ id: string; recipe: Recipe } | null>(null);
   const latestRecipe = useRef<Recipe | null>(null);
   latestRecipe.current = state.recipe;
+  const { canUndo, canRedo, record, undo: undoStep, redo: redoStep, clear } = useHistory<Recipe>();
 
   const send = useCallback(
     async (id: string, recipe: Recipe, edge: number, slot: Slot, gen: number) => {
@@ -244,6 +257,8 @@ export function useDevelop(frameId: string | null): Develop {
     clearTimeout(timer.current);
     accepted.current = { after: -1, before: -1, pick: -1 };
     frame.current = frameId;
+    // The history belongs to the frame that was open.
+    clear();
     if (!frameId) {
       setState(EMPTY);
       return;
@@ -253,6 +268,7 @@ export function useDevelop(frameId: string | null): Develop {
       try {
         const info = await developOpen(frameId);
         if (gen !== generation.current) return;
+        latestRecipe.current = info.recipe;
         setState((s) => ({ ...s, status: 'ready', info, recipe: info.recipe }));
         void send(frameId, info.recipe, RELEASE_EDGE, 'after', gen);
         developAnalyze(frameId, null, null).then(
@@ -283,7 +299,7 @@ export function useDevelop(frameId: string | null): Develop {
       generation.current += 1;
       clearTimeout(timer.current);
     };
-  }, [frameId, send, flushSave]);
+  }, [frameId, send, flushSave, clear]);
 
   // "Before" is rendered the first time it is wanted, from the automatic recipe.
   const { showBefore, auto, before, status, pickView, pick } = state;
@@ -304,11 +320,13 @@ export function useDevelop(frameId: string | null): Develop {
     void send(frame.current, shown, RELEASE_EDGE, 'pick', generation.current);
   }, [pickView, pick, status, send]);
 
-  const setRecipe = useCallback(
+  /** Shows, previews and saves a recipe, without telling the history. */
+  const apply = useCallback(
     (recipe: Recipe, options?: { dragging?: boolean; preview?: boolean }) => {
       const id = frame.current;
       if (!id) return;
       const gen = generation.current;
+      latestRecipe.current = recipe;
       setState((s) => ({
         ...s,
         recipe,
@@ -332,6 +350,28 @@ export function useDevelop(frameId: string | null): Develop {
     },
     [send, flushSave],
   );
+
+  const setRecipe = useCallback(
+    (recipe: Recipe, options?: { dragging?: boolean; preview?: boolean }) => {
+      const before = latestRecipe.current;
+      if (!frame.current || !before) return;
+      record(before, recipe, options?.dragging === true);
+      apply(recipe, options);
+    },
+    [record, apply],
+  );
+
+  const undo = useCallback(() => {
+    const current = latestRecipe.current;
+    const previous = current && undoStep(current);
+    if (previous) apply(previous);
+  }, [undoStep, apply]);
+
+  const redo = useCallback(() => {
+    const current = latestRecipe.current;
+    const next = current && redoStep(current);
+    if (next) apply(next);
+  }, [redoStep, apply]);
 
   const rerender = useCallback(() => {
     const id = frame.current;
@@ -399,6 +439,7 @@ export function useDevelop(frameId: string | null): Develop {
     error: state.error,
     info: state.info,
     recipe: state.recipe,
+    auto: state.auto,
     preview,
     showBefore: state.showBefore,
     showingBefore,
@@ -414,6 +455,10 @@ export function useDevelop(frameId: string | null): Develop {
     setPickView,
     setRecipe,
     rerender,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
     refresh,
   };
 }

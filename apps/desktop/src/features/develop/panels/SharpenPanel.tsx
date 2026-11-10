@@ -10,6 +10,8 @@ import {
   sharpenOf,
   withSharpen,
 } from '../recipe-parts';
+import { resetSharpen } from '../recipe-reset';
+import { ResetPanelButton } from './ResetPanelButton';
 
 interface SharpenPanelProps {
   recipe: Recipe;
@@ -17,6 +19,11 @@ interface SharpenPanelProps {
   readOnly: boolean;
   /** Something is being done elsewhere in the view. */
   working: boolean;
+  /**
+   * The automatic recipe: what the sliders and "Reset" go back to. Null or missing until it is
+   * known; the resets are then off.
+   */
+  auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
   onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
 }
@@ -26,10 +33,18 @@ interface SharpenPanelProps {
  * the image at its final size, and not to the preview, so nothing on screen changes when a slider
  * moves; the panel says so.
  */
-export function SharpenPanel({ recipe, readOnly, working, onChange }: SharpenPanelProps) {
+export function SharpenPanel({
+  recipe,
+  readOnly,
+  working,
+  onChange,
+  auto = null,
+}: SharpenPanelProps) {
   const { t, i18n } = useTranslation();
   const sharpen = sharpenOf(recipe);
   const locked = readOnly || working;
+  const autoSharpen = auto ? sharpenOf(auto) : undefined;
+  const resetTo = (next: Recipe) => onChange(next, { dragging: false });
   const number = (digits: number) => (value: number) =>
     new Intl.NumberFormat(i18n.language, {
       minimumFractionDigits: digits,
@@ -43,9 +58,16 @@ export function SharpenPanel({ recipe, readOnly, working, onChange }: SharpenPan
   return (
     <div className={styles.panel}>
       <section aria-labelledby="sharpen-heading" className={styles.panelSection}>
-        <h3 id="sharpen-heading" className={styles.panelTitle}>
-          {t('develop.sharpen.heading')}
-        </h3>
+        <div className={styles.panelHead}>
+          <h3 id="sharpen-heading" className={styles.panelTitle}>
+            {t('develop.sharpen.heading')}
+          </h3>
+          <ResetPanelButton
+            panel={t('develop.sharpen.heading')}
+            disabled={locked || !auto}
+            onClick={() => auto && resetTo(resetSharpen(recipe, auto))}
+          />
+        </div>
         <p id="sharpen-note" className={styles.panelText}>
           {t('develop.sharpen.note')}
         </p>
@@ -63,6 +85,9 @@ export function SharpenPanel({ recipe, readOnly, working, onChange }: SharpenPan
             step={1}
             format={percent}
             disabled={locked}
+            onReset={
+              autoSharpen && (() => resetTo(withSharpen(recipe, { amount: autoSharpen.amount })))
+            }
             onChange={(next, dragging) =>
               onChange(withSharpen(recipe, { amount: next }), { dragging })
             }
@@ -75,6 +100,10 @@ export function SharpenPanel({ recipe, readOnly, working, onChange }: SharpenPan
             step={0.1}
             format={pixels}
             disabled={locked}
+            onReset={
+              autoSharpen &&
+              (() => resetTo(withSharpen(recipe, { radius_px: autoSharpen.radius_px })))
+            }
             onChange={(next, dragging) =>
               onChange(withSharpen(recipe, { radius_px: Math.round(next * 10) / 10 }), {
                 dragging,

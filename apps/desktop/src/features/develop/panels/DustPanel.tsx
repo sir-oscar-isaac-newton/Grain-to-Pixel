@@ -10,6 +10,8 @@ import {
   thresholdOf,
   withDust,
 } from '../recipe-parts';
+import { resetDust } from '../recipe-reset';
+import { ResetPanelButton } from './ResetPanelButton';
 
 interface DustPanelProps {
   recipe: Recipe;
@@ -19,6 +21,11 @@ interface DustPanelProps {
   working: boolean;
   /** The `dust_removal` feature flag of the settings, or null when it could not be read. */
   flagOn: boolean | null;
+  /**
+   * The automatic recipe: what the sliders and "Reset" go back to. Null or missing until it is
+   * known; the resets are then off.
+   */
+  auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
   onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
 }
@@ -29,10 +36,19 @@ interface DustPanelProps {
  * that have an infrared plane. The sensitivity is the recipe's threshold turned around, so more
  * is more dust found.
  */
-export function DustPanel({ recipe, readOnly, working, flagOn, onChange }: DustPanelProps) {
+export function DustPanel({
+  recipe,
+  readOnly,
+  working,
+  flagOn,
+  onChange,
+  auto = null,
+}: DustPanelProps) {
   const { t, i18n } = useTranslation();
   const dust = dustOf(recipe);
   const locked = readOnly || working;
+  const autoDust = auto ? dustOf(auto) : undefined;
+  const resetTo = (next: Recipe) => onChange(next, { dragging: false });
   const sensitivity = sensitivityOf(dust.threshold);
   const atDefaults =
     dust.enabled === DUST_DEFAULT.enabled &&
@@ -43,9 +59,16 @@ export function DustPanel({ recipe, readOnly, working, flagOn, onChange }: DustP
   return (
     <div className={styles.panel}>
       <section aria-labelledby="dust-heading" className={styles.panelSection}>
-        <h3 id="dust-heading" className={styles.panelTitle}>
-          {t('develop.dust.heading')}
-        </h3>
+        <div className={styles.panelHead}>
+          <h3 id="dust-heading" className={styles.panelTitle}>
+            {t('develop.dust.heading')}
+          </h3>
+          <ResetPanelButton
+            panel={t('develop.dust.heading')}
+            disabled={locked || !auto}
+            onClick={() => auto && resetTo(resetDust(recipe, auto))}
+          />
+        </div>
         <p id="dust-note" className={styles.panelText}>
           {t('develop.dust.note')}
         </p>
@@ -79,6 +102,9 @@ export function DustPanel({ recipe, readOnly, working, flagOn, onChange }: DustP
             step={1}
             format={(value) => t('develop.dust.percent', { value: number(value) })}
             disabled={locked || !dust.enabled}
+            onReset={
+              autoDust && (() => resetTo(withDust(recipe, { threshold: autoDust.threshold })))
+            }
             onChange={(next, dragging) =>
               onChange(withDust(recipe, { threshold: thresholdOf(next) }), { dragging })
             }
@@ -91,6 +117,7 @@ export function DustPanel({ recipe, readOnly, working, flagOn, onChange }: DustP
             step={1}
             format={(value) => t('develop.dust.pixels', { value: number(value) })}
             disabled={locked || !dust.enabled}
+            onReset={autoDust && (() => resetTo(withDust(recipe, { grow_px: autoDust.grow_px })))}
             onChange={(next, dragging) =>
               onChange(withDust(recipe, { grow_px: Math.round(next) }), { dragging })
             }

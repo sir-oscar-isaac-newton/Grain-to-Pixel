@@ -423,3 +423,10 @@
   margin-bottom: var(--space-1);
   font-size: 0.85rem;
 }
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}

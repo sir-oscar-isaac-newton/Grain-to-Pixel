@@ -521,6 +521,13 @@
     "noFrame": "Choose a frame in the Library to develop it: double-click it, or select it and press Enter.",
     "toLibrary": "Library",
     "toolbar": "Develop tools",
+    "undo": "Undo",
+    "redo": "Redo",
+    "resetAll": "Reset all",
+    "resetPanel": {
+      "label": "Reset {{panel}} to automatic",
+      "text": "Reset"
+    },
     "side": "Histogram and settings",
     "before": "Before",
     "beforeBadge": "Before",
@@ -625,6 +632,7 @@
     },
     "geometry": {
       "heading": "Turn and straighten",
+      "panel": "Crop, turn and straighten",
       "rotateLeft": "Rotate left",
       "rotateRight": "Rotate right",
       "flipH": "Flip horizontally",

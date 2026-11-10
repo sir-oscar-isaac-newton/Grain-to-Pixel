@@ -18,6 +18,14 @@ interface SliderProps {
   /** How a value is written, for the number beside the slider and for assistive technology. */
   format?: (value: number) => string;
   disabled?: boolean;
+  /**
+   * Called to put the slider back to its starting value: on a double click anywhere on the slider
+   * (label, value, track or thumb), and on Delete or Backspace while the thumb has focus. The
+   * slider does not change its value itself: the owner answers with `onChange`-like state. A
+   * double click on the track still moves the thumb to the first click, as a single click does.
+   * Without it, neither gesture does anything. Not called while `disabled`.
+   */
+  onReset?: () => void;
 }
 
 /** A labelled slider with its value beside it (Radix: keyboard, pointer and touch). */
@@ -30,6 +38,7 @@ export function Slider({
   onChange,
   format = String,
   disabled = false,
+  onReset,
 }: SliderProps) {
   const id = useId();
   const text = format(value);
@@ -37,7 +46,16 @@ export function Slider({
   // move after it as "still dragging" would leave a rough result on screen, so it is ignored.
   const released = useRef<number | null>(null);
   return (
-    <div className={styles.slider}>
+    <div
+      className={styles.slider}
+      onDoubleClick={
+        onReset && !disabled
+          ? () => {
+              onReset();
+            }
+          : undefined
+      }
+    >
       <label id={id} className={styles.label}>
         {label}
       </label>
@@ -51,6 +69,11 @@ export function Slider({
         step={step}
         value={[value]}
         disabled={disabled}
+        onKeyDown={(event) => {
+          if (!onReset || disabled || (event.key !== 'Delete' && event.key !== 'Backspace')) return;
+          event.preventDefault();
+          onReset();
+        }}
         onValueChange={([next]) => {
           if (next === undefined || next === released.current) return;
           onChange(next, true);

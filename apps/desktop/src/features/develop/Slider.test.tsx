@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Slider } from '@gtp/ui';
@@ -59,6 +59,56 @@ describe('Slider', () => {
     slider.focus();
     await user.keyboard('{ArrowRight}');
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  describe('onReset', () => {
+    it('is called by a double click on the thumb, the label or the value, and changes nothing itself', () => {
+      const onReset = vi.fn();
+      const { onChange } = setup({ onReset });
+      fireEvent.doubleClick(screen.getByRole('slider'));
+      fireEvent.doubleClick(screen.getByText('Black point, red'));
+      fireEvent.doubleClick(screen.getByText('0.5'));
+      expect(onReset).toHaveBeenCalledTimes(3);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it.each(['{Delete}', '{Backspace}'])('is called by %s on the focused thumb', async (key) => {
+      const user = userEvent.setup();
+      const onReset = vi.fn();
+      const { onChange } = setup({ onReset });
+      screen.getByRole('slider').focus();
+      await user.keyboard(key);
+      expect(onReset).toHaveBeenCalledTimes(1);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('is not called by other keys', async () => {
+      const user = userEvent.setup();
+      const onReset = vi.fn();
+      setup({ onReset });
+      screen.getByRole('slider').focus();
+      await user.keyboard('{ArrowRight}{Home}{Escape}');
+      expect(onReset).not.toHaveBeenCalled();
+    });
+
+    it('is not called while disabled, and without it nothing happens', async () => {
+      const user = userEvent.setup();
+      const onReset = vi.fn();
+      setup({ onReset, disabled: true });
+      fireEvent.doubleClick(screen.getByRole('slider'));
+      screen.getByRole('slider').focus();
+      await user.keyboard('{Delete}');
+      expect(onReset).not.toHaveBeenCalled();
+    });
+
+    it('does nothing without a handler', async () => {
+      const user = userEvent.setup();
+      const { onChange } = setup();
+      fireEvent.doubleClick(screen.getByRole('slider'));
+      screen.getByRole('slider').focus();
+      await user.keyboard('{Delete}');
+      expect(onChange).not.toHaveBeenCalled();
+    });
   });
 
   it('has no accessibility violations', async () => {

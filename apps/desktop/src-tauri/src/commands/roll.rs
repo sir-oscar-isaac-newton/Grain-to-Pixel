@@ -188,6 +188,7 @@ mod tests {
             FrameQuery {
                 roll_id: Some(roll.id),
                 flag: None,
+                needs_export: false,
                 page: 0,
                 page_size: 50,
             },

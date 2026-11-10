@@ -82,6 +82,9 @@ export function useLibraryEvents(enabled: boolean) {
                     }
                   : { state: 'done' as const, fraction: 1 };
         store().patchJob(e.id, patch);
+        // An export changes no frame, so the backend sends no library change: reload the grid
+        // here so the export marks and the Needs export filter follow.
+        if (result.kind === 'Exported') store().bump();
       }),
     );
     track(

@@ -58,6 +58,7 @@ export function toQuery(
   filters: Filters,
   rollId: string | null,
   flag: FlagFilter = 'all',
+  needsExport = false,
 ): SearchQuery {
   const iso = /^\d+$/.test(filters.iso) ? Number(filters.iso) : null;
   return {
@@ -70,5 +71,6 @@ export function toQuery(
     camera: blank(filters.camera),
     iso: iso && iso > 0 ? iso : null,
     ...(flag === 'all' ? {} : { flag }),
+    ...(needsExport ? { needs_export: true } : {}),
   };
 }

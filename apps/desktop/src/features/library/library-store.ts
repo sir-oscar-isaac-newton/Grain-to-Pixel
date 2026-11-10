@@ -72,6 +72,8 @@ interface LibraryState {
   filters: Filters;
   /** Which frames the grid shows by their pick or reject mark. */
   flagFilter: FlagFilter;
+  /** Show only the frames exported and edited since (they need a new export). */
+  needsExport: boolean;
   /** The roll shown, or null for every frame. */
   rollId: string | null;
   /** Bumped when frames were added, changed or removed, so the grid reloads. */
@@ -89,6 +91,7 @@ interface LibraryState {
   reloadTags: () => Promise<void>;
   setFilters: (filters: Filters) => void;
   setFlagFilter: (flag: FlagFilter) => void;
+  setNeedsExport: (needsExport: boolean) => void;
   selectRoll: (id: string | null) => void;
   setSelected: (ids: Iterable<string>) => void;
   bump: () => void;
@@ -106,6 +109,7 @@ const initial = {
   tags: [],
   filters: NO_FILTERS,
   flagFilter: 'all' as FlagFilter,
+  needsExport: false,
   rollId: null,
   revision: 0,
   selected: new Set<string>() as ReadonlySet<string>,
@@ -129,6 +133,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
       rollId: null,
       filters: NO_FILTERS,
       flagFilter: 'all',
+      needsExport: false,
       tags: [],
       selected: new Set(),
       jobs: [],
@@ -202,6 +207,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
 
     setFlagFilter(flagFilter) {
       set({ flagFilter, selected: new Set() });
+    },
+
+    setNeedsExport(needsExport) {
+      set({ needsExport, selected: new Set() });
     },
 
     selectRoll(id) {

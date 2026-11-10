@@ -15,6 +15,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import type { FrameFlag, FrameSummary } from '../../shared/ipc';
 import styles from './library.module.css';
+import { exportState } from './export-state';
 import { CELL_GAP, ROW_HEIGHT, columnsFor, rangeBetween, targetIndex } from './grid-navigation';
 import { useLibraryStore } from './library-store';
 import { useFrames, type PageFetcher } from './use-frames';
@@ -55,6 +56,7 @@ const FrameCell = memo(function FrameCell({
 }: CellProps) {
   const { t } = useTranslation();
   const thumbnail = useThumbnail(frame.id, frame.has_thumb);
+  const exported = exportState(frame);
   return (
     <div
       id={cellId(frame.id)}
@@ -74,6 +76,16 @@ const FrameCell = memo(function FrameCell({
             aria-label={t(`library.flag.${frame.flag}`)}
           >
             {frame.flag === 'pick' ? '✓' : '✕'}
+          </span>
+        )}
+        {exported !== 'never' && (
+          <span
+            className={styles.exportMark}
+            data-state={exported}
+            role="img"
+            aria-label={t(`library.exportState.${exported}`)}
+          >
+            {exported === 'stale' ? '↻' : '↑'}
           </span>
         )}
         {thumbnail.status === 'ready' ? (

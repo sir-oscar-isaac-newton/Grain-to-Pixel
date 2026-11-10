@@ -203,6 +203,37 @@
   border: 1px solid var(--text);
 }
 
+.exportMark {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--text);
+  border-radius: 0.25rem;
+  opacity: 0.7;
+}
+
+.exportMark[data-state='stale'] {
+  border-width: 2px;
+  font-weight: 700;
+  opacity: 1;
+}
+
+.needsExport {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
 .cell[data-flag='reject'] .image {
   opacity: 0.5;
 }

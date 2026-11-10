@@ -866,6 +866,15 @@
       "number": 284,
       "title": "Pickers show the frame as it is edited",
       "branch": "feat/issue-284-picker-orientation",
+      "status": "completed",
+      "pr": 285,
+      "commit": "95c4845"
+    },
+    {
+      "id": "L-11",
+      "number": 279,
+      "title": "Badge for frames edited since their last export",
+      "branch": "feat/issue-279-export-badge",
       "status": "in_progress",
       "pr": null,
       "commit": null

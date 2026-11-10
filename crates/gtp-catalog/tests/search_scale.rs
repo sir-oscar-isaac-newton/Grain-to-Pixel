@@ -180,7 +180,7 @@ fn search_over_50000_frames_takes_at_most_100_ms() {
     let dir = TempDir::new("50k");
     let (cat, tags) = big_library(&dir);
     assert_eq!(
-        cat.count_frames(None, None).unwrap() as usize,
+        cat.count_frames(None, None, false).unwrap() as usize,
         ROLLS * FRAMES_PER_ROLL
     );
 

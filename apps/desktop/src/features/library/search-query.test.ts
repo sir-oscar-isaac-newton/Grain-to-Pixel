@@ -66,4 +66,13 @@ describe('search-query', () => {
     expect(toQuery(NO_FILTERS, null, 'all')).not.toHaveProperty('flag');
     expect(toQuery(NO_FILTERS, null, 'reject').flag).toBe('reject');
   });
+
+  it('adds needs_export only when it is on', () => {
+    expect(toQuery(NO_FILTERS, null)).not.toHaveProperty('needs_export');
+    expect(toQuery(NO_FILTERS, null, 'all', false)).not.toHaveProperty('needs_export');
+    expect(toQuery(NO_FILTERS, null, 'pick', true)).toMatchObject({
+      flag: 'pick',
+      needs_export: true,
+    });
+  });
 });

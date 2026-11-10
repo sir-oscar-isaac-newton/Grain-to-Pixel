@@ -138,6 +138,7 @@ mod tests {
             FrameQuery {
                 roll_id: Some(roll.id),
                 flag: Some(FrameFlag::Reject),
+                needs_export: false,
                 page: 0,
                 page_size: 50,
             },

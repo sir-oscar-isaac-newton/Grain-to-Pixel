@@ -147,6 +147,7 @@ mod tests {
             FrameQuery {
                 roll_id: None,
                 flag: None,
+                needs_export: false,
                 page: 0,
                 page_size: 100,
             },
@@ -179,6 +180,7 @@ mod tests {
                     FrameQuery {
                         roll_id: Some(r.id),
                         flag: None,
+                        needs_export: false,
                         page: 0,
                         page_size: 50,
                     },

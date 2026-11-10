@@ -741,7 +741,7 @@ mod tests {
         // No folder or thumbnail is left for the skipped triplet.
         assert_eq!(
             s.lib()
-                .read(|c| c.count_frames(Some(s.roll), None))
+                .read(|c| c.count_frames(Some(s.roll), None, false))
                 .unwrap(),
             2
         );
@@ -788,7 +788,7 @@ mod tests {
         assert_eq!(err.code, ErrorCode::Cancelled);
         assert_eq!(
             s.lib()
-                .read(|c| c.count_frames(Some(s.roll), None))
+                .read(|c| c.count_frames(Some(s.roll), None, false))
                 .unwrap(),
             2
         );
@@ -806,7 +806,7 @@ mod tests {
         }
         assert_eq!(
             s.lib()
-                .read(|c| c.count_frames(Some(s.roll), None))
+                .read(|c| c.count_frames(Some(s.roll), None, false))
                 .unwrap(),
             0
         );

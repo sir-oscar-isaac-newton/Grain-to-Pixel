@@ -10,7 +10,7 @@ use rusqlite::{params_from_iter, Row};
 use gtp_core::model::{check_iso, check_shot_range, partial_date_span};
 use gtp_core::{AppError, ErrorCode, Frame, FrameId, SearchQuery};
 
-use super::frame::{prefixed_columns, read};
+use super::frame::{prefixed_columns, read, LAST_EXPORT_JOIN, NEEDS_EXPORT};
 use crate::db::db_error;
 use crate::{fts, Catalog};
 
@@ -99,6 +99,11 @@ fn compile(q: &SearchQuery) -> Result<Compiled, AppError> {
     if let Some(flag) = q.flag {
         wh.push("f.flag = ?".into());
         params.push(Value::Text(flag.as_str().to_owned()));
+    }
+
+    if q.needs_export {
+        from.push_str(&format!(" {LAST_EXPORT_JOIN}"));
+        wh.push(NEEDS_EXPORT.into());
     }
 
     let mut tags = q.tags_all.clone();

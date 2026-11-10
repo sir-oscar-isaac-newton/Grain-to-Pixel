@@ -78,6 +78,9 @@ pub struct FrameQuery {
     /// Only the frames with this pick or reject mark.
     #[serde(default)]
     pub flag: Option<FrameFlag>,
+    /// Only the frames exported and edited since their newest export.
+    #[serde(default)]
+    pub needs_export: bool,
     pub page: u32,
     pub page_size: u32,
 }
@@ -96,6 +99,9 @@ pub struct FrameSummary {
     pub note: String,
     pub flag: FrameFlag,
     pub edited_at: Option<String>,
+    /// When the frame was last exported (the newest `export_log` row); `None` when never. It is in
+    /// the same format as `edited_at`, so `edited_at > exported_at` means edited since.
+    pub exported_at: Option<String>,
     /// True when the frame's thumbnail file exists.
     pub has_thumb: bool,
 }
@@ -307,11 +313,17 @@ pub fn frame_list(library: &Library, query: FrameQuery) -> Result<FramePage, App
     let offset = page_offset(query.page, query.page_size)?;
     let (frames, total) = library.read(|c| {
         Ok((
-            c.list_frames_page(query.roll_id, query.flag, offset, query.page_size)?,
-            c.count_frames(query.roll_id, query.flag)?,
+            c.list_frames_page(
+                query.roll_id,
+                query.flag,
+                query.needs_export,
+                offset,
+                query.page_size,
+            )?,
+            c.count_frames(query.roll_id, query.flag, query.needs_export)?,
         ))
     })?;
-    let items = frames.into_iter().map(|f| summary(library, f)).collect();
+    let items = summaries(library, frames)?;
     Ok(FramePage {
         items,
         total,
@@ -354,7 +366,7 @@ pub fn frame_set_flag(
     flag: FrameFlag,
 ) -> Result<Vec<FrameSummary>, AppError> {
     let frames = library.write(|c| c.set_frames_flag(ids, flag))?;
-    Ok(frames.into_iter().map(|f| summary(library, f)).collect())
+    summaries(library, frames)
 }
 
 /// Deletes frames (unknown ids are skipped), then their originals and thumbnails.
@@ -379,7 +391,23 @@ pub fn frame_delete(library: &Library, ids: &[FrameId]) -> Result<DeleteReport, 
     Ok(report)
 }
 
-pub(crate) fn summary(library: &Library, f: Frame) -> FrameSummary {
+/// The summaries of `frames`, with their last export times read in one query.
+pub(crate) fn summaries(
+    library: &Library,
+    frames: Vec<Frame>,
+) -> Result<Vec<FrameSummary>, AppError> {
+    let ids: Vec<FrameId> = frames.iter().map(|f| f.id).collect();
+    let mut exports = library.read(|c| c.last_exports(&ids))?;
+    Ok(frames
+        .into_iter()
+        .map(|f| {
+            let exported_at = exports.remove(&f.id);
+            summary(library, f, exported_at)
+        })
+        .collect())
+}
+
+fn summary(library: &Library, f: Frame, exported_at: Option<String>) -> FrameSummary {
     let has_thumb = library.resolve(&thumb_rel(f.id)).is_ok_and(|p| p.is_file());
     FrameSummary {
         id: f.id,
@@ -392,6 +420,7 @@ pub(crate) fn summary(library: &Library, f: Frame) -> FrameSummary {
         note: f.note,
         flag: f.flag,
         edited_at: f.edited_at,
+        exported_at,
         has_thumb,
     }
 }
@@ -817,6 +846,7 @@ mod tests {
         let query = |page, page_size| FrameQuery {
             roll_id: Some(roll.id),
             flag: None,
+            needs_export: false,
             page,
             page_size,
         };
@@ -852,6 +882,7 @@ mod tests {
         let query = |flag| FrameQuery {
             roll_id: Some(roll.id),
             flag,
+            needs_export: false,
             page: 0,
             page_size: 50,
         };
@@ -894,6 +925,68 @@ mod tests {
             serde_json::from_str(r#"{"roll_id":null,"flag":"reject","page":0,"page_size":10}"#)
                 .unwrap();
         assert_eq!(query.flag, Some(FrameFlag::Reject));
+    }
+
+    #[test]
+    fn a_frame_query_without_needs_export_still_parses() {
+        let query: FrameQuery =
+            serde_json::from_str(r#"{"roll_id":null,"page":0,"page_size":10}"#).unwrap();
+        assert!(!query.needs_export);
+        let query: FrameQuery =
+            serde_json::from_str(r#"{"roll_id":null,"needs_export":true,"page":0,"page_size":10}"#)
+                .unwrap();
+        assert!(query.needs_export);
+    }
+
+    #[test]
+    fn an_export_then_a_recipe_save_makes_the_frame_need_an_export() {
+        let t = TempLib::new("needs-export");
+        let roll = roll_create(t.lib(), input("R")).unwrap();
+        let exported = frame_with_files(t.lib(), roll.id, 1);
+        let never = frame_with_files(t.lib(), roll.id, 2);
+        let query = |needs_export| FrameQuery {
+            roll_id: Some(roll.id),
+            flag: None,
+            needs_export,
+            page: 0,
+            page_size: 50,
+        };
+        let list = |needs_export| frame_list(t.lib(), query(needs_export)).unwrap();
+
+        assert!(list(false).items.iter().all(|f| f.exported_at.is_none()));
+        t.lib()
+            .write(|c| c.log_export(exported.id, "tiff", "a.tif"))
+            .unwrap();
+        let page = list(false);
+        assert!(page.items[0].exported_at.is_some(), "exported");
+        assert!(page.items[1].exported_at.is_none(), "never exported");
+        assert_eq!(list(true).total, 0, "exported and unchanged");
+
+        // Flags and notes are not edits.
+        frame_set_flag(t.lib(), &[exported.id], FrameFlag::Pick).unwrap();
+        frame_set_note(t.lib(), exported.id, "note").unwrap();
+        assert_eq!(list(true).total, 0);
+
+        // The catalog stamps whole seconds, so let the next second begin before the edit.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        t.lib()
+            .write(|c| c.save_recipe(exported.id, &Recipe::default()))
+            .unwrap();
+        t.lib()
+            .write(|c| c.save_recipe(never.id, &Recipe::default()))
+            .unwrap();
+        let needing = list(true);
+        assert_eq!(
+            needing.total, 1,
+            "an edited frame never exported is not listed"
+        );
+        assert_eq!(needing.items[0].id, exported.id);
+        assert!(needing.items[0].edited_at > needing.items[0].exported_at);
+        let flagged = frame_set_flag(t.lib(), &[exported.id], FrameFlag::None).unwrap();
+        assert!(
+            flagged[0].exported_at.is_some(),
+            "the flag result carries it"
+        );
     }
 
     #[test]

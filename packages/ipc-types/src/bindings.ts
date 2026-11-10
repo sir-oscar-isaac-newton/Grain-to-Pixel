@@ -1118,6 +1118,8 @@ export type FrameQuery_Deserialize = {
 	roll_id?: RollId | null,
 	/**  Only the frames with this pick or reject mark. */
 	flag?: FrameFlag | null,
+	/**  Only the frames exported and edited since their newest export. */
+	needs_export?: boolean,
 	page: number,
 	page_size: number,
 };
@@ -1127,6 +1129,8 @@ export type FrameQuery_Serialize = {
 	roll_id: RollId | null,
 	/**  Only the frames with this pick or reject mark. */
 	flag: FrameFlag | null,
+	/**  Only the frames exported and edited since their newest export. */
+	needs_export: boolean,
 	page: number,
 	page_size: number,
 };
@@ -1180,6 +1184,11 @@ export type FrameSummary_Deserialize = {
 	note: string,
 	flag: FrameFlag,
 	edited_at?: string | null,
+	/**
+	 *  When the frame was last exported (the newest `export_log` row); `None` when never. It is in
+	 *  the same format as `edited_at`, so `edited_at > exported_at` means edited since.
+	 */
+	exported_at?: string | null,
 	/**  True when the frame's thumbnail file exists. */
 	has_thumb: boolean,
 };
@@ -1196,6 +1205,11 @@ export type FrameSummary_Serialize = {
 	note: string,
 	flag: FrameFlag,
 	edited_at: string | null,
+	/**
+	 *  When the frame was last exported (the newest `export_log` row); `None` when never. It is in
+	 *  the same format as `edited_at`, so `edited_at > exported_at` means edited since.
+	 */
+	exported_at: string | null,
 	/**  True when the frame's thumbnail file exists. */
 	has_thumb: boolean,
 };
@@ -1916,6 +1930,7 @@ export type ScanRequest = {
  *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
  *    its shooting dates overlap the range; a roll without dates never matches a date filter.
  *  - `flag`: the frame's pick or reject mark.
+ *  - `needs_export`: only frames exported and edited since their newest export.
  */
 export type SearchQuery = SearchQuery_Serialize | SearchQuery_Deserialize;
 
@@ -1931,6 +1946,7 @@ export type SearchQuery = SearchQuery_Serialize | SearchQuery_Deserialize;
  *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
  *    its shooting dates overlap the range; a roll without dates never matches a date filter.
  *  - `flag`: the frame's pick or reject mark.
+ *  - `needs_export`: only frames exported and edited since their newest export.
  */
 export type SearchQuery_Deserialize = {
 	text?: string | null,
@@ -1942,6 +1958,7 @@ export type SearchQuery_Deserialize = {
 	camera?: string | null,
 	iso?: number | null,
 	flag?: FrameFlag | null,
+	needs_export?: boolean,
 };
 
 /**
@@ -1956,6 +1973,7 @@ export type SearchQuery_Deserialize = {
  *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
  *    its shooting dates overlap the range; a roll without dates never matches a date filter.
  *  - `flag`: the frame's pick or reject mark.
+ *  - `needs_export`: only frames exported and edited since their newest export.
  */
 export type SearchQuery_Serialize = {
 	text: string | null,
@@ -1967,6 +1985,7 @@ export type SearchQuery_Serialize = {
 	camera: string | null,
 	iso: number | null,
 	flag: FrameFlag | null,
+	needs_export: boolean,
 };
 
 export type Settings = Settings_Serialize | Settings_Deserialize;

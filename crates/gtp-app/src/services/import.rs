@@ -1155,7 +1155,7 @@ mod tests {
         assert_eq!(err.code, ErrorCode::Cancelled);
         assert_eq!(
             s.lib()
-                .read(|c| c.count_frames(Some(s.roll), None))
+                .read(|c| c.count_frames(Some(s.roll), None, false))
                 .unwrap(),
             2
         );

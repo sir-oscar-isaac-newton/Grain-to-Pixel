@@ -28,6 +28,8 @@ export function SearchBar({ total }: { total: number | null }) {
   const setFilters = useLibraryStore((s) => s.setFilters);
   const flagFilter = useLibraryStore((s) => s.flagFilter);
   const setFlagFilter = useLibraryStore((s) => s.setFlagFilter);
+  const needsExport = useLibraryStore((s) => s.needsExport);
+  const setNeedsExport = useLibraryStore((s) => s.setNeedsExport);
   const rolls = useLibraryStore((s) => s.rolls);
   const tags = useLibraryStore((s) => s.tags);
   const setNotice = useLibraryStore((s) => s.setNotice);
@@ -90,6 +92,14 @@ export function SearchBar({ total }: { total: number | null }) {
             </option>
           ))}
         </select>
+        <label className={styles.needsExport}>
+          <input
+            type="checkbox"
+            checked={needsExport}
+            onChange={(e) => setNeedsExport(e.target.checked)}
+          />
+          {t('library.needsExport')}
+        </label>
         <button
           type="button"
           aria-expanded={open}

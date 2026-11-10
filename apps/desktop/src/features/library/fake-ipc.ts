@@ -95,6 +95,7 @@ export function makeFrames(rollId: string, count: number, prefix = rollId): Fram
     note: '',
     flag: 'none',
     edited_at: null,
+    exported_at: null,
     has_thumb: true,
   }));
 }
@@ -271,6 +272,8 @@ export const state = {
   diagnosticsFails: null as string | null,
   /** The exports started, in order. */
   exports: [] as Array<{ frameIds: string[]; options: unknown }>,
+  /** The time the fake stamps on frames it exports (RFC 3339, as the catalog writes it). */
+  exportedAt: '2026-11-05T10:00:00Z',
   /** Starting an export is refused with this message when set. */
   exportRefused: null as string | null,
   /** How many library checks were started, and starting one is refused with this message when set. */
@@ -410,6 +413,7 @@ function matching(q: SearchQuery): FrameSummary[] {
     const names = [...(state.frameTags[f.id] ?? []), ...(state.rollTags[f.roll_id] ?? [])];
     if (q.roll_id && f.roll_id !== q.roll_id) return false;
     if (q.flag && f.flag !== q.flag) return false;
+    if (q.needs_export && !needsExport(f)) return false;
     if (q.film_stock && keyOf(roll?.film_stock ?? '') !== keyOf(q.film_stock)) return false;
     if (q.camera && keyOf(roll?.camera ?? '') !== keyOf(q.camera)) return false;
     if (q.iso && roll?.iso_box !== q.iso && roll?.iso_shot !== q.iso) return false;
@@ -428,14 +432,21 @@ function matching(q: SearchQuery): FrameSummary[] {
   });
 }
 
+/** Exported and edited afterwards, as the backend's `needs_export` filter means it. */
+function needsExport(f: FrameSummary): boolean {
+  return !!f.exported_at && !!f.edited_at && f.edited_at > f.exported_at;
+}
+
 function pageOf(
   rollId: string | null | undefined,
   flag: FrameSummary['flag'] | null | undefined,
+  needs: boolean | undefined,
   page: number,
   size: number,
 ): FramePage {
   const all = state.frames.filter(
-    (f) => (!rollId || f.roll_id === rollId) && (!flag || f.flag === flag),
+    (f) =>
+      (!rollId || f.roll_id === rollId) && (!flag || f.flag === flag) && (!needs || needsExport(f)),
   );
   return {
     items: all.slice(page * size, page * size + size),
@@ -540,9 +551,10 @@ export const ipc = {
     async (q: {
       roll_id?: string | null;
       flag?: FrameSummary['flag'] | null;
+      needs_export?: boolean;
       page: number;
       page_size: number;
-    }) => pageOf(q.roll_id, q.flag, q.page, q.page_size),
+    }) => pageOf(q.roll_id, q.flag, q.needs_export, q.page, q.page_size),
   ),
   search: vi.fn(async (q: SearchQuery, page: number, size: number): Promise<FramePage> => {
     const all = matching(q);
@@ -733,6 +745,10 @@ export const ipc = {
     if (state.exportRefused) {
       throw new IpcError({ code: 'InvalidInput', message: state.exportRefused });
     }
+    // The export is logged as it runs: the frames carry the time from now on.
+    state.frames = state.frames.map((fr) =>
+      frameIds.includes(fr.id) ? { ...fr, exported_at: state.exportedAt } : fr,
+    );
     return 'job-export-1';
   }),
   libraryVerify: vi.fn(async () => {
@@ -914,6 +930,7 @@ export function resetFake() {
   state.frameRect = { x: 0.05, y: 0.1, w: 0.9, h: 0.8 };
   state.frameConfidence = 0.9;
   state.exportRefused = null;
+  state.exportedAt = '2026-11-05T10:00:00Z';
   state.verifies = 0;
   state.hasIr = false;
   state.verifyRefused = null;

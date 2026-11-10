@@ -1353,7 +1353,7 @@ fn an_imported_frame_is_numbered_and_stored_with_its_sources_and_recipe() {
             .code,
         ErrorCode::NotFound
     );
-    assert_eq!(cat.count_frames(None, None).unwrap(), 2);
+    assert_eq!(cat.count_frames(None, None, false).unwrap(), 2);
 }
 
 #[test]
@@ -1410,7 +1410,7 @@ fn rolls_and_frames_list_in_order_and_meta_round_trips() {
 
     let fb = cat.insert_frame(&frame(b.id, 1)).unwrap();
     let page = |roll, offset, limit| -> Vec<FrameId> {
-        cat.list_frames_page(roll, None, offset, limit)
+        cat.list_frames_page(roll, None, false, offset, limit)
             .unwrap()
             .iter()
             .map(|f| f.id)
@@ -1424,9 +1424,12 @@ fn rolls_and_frames_list_in_order_and_meta_round_trips() {
     assert_eq!(page(None, 1, 1), vec![f1.id]);
     assert_eq!(page(Some(a.id), 0, 10), vec![f1.id, f3.id]);
     assert!(page(Some(a.id), 5, 10).is_empty());
-    assert_eq!(cat.count_frames(None, None).unwrap(), 3);
-    assert_eq!(cat.count_frames(Some(a.id), None).unwrap(), 2);
-    assert_eq!(cat.count_frames(Some(RollId::new()), None).unwrap(), 0);
+    assert_eq!(cat.count_frames(None, None, false).unwrap(), 3);
+    assert_eq!(cat.count_frames(Some(a.id), None, false).unwrap(), 2);
+    assert_eq!(
+        cat.count_frames(Some(RollId::new()), None, false).unwrap(),
+        0
+    );
 
     assert_eq!(cat.meta_get("library_name").unwrap(), None);
     cat.meta_set("library_name", "Negatives").unwrap();
@@ -1600,7 +1603,7 @@ fn the_flag_filters_the_frame_pages_and_their_count() {
     cat.set_frames_flag(&[a2.id], FrameFlag::Reject).unwrap();
 
     let page = |roll, flag| -> Vec<FrameId> {
-        cat.list_frames_page(roll, flag, 0, 50)
+        cat.list_frames_page(roll, flag, false, 0, 50)
             .unwrap()
             .iter()
             .map(|f| f.id)
@@ -1611,7 +1614,7 @@ fn the_flag_filters_the_frame_pages_and_their_count() {
     assert_eq!(page(Some(a.id), Some(FrameFlag::Reject)), vec![a2.id]);
     assert_eq!(page(Some(a.id), Some(FrameFlag::None)), vec![a3.id]);
     assert_eq!(page(None, None).len(), 4);
-    let count = |roll, flag| cat.count_frames(roll, flag).unwrap();
+    let count = |roll, flag| cat.count_frames(roll, flag, false).unwrap();
     assert_eq!(count(None, Some(FrameFlag::Pick)), 2);
     assert_eq!(count(Some(a.id), Some(FrameFlag::Pick)), 1);
     assert_eq!(count(Some(b.id), Some(FrameFlag::Reject)), 0);
@@ -1652,4 +1655,199 @@ fn the_flag_filters_a_search_alone_and_with_text() {
     );
     assert!(found(&cat, &with(Some(FrameFlag::Reject), Some("market"))).is_empty());
     assert_eq!(found(&cat, &with(None, Some("harbour"))).len(), 2);
+}
+
+/// Sets the catalog's two times by hand (the catalog stamps whole seconds, too coarse to order an
+/// export and an edit made within the same test).
+fn set_edited_at(dir: &TempDir, frame: FrameId, at: Option<&str>) {
+    Connection::open(dir.db())
+        .unwrap()
+        .execute(
+            "UPDATE frame SET edited_at = ?2 WHERE id = ?1",
+            rusqlite::params![frame.to_string(), at],
+        )
+        .unwrap();
+}
+
+fn set_export_times(dir: &TempDir, frame: FrameId, times: &[&str]) {
+    let conn = Connection::open(dir.db()).unwrap();
+    conn.execute(
+        "DELETE FROM export_log WHERE frame_id = ?1",
+        [frame.to_string()],
+    )
+    .unwrap();
+    for at in times {
+        conn.execute(
+            "INSERT INTO export_log(frame_id, format, path, created_at) VALUES (?1, 'tiff', 'x', ?2)",
+            rusqlite::params![frame.to_string(), at],
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn exported_at_is_the_newest_export_of_a_frame() {
+    let dir = TempDir::new("exported-at");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    let never = cat.insert_frame(&frame(r.id, 1)).unwrap();
+    let once = cat.insert_frame(&frame(r.id, 2)).unwrap();
+    let many = cat.insert_frame(&frame(r.id, 3)).unwrap();
+
+    // Written by the catalog itself: one row, in the format of edited_at.
+    cat.log_export(once.id, "tiff", "a.tif").unwrap();
+    set_export_times(
+        &dir,
+        many.id,
+        &[
+            "2026-11-02T10:00:00Z",
+            "2026-11-05T10:00:00Z",
+            "2026-11-03T10:00:00Z",
+        ],
+    );
+    let ids = [never.id, once.id, many.id, FrameId::new()];
+    let found = cat.last_exports(&ids).unwrap();
+    assert_eq!(found.len(), 2, "a frame never exported is absent");
+    assert!(!found.contains_key(&never.id));
+    let at = &found[&once.id];
+    assert!(at.ends_with('Z') && at.len() == 20, "{at}");
+    assert_eq!(
+        found[&many.id], "2026-11-05T10:00:00Z",
+        "the newest, not the last logged"
+    );
+    assert!(cat.last_exports(&[]).unwrap().is_empty());
+
+    // An edit afterwards leaves the export time as it was.
+    cat.save_recipe(many.id, &Recipe::default()).unwrap();
+    assert_eq!(
+        cat.last_exports(&[many.id]).unwrap()[&many.id],
+        "2026-11-05T10:00:00Z"
+    );
+}
+
+#[test]
+fn needs_export_means_exported_and_edited_since_in_pages_and_count() {
+    let dir = TempDir::new("needs-export");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    let mk = |cat: &mut Catalog, i| cat.insert_frame(&frame(r.id, i)).unwrap().id;
+    let never_exported = mk(&mut cat, 1);
+    let unedited = mk(&mut cat, 2);
+    let edited_before = mk(&mut cat, 3);
+    let edited_after = mk(&mut cat, 4);
+    let edited_after_many = mk(&mut cat, 5);
+    let edited_never_exported = mk(&mut cat, 6);
+
+    set_edited_at(&dir, edited_never_exported, Some("2026-11-04T10:00:00Z"));
+    set_export_times(&dir, unedited, &["2026-11-02T10:00:00Z"]);
+    set_edited_at(&dir, edited_before, Some("2026-11-01T10:00:00Z"));
+    set_export_times(&dir, edited_before, &["2026-11-02T10:00:00Z"]);
+    set_edited_at(&dir, edited_after, Some("2026-11-03T10:00:00Z"));
+    set_export_times(&dir, edited_after, &["2026-11-02T10:00:00Z"]);
+    // Edited after the first export but before the second: up to date.
+    set_edited_at(&dir, edited_after_many, Some("2026-11-03T10:00:00Z"));
+    set_export_times(
+        &dir,
+        edited_after_many,
+        &["2026-11-02T10:00:00Z", "2026-11-04T10:00:00Z"],
+    );
+    let _ = never_exported;
+
+    cat.set_frames_flag(&[edited_after], FrameFlag::Pick)
+        .unwrap();
+    cat.set_frames_flag(&[edited_before], FrameFlag::Pick)
+        .unwrap();
+    let page = |needs| -> Vec<FrameId> {
+        cat.list_frames_page(None, None, needs, 0, 50)
+            .unwrap()
+            .iter()
+            .map(|f| f.id)
+            .collect()
+    };
+    assert_eq!(page(true), vec![edited_after]);
+    assert_eq!(page(false).len(), 6);
+    assert_eq!(cat.count_frames(None, None, true).unwrap(), 1);
+    assert_eq!(cat.count_frames(Some(r.id), None, true).unwrap(), 1);
+    assert_eq!(cat.count_frames(None, None, false).unwrap(), 6);
+
+    // Combined with the flag.
+    let both = cat
+        .list_frames_page(None, Some(FrameFlag::Pick), true, 0, 50)
+        .unwrap();
+    assert_eq!(
+        both.iter().map(|f| f.id).collect::<Vec<_>>(),
+        vec![edited_after]
+    );
+    assert_eq!(
+        cat.count_frames(None, Some(FrameFlag::Pick), true).unwrap(),
+        1
+    );
+    assert_eq!(
+        cat.count_frames(None, Some(FrameFlag::Reject), true)
+            .unwrap(),
+        0
+    );
+
+    // A new export clears it; a later edit sets it again.
+    set_export_times(&dir, edited_after, &["2026-11-06T10:00:00Z"]);
+    assert!(page(true).is_empty());
+    set_edited_at(&dir, edited_after, Some("2026-11-07T10:00:00Z"));
+    assert_eq!(page(true), vec![edited_after]);
+}
+
+#[test]
+fn needs_export_filters_a_search_alone_with_text_and_with_a_flag() {
+    let dir = TempDir::new("needs-export-search");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("Summer")).unwrap();
+    let f1 = cat.insert_frame(&frame(r.id, 1)).unwrap().id;
+    let f2 = cat.insert_frame(&frame(r.id, 2)).unwrap().id;
+    let f3 = cat.insert_frame(&frame(r.id, 3)).unwrap().id;
+    cat.set_frame_note(f1, "harbour").unwrap();
+    cat.set_frame_note(f2, "harbour").unwrap();
+    cat.set_frame_note(f3, "market").unwrap();
+    for f in [f1, f2, f3] {
+        set_export_times(&dir, f, &["2026-11-02T10:00:00Z"]);
+    }
+    set_edited_at(&dir, f1, Some("2026-11-03T10:00:00Z"));
+    set_edited_at(&dir, f3, Some("2026-11-03T10:00:00Z"));
+    cat.set_frames_flag(&[f1], FrameFlag::Pick).unwrap();
+
+    let with = |needs_export, flag, text: Option<&str>| SearchQuery {
+        needs_export,
+        flag,
+        text: text.map(str::to_owned),
+        ..SearchQuery::default()
+    };
+    let mut both = vec![f1, f3];
+    both.sort();
+    assert_eq!(found(&cat, &with(true, None, None)), both);
+    assert_eq!(found(&cat, &with(true, None, Some("harbour"))), vec![f1]);
+    assert_eq!(
+        found(&cat, &with(true, Some(FrameFlag::Pick), None)),
+        vec![f1]
+    );
+    assert!(found(&cat, &with(true, Some(FrameFlag::Reject), None)).is_empty());
+    assert!(found(&cat, &with(true, None, Some("nothing"))).is_empty());
+    assert_eq!(found(&cat, &with(false, None, Some("harbour"))).len(), 2);
+}
+
+#[test]
+fn a_recipe_edit_after_an_export_needs_an_export_but_a_flag_or_note_does_not() {
+    let dir = TempDir::new("needs-export-edits");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    let f = cat.insert_frame(&frame(r.id, 1)).unwrap().id;
+    // Exported "in the past" so that a stamp of now is later than it.
+    set_export_times(&dir, f, &["2020-01-01T00:00:00Z"]);
+    assert_eq!(cat.count_frames(None, None, true).unwrap(), 0);
+
+    cat.set_frames_flag(&[f], FrameFlag::Reject).unwrap();
+    cat.set_frame_note(f, "a note").unwrap();
+    assert_eq!(cat.get_frame(f).unwrap().edited_at, None);
+    assert_eq!(cat.count_frames(None, None, true).unwrap(), 0);
+
+    cat.save_recipe(f, &Recipe::default()).unwrap();
+    assert!(cat.get_frame(f).unwrap().edited_at.is_some());
+    assert_eq!(cat.count_frames(None, None, true).unwrap(), 1);
 }

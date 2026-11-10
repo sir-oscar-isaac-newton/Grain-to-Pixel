@@ -95,6 +95,8 @@ interface FrameGridProps {
   onTotal?: (total: number | null) => void;
   /** Called when a frame is opened (double-click, or Enter on the focused frame). */
   onOpen?: (frame: FrameSummary, index: number) => void;
+  /** Called when Delete is pressed with frames selected. */
+  onDelete?: () => void;
 }
 
 /**
@@ -109,6 +111,7 @@ export function FrameGrid({
   showRoll,
   onTotal,
   onOpen,
+  onDelete,
 }: FrameGridProps) {
   const { t } = useTranslation();
   const revision = useLibraryStore((s) => s.revision);
@@ -202,6 +205,13 @@ export function FrameGrid({
       if (frame) {
         event.preventDefault();
         onOpen(frame, focus);
+      }
+      return;
+    }
+    if (event.key === 'Delete' && onDelete) {
+      if (selected.size > 0) {
+        event.preventDefault();
+        onDelete();
       }
       return;
     }

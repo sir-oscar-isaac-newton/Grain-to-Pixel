@@ -431,10 +431,14 @@ export async function captureTriplet(rollId: string, levels: Levels): Promise<st
 
 /**
  * Finds the Scanlight level of each colour that fills the camera's range as a job, shooting the
- * whole frame; the `CalibrationResult` arrives in `job://done` and nothing is saved. Returns the job id.
+ * whole frame, or only `region` (fractions of the frame) when given; the `CalibrationResult` arrives in `job://done` and nothing is saved. Returns the job id.
  */
-export async function captureCalibrate(rollId: string, levels: Levels): Promise<string> {
-  return unwrap(await commands.captureCalibrate(rollId, levels, null));
+export async function captureCalibrate(
+  rollId: string,
+  levels: Levels,
+  region: { x: number; y: number; w: number; h: number } | null = null,
+): Promise<string> {
+  return unwrap(await commands.captureCalibrate(rollId, levels, region));
 }
 
 /** The scanners that can be used now; fails with the reason (not connected, wrong driver ...) when none. */

@@ -837,9 +837,14 @@ export const ipc = {
     },
   ),
   captureCalibrate: vi.fn(
-    async (rollId: string, levels?: [number, number, number]): Promise<string> => {
+    async (
+      rollId: string,
+      levels?: [number, number, number],
+      region?: { x: number; y: number; w: number; h: number } | null,
+    ): Promise<string> => {
       void rollId;
       void levels;
+      void region;
       if (state.calibrationFail) {
         throw new IpcError({ code: 'InvalidInput', message: state.calibrationFail });
       }

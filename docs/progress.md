@@ -799,6 +799,15 @@
       "commit": "71405d3"
     },
     {
+      "id": "H-20",
+      "number": 260,
+      "title": "Choose the calibration area on the live view",
+      "branch": "feat/issue-260-calibration-area",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
+    },
+    {
       "id": "T-09",
       "number": 262,
       "title": "Clear the SQLite advisory RUSTSEC-2026-0459",

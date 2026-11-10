@@ -1196,6 +1196,41 @@ fn a_calibration_starts_from_any_level_and_measures_only_the_chosen_area() {
 }
 
 #[test]
+fn a_calibration_of_the_bright_corner_needs_a_lower_level_than_one_of_the_dark_corner() {
+    let rig = Rig::levelled("calibrate-corners");
+    let dark = Region {
+        x: 0.0,
+        y: 0.0,
+        w: 0.25,
+        h: 0.25,
+    };
+    let bright = Region {
+        x: 0.75,
+        y: 0.75,
+        w: 0.25,
+        h: 0.25,
+    };
+    // The fake's picture brightens from the top left to the bottom right, so the area chosen
+    // changes the levels, and both areas still fill the range.
+    rig.calibrate([44, 22, 2], Some(dark)).unwrap();
+    let dark_result = calibrated(&rig);
+    rig.calibrate([44, 22, 2], Some(bright)).unwrap();
+    let bright_result = calibrated(&rig);
+    assert!(
+        bright_result.levels[0] < dark_result.levels[0],
+        "{bright_result:?} vs {dark_result:?}"
+    );
+    assert!(
+        (0.90..=0.97).contains(&dark_result.reached[0]),
+        "{dark_result:?}"
+    );
+    assert!(
+        (0.90..=0.97).contains(&bright_result.reached[0]),
+        "{bright_result:?}"
+    );
+}
+
+#[test]
 fn a_calibration_that_cannot_succeed_says_why_and_leaves_the_light_off() {
     // Red is clipped whatever the level.
     let rig = Rig::build("calibrate-clipped", Arc::new(ClipRed), |light| {

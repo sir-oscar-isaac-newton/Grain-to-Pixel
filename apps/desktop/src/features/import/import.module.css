@@ -363,3 +363,14 @@
   text-align: center;
   border: 1px solid var(--border, #8884);
 }
+
+.captureLivePick {
+  touch-action: none;
+}
+
+.captureLiveArea {
+  position: absolute;
+  pointer-events: none;
+  border: 2px dashed #0ff;
+  box-shadow: 0 0 0 1px #000;
+}

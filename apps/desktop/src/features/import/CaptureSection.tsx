@@ -18,6 +18,7 @@ import {
 import { flagsOf } from '../settings/flags';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import styles from './import.module.css';
+import type { Area } from './capture/area';
 import { Calibrate } from './capture/Calibrate';
 import { CameraSettings } from './capture/CameraSettings';
 import { FocusCheck } from './capture/FocusCheck';
@@ -86,6 +87,8 @@ function Capture() {
   const [calibrating, setCalibrating] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [focusing, setFocusing] = useState(false);
+  // The part of the frame a calibration measures, drawn on the live view; kept, not saved.
+  const [calibrationArea, setCalibrationArea] = useState<Area | null>(null);
   const liveStop = useRef<(() => void) | null>(null);
 
   const refreshCameras = useCallback(async () => {
@@ -211,6 +214,8 @@ function Capture() {
           {profile.camera_backend === 'gphoto' ? (
             cameras.length > 0 && (
               <LiveView
+                calibrationArea={calibrationArea}
+                onCalibrationAreaChange={setCalibrationArea}
                 stopRef={liveStop}
                 levels={levels}
                 lightLost={!light.connected || light.status?.tripped === true}
@@ -288,6 +293,8 @@ function Capture() {
       )}
       {levels && (
         <Calibrate
+          area={calibrationArea}
+          onClearArea={() => setCalibrationArea(null)}
           ready={usable && !settingsChanging}
           busy={running}
           roll={roll}

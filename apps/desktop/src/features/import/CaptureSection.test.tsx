@@ -766,7 +766,7 @@ describe('CaptureSection', () => {
       expect(calibrateButton()).toBeEnabled();
       expect(screen.getByText(/Frame clear film base/)).toBeInTheDocument();
       const id = await startCalibration(user);
-      expect(ipc.captureCalibrate).toHaveBeenCalledWith(roll.id, [44, 22, 2]);
+      expect(ipc.captureCalibrate).toHaveBeenCalledWith(roll.id, [44, 22, 2], null);
       expect(useLibraryStore.getState().jobs[0]).toMatchObject({ id, kind: 'calibration' });
     });
 
@@ -1335,6 +1335,115 @@ describe('CaptureSection', () => {
         await waitFor(() => expect(ipc.cameraPreviewSetZoom).toHaveBeenCalled());
         unmount();
         expect(ipc.cameraPreviewStop).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('calibration area', () => {
+      const BOX = { left: 100, top: 50, width: 200, height: 100 } as DOMRect;
+      const TEXT = 'Calibration area: 10 % to 50 % across, 10 % to 50 % down';
+      const pick = () => screen.getByRole('button', { name: /^Choose the spot to zoom to/ });
+      const begin = async () => {
+        const view = await ready();
+        await view.user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        await screen.findByRole('radio', { name: 'Whole frame' });
+        vi.spyOn(pick(), 'getBoundingClientRect').mockReturnValue(BOX);
+        return view;
+      };
+      /** A drag from 10 % across and down to 50 % of both. */
+      const drag = () => {
+        fireEvent.pointerDown(pick(), { clientX: 120, clientY: 60, pointerId: 1 });
+        fireEvent.pointerMove(pick(), { clientX: 200, clientY: 100, pointerId: 1 });
+        fireEvent.pointerUp(pick(), { clientX: 200, clientY: 100, pointerId: 1 });
+      };
+      const outline = () => screen.queryByRole('img', { name: /^Calibration area/ });
+
+      it('draws the area on a drag, with words for it, and does not aim the zoom', async () => {
+        await begin();
+        drag();
+        expect(await screen.findByRole('img', { name: TEXT })).toBeInTheDocument();
+        fireEvent.click(pick(), { detail: 1, clientX: 200, clientY: 100 });
+        expect(ipc.cameraPreviewSetArea).not.toHaveBeenCalled();
+      });
+
+      it('still aims the zoom on a click, also one that moved a pixel or two', async () => {
+        await begin();
+        fireEvent.pointerDown(pick(), { clientX: 150, clientY: 75, pointerId: 1 });
+        fireEvent.pointerMove(pick(), { clientX: 152, clientY: 76, pointerId: 1 });
+        fireEvent.pointerUp(pick(), { clientX: 152, clientY: 76, pointerId: 1 });
+        fireEvent.click(pick(), { detail: 1, clientX: 150, clientY: 75 });
+        await waitFor(() => expect(ipc.cameraPreviewSetArea).toHaveBeenCalledWith(0.25, 0.25));
+        expect(outline()).not.toBeInTheDocument();
+      });
+
+      it('clears the area', async () => {
+        const { user } = await begin();
+        drag();
+        await screen.findByRole('img', { name: TEXT });
+        await user.click(screen.getByRole('button', { name: 'Clear area' }));
+        expect(outline()).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Clear area' })).not.toBeInTheDocument();
+      });
+
+      it('sends the area as fractions of the frame to the calibration, or null without one', async () => {
+        const { user } = await ready();
+        const id = await startCalibration(user);
+        expect(ipc.captureCalibrate.mock.calls[0]?.[2] ?? null).toBeNull();
+        calibrationDone(id);
+        expect(await screen.findByText('Measured over the whole frame.')).toBeInTheDocument();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        await screen.findByRole('radio', { name: 'Whole frame' });
+        vi.spyOn(pick(), 'getBoundingClientRect').mockReturnValue(BOX);
+        drag();
+        await screen.findByRole('img', { name: TEXT });
+        await user.click(calibrateButton());
+        await waitFor(() => expect(ipc.captureCalibrate).toHaveBeenCalledTimes(2));
+        const region = ipc.captureCalibrate.mock.calls[1]?.[2];
+        expect(region?.x).toBeCloseTo(0.1, 6);
+        expect(region?.y).toBeCloseTo(0.1, 6);
+        expect(region?.w).toBeCloseTo(0.4, 6);
+        expect(region?.h).toBeCloseTo(0.4, 6);
+      });
+
+      it('says whether the result measured the area', async () => {
+        const { user } = await begin();
+        drag();
+        await screen.findByRole('img', { name: TEXT });
+        expect(screen.getByText(/^Draw the area over clear film base/)).toBeInTheDocument();
+        const id = await startCalibration(user);
+        calibrationDone(id);
+        expect(await screen.findByText('Measured over the chosen area.')).toBeInTheDocument();
+      });
+
+      it('keeps the area when live view stops, as text next to Calibrate', async () => {
+        const { user } = await begin();
+        drag();
+        await screen.findByRole('img', { name: TEXT });
+        await user.click(stopLive());
+        expect(outline()).not.toBeInTheDocument();
+        expect(screen.getByText(TEXT)).toBeInTheDocument();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: TEXT });
+      });
+
+      it('hides the outline while zoomed, and keeps the area', async () => {
+        const { user } = await begin();
+        drag();
+        await screen.findByRole('img', { name: TEXT });
+        await user.click(screen.getByRole('radio', { name: '100 %' }));
+        await waitFor(() => expect(ipc.cameraPreviewSetZoom).toHaveBeenCalledWith('6'));
+        await waitFor(() => expect(outline()).not.toBeInTheDocument());
+        expect(screen.getByText(TEXT)).toBeInTheDocument();
+        await user.click(screen.getByRole('radio', { name: 'Whole frame' }));
+        expect(await screen.findByRole('img', { name: TEXT })).toBeInTheDocument();
+      });
+
+      it('has no accessibility violations with an area drawn', async () => {
+        const { container } = await begin();
+        drag();
+        await screen.findByRole('img', { name: TEXT });
+        await expectNoA11yViolations(container);
       });
     });
 

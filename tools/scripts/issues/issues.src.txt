@@ -2382,3 +2382,69 @@ ROUTES: none new; ExportOptions gains write_metadata. Approved by the owner on 2
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: first check whether the tiff and jpeg-encoder crates already in use can write the tags. A new dependency is not approved yet: propose it to the owner with its licence before adding it (deny.toml, the notices). Out of scope: XMP sidecars, IPTC, GPS, editing metadata per frame beyond the note, writing metadata back into the original scans.
+
+## U-23
+title: Sync a roll to one frame, and compare two frames
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: U-06, U-02
+adr: no
+spec: specification section 7
+desc: Keeping a roll consistent means taking one good frame as the model. The Apply settings dialog of U-06 can already copy chosen groups to the whole roll, but its button needs at least two selected frames, and Develop cannot show two frames side by side. Let one selected frame be the source for the whole roll, and add a compare mode to Develop.
+ac:
+- With exactly one frame selected, Apply settings opens with that frame as the source and the whole roll as the target
+- In Develop, Compare with picks a reference frame from the filmstrip; the two are shown side by side, the reference rendered with its own saved recipe, and they leave compare mode together
+- Edits apply only to the current frame; the reference and the current frame can be swapped
+- Component tests for the one-frame sync and for compare mode (enter, swap, leave); axe clean
+tech:
+FILES: apps/desktop/src/features/library (LibraryView.tsx, ApplySettingsDialog.tsx), apps/desktop/src/features/develop (DevelopView.tsx, the canvas, the filmstrip), en.json.
+ROUTES: none new; the reference is rendered with the existing develop commands.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: out of scope: comparing more than two frames, syncing across rolls.
+
+## H-21
+title: Calibration help at the rig
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: H-15, H-17
+needs: hw, mac
+adr: no
+spec: specification section 6.1 and 7; docs/research/scanlight-capture.md
+desc: A roll whose film stock has no saved levels starts from the bare-light defaults (44/22/2) without saying so, and nothing warns that a level is close to its top before calibration fails at 255. Tell the user when the levels are the bare-light defaults, offer to calibrate, and warn when a level leaves little headroom.
+ac:
+- When the levels come from the bare-light defaults (LevelsSource::Default), the capture view shows a notice saying so, with a Calibrate button; the notice goes away once the roll is calibrated or its stock has saved levels
+- A level of 240 or more shows a warning on its slider and in the calibration result: little headroom is left, and a longer shutter speed gives the light room
+- Component tests for the notice and the warning; axe clean; checked on the D600 (human)
+tech:
+FILES: apps/desktop/src/features/import/capture (CaptureSection, LevelSliders.tsx, Calibrate.tsx), en.json.
+ROUTES: none new; the levels' source already comes with the resolved capture levels.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the threshold of 240 was chosen by the owner on 2026-11-09. Calibration already stops with an error when a channel is too dark at 255 (crates/gtp-capture/src/calibration.rs); this only warns earlier.
+
+## L-11
+title: Badge for frames edited since their last export
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: P-12, U-01
+adr: no
+spec: specification sections 6 and 7
+desc: Every export is logged per frame (export_log, with its time) and frames carry edited_at, but the UI reads neither together. Show which frames were edited after their last export, so a changed frame is not forgotten.
+ac:
+- FrameSummary gains exported_at, the time of the frame's last export from export_log (none when never exported)
+- The grid shows a badge on frames exported and edited afterwards, and a quieter mark on frames exported and unchanged since; the badge has a text label for screen readers
+- The grid can be filtered to frames that need a new export
+- Service tests for exported_at (never, once, several times, edited after the export); component tests for the badge and the filter; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-catalog/src/repo/frame.rs (the summary query), crates/gtp-app/src/services/roll_frame.rs, apps/desktop/src/features/library (FrameGrid, the filter), fake-ipc.ts, en.json, packages/ipc-types.
+ROUTES: FrameSummary gains exported_at; the frame query gains the needs-export filter. Approved by the owner on 2026-11-09.
+MIGRATIONS: none (export_log exists since migration 0003).
+TESTS: as in ac.
+NOTES: compare times in the same format; export_log.created_at and frame.edited_at are both set by the catalog. Out of scope: a list of all past exports, re-exporting automatically.

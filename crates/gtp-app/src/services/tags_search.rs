@@ -8,7 +8,7 @@
 use gtp_core::{AppError, ErrorCode, FrameId, RollId, SearchQuery, Tag, TagId};
 
 use crate::services::library::Library;
-use crate::services::roll_frame::{page_offset, summary, FramePage};
+use crate::services::roll_frame::{page_offset, summaries, FramePage};
 
 pub fn tag_list(library: &Library) -> Result<Vec<Tag>, AppError> {
     library.read(|c| c.tag_list())
@@ -88,7 +88,7 @@ pub fn search(
             c.search_count(query)?,
         ))
     })?;
-    let items = frames.into_iter().map(|f| summary(library, f)).collect();
+    let items = summaries(library, frames)?;
     Ok(FramePage {
         items,
         total,

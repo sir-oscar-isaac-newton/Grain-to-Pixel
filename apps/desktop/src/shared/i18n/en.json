@@ -24,6 +24,11 @@
       "pick": "Picked",
       "reject": "Rejected"
     },
+    "needsExport": "Needs export",
+    "exportState": {
+      "stale": "Edited since last export",
+      "current": "Exported"
+    },
     "flagFilter": {
       "label": "Show frames by flag",
       "all": "All frames",

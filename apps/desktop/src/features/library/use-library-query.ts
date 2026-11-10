@@ -16,7 +16,7 @@ export interface LibraryQuery {
   queryKey: string;
   /** True when the search box or a filter narrows the frames down. */
   filtered: boolean;
-  /** The ids of every rejected frame of the current view (roll, search and tag filters). */
+  /** The ids of every rejected frame of the current view (roll, search, tag, flag and needs-export filters). */
   fetchRejectedIds: () => Promise<string[]>;
 }
 
@@ -29,18 +29,30 @@ export function useLibraryQuery(): LibraryQuery {
   const rollId = useLibraryStore((s) => s.rollId);
   const filters = useLibraryStore((s) => s.filters);
   const flagFilter = useLibraryStore((s) => s.flagFilter);
+  const needsExport = useLibraryStore((s) => s.needsExport);
   const filtered = isFiltered(filters);
-  const query = useMemo(() => toQuery(filters, rollId, flagFilter), [filters, rollId, flagFilter]);
+  const query = useMemo(
+    () => toQuery(filters, rollId, flagFilter, needsExport),
+    [filters, rollId, flagFilter, needsExport],
+  );
   const flag = flagFilter === 'all' ? null : flagFilter;
 
   const fetchPage = useCallback(
     (page: number, pageSize: number) =>
       filtered
         ? search(query, page, pageSize)
-        : frameList({ roll_id: rollId, flag, page, page_size: pageSize }),
-    [filtered, query, rollId, flag],
+        : frameList({
+            roll_id: rollId,
+            flag,
+            ...(needsExport ? { needs_export: true } : {}),
+            page,
+            page_size: pageSize,
+          }),
+    [filtered, query, rollId, flag, needsExport],
   );
-  const queryKey = filtered ? JSON.stringify(query) : `${rollId ?? 'all'}|${flagFilter}`;
+  const queryKey = filtered
+    ? JSON.stringify(query)
+    : `${rollId ?? 'all'}|${flagFilter}|${needsExport ? 'needs-export' : ''}`;
 
   const fetchRejectedIds = useCallback(async () => {
     // The view's own flag filter still applies: with Picked or Unflagged chosen no frame of it
@@ -50,12 +62,18 @@ export function useLibraryQuery(): LibraryQuery {
     for (let page = 0; page < MAX_PAGES; page += 1) {
       const result = filtered
         ? await search({ ...query, flag: 'reject' }, page, WHOLE_PAGE_SIZE)
-        : await frameList({ roll_id: rollId, flag: 'reject', page, page_size: WHOLE_PAGE_SIZE });
+        : await frameList({
+            roll_id: rollId,
+            flag: 'reject',
+            ...(needsExport ? { needs_export: true } : {}),
+            page,
+            page_size: WHOLE_PAGE_SIZE,
+          });
       ids.push(...result.items.map((frame) => frame.id));
       if (ids.length >= result.total || result.items.length === 0) break;
     }
     return ids;
-  }, [filtered, query, rollId, flagFilter]);
+  }, [filtered, query, rollId, flagFilter, needsExport]);
 
   return { fetchPage, queryKey, filtered, fetchRejectedIds };
 }

@@ -14,6 +14,7 @@ use crate::model::FrameFlag;
 /// - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
 ///   its shooting dates overlap the range; a roll without dates never matches a date filter.
 /// - `flag`: the frame's pick or reject mark.
+/// - `needs_export`: only frames exported and edited since their newest export.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
@@ -27,4 +28,5 @@ pub struct SearchQuery {
     pub camera: Option<String>,
     pub iso: Option<u32>,
     pub flag: Option<FrameFlag>,
+    pub needs_export: bool,
 }

@@ -2308,3 +2308,27 @@ ROUTES: frame_set_flag(ids, flag) -> the changed frames; FrameQuery gains an opt
 MIGRATIONS: one column `flag` on `frame` (none, pick, reject; default none). Approved by the owner on 2026-11-09.
 TESTS: as in ac.
 NOTES: out of scope: star ratings, colour labels, flags written into exported files. The specification's domain model, storage and command sections are updated in the same change.
+
+## U-21
+title: Export presets
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: U-11
+adr: no
+spec: specification sections 5, 6 and 7
+desc: Export takes a format, an output colour space, a JPEG quality, a destination folder and a file name template, and they are set anew each time. Let the user save named sets of these options and choose one in the export dialog.
+ac:
+- A preset is a name plus the five export options; presets are saved in settings.json and survive a restart
+- The export dialog has a preset select; choosing one fills all options, and changing an option afterwards marks the preset as modified
+- Save as preset, Update and Delete work from the dialog; names must be unique and not empty
+- The last used preset or options are remembered for the next export
+- Two presets ship as defaults and can be deleted: a full-size 16-bit TIFF for archiving and an sRGB JPEG for sharing
+- A settings file without presets loads with the defaults; service tests for save, update and delete, component tests for the dialog; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-app/src/services/settings.rs (the preset list and the last used options), apps/desktop/src/features (the export dialog), fake-ipc.ts, en.json, packages/ipc-types.
+ROUTES: none new; presets are read and written through the existing settings commands. Approved by the owner on 2026-11-09.
+MIGRATIONS: none (a list in settings.json).
+TESTS: as in ac.
+NOTES: out of scope: resizing on export (the export has no size option; that is its own issue), exporting with several presets in one run, sharing presets between machines.

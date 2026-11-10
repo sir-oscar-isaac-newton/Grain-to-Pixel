@@ -875,6 +875,15 @@
       "number": 279,
       "title": "Badge for frames edited since their last export",
       "branch": "feat/issue-279-export-badge",
+      "status": "completed",
+      "pr": 286,
+      "commit": "4bd490c"
+    },
+    {
+      "id": "U-21",
+      "number": 271,
+      "title": "Export presets",
+      "branch": "feat/issue-271-export-presets",
       "status": "in_progress",
       "pr": null,
       "commit": null

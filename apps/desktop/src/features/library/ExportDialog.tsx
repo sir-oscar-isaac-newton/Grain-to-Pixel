@@ -1,15 +1,19 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { ProgressList, Slider } from '@gtp/ui';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   exportStart,
   frameList,
   jobCancel,
   pickFolder,
+  settingsGet,
+  settingsSet,
   type ExportOptions,
+  type ExportPreset,
 } from '../../shared/ipc';
 import { describeJob } from './JobsPanel';
+import { applyPreset, findPreset, isModified, nameProblem } from './export-presets';
 import styles from './library.module.css';
 import { messageOf, useLibraryStore } from './library-store';
 
@@ -19,7 +23,6 @@ type Space = ExportOptions['space'];
 const FORMATS: readonly Format[] = ['tiff16', 'jpeg'];
 const SPACES: readonly Space[] = ['srgb', 'adobe_rgb', 'prophoto'];
 const DEFAULT_TEMPLATE = '{roll}_{index:03}';
-const STORAGE_KEY = 'gtp.export-options';
 
 const DEFAULTS: ExportOptions = {
   format: 'tiff16',
@@ -28,39 +31,6 @@ const DEFAULTS: ExportOptions = {
   dest_dir: '',
   template: DEFAULT_TEMPLATE,
 };
-
-/** The options used last time in this window, or the defaults; anything odd in storage is ignored. */
-function loadOptions(): ExportOptions {
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
-    if (typeof raw !== 'object' || raw === null) return DEFAULTS;
-    const o = raw as Record<string, unknown>;
-    return {
-      format: FORMATS.find((f) => f === o.format) ?? DEFAULTS.format,
-      space: SPACES.find((s) => s === o.space) ?? DEFAULTS.space,
-      jpeg_quality:
-        typeof o.jpeg_quality === 'number' &&
-        Number.isInteger(o.jpeg_quality) &&
-        o.jpeg_quality >= 1 &&
-        o.jpeg_quality <= 100
-          ? o.jpeg_quality
-          : DEFAULTS.jpeg_quality,
-      dest_dir: typeof o.dest_dir === 'string' ? o.dest_dir : DEFAULTS.dest_dir,
-      template:
-        typeof o.template === 'string' && o.template !== '' ? o.template : DEFAULTS.template,
-    };
-  } catch {
-    return DEFAULTS;
-  }
-}
-
-function saveOptions(options: ExportOptions) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(options));
-  } catch {
-    // Not remembered: the dialog works the same.
-  }
-}
 
 /** What the file name would be for a roll "Roll", frame 1; null when the template is not valid. */
 export function exampleName(template: string, format: Format): string | null {
@@ -126,7 +96,7 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
     s.jobs.find((j) => j.kind === 'export' && j.state === 'running'),
   );
 
-  const [options, setOptions] = useState<ExportOptions>(loadOptions);
+  const [options, setOptions] = useState<ExportOptions>(DEFAULTS);
   const [jobId, setJobId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +129,99 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
     if (open && jobId === null && running) setJobId(running.id);
   }, [open, jobId, running]);
 
-  const change = (patch: Partial<ExportOptions>) => setOptions((o) => ({ ...o, ...patch }));
+  // The presets and the options used last come from the settings when the dialog opens. What the
+  // user has already changed by then is not overwritten.
+  const [presets, setPresets] = useState<ExportPreset[]>([]);
+  const [presetName, setPresetName] = useState<string | null>(null);
+  const [presetError, setPresetError] = useState<string | null>(null);
+  const [naming, setNaming] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const touched = useRef(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const namingOpen = naming !== null;
+  useEffect(() => {
+    if (namingOpen) nameRef.current?.focus();
+  }, [namingOpen]);
+  const nameId = useId();
+  const nameErrorId = useId();
+  useEffect(() => {
+    let alive = true;
+    settingsGet().then(
+      (settings) => {
+        if (!alive) return;
+        const list = settings.export_presets ?? [];
+        setPresets(list);
+        const last = settings.last_export;
+        if (last && !touched.current) {
+          setOptions(last.options);
+          setPresetName(findPreset(list, last.preset)?.name ?? null);
+        }
+      },
+      (e: unknown) =>
+        alive && setPresetError(t('export.presets.loadFailed', { message: messageOf(e) })),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [t]);
+
+  const change = (patch: Partial<ExportOptions>) => {
+    touched.current = true;
+    setOptions((o) => ({ ...o, ...patch }));
+  };
+  const chosenPreset = findPreset(presets, presetName);
+  const modified = chosenPreset !== undefined && isModified(options, chosenPreset);
+
+  const choosePreset = (name: string) => {
+    touched.current = true;
+    setPresetError(null);
+    setConfirmingDelete(false);
+    const preset = findPreset(presets, name);
+    setPresetName(preset?.name ?? null);
+    if (preset) setOptions((o) => applyPreset(o, preset));
+  };
+
+  /** Writes the whole list of presets; true when it was saved (the list shown is then the saved one). */
+  const writePresets = async (list: ExportPreset[]): Promise<boolean> => {
+    setPresetError(null);
+    try {
+      const saved = await settingsSet({ export_presets: list });
+      setPresets(saved.export_presets ?? list);
+      return true;
+    } catch (e) {
+      setPresetError(t('export.presets.failed', { message: messageOf(e) }));
+      return false;
+    }
+  };
+  const shown = (): ExportOptions => ({ ...options, template: options.template.trim() });
+
+  const saveAs = async () => {
+    const name = (naming ?? '').trim();
+    const problem = nameProblem(name, presets);
+    if (problem !== null) {
+      setNameError(t(problem));
+      return;
+    }
+    if (await writePresets([...presets, { name, options: shown() }])) {
+      setPresetName(name);
+      setNaming(null);
+      setNameError(null);
+    }
+  };
+  const update = async () => {
+    if (!chosenPreset) return;
+    await writePresets(
+      presets.map((p) => (p === chosenPreset ? { name: p.name, options: shown() } : p)),
+    );
+  };
+  const remove = async () => {
+    if (!chosenPreset) return;
+    if (await writePresets(presets.filter((p) => p !== chosenPreset))) {
+      setPresetName(null);
+      setConfirmingDelete(false);
+    }
+  };
   const problem = problemOf(options);
   const folderProblem = problem === 'export.errors.noFolder';
   const example = exampleName(options.template, options.format);
@@ -181,8 +243,12 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
     setError(null);
     try {
       const chosen = { ...options, template: options.template.trim() };
-      saveOptions(chosen);
       const id = await exportStart([...exported], chosen);
+      try {
+        await settingsSet({ last_export: { options: chosen, preset: chosenPreset?.name ?? null } });
+      } catch {
+        // Not remembered for next time: the export itself is running.
+      }
       addJob({
         id,
         kind: 'export',
@@ -249,6 +315,95 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
             </div>
           ) : (
             <form onSubmit={start} className={styles.form}>
+              <label className={styles.field}>
+                {t('export.presets.label')}
+                <select
+                  value={chosenPreset?.name ?? ''}
+                  onChange={(e) => choosePreset(e.target.value)}
+                >
+                  <option value="">{t('export.presets.none')}</option>
+                  {presets.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p === chosenPreset && modified
+                        ? t('export.presets.modified', { name: p.name })
+                        : p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className={styles.buttons}>
+                <button type="button" onClick={() => setNaming('')} disabled={naming !== null}>
+                  {t('export.presets.saveAs')}
+                </button>
+                <button type="button" onClick={() => void update()} disabled={!modified}>
+                  {t('export.presets.update')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(true)}
+                  disabled={!chosenPreset || confirmingDelete}
+                >
+                  {t('export.presets.delete')}
+                </button>
+              </div>
+              {naming !== null && (
+                <div className={styles.field}>
+                  <label htmlFor={nameId}>{t('export.presets.name')}</label>
+                  <input
+                    id={nameId}
+                    type="text"
+                    value={naming}
+                    maxLength={100}
+                    ref={nameRef}
+                    aria-invalid={nameError !== null}
+                    aria-describedby={nameError ? nameErrorId : undefined}
+                    onChange={(e) => {
+                      setNaming(e.target.value);
+                      setNameError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void saveAs();
+                      }
+                    }}
+                  />
+                  {nameError && (
+                    <p id={nameErrorId} role="alert">
+                      {nameError}
+                    </p>
+                  )}
+                  <div className={styles.buttons}>
+                    <button type="button" onClick={() => void saveAs()}>
+                      {t('export.presets.save')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNaming(null);
+                        setNameError(null);
+                      }}
+                    >
+                      {t('export.presets.cancel')}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {confirmingDelete && chosenPreset && (
+                <div role="group" aria-label={t('export.presets.confirmLabel')}>
+                  <p>{t('export.presets.confirmDelete', { name: chosenPreset.name })}</p>
+                  <div className={styles.buttons}>
+                    <button type="button" onClick={() => void remove()}>
+                      {t('export.presets.confirm')}
+                    </button>
+                    <button type="button" onClick={() => setConfirmingDelete(false)}>
+                      {t('export.presets.keep')}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {presetError && <p role="alert">{presetError}</p>}
+
               <fieldset className={styles.fieldset}>
                 <legend>{t('export.format')}</legend>
                 {FORMATS.map((format) => (

@@ -10,8 +10,6 @@ import { resetThumbnails } from './thumbnails';
 
 vi.mock('../../shared/ipc', async () => (await import('./fake-ipc')).ipc);
 
-const STORAGE_KEY = 'gtp.export-options';
-
 function openLibrary() {
   state.details = libraryDetails();
   state.rolls = [makeRoll({ id: 'summer', name: 'Summer' })];
@@ -55,7 +53,6 @@ describe('ExportDialog', () => {
     resetFake();
     resetLibraryStore();
     resetThumbnails();
-    localStorage.clear();
     restoreLayout = mockLayout(900, 600);
   });
   afterEach(() => {
@@ -305,7 +302,7 @@ describe('ExportDialog', () => {
     });
   });
 
-  describe('remembering the options', () => {
+  describe('remembering the options in the settings', () => {
     it('keeps what was used last time for the next time', async () => {
       const user = await openDialog();
       const d = within(dialog());
@@ -321,42 +318,10 @@ describe('ExportDialog', () => {
 
       await user.click(exportButton());
       const next = within(await screen.findByRole('dialog', { name: 'Export' }));
-      expect(next.getByRole('radio', { name: /JPEG/ })).toBeChecked();
+      await waitFor(() => expect(next.getByRole('radio', { name: /JPEG/ })).toBeChecked());
       expect(next.getByRole('combobox', { name: /Colour space/ })).toHaveValue('adobe_rgb');
       expect(next.getByRole('textbox', { name: /File name/ })).toHaveValue('Frame {index}');
       expect(next.getByText('/films/Library')).toBeInTheDocument();
-    });
-
-    it('ignores stored options that make no sense', async () => {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          format: 'png',
-          space: 'lab',
-          jpeg_quality: 500,
-          dest_dir: 7,
-          template: '',
-        }),
-      );
-      await openDialog();
-      const d = within(dialog());
-      expect(d.getByRole('radio', { name: /TIFF, 16-bit/ })).toBeChecked();
-      expect(d.getByRole('combobox', { name: /Colour space/ })).toHaveValue('srgb');
-      expect(d.getByRole('textbox', { name: /File name/ })).toHaveValue('{roll}_{index:03}');
-      expect(d.getByText('No folder chosen')).toBeInTheDocument();
-    });
-
-    it('works when storage cannot be used', async () => {
-      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-        throw new Error('blocked');
-      });
-      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-        throw new Error('blocked');
-      });
-      const user = await openDialog();
-      expect(within(dialog()).getByRole('radio', { name: /TIFF, 16-bit/ })).toBeChecked();
-      await start(user);
-      expect(state.exports).toHaveLength(1);
     });
   });
 

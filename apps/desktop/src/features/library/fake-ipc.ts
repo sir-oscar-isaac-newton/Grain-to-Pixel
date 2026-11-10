@@ -11,10 +11,12 @@ import type {
   CaptureStep,
   Counters,
   DeviceInfo,
+  ExportPreset,
   FolderCheck,
   FramePage,
   FrameSummary,
   ImportResult,
+  LastExport,
   LevelsScope,
   LibraryDetails,
   LightInfo,
@@ -159,6 +161,8 @@ interface SettingsPatchShape {
   keys?: Record<string, string>;
   focus_reference?: FocusCheck['raw_map'];
   clear_focus_reference?: boolean;
+  export_presets?: ExportPreset[];
+  last_export?: LastExport;
 }
 
 /** The answer of the focus check before a test changes it. */
@@ -190,6 +194,30 @@ export const DEFAULT_FLAGS = {
   dev_overlay: false,
   update_check: true,
 };
+
+/** The two export presets a settings file without any starts with (spec section 7). */
+export const DEFAULT_EXPORT_PRESETS: ExportPreset[] = [
+  {
+    name: 'Archive (TIFF 16-bit)',
+    options: {
+      format: 'tiff16',
+      space: 'prophoto',
+      jpeg_quality: 92,
+      dest_dir: '',
+      template: '{roll}_{index:03}',
+    },
+  },
+  {
+    name: 'Share (JPEG sRGB)',
+    options: {
+      format: 'jpeg',
+      space: 'srgb',
+      jpeg_quality: 90,
+      dest_dir: '',
+      template: '{roll}_{index:03}',
+    },
+  },
+];
 
 /** The camera of the fake: ISO, shutter speed and aperture, all writable. */
 export function defaultCameraSettings(): CameraSetting[] {
@@ -255,6 +283,9 @@ export const state = {
   startingLook: 'neutral' as 'neutral' | 'film_log' | 'frontier',
   /** The keyboard shortcuts the user changed (action name to key). */
   keys: {} as Record<string, string>,
+  /** The export presets, and the options the last export started with. */
+  exportPresets: DEFAULT_EXPORT_PRESETS.map((p) => ({ ...p, options: { ...p.options } })),
+  lastExport: null as LastExport | null,
   /** Reading the settings fails with this message when set. */
   settingsUnreadable: null as string | null,
   /** Saving settings is refused with this message when set. */
@@ -479,6 +510,8 @@ export const ipc = {
       flags: { ...state.flags },
       keys: { ...state.keys },
       focus_reference: state.focusReference,
+      export_presets: state.exportPresets.map((p) => ({ ...p, options: { ...p.options } })),
+      last_export: state.lastExport,
     };
   }),
   settingsDefaults: vi.fn(async () => ({ last_library: null, flags: { ...DEFAULT_FLAGS } })),
@@ -492,12 +525,16 @@ export const ipc = {
     if (patch.starting_look) state.startingLook = patch.starting_look;
     if (patch.focus_reference) state.focusReference = patch.focus_reference;
     if (patch.clear_focus_reference) state.focusReference = null;
+    if (patch.export_presets) state.exportPresets = patch.export_presets;
+    if (patch.last_export) state.lastExport = patch.last_export;
     return {
       last_library: state.lastLibrary,
       starting_look: state.startingLook,
       flags: { ...state.flags },
       keys: { ...state.keys },
       focus_reference: state.focusReference,
+      export_presets: state.exportPresets.map((p) => ({ ...p, options: { ...p.options } })),
+      last_export: state.lastExport,
     };
   }),
   updateCheck: vi.fn<(manual: boolean) => Promise<UpdateOutcome>>(async () => {
@@ -937,6 +974,8 @@ export function resetFake() {
   state.exports = [];
   state.flags = { ...DEFAULT_FLAGS };
   state.keys = {};
+  state.exportPresets = DEFAULT_EXPORT_PRESETS.map((p) => ({ ...p, options: { ...p.options } }));
+  state.lastExport = null;
   state.settingsPatches = [];
   state.startingLook = 'neutral';
   state.settingsUnreadable = null;

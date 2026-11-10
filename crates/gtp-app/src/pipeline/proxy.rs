@@ -85,21 +85,48 @@ pub fn build_proxy(image: &ImageF32, max_edge: u32) -> Result<ImageF32, AppError
             "A proxy needs a size above 0.",
         ));
     }
-    let (w, h) = (image.width, image.height);
-    let Some((new_w, new_h)) = proxy_size(w, h, max_edge) else {
+    let Some((new_w, new_h)) = proxy_size(image.width, image.height, max_edge) else {
         return Ok(image.clone());
     };
+    resize_rgb(image, new_w, new_h, FilterType::Box, "proxy resize")
+}
 
+/// `image` scaled down so its long edge is exactly `long_edge`, keeping the proportions (the other
+/// edge is rounded to the nearest pixel, at least 1), with a Lanczos filter: sharp, and it may
+/// overshoot a little at hard edges (the encoders clamp to 0..1 when they convert). An image whose long
+/// edge is already `long_edge` or less is returned unchanged: this never enlarges. Needs 3 channels.
+pub fn resize_to_long_edge(image: ImageF32, long_edge: u32) -> Result<ImageF32, AppError> {
+    if image.channels != 3 || long_edge == 0 {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "A resize needs a 3-channel image and a size above 0.",
+        )
+        .with_details(format!("{} channels, edge {long_edge}", image.channels)));
+    }
+    match proxy_size(image.width, image.height, long_edge) {
+        Some((w, h)) => resize_rgb(&image, w, h, FilterType::Lanczos3, "export resize"),
+        None => Ok(image),
+    }
+}
+
+/// A 3-channel `image` resized to `new_w` x `new_h` with `filter`.
+fn resize_rgb(
+    image: &ImageF32,
+    new_w: u32,
+    new_h: u32,
+    filter: FilterType,
+    what: &str,
+) -> Result<ImageF32, AppError> {
+    let (w, h) = (image.width, image.height);
     // The resize works on its own pixel type, so the pixels are copied in and out; those copies
     // and the resize itself (the library's `rayon` feature) use all cores. Every pixel is
     // computed from the same inputs as before, so the result is bit for bit the same.
     let (pixels, _) = image.data.as_chunks::<3>();
     let source_pixels: Vec<F32x3> = pixels.par_iter().map(|p| F32x3::new(*p)).collect();
-    let resize_error =
-        |err: &dyn std::fmt::Display| AppError::internal(format!("proxy resize: {err}"));
+    let resize_error = |err: &dyn std::fmt::Display| AppError::internal(format!("{what}: {err}"));
     let source = TypedImage::from_pixels(w, h, source_pixels).map_err(|e| resize_error(&e))?;
     let mut target = TypedImage::<F32x3>::new(new_w, new_h);
-    let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Box));
+    let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(filter));
     Resizer::new()
         .resize_typed(&source, &mut target, &options)
         .map_err(|e| resize_error(&e))?;
@@ -241,6 +268,25 @@ mod tests {
             .data
             .iter()
             .all(|v| (0.05 - 1e-5..=1.0 + 1e-5).contains(v)));
+    }
+
+    #[test]
+    fn a_resize_to_a_long_edge_is_exact_proportional_and_never_enlarges() {
+        for ((w, h), edge, want) in [
+            ((600, 400), 300, (300, 200)),
+            ((400, 600), 300, (200, 300)),
+            ((599, 400), 300, (300, 200)),
+            ((4000, 7), 256, (256, 1)),
+        ] {
+            let out = resize_to_long_edge(flat(w, h, 0.4), edge).unwrap();
+            assert_eq!((out.width, out.height), want, "{w}x{h} -> {edge}");
+            assert!(out.data.iter().all(|v| (v - 0.4).abs() < 1e-4));
+        }
+        let same = flat(300, 200, 0.4);
+        assert_eq!(resize_to_long_edge(same.clone(), 300).unwrap(), same);
+        assert_eq!(resize_to_long_edge(same.clone(), 5000).unwrap(), same);
+        assert!(resize_to_long_edge(flat(10, 10, 0.1), 0).is_err());
+        assert!(resize_to_long_edge(ImageF32::zeros(10, 10, 1).unwrap(), 5).is_err());
     }
 
     #[test]

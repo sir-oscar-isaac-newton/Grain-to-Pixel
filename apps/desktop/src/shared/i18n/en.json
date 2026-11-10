@@ -482,10 +482,10 @@
   "export": {
     "open": "Export…",
     "title": "Export",
-    "description_one": "Write {{count}} frame at full size, with the colour profile embedded.",
-    "description_other": "Write {{count}} frames at full size, with the colour profile embedded.",
-    "descriptionPicked_one": "Write {{count}} picked frame at full size, with the colour profile embedded.",
-    "descriptionPicked_other": "Write {{count}} picked frames at full size, with the colour profile embedded.",
+    "description_one": "Write {{count}} frame, with the colour profile embedded.",
+    "description_other": "Write {{count}} frames, with the colour profile embedded.",
+    "descriptionPicked_one": "Write {{count}} picked frame, with the colour profile embedded.",
+    "descriptionPicked_other": "Write {{count}} picked frames, with the colour profile embedded.",
     "onlyPicked": "Only picked frames",
     "format": "File format",
     "tiff16": "TIFF, 16-bit",
@@ -501,6 +501,12 @@
       "adobe_rgb": "A wider range of colours, for print.",
       "prophoto": "The widest range, for further editing in other software."
     },
+    "size": "Size",
+    "sizeFull": "Full size",
+    "sizePixels": "{{pixels}} px on the long edge",
+    "sizeCustom": "Custom",
+    "sizeCustomLabel": "Long edge in pixels",
+    "sizeHint": "A smaller size keeps the proportions. A frame is never enlarged.",
     "quality": "JPEG quality",
     "folder": "Folder",
     "noFolder": "No folder chosen",
@@ -513,6 +519,8 @@
     "errors": {
       "noFolder": "Choose the folder to export into.",
       "noTemplate": "Type a file name.",
+      "sizeWhole": "Type a whole number of pixels.",
+      "sizeRange": "The long edge runs from {{min}} to {{max}} pixels.",
       "folders": "A file name cannot contain folders: remove the / or \\."
     },
     "start": "Export",

@@ -905,6 +905,15 @@
       "status": "completed",
       "pr": 289,
       "commit": "29b2aa0"
+    },
+    {
+      "id": "P-24",
+      "number": 292,
+      "title": "Resize on export",
+      "branch": "feat/issue-292-export-resize",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

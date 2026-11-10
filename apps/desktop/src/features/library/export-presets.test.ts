@@ -9,6 +9,7 @@ const options = (over: Partial<ExportOptions> = {}): ExportOptions => ({
   dest_dir: '/out',
   template: '{roll}_{index:03}',
   write_metadata: true,
+  long_edge: null,
   ...over,
 });
 
@@ -43,9 +44,23 @@ describe('sameOptions', () => {
       { dest_dir: '/other' },
       { template: 'x' },
       { write_metadata: false },
+      { long_edge: 2048 },
     ] as const) {
       expect(sameOptions(options(), options(change))).toBe(false);
     }
+  });
+
+  it('takes a missing size for none', () => {
+    const missing = options();
+    delete (missing as { long_edge?: unknown }).long_edge;
+    expect(sameOptions(missing, options({ long_edge: null }))).toBe(true);
+    expect(sameOptions(missing, options({ long_edge: 2048 }))).toBe(false);
+    expect(isModified(options({ long_edge: 2048 }), preset('P', { long_edge: 2048 }))).toBe(false);
+    expect(isModified(options({ long_edge: 1600 }), preset('P', { long_edge: 2048 }))).toBe(true);
+    expect(applyPreset(options(), preset('P', { long_edge: 2048 })).long_edge).toBe(2048);
+    expect(
+      applyPreset(options({ long_edge: 1600 }), { name: 'P', options: missing }).long_edge,
+    ).toBeNull();
   });
 
   it('ignores the quality for TIFF, where it is not shown', () => {

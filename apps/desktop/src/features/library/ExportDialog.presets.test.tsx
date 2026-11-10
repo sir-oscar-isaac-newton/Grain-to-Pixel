@@ -138,6 +138,156 @@ describe('ExportDialog presets', () => {
     expect(button('Update')).toBeDisabled();
   });
 
+  describe('Size', () => {
+    const size = () => within(dialog()).getByRole('combobox', { name: /^Size/ });
+    const customField = () =>
+      within(dialog()).queryByRole('spinbutton', { name: 'Long edge in pixels' });
+    const exportButton = () => button('Export');
+    const typedField = () =>
+      within(dialog()).getByRole('spinbutton', { name: 'Long edge in pixels' });
+
+    it('offers full size, the listed sizes and Custom, starting on full size', async () => {
+      await openDialog();
+      const labels = within(size())
+        .getAllByRole('option')
+        .map((o) => o.textContent);
+      expect(labels).toEqual([
+        'Full size',
+        '1600 px on the long edge',
+        '2048 px on the long edge',
+        '3000 px on the long edge',
+        '4000 px on the long edge',
+        'Custom',
+      ]);
+      expect(size()).toHaveValue('full');
+      expect(customField()).toBeNull();
+    });
+
+    it('sends the size chosen, and remembers it', async () => {
+      const user = await openDialog();
+      await chooseFolder(user);
+      await user.selectOptions(size(), '3000');
+      await user.click(exportButton());
+      await within(dialog()).findByRole('progressbar', { name: 'Export 2 frames' });
+      expect(state.exports[0]?.options.long_edge).toBe(3000);
+      expect(state.lastExport?.options.long_edge).toBe(3000);
+    });
+
+    it('takes the size of a preset, and marks the preset modified when the size changes', async () => {
+      const user = await openDialog();
+      await user.selectOptions(presetSelect(), 'Share (JPEG sRGB)');
+      expect(size()).toHaveValue('2048');
+      expect(button('Update')).toBeDisabled();
+
+      await user.selectOptions(size(), '1600');
+      expect(
+        within(presetSelect()).getByRole('option', { name: 'Share (JPEG sRGB) (modified)' }),
+      ).toBeInTheDocument();
+      await user.selectOptions(size(), '2048');
+      expect(button('Update')).toBeDisabled();
+
+      await user.selectOptions(size(), 'full');
+      expect(button('Update')).toBeEnabled();
+      await user.click(button('Update'));
+      await waitFor(() => expect(button('Update')).toBeDisabled());
+      expect(state.exportPresets[1]?.options.long_edge).toBeNull();
+
+      await user.selectOptions(presetSelect(), 'Archive (TIFF 16-bit)');
+      expect(size()).toHaveValue('full');
+      await user.selectOptions(size(), '4000');
+      await user.click(button('Save as preset…'));
+      await user.type(within(dialog()).getByRole('textbox', { name: 'Preset name' }), 'Big');
+      await user.click(button('Save preset'));
+      await waitFor(() => expect(presetSelect()).toHaveValue('Big'));
+      expect(state.exportPresets[2]?.options.long_edge).toBe(4000);
+    });
+
+    it('treats a preset without a size as full size', async () => {
+      const bare = { ...ARCHIVE.options };
+      delete (bare as { long_edge?: unknown }).long_edge;
+      state.exportPresets = [{ name: 'Old', options: bare }];
+      const user = await openDialog();
+      await user.selectOptions(presetSelect(), 'Old');
+      expect(size()).toHaveValue('full');
+      expect(button('Update')).toBeDisabled();
+    });
+
+    it('shows a size the list does not have as Custom with that number', async () => {
+      state.exportPresets = [{ name: 'Odd', options: { ...SHARE.options, long_edge: 2500 } }];
+      const user = await openDialog();
+      await user.selectOptions(presetSelect(), 'Odd');
+      expect(size()).toHaveValue('custom');
+      expect(customField()).toHaveValue(2500);
+      expect(button('Update')).toBeDisabled();
+    });
+
+    it('shows the last used size, listed or not, when it opens', async () => {
+      state.lastExport = {
+        options: { ...SHARE.options, dest_dir: '/out', long_edge: 777 },
+        preset: null,
+      };
+      await openDialog();
+      await waitFor(() => expect(size()).toHaveValue('custom'));
+      expect(customField()).toHaveValue(777);
+    });
+
+    it('keeps Custom shown for a typed size and exports it', async () => {
+      const user = await openDialog();
+      await chooseFolder(user);
+      await user.selectOptions(size(), 'custom');
+      await user.type(typedField(), '2048');
+      expect(size()).toHaveValue('custom');
+      expect(within(dialog()).queryByRole('alert')).toBeNull();
+      await user.click(exportButton());
+      await within(dialog()).findByRole('progressbar', { name: 'Export 2 frames' });
+      expect(state.exports[0]?.options.long_edge).toBe(2048);
+    });
+
+    it('blocks the export with an error under the field for a size out of range or not whole', async () => {
+      const user = await openDialog();
+      await chooseFolder(user);
+      await user.selectOptions(size(), 'custom');
+      const field = typedField();
+      expect(exportButton()).toBeDisabled();
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(field).toHaveAccessibleDescription('Type a whole number of pixels.');
+
+      for (const [text, message] of [
+        ['255', 'The long edge runs from 256 to 20000 pixels.'],
+        ['20001', 'The long edge runs from 256 to 20000 pixels.'],
+        ['1500.5', 'Type a whole number of pixels.'],
+        ['-300', 'Type a whole number of pixels.'],
+      ] as const) {
+        await user.clear(field);
+        await user.type(field, text);
+        expect(field).toHaveAccessibleDescription(message);
+        expect(exportButton()).toBeDisabled();
+        expect(button('Save as preset…')).toBeDisabled();
+        await user.keyboard('{Enter}');
+        expect(state.exports).toEqual([]);
+      }
+
+      for (const text of ['256', '20000']) {
+        await user.clear(field);
+        await user.type(field, text);
+        expect(field).toHaveAttribute('aria-invalid', 'false');
+        expect(within(dialog()).queryByRole('alert')).toBeNull();
+        expect(exportButton()).toBeEnabled();
+      }
+    });
+
+    it('has no accessibility violations with the custom field and its error', async () => {
+      const user = await openDialog();
+      await user.selectOptions(size(), 'custom');
+      await expectNoA11yViolations(document.body);
+      await user.type(typedField(), '20');
+      expect(within(dialog()).getByRole('alert')).toBeInTheDocument();
+      await expectNoA11yViolations(document.body);
+      await user.type(typedField(), '48');
+      await expectNoA11yViolations(document.body);
+    });
+  });
+
   describe('Save as preset', () => {
     it('asks for a name inline, saves the options shown, and chooses the new preset', async () => {
       const user = await openDialog();
@@ -159,6 +309,7 @@ describe('ExportDialog presets', () => {
           dest_dir: '/films/Library',
           template: '{roll}_{index:03}',
           write_metadata: true,
+          long_edge: null,
         },
       });
       expect(within(dialog()).queryByRole('textbox', { name: 'Preset name' })).toBeNull();
@@ -208,6 +359,7 @@ describe('ExportDialog presets', () => {
       dest_dir: '/films/Library',
       template: '{roll}_{index:03}',
       write_metadata: true,
+      long_edge: 2048,
     });
     expect(state.exportPresets[0]).toEqual(ARCHIVE);
     expect(presetSelect()).toHaveValue('Share (JPEG sRGB)');
@@ -249,6 +401,7 @@ describe('ExportDialog presets', () => {
         dest_dir: '/films/Library',
         template: '{roll}_{index:03}',
         write_metadata: true,
+        long_edge: 2048,
       },
       preset: 'Share (JPEG sRGB)',
     });

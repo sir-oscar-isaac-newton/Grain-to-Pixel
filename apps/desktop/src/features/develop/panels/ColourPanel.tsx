@@ -47,7 +47,7 @@ interface ColourPanelProps {
    */
   auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
-  onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
+  onChange: (recipe: Recipe, options: { dragging: boolean; merge?: boolean }) => void;
 }
 
 /**
@@ -72,6 +72,7 @@ export function ColourPanel({
   const autoColour = auto ? colourOf(auto) : undefined;
   const autoMix = auto ? monoOf(auto).mix : undefined;
   const resetTo = (next: Recipe) => onChange(next, { dragging: false });
+  const resetSlider = (next: Recipe) => onChange(next, { dragging: false, merge: true });
   const whole = (value: number) =>
     new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 0 }).format(value);
   const hundredths = (value: number) =>
@@ -120,7 +121,7 @@ export function ColourPanel({
               format={whole}
               disabled={locked}
               onReset={
-                autoColour && (() => resetTo(withColour(recipe, { [key]: autoColour[key] })))
+                autoColour && (() => resetSlider(withColour(recipe, { [key]: autoColour[key] })))
               }
               onChange={(next, dragging) =>
                 onChange(withColour(recipe, { [key]: next }), { dragging })
@@ -139,7 +140,7 @@ export function ColourPanel({
                 disabled={locked}
                 onReset={
                   autoColour &&
-                  (() => resetTo(withColour(recipe, { saturation: autoColour.saturation })))
+                  (() => resetSlider(withColour(recipe, { saturation: autoColour.saturation })))
                 }
                 onChange={(next, dragging) =>
                   onChange(withColour(recipe, { saturation: next }), { dragging })
@@ -155,7 +156,7 @@ export function ColourPanel({
                 disabled={locked}
                 onReset={
                   autoColour &&
-                  (() => resetTo(withColour(recipe, { vibrance: autoColour.vibrance })))
+                  (() => resetSlider(withColour(recipe, { vibrance: autoColour.vibrance })))
                 }
                 onChange={(next, dragging) =>
                   onChange(withColour(recipe, { vibrance: next }), { dragging })
@@ -200,7 +201,7 @@ export function ColourPanel({
                   (() => {
                     const mix: [number, number, number] = [...mono.mix];
                     mix[channel] = autoMix[channel];
-                    resetTo(withMono(recipe, { ...mono, mix }));
+                    resetSlider(withMono(recipe, { ...mono, mix }));
                   })
                 }
                 onChange={(next, dragging) => {

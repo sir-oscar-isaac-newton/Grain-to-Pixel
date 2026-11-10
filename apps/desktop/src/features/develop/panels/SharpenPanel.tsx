@@ -4,7 +4,6 @@ import type { Recipe } from '../../../shared/ipc';
 import styles from '../develop.module.css';
 import {
   SHARPEN_AMOUNT_MAX,
-  SHARPEN_DEFAULT,
   SHARPEN_RADIUS_MAX,
   SHARPEN_RADIUS_MIN,
   sharpenOf,
@@ -25,7 +24,7 @@ interface SharpenPanelProps {
    */
   auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
-  onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
+  onChange: (recipe: Recipe, options: { dragging: boolean; merge?: boolean }) => void;
 }
 
 /**
@@ -45,6 +44,7 @@ export function SharpenPanel({
   const locked = readOnly || working;
   const autoSharpen = auto ? sharpenOf(auto) : undefined;
   const resetTo = (next: Recipe) => onChange(next, { dragging: false });
+  const resetSlider = (next: Recipe) => onChange(next, { dragging: false, merge: true });
   const number = (digits: number) => (value: number) =>
     new Intl.NumberFormat(i18n.language, {
       minimumFractionDigits: digits,
@@ -52,8 +52,6 @@ export function SharpenPanel({
     }).format(value);
   const percent = (value: number) => t('develop.sharpen.percent', { value: number(0)(value) });
   const pixels = (value: number) => t('develop.sharpen.pixels', { value: number(1)(value) });
-  const atDefaults =
-    sharpen.amount === SHARPEN_DEFAULT.amount && sharpen.radius_px === SHARPEN_DEFAULT.radius_px;
 
   return (
     <div className={styles.panel}>
@@ -86,7 +84,8 @@ export function SharpenPanel({
             format={percent}
             disabled={locked}
             onReset={
-              autoSharpen && (() => resetTo(withSharpen(recipe, { amount: autoSharpen.amount })))
+              autoSharpen &&
+              (() => resetSlider(withSharpen(recipe, { amount: autoSharpen.amount })))
             }
             onChange={(next, dragging) =>
               onChange(withSharpen(recipe, { amount: next }), { dragging })
@@ -102,7 +101,7 @@ export function SharpenPanel({
             disabled={locked}
             onReset={
               autoSharpen &&
-              (() => resetTo(withSharpen(recipe, { radius_px: autoSharpen.radius_px })))
+              (() => resetSlider(withSharpen(recipe, { radius_px: autoSharpen.radius_px })))
             }
             onChange={(next, dragging) =>
               onChange(withSharpen(recipe, { radius_px: Math.round(next * 10) / 10 }), {
@@ -110,15 +109,6 @@ export function SharpenPanel({
               })
             }
           />
-        </div>
-        <div className={styles.panelButtons}>
-          <button
-            type="button"
-            disabled={locked || atDefaults}
-            onClick={() => onChange(withSharpen(recipe, SHARPEN_DEFAULT), { dragging: false })}
-          >
-            {t('develop.sharpen.reset')}
-          </button>
         </div>
       </section>
     </div>

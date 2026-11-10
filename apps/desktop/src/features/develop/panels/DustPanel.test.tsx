@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support';
@@ -111,13 +111,19 @@ describe('DustPanel', () => {
     );
   });
 
-  it('resets to the defaults, and has nothing to reset at them', async () => {
+  it('has one reset, the header one, which puts everything to the automatic values', async () => {
     const user = userEvent.setup();
-    const { props, mocks, rerender } = setup();
-    await user.click(screen.getByRole('button', { name: 'Reset dust removal' }));
-    expect(lastDust(mocks)).toEqual({ enabled: true, threshold: 0.5, grow_px: 2 });
-    rerender(<DustPanel {...props} recipe={makeRecipe('x')} />);
-    expect(screen.getByRole('button', { name: 'Reset dust removal' })).toBeDisabled();
+    const auto = makeRecipe('auto', { dust: { enabled: false, threshold: 0.6, grow_px: 3 } });
+    const { mocks } = setup({ auto });
+    expect(screen.getAllByRole('button', { name: /^Reset/ })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Reset Dust removal to automatic' }));
+    expect(lastDust(mocks)).toEqual({ enabled: false, threshold: 0.6, grow_px: 3 });
+  });
+
+  it('marks a slider reset as one to merge with a change just made', () => {
+    const { mocks } = setup({ auto: makeRecipe('auto') });
+    fireEvent.doubleClick(slider('Widen spots by'));
+    expect(mocks.onChange.mock.calls[0]?.[1]).toEqual({ dragging: false, merge: true });
   });
 
   describe('when nothing can be changed', () => {
@@ -127,7 +133,9 @@ describe('DustPanel', () => {
     ])('disables every control for %s', (_name, over) => {
       setup(over);
       expect(toggle()).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Reset dust removal' })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Reset Dust removal to automatic' }),
+      ).toBeDisabled();
       for (const s of screen.getAllByRole('slider')) expect(s).toHaveAttribute('data-disabled');
     });
   });

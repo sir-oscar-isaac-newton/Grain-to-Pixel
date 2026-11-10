@@ -2,14 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Slider } from '@gtp/ui';
 import type { Recipe } from '../../../shared/ipc';
 import styles from '../develop.module.css';
-import {
-  DUST_DEFAULT,
-  DUST_GROW_MAX,
-  dustOf,
-  sensitivityOf,
-  thresholdOf,
-  withDust,
-} from '../recipe-parts';
+import { DUST_GROW_MAX, dustOf, sensitivityOf, thresholdOf, withDust } from '../recipe-parts';
 import { resetDust } from '../recipe-reset';
 import { ResetPanelButton } from './ResetPanelButton';
 
@@ -27,7 +20,7 @@ interface DustPanelProps {
    */
   auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
-  onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
+  onChange: (recipe: Recipe, options: { dragging: boolean; merge?: boolean }) => void;
 }
 
 /**
@@ -49,11 +42,8 @@ export function DustPanel({
   const locked = readOnly || working;
   const autoDust = auto ? dustOf(auto) : undefined;
   const resetTo = (next: Recipe) => onChange(next, { dragging: false });
+  const resetSlider = (next: Recipe) => onChange(next, { dragging: false, merge: true });
   const sensitivity = sensitivityOf(dust.threshold);
-  const atDefaults =
-    dust.enabled === DUST_DEFAULT.enabled &&
-    dust.threshold === DUST_DEFAULT.threshold &&
-    dust.grow_px === DUST_DEFAULT.grow_px;
   const number = (value: number) => new Intl.NumberFormat(i18n.language).format(value);
 
   return (
@@ -103,7 +93,7 @@ export function DustPanel({
             format={(value) => t('develop.dust.percent', { value: number(value) })}
             disabled={locked || !dust.enabled}
             onReset={
-              autoDust && (() => resetTo(withDust(recipe, { threshold: autoDust.threshold })))
+              autoDust && (() => resetSlider(withDust(recipe, { threshold: autoDust.threshold })))
             }
             onChange={(next, dragging) =>
               onChange(withDust(recipe, { threshold: thresholdOf(next) }), { dragging })
@@ -117,20 +107,13 @@ export function DustPanel({
             step={1}
             format={(value) => t('develop.dust.pixels', { value: number(value) })}
             disabled={locked || !dust.enabled}
-            onReset={autoDust && (() => resetTo(withDust(recipe, { grow_px: autoDust.grow_px })))}
+            onReset={
+              autoDust && (() => resetSlider(withDust(recipe, { grow_px: autoDust.grow_px })))
+            }
             onChange={(next, dragging) =>
               onChange(withDust(recipe, { grow_px: Math.round(next) }), { dragging })
             }
           />
-        </div>
-        <div className={styles.panelButtons}>
-          <button
-            type="button"
-            disabled={locked || atDefaults}
-            onClick={() => onChange(withDust(recipe, DUST_DEFAULT), { dragging: false })}
-          >
-            {t('develop.dust.reset')}
-          </button>
         </div>
       </section>
     </div>

@@ -3,11 +3,20 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useUiStore } from '../../app/store';
 import { expectNoA11yViolations, mockLayout } from '../../test-support';
-import { ipc, libraryDetails, makeFrames, makeRoll, resetFake, state } from '../library/fake-ipc';
+import {
+  ipc,
+  libraryDetails,
+  makeFrames,
+  makeRecipe,
+  makeRoll,
+  resetFake,
+  state,
+} from '../library/fake-ipc';
 import { resetLibraryStore, useLibraryStore } from '../library/library-store';
 import { resetThumbnails } from '../library/thumbnails';
 import { DevelopView } from './DevelopView';
 import { levelsOf } from './recipe-parts';
+import { MERGE_WINDOW_MS } from './history';
 import { SAVE_DELAY_MS } from './use-develop';
 
 vi.mock('../../shared/ipc', async () => (await import('../library/fake-ipc')).ipc);
@@ -235,6 +244,79 @@ describe('Develop undo, redo and reset', () => {
       await waitFor(() => expect(value('Contrast')).toBe(0));
     });
 
+    describe('with a double click on the track', () => {
+      /** A change of the slider (the first click of the double click), then the reset. */
+      async function moveThenReset(user: ReturnType<typeof userEvent.setup>, name: string) {
+        slider(name).focus();
+        await user.keyboard('{PageUp}');
+        await waitFor(() => expect(button('Undo')).toBeEnabled());
+        fireEvent.doubleClick(slider(name));
+      }
+
+      it('is one undo step: undo goes back to before the double click, redo to the reset', async () => {
+        const { user } = await openFrame();
+        expect(value(BLACK_RED)).toBe(0.1);
+        await moveThenReset(user, BLACK_RED);
+        await waitFor(() => expect(value(BLACK_RED)).toBe(0.05));
+        await user.click(button('Undo'));
+        await waitFor(() => expect(value(BLACK_RED)).toBe(0.1));
+        expect(button('Undo')).toBeDisabled();
+        await user.click(button('Redo'));
+        await waitFor(() => expect(value(BLACK_RED)).toBe(0.05));
+        expect(button('Redo')).toBeDisabled();
+      });
+
+      it('leaves no step when the reset puts the value back to where it was', async () => {
+        // A recipe that has the whole tone block, as the backend sends it.
+        state.recipes['summer-f00001'] = makeRecipe('saved', {
+          tone: {
+            exposure_ev: 0,
+            contrast: 0,
+            highlights: 0,
+            shadows: 0,
+            whites: 0,
+            blacks: 0,
+            dehaze: 0,
+          },
+        });
+        const { user } = await openFrame();
+        await moveThenReset(user, 'Contrast');
+        await waitFor(() => expect(value('Contrast')).toBe(0));
+        expect(button('Undo')).toBeDisabled();
+        expect(button('Redo')).toBeDisabled();
+      });
+
+      it('is a separate step when the reset comes more than half a second later', async () => {
+        const { user } = await openFrame();
+        const start = Date.now();
+        let later = 0;
+        vi.spyOn(Date, 'now').mockImplementation(() => start + later);
+        slider(BLACK_RED).focus();
+        await user.keyboard('{PageUp}');
+        await waitFor(() => expect(button('Undo')).toBeEnabled());
+        later = MERGE_WINDOW_MS + 1;
+        fireEvent.doubleClick(slider(BLACK_RED));
+        await waitFor(() => expect(value(BLACK_RED)).toBe(0.05));
+        await user.click(button('Undo'));
+        await waitFor(() => expect(value(BLACK_RED)).toBeGreaterThan(0.1));
+        await user.click(button('Undo'));
+        await waitFor(() => expect(value(BLACK_RED)).toBe(0.1));
+        expect(button('Undo')).toBeDisabled();
+      });
+
+      it('is a separate step after a change to another slider', async () => {
+        const { user } = await openFrame();
+        await nudgeContrast(user);
+        fireEvent.doubleClick(slider(BLACK_RED));
+        await waitFor(() => expect(value(BLACK_RED)).toBe(0.05));
+        await user.click(button('Undo'));
+        await waitFor(() => expect(value(BLACK_RED)).toBe(0.1));
+        expect(value('Contrast')).toBe(10);
+        await user.click(button('Undo'));
+        await waitFor(() => expect(value('Contrast')).toBe(0));
+      });
+    });
+
     it('does nothing while the automatic recipe is not known', async () => {
       const { user } = await openFrame({ analysis: false });
       fireEvent.doubleClick(slider(BLACK_RED));
@@ -300,12 +382,37 @@ describe('Develop undo, redo and reset', () => {
       await waitFor(() => expect(value('Amount')).toBe(0));
     });
 
-    it('puts the whole geometry back to the automatic one', async () => {
+    it('puts the whole geometry back to the automatic one: turns, flips and angle', async () => {
       const { user } = await openFrame();
+      // The saved and the automatic recipe are turned once, flipped, and at 1.5 degrees.
       await user.click(button('Rotate right'));
-      await waitFor(() => expect(lastRender()).toMatchObject({ geometry: { rot90: 2 } }));
+      await user.click(button('Flip horizontally'));
+      slider('Straighten').focus();
+      await user.keyboard('{PageUp}');
+      await waitFor(() =>
+        expect(lastRender()).toMatchObject({ geometry: { rot90: 2, flip_h: false } }),
+      );
+      expect(value('Straighten')).not.toBe(1.5);
       await user.click(button('Reset Crop, turn and straighten to automatic'));
-      await waitFor(() => expect(lastRender()).toMatchObject({ geometry: { rot90: 1 } }));
+      await waitFor(() =>
+        expect(lastRender()).toMatchObject({
+          geometry: { rot90: 1, flip_h: true, angle_deg: 1.5 },
+        }),
+      );
+      expect(value('Straighten')).toBe(1.5);
+    });
+
+    it('is the only reset of the Tone, Sharpen and Crop panels', async () => {
+      await openFrame();
+      for (const old of [
+        'Reset tone',
+        'Reset sharpening',
+        'Reset dust removal',
+        'Reset turns and straighten',
+      ]) {
+        expect(screen.queryByRole('button', { name: old })).toBeNull();
+      }
+      expect(screen.getAllByRole('button', { name: /^Reset .* to automatic$/ }).length).toBe(5);
     });
 
     it('is off while the automatic recipe is not known', async () => {

@@ -13,6 +13,7 @@ import {
   settingsGet,
   type FrameSummary,
   type LevelsPoint,
+  type Recipe,
 } from '../../shared/ipc';
 import {
   COLOUR_ACTIONS,
@@ -46,6 +47,7 @@ import { GeometryPanel } from './panels/GeometryPanel';
 import { SharpenPanel } from './panels/SharpenPanel';
 import { TonePanel } from './panels/TonePanel';
 import type { Fractions } from './picker';
+import { regionToFrame, regionToScan } from './pick-geometry';
 import {
   baseOf,
   curvesOf,
@@ -60,7 +62,7 @@ import {
   withCurve,
   withLevels,
 } from './recipe-parts';
-import { useDevelop } from './use-develop';
+import { useDevelop, type PickView } from './use-develop';
 import { useKeyMap } from './use-keymap';
 import { usePicker } from './use-picker';
 import { useViewport } from './use-viewport';
@@ -160,10 +162,11 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     setRatio(FREE_RATIO);
   }, [frame.id, fit]);
 
-  // Picking the base shows the whole scan (the rebate is outside the crop); picking the white or
-  // black point shows the frame without turns, so a click is a position in the cropped frame. The
-  // picture goes back afterwards.
-  const view = pick === null ? null : pick === 'base' || pick === 'crop' ? 'scan' : 'frame';
+  // Picking the base shows the whole scan (the rebate is outside the crop), turned and flipped like
+  // the frame; the crop is edited on the whole scan as scanned; the other pickers show the frame as
+  // edited. The picture goes back afterwards.
+  const view: PickView | null =
+    pick === null ? null : pick === 'crop' ? 'scan' : pick === 'base' ? 'base' : 'frame';
   useEffect(() => {
     setPickView(view);
     fit();
@@ -188,11 +191,15 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     n: summary?.id === frame.id ? summary.index_in_roll : frame.index + 1,
   });
 
+  /** A region of the shown picture as the sample commands take it (see pick-geometry.ts). */
+  const toFrame = (region: Fractions, recipe: Recipe): Fractions | null =>
+    scan ? regionToFrame(region, geometryOf(recipe), scan) : null;
+
   /** A click or box on the whole scan: the film base of this frame becomes what is under it. */
   const picked = async (region: Fractions) => {
-    if (!recipe) return;
+    if (!recipe || !scan) return;
     try {
-      const rgb = await developSampleBase(frame.id, region);
+      const rgb = await developSampleBase(frame.id, regionToScan(region, geometryOf(recipe), scan));
       setRecipe(withBase(recipe, { source: 'manual', rgb: triple(rgb, 1) }));
       setPick(null);
       setNotice({ tone: 'info', text: t('develop.base.picked') });
@@ -205,9 +212,10 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   };
   /** A click or box on the frame: the colour axes are set so that what is under it is grey. */
   const pickedNeutral = async (region: Fractions) => {
-    if (!recipe) return;
+    const area = recipe && toFrame(region, recipe);
+    if (!recipe || !area) return;
     try {
-      const color = await developSampleNeutral(frame.id, recipe, region);
+      const color = await developSampleNeutral(frame.id, recipe, area);
       setRecipe(
         withColour(recipe, {
           red_cyan: color.red_cyan ?? 0,
@@ -227,9 +235,10 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
 
   /** A click or box on the frame: the white or black point becomes what is under it. */
   const pickedLevel = async (region: Fractions, point: LevelsPoint) => {
-    if (!recipe) return;
+    const area = recipe && toFrame(region, recipe);
+    if (!recipe || !area) return;
     try {
-      const levels = await developSampleLevels(frame.id, recipe, region, point);
+      const levels = await developSampleLevels(frame.id, recipe, area, point);
       setRecipe(withLevels(recipe, levelsIn(levels)));
       setPick(null);
       setNotice({
@@ -247,7 +256,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     stageRef: viewport.stageRef,
     active:
       pick === 'base'
-        ? develop.showingScan
+        ? develop.showingBase
         : pick !== null && pick !== 'crop' && develop.showingFrame,
     onPick: (region) => {
       if (pick === 'base') void picked(region);
@@ -537,7 +546,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         <div
           ref={viewport.stageRef}
           className={`${styles.stage} ${viewport.fitting || pick !== null ? '' : styles.pannable} ${
-            pick !== null && pick !== 'crop' && (develop.showingScan || develop.showingFrame)
+            pick !== null && pick !== 'crop' && (develop.showingBase || develop.showingFrame)
               ? styles.picking
               : ''
           }`}
@@ -548,12 +557,12 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               preview={preview}
               label={
                 develop.showingScan
-                  ? pick === 'crop'
-                    ? t('develop.cropLabel')
-                    : t('develop.base.scanLabel')
-                  : develop.showingFrame
-                    ? t('develop.pickFrameLabel')
-                    : label
+                  ? t('develop.cropLabel')
+                  : develop.showingBase
+                    ? t('develop.base.scanLabel')
+                    : develop.showingFrame
+                      ? t('develop.pickFrameLabel')
+                      : label
               }
               view={viewport.view}
             />
@@ -670,7 +679,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 rollBaseConfidence={info?.roll_base_confidence ?? null}
                 readOnly={readOnly}
                 pick={pick === 'neutral' || pick === 'crop' ? null : pick}
-                pickReady={pick === 'base' ? develop.showingScan : develop.showingFrame}
+                pickReady={pick === 'base' ? develop.showingBase : develop.showingFrame}
                 working={working}
                 onPickChange={setPick}
                 onChange={(next, options) => setRecipe(next, options)}

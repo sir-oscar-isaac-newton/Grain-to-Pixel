@@ -564,8 +564,8 @@ export type Region = Args<'developSampleBase'>[1];
 
 /**
  * The film base from an area of the whole scan, as the per-channel median in linear scan values.
- * Needs the picture to show the whole uncropped scan, so that fractions of it are fractions of the
- * scan.
+ * The area is in fractions of the whole scan as
+ * it was scanned (the Develop view maps a pick on the turned and flipped picture back first).
  */
 export async function developSampleBase(
   ...args: Args<'developSampleBase'>
@@ -578,7 +578,8 @@ export type LevelsPoint = Args<'developSampleLevels'>[3];
 
 /**
  * The recipe's levels with the white or black point set from an area of the frame. The area is in
- * fractions of the cropped frame as the picture shows it without turns, flips or straightening.
+ * fractions of the cropped frame before straightening, turns and flips (the Develop view maps a
+ * pick on the shown picture back first).
  */
 export async function developSampleLevels(
   ...args: Args<'developSampleLevels'>

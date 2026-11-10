@@ -2448,3 +2448,25 @@ ROUTES: FrameSummary gains exported_at; the frame query gains the needs-export f
 MIGRATIONS: none (export_log exists since migration 0003).
 TESTS: as in ac.
 NOTES: compare times in the same format; export_log.created_at and frame.edited_at are both set by the catalog. Out of scope: a list of all past exports, re-exporting automatically.
+
+## U-24
+title: Pickers show the frame as it is edited
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: U-02, U-04
+adr: no
+spec: specification section 7
+desc: When a picker starts (neutral, levels, curve point, film base), the Develop view shows the frame without its turns, flips and straighten angle, because the sample commands take a region of the cropped frame before those steps. A turned or flipped frame then looks different while picking. Show the frame as it is edited and map the picked point or box back before it is sent.
+ac:
+- The neutral, levels and curve pickers show the frame with its turns, flips and straighten angle; the film-base picker shows the whole scan turned and flipped like the frame
+- The picked point or box is mapped back to the frame's coordinates by inverting flip, turn and straighten (the reverse of the order in crates/gtp-edit/src/geometry.rs); turns and flips map exactly; with an angle, the box sent is the smallest upright box around the tilted one
+- No backend command changes
+- Unit tests for the mapping (four turns, both flips, an angle, a point and a box round-tripping); component tests that the pick view is rendered with the frame's geometry and that the region sent is mapped
+tech:
+FILES: apps/desktop/src/features/develop (use-develop.ts, use-picker.ts, picker.ts, a mapping module), en.json if any text changes.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: reported by the owner on 2026-11-09. The unrotated view was deliberate, so that a click mapped straight to the sample region; this keeps the sample commands and moves the mapping to the frontend.

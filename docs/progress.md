@@ -905,6 +905,15 @@
       "status": "completed",
       "pr": 289,
       "commit": "29b2aa0"
+    },
+    {
+      "id": "H-21",
+      "number": 278,
+      "title": "Calibration help at the rig",
+      "branch": "feat/issue-278-calibration-help",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

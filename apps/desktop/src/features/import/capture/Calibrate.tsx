@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   captureCalibrate,
@@ -10,6 +10,7 @@ import {
 import { messageOf, useLibraryStore } from '../../library/library-store';
 import styles from '../import.module.css';
 import { areaPercents, type Area } from './area';
+import { LEVEL_HEADROOM_WARNING } from './headroom';
 
 const CHANNELS = ['red', 'green', 'blue'] as const;
 
@@ -33,6 +34,12 @@ interface CalibrateProps {
   onCalibrated: (levels: Levels, exposure: ExposureInfo) => void;
   /** Called with true while a calibration starts or runs, and false when it is over. */
   onBusyChange: (busy: boolean) => void;
+  /**
+   * Filled with the function that starts the calibration, so another control (the notice about
+   * default levels) can start this same one. That control keeps itself disabled when the Calibrate
+   * button is.
+   */
+  startRef?: MutableRefObject<(() => void) | null>;
 }
 
 /**
@@ -48,6 +55,7 @@ export function Calibrate({
   levels,
   onCalibrated,
   onBusyChange,
+  startRef,
 }: CalibrateProps) {
   const { t } = useTranslation();
   const addJob = useLibraryStore((s) => s.addJob);
@@ -97,6 +105,8 @@ export function Calibrate({
       setStarting(false);
     }
   };
+
+  if (startRef) startRef.current = () => void start();
 
   const failure =
     jobState === 'error' ? (job?.message ?? t('import.capture.calibrate.failed')) : null;
@@ -159,6 +169,17 @@ export function Calibrate({
               );
             })}
           </ul>
+          {CHANNELS.map((channel, i) => {
+            const level = found.levels[i] ?? 0;
+            return level >= LEVEL_HEADROOM_WARNING ? (
+              <p key={channel} className={styles.captureHeadroom}>
+                {t('import.capture.levels.headroom', {
+                  channel: t(`import.capture.calibrate.channel.${channel}`),
+                  level,
+                })}
+              </p>
+            ) : null;
+          })}
           {found.warnings.map((warning) => (
             <p key={warning.channel} role="alert">
               {t('import.capture.calibrate.coarse', {

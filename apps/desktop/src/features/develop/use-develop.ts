@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { clampCrop } from './crop';
+import { geometryOf } from './recipe-parts';
 import { useHistory } from './use-history';
 import {
   IpcError,
@@ -36,7 +37,7 @@ export type DevelopStatus = 'idle' | 'opening' | 'ready' | 'error';
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 /** What the picture shows while something is being picked on it. */
-export type PickView = 'scan' | 'frame';
+export type PickView = 'scan' | 'base' | 'frame';
 
 /** The frame the analysis found, as fractions of the scan, and how sure it is (0 to 1). */
 export interface DetectedFrame {
@@ -61,7 +62,7 @@ interface State {
   detected: DetectedFrame | null;
   after: Preview | null;
   before: Preview | null;
-  /** The picture picking is done on: the whole scan, or the frame without turns. */
+  /** The picture picking is done on: the whole scan (turned or not), or the frame as edited. */
   pick: Preview | null;
   /** The backend's message when a render failed; the last picture stays. */
   renderError: string | null;
@@ -111,9 +112,11 @@ export interface Develop {
   beforeUnavailable: boolean;
   /** The frame the analysis found and how sure it is; null until the analysis is done. */
   detected: DetectedFrame | null;
-  /** The picture on screen is the whole uncropped scan, so a click on it can pick on the rebate. */
+  /** The picture on screen is the whole uncropped scan as scanned, for editing the crop. */
   showingScan: boolean;
-  /** The picture on screen is the frame without turns or straightening, for the levels pickers. */
+  /** The picture on screen is the whole scan turned and flipped like the frame, to pick the film base. */
+  showingBase: boolean;
+  /** The picture on screen is the frame as edited, for the neutral and levels pickers. */
   showingFrame: boolean;
   busy: boolean;
   renderError: string | null;
@@ -122,8 +125,8 @@ export interface Develop {
   saveError: string | null;
   toggleBefore: () => void;
   /**
-   * Shows the whole scan (no crop or turn) or the frame without turns or straightening instead of
-   * the picture, or goes back to the picture with `null`.
+   * Shows the whole scan as scanned (`scan`), the whole scan turned and flipped (`base`) or the frame
+   * as edited (`frame`) instead of the picture, or goes back to the picture with `null`.
    */
   setPickView: (view: PickView | null) => void;
   /**
@@ -312,10 +315,15 @@ export function useDevelop(frameId: string | null): Develop {
   useEffect(() => {
     const recipe = latestRecipe.current;
     if (!pickView || pick || status !== 'ready' || !frame.current || !recipe) return;
+    // The whole scan as scanned (to edit the crop), the whole scan turned and flipped like the frame
+    // (for the film base), or the frame as edited. A picked region is mapped back by pick-geometry.ts.
+    const { rot90, flip_h, flip_v } = geometryOf(recipe);
     const geometry =
       pickView === 'scan'
         ? WHOLE_SCAN_GEOMETRY
-        : { ...recipe.geometry, angle_deg: 0, rot90: 0, flip_h: false, flip_v: false };
+        : pickView === 'base'
+          ? { ...WHOLE_SCAN_GEOMETRY, rot90, flip_h, flip_v }
+          : recipe.geometry;
     const shown = { ...recipe, geometry } as Recipe;
     void send(frame.current, shown, RELEASE_EDGE, 'pick', generation.current);
   }, [pickView, pick, status, send]);
@@ -431,6 +439,7 @@ export function useDevelop(frameId: string | null): Develop {
 
   const showingPick = state.pickView !== null && state.pick !== null;
   const showingScan = showingPick && state.pickView === 'scan';
+  const showingBase = showingPick && state.pickView === 'base';
   const showingFrame = showingPick && state.pickView === 'frame';
   const showingBefore = !showingPick && state.showBefore && state.before !== null;
   const preview = showingPick ? state.pick : showingBefore ? state.before : state.after;
@@ -446,6 +455,7 @@ export function useDevelop(frameId: string | null): Develop {
     beforeUnavailable: state.showBefore && state.autoFailed,
     detected: state.detected,
     showingScan,
+    showingBase,
     showingFrame,
     busy: state.pending > 0,
     renderError: state.renderError,

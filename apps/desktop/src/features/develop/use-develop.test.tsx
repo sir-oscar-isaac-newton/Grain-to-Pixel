@@ -457,8 +457,27 @@ describe('useDevelop', () => {
     });
   });
 
-  describe('the frame without turns, for picking the white and black points', () => {
-    it('renders the recipe with its crop but no turn, flip or straightening', async () => {
+  describe('the whole scan turned and flipped, for picking the film base', () => {
+    it('renders the whole scan with the turns and flips, but no crop or angle', async () => {
+      const { result } = renderHook(() => useDevelop('f1'));
+      await waitFor(() => expect(result.current.preview).not.toBeNull());
+      ipc.developRender.mockClear();
+
+      act(() => result.current.setPickView('base'));
+      await waitFor(() => expect(result.current.showingBase).toBe(true));
+      expect(result.current.showingScan).toBe(false);
+      expect(result.current.showingFrame).toBe(false);
+      expect(ipc.developRender).toHaveBeenCalledTimes(1);
+      const [, recipe] = ipc.developRender.mock.calls[0] ?? [];
+      expect(recipe).toMatchObject({
+        tag: 'saved',
+        geometry: { ...WHOLE_SCAN_GEOMETRY, rot90: 1, flip_h: true },
+      });
+    });
+  });
+
+  describe('the frame as edited, for picking the neutral grey and the white and black points', () => {
+    it('renders the recipe with its crop, straightening, turns and flips', async () => {
       const { result } = renderHook(() => useDevelop('f1'));
       await waitFor(() => expect(result.current.preview).not.toBeNull());
       ipc.developRender.mockClear();
@@ -472,9 +491,9 @@ describe('useDevelop', () => {
         tag: 'saved',
         geometry: {
           crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
-          angle_deg: 0,
-          rot90: 0,
-          flip_h: false,
+          angle_deg: 1.5,
+          rot90: 1,
+          flip_h: true,
           flip_v: false,
         },
       });

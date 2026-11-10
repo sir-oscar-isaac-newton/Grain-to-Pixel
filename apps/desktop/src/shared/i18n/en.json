@@ -583,7 +583,7 @@
       "slider": "{{kind}}, {{channel}}"
     },
     "cropLabel": "The whole scan, for cropping",
-    "pickFrameLabel": "The frame without turns or straightening, for picking on it",
+    "pickFrameLabel": "The frame, for picking on it",
     "colour": {
       "heading": "Colour",
       "pickNeutral": "Pick neutral grey",

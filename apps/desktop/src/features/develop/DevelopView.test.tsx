@@ -9,6 +9,7 @@ import {
   ipc,
   libraryDetails,
   makeFrames,
+  makeRecipe,
   makeRoll,
   resetFake,
   state,
@@ -16,7 +17,8 @@ import {
 import { resetLibraryStore, useLibraryStore } from '../library/library-store';
 import { resetThumbnails } from '../library/thumbnails';
 import { DevelopView } from './DevelopView';
-import { baseOf, levelsOf } from './recipe-parts';
+import { regionToFrame } from './pick-geometry';
+import { baseOf, geometryOf, levelsOf } from './recipe-parts';
 import { RELEASE_EDGE, SAVE_DELAY_MS, WHOLE_SCAN_GEOMETRY } from './use-develop';
 
 vi.mock('../../shared/ipc', async () => (await import('../library/fake-ipc')).ipc);
@@ -663,11 +665,13 @@ describe('DevelopView', () => {
     const press = (x: number, y: number) =>
       fireEvent.mouseDown(stage(), { button: 0, clientX: x, clientY: y });
     const release = (x: number, y: number) => fireEvent.mouseUp(window, { clientX: x, clientY: y });
+    // The film base picker shows the whole scan turned and flipped like the frame (the fake frame is
+    // turned once and flipped left to right); the crop editor shows it as scanned.
     const wholeScanRequests = () =>
       ipc.developRender.mock.calls.filter(
         (c) =>
           JSON.stringify((c[1] as { geometry?: unknown }).geometry) ===
-          JSON.stringify(WHOLE_SCAN_GEOMETRY),
+          JSON.stringify({ ...WHOLE_SCAN_GEOMETRY, rot90: 1, flip_h: true }),
       );
     const savedRecipe = () => state.saved[state.saved.length - 1]?.recipe;
     const pickButton = () => screen.getByRole('button', { name: 'Pick film base' });
@@ -1194,14 +1198,14 @@ describe('DevelopView', () => {
         expect(savedRecipe()).toMatchObject({ color: { temperature: 1, saturation: 1 } });
       });
 
-      it('shows the frame without turns while picking, and sets the axes from a click', async () => {
+      it('shows the frame as edited while picking, and sets the axes from a click', async () => {
         const user = await openFrame();
         await user.click(neutralButton());
         expect(await screen.findByText(/part of the picture that should be grey/)).toBeVisible();
         expect(neutralButton()).toHaveAttribute('aria-pressed', 'true');
         expect(
           screen.getByRole('img', {
-            name: 'The frame without turns or straightening, for picking on it',
+            name: 'The frame, for picking on it',
           }),
         ).toBeInTheDocument();
 
@@ -1282,10 +1286,12 @@ describe('DevelopView', () => {
     });
 
     describe('picking the white and black points', () => {
+      // The pick view is the frame as edited, so it asks for the recipe's own geometry: the picture
+      // when the frame opens, and once more when picking starts.
       const frameRequests = () =>
         ipc.developRender.mock.calls.filter((c) => {
-          const g = (c[1] as { geometry?: { rot90?: number } }).geometry;
-          return g?.rot90 === 0 && JSON.stringify(g) !== JSON.stringify(WHOLE_SCAN_GEOMETRY);
+          const g = (c[1] as { geometry?: unknown }).geometry;
+          return JSON.stringify(g) === JSON.stringify(makeRecipe('saved').geometry);
         });
 
       /** Opens frame 1 and turns picking of the white or black point on. */
@@ -1300,12 +1306,12 @@ describe('DevelopView', () => {
         return user;
       }
 
-      it('shows the frame without turns, sets the white point from a click, and saves it', async () => {
+      it('shows the frame as edited, sets the white point from a click, and saves it', async () => {
         await startLevelPicking('Pick white point', /brightest part/);
-        expect(frameRequests()).toHaveLength(1);
+        expect(frameRequests()).toHaveLength(2);
         expect(
           screen.getByRole('img', {
-            name: 'The frame without turns or straightening, for picking on it',
+            name: 'The frame, for picking on it',
           }),
         ).toBeInTheDocument();
 
@@ -1348,12 +1354,26 @@ describe('DevelopView', () => {
         fireEvent.mouseMove(window, { clientX: 300, clientY: 200 });
         release(300, 200);
         await waitFor(() => expect(ipc.developSampleLevels).toHaveBeenCalledTimes(1));
-        expect(ipc.developSampleLevels.mock.calls[0]?.[2]).toEqual({
-          x: 0.25,
-          y: 50 / 300,
-          w: 0.25,
-          h: 100 / 300,
-        });
+        // The picture is turned once and flipped left to right (and straightened by 1.5 degrees), so
+        // the box dragged on it is mapped back: the shown box (x .25, y 1/6, w .25, h 1/3) is, in the
+        // frame, about x 1/6, y .25, w 1/3, h .25 (a little more for the angle).
+        const region = ipc.developSampleLevels.mock.calls[0]?.[2] as {
+          x: number;
+          y: number;
+          w: number;
+          h: number;
+        };
+        expect(region.x).toBeCloseTo(1 / 6, 1);
+        expect(region.y).toBeCloseTo(0.25, 1);
+        expect(region.w).toBeCloseTo(1 / 3, 1);
+        expect(region.h).toBeCloseTo(0.25, 1);
+        expect(region).toEqual(
+          regionToFrame(
+            { x: 0.25, y: 50 / 300, w: 0.25, h: 100 / 300 },
+            geometryOf(makeRecipe('saved')),
+            { width: 5616, height: 3744 },
+          ),
+        );
         expect(ipc.developSampleLevels.mock.calls[0]?.[3]).toBe('black');
         expect(
           await screen.findByText('The black point was set from that area.'),
@@ -1387,7 +1407,7 @@ describe('DevelopView', () => {
           'false',
         );
         // Still the frame view: the picture was not asked for again.
-        expect(frameRequests()).toHaveLength(1);
+        expect(frameRequests()).toHaveLength(2);
 
         await user.keyboard('{Escape}');
         expect(screen.getByRole('button', { name: 'Pick black point' })).toHaveAttribute(
@@ -1447,12 +1467,18 @@ describe('DevelopView', () => {
         expect(document.querySelector('[class*="pickBox"]')).toBeInTheDocument();
         release(300, 200);
         await waitFor(() => expect(ipc.developSampleBase).toHaveBeenCalledTimes(1));
-        expect(ipc.developSampleBase.mock.calls[0]?.[1]).toEqual({
-          x: 0.25,
-          y: 50 / 300,
-          w: 0.25,
-          h: 100 / 300,
-        });
+        // The whole scan is shown turned once and flipped left to right, so the box is mapped back
+        // to the scan as scanned (exactly: there is no angle on the whole scan).
+        const region = ipc.developSampleBase.mock.calls[0]?.[1] as {
+          x: number;
+          y: number;
+          w: number;
+          h: number;
+        };
+        expect(region.x).toBeCloseTo(1 / 6, 9);
+        expect(region.y).toBeCloseTo(0.25, 9);
+        expect(region.w).toBeCloseTo(1 / 3, 9);
+        expect(region.h).toBeCloseTo(0.25, 9);
         expect(document.querySelector('[class*="pickBox"]')).not.toBeInTheDocument();
       });
 

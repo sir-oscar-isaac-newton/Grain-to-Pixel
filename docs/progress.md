@@ -857,6 +857,15 @@
       "number": 272,
       "title": "Undo, redo and reset in Develop",
       "branch": "feat/issue-272-develop-undo",
+      "status": "completed",
+      "pr": 283,
+      "commit": "e915ef6"
+    },
+    {
+      "id": "U-24",
+      "number": 284,
+      "title": "Pickers show the frame as it is edited",
+      "branch": "feat/issue-284-picker-orientation",
       "status": "in_progress",
       "pr": null,
       "commit": null

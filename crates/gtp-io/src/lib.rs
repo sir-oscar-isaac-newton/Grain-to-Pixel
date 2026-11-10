@@ -5,6 +5,7 @@ mod export;
 mod hash;
 mod icc;
 mod limits;
+mod metadata;
 mod raw;
 mod tiff;
 
@@ -14,6 +15,7 @@ pub use export::{
 pub use hash::{mark_read_only, sha256_file, sha256_file_with};
 pub use icc::{icc_profile, to_output, Tiff16Output};
 pub use limits::Limits;
+pub use metadata::{ExifDate, ExportMetadata};
 pub use raw::{
     decode_nef, demosaic_bilinear, demosaic_channel, Cfa, RawDecoder, RawLinear, RawlerDecoder,
     MAX_RAW_FILE_BYTES,

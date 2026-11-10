@@ -77,6 +77,7 @@ mod tests {
             jpeg_quality: 90,
             dest_dir: dir.join("out").to_string_lossy().into_owned(),
             template: "{roll}_{index:03}".into(),
+            write_metadata: true,
         };
         let start = |ids: Vec<FrameId>, options: ExportOptions| {
             export_start(app.state(), app.state(), ids, options)

@@ -295,7 +295,7 @@ pub fn crop_jpeg(
         data.extend_from_slice(&[grey, grey, grey]);
     }
     let image = ImageF32::new((x1 - x0) as u32, (y1 - y0) as u32, 3, data)?;
-    encode_jpeg_bytes(&image, OutputSpace::Srgb, CROP_QUALITY)
+    encode_jpeg_bytes(&image, OutputSpace::Srgb, CROP_QUALITY, None)
 }
 
 /// Standard base64 with padding.

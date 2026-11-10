@@ -30,6 +30,7 @@ const DEFAULTS: ExportOptions = {
   jpeg_quality: 92,
   dest_dir: '',
   template: DEFAULT_TEMPLATE,
+  write_metadata: true,
 };
 
 /** What the file name would be for a roll "Roll", frame 1; null when the template is not valid. */
@@ -481,6 +482,21 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
                   <span className={styles.hint}>{t('export.example', { name: example })}</span>
                 )}
               </label>
+
+              <div className={styles.field}>
+                <label className={styles.radio}>
+                  <input
+                    type="checkbox"
+                    checked={options.write_metadata}
+                    aria-describedby="export-metadata-hint"
+                    onChange={(e) => change({ write_metadata: e.target.checked })}
+                  />
+                  {t('export.writeMetadata')}
+                </label>
+                <span id="export-metadata-hint" className={styles.hint}>
+                  {t('export.writeMetadataHint')}
+                </span>
+              </div>
 
               {problem !== null && !folderProblem && <p role="alert">{t(problem)}</p>}
               {error && <p role="alert">{error}</p>}

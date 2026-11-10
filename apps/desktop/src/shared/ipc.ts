@@ -21,7 +21,8 @@ import {
   type CrashNote,
   type DeviceInfo,
   type ExportedFile,
-  type ExportPreset,
+  type ExportOptions_Serialize,
+  type ExportPreset_Serialize,
   type ExposureInfo_Serialize,
   type FocusCheck_Serialize,
   type FocusPattern,
@@ -42,7 +43,7 @@ import {
   type Recipe,
   type RollPreviewImage,
   type ScanRequest,
-  type Settings,
+  type Settings_Serialize,
   type SettingsPatch,
   type SkipReason,
   type SkippedFile,
@@ -70,7 +71,6 @@ export type {
   CrashNote,
   DeviceInfo,
   ExportedFile,
-  ExportPreset,
   FailedExport,
   FilmFormat,
   FlatFieldInfo,
@@ -85,7 +85,6 @@ export type {
   PortInfo,
   RollPreviewImage,
   ScanRequest,
-  Settings,
   SettingsPatch,
   SkipReason,
   SkippedFile,
@@ -250,8 +249,17 @@ export async function importFiles(...args: Args<'importFiles'>): Promise<Data<'i
   return unwrap(await commands.importFiles(...args));
 }
 
-/** What to export: format, colour space, JPEG quality, destination folder and naming template. */
-export type ExportOptions = Args<'exportStart'>[1];
+/**
+ * What to export: format, colour space, JPEG quality, destination folder, naming template and
+ * whether to write metadata.
+ */
+export type ExportOptions = ExportOptions_Serialize;
+
+/** What the app returns of its settings. */
+export type Settings = Settings_Serialize;
+
+/** A named set of export options kept in the settings. */
+export type ExportPreset = ExportPreset_Serialize;
 
 /** The options and preset of the export started last, kept in the settings. */
 export type LastExport = LastExport_Serialize;

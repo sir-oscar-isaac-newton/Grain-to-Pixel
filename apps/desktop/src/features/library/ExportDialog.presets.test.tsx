@@ -87,6 +87,26 @@ describe('ExportDialog presets', () => {
     expect(within(dialog()).getByText('/films/Library')).toBeInTheDocument();
   });
 
+  it('fills the metadata box from a preset, and marks the preset modified when it differs', async () => {
+    state.exportPresets = [
+      { name: 'Bare', options: { ...ARCHIVE.options, write_metadata: false } },
+      ARCHIVE,
+    ];
+    const user = await openDialog();
+    const box = () => within(dialog()).getByRole('checkbox', { name: 'Write metadata' });
+    expect(box()).toBeChecked();
+    await user.selectOptions(presetSelect(), 'Bare');
+    expect(box()).not.toBeChecked();
+    expect(button('Update')).toBeDisabled();
+    await user.click(box());
+    expect(
+      within(presetSelect()).getByRole('option', { name: 'Bare (modified)' }),
+    ).toBeInTheDocument();
+    expect(button('Update')).toBeEnabled();
+    await user.selectOptions(presetSelect(), 'Archive (TIFF 16-bit)');
+    expect(box()).toBeChecked();
+  });
+
   it('takes the folder of a preset that has one', async () => {
     state.exportPresets = [
       { name: 'To disk', options: { ...ARCHIVE.options, dest_dir: '/disk/out' } },
@@ -138,6 +158,7 @@ describe('ExportDialog presets', () => {
           jpeg_quality: 92,
           dest_dir: '/films/Library',
           template: '{roll}_{index:03}',
+          write_metadata: true,
         },
       });
       expect(within(dialog()).queryByRole('textbox', { name: 'Preset name' })).toBeNull();
@@ -186,6 +207,7 @@ describe('ExportDialog presets', () => {
       jpeg_quality: 90,
       dest_dir: '/films/Library',
       template: '{roll}_{index:03}',
+      write_metadata: true,
     });
     expect(state.exportPresets[0]).toEqual(ARCHIVE);
     expect(presetSelect()).toHaveValue('Share (JPEG sRGB)');
@@ -226,6 +248,7 @@ describe('ExportDialog presets', () => {
         jpeg_quality: 90,
         dest_dir: '/films/Library',
         template: '{roll}_{index:03}',
+        write_metadata: true,
       },
       preset: 'Share (JPEG sRGB)',
     });

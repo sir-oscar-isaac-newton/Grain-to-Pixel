@@ -72,7 +72,7 @@ pub fn make_preview(preview: &RollPreview) -> Result<RollPreviewImage, AppError>
             max_edge: strip.width.max(strip.height),
         },
     )?;
-    let strip_jpeg = encode_jpeg_bytes(&image, OutputSpace::Srgb, STRIP_JPEG_QUALITY)?;
+    let strip_jpeg = encode_jpeg_bytes(&image, OutputSpace::Srgb, STRIP_JPEG_QUALITY, None)?;
     Ok(RollPreviewImage {
         frame_count: preview.frame_count,
         pitch: strip.width as f32 / preview.frame_count as f32,

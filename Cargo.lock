@@ -1707,6 +1707,7 @@ dependencies = [
  "gtp-io",
  "gtp-negative",
  "jpeg-decoder",
+ "kamadak-exif",
  "rayon",
  "serde",
  "serde_json",
@@ -1790,6 +1791,7 @@ version = "0.0.0"
 dependencies = [
  "gtp-core",
  "jpeg-encoder",
+ "kamadak-exif",
  "lcms2",
  "proptest",
  "rawler",

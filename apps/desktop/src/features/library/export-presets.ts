@@ -28,6 +28,7 @@ export function sameOptions(
     a.space === b.space &&
     (a.format !== 'jpeg' || a.jpeg_quality === b.jpeg_quality) &&
     a.template === b.template &&
+    a.write_metadata === b.write_metadata &&
     (ignoreFolder || a.dest_dir === b.dest_dir)
   );
 }

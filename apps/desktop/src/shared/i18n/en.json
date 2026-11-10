@@ -508,6 +508,8 @@
     "template": "File name",
     "templateHint": "Fields: {roll}, {index}, {index:03}, {frame}. The extension is added.",
     "example": "Example: {{name}}",
+    "writeMetadata": "Write metadata",
+    "writeMetadataHint": "Adds the film, camera, ISO, first shooting date and notes you entered, and the app name, to the file.",
     "errors": {
       "noFolder": "Choose the folder to export into.",
       "noTemplate": "Type a file name.",

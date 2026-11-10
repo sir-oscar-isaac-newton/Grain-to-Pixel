@@ -193,7 +193,7 @@ export const commands = {
 	 *  that failed) arrive as `job://*` events. An existing file is never overwritten: the name gets a
 	 *  number. Returns the job id at once.
 	 */
-	exportStart: (frameIds: FrameId[], options: ExportOptions) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("export_start", { frameIds, options })),
+	exportStart: (frameIds: FrameId[], options: ExportOptions_Deserialize) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("export_start", { frameIds, options })),
 	/**
 	 *  Opens a frame for editing: decodes its original into the proxy cache and returns its size, saved
 	 *  recipe and the roll's film base.
@@ -798,7 +798,10 @@ export type ExportFormat =
 "jpeg";
 
 /**  What to export and where. */
-export type ExportOptions = {
+export type ExportOptions = ExportOptions_Serialize | ExportOptions_Deserialize;
+
+/**  What to export and where. */
+export type ExportOptions_Deserialize = {
 	format: ExportFormat,
 	space: OutputSpace,
 	/**  1 to 100; used for JPEG only. */
@@ -810,15 +813,55 @@ export type ExportOptions = {
 	 *  1 to 9 allowed), `{frame}` and `{ext}`. The extension is added when the name lacks it.
 	 */
 	template: string,
+	/**
+	 *  Write the roll and frame details the user entered (film, camera, ISO, date, notes) and the
+	 *  app name into the file as Exif tags. Settings saved before this option existed load as on.
+	 */
+	write_metadata?: boolean,
+};
+
+/**  What to export and where. */
+export type ExportOptions_Serialize = {
+	format: ExportFormat,
+	space: OutputSpace,
+	/**  1 to 100; used for JPEG only. */
+	jpeg_quality: number,
+	/**  The folder to write into; created when it does not exist. */
+	dest_dir: string,
+	/**
+	 *  The file name, without folders: `{roll}`, `{index}`, `{index:03}` (zero-padded to 3 digits,
+	 *  1 to 9 allowed), `{frame}` and `{ext}`. The extension is added when the name lacks it.
+	 */
+	template: string,
+	/**
+	 *  Write the roll and frame details the user entered (film, camera, ISO, date, notes) and the
+	 *  app name into the file as Exif tags. Settings saved before this option existed load as on.
+	 */
+	write_metadata: boolean,
 };
 
 /**
  *  A named set of export options (U-21). The name is plain text the user typed, or one of the two
  *  built-in names, which are stored as English text and not translated.
  */
-export type ExportPreset = {
+export type ExportPreset = ExportPreset_Serialize | ExportPreset_Deserialize;
+
+/**
+ *  A named set of export options (U-21). The name is plain text the user typed, or one of the two
+ *  built-in names, which are stored as English text and not translated.
+ */
+export type ExportPreset_Deserialize = {
 	name: string,
-	options: ExportOptions,
+	options: ExportOptions_Deserialize,
+};
+
+/**
+ *  A named set of export options (U-21). The name is plain text the user typed, or one of the two
+ *  built-in names, which are stored as English text and not translated.
+ */
+export type ExportPreset_Serialize = {
+	name: string,
+	options: ExportOptions_Serialize,
 };
 
 /**  What an export did. */
@@ -1507,13 +1550,13 @@ export type LastExport = LastExport_Serialize | LastExport_Deserialize;
 
 /**  The options of the last export started, and the preset they were chosen from, if any. */
 export type LastExport_Deserialize = {
-	options: ExportOptions,
+	options: ExportOptions_Deserialize,
 	preset?: string | null,
 };
 
 /**  The options of the last export started, and the preset they were chosen from, if any. */
 export type LastExport_Serialize = {
-	options: ExportOptions,
+	options: ExportOptions_Serialize,
 	preset: string | null,
 };
 
@@ -2033,7 +2076,7 @@ export type SettingsPatch_Deserialize = {
 	 *  Replaces the whole list of export presets (names are trimmed, and must be unique without
 	 *  regard to case).
 	 */
-	export_presets?: ExportPreset[] | null,
+	export_presets?: ExportPreset_Deserialize[] | null,
 	/**  Records the options of the export just started and the preset they came from. */
 	last_export?: LastExport_Deserialize | null,
 };
@@ -2054,7 +2097,7 @@ export type SettingsPatch_Serialize = {
 	 *  Replaces the whole list of export presets (names are trimmed, and must be unique without
 	 *  regard to case).
 	 */
-	export_presets: ExportPreset[] | null,
+	export_presets: ExportPreset_Serialize[] | null,
 	/**  Records the options of the export just started and the preset they came from. */
 	last_export: LastExport_Serialize | null,
 };
@@ -2082,7 +2125,7 @@ export type Settings_Deserialize = {
 	 *  The export presets. A file without this key gets the two built-in ones; an empty list stays
 	 *  empty, so deleting both sticks.
 	 */
-	export_presets?: ExportPreset[],
+	export_presets?: ExportPreset_Deserialize[],
 	/**  What the export dialog starts from: the options of the last export and their preset. */
 	last_export?: LastExport_Deserialize | null,
 };
@@ -2110,7 +2153,7 @@ export type Settings_Serialize = {
 	 *  The export presets. A file without this key gets the two built-in ones; an empty list stays
 	 *  empty, so deleting both sticks.
 	 */
-	export_presets: ExportPreset[],
+	export_presets: ExportPreset_Serialize[],
 	/**  What the export dialog starts from: the options of the last export and their preset. */
 	last_export: LastExport_Serialize | null,
 };

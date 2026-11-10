@@ -19,7 +19,9 @@ pub use analyze::{
     analyze_with_look, apply_balance_axes, frame_hint, Analysis, LevelsPercentiles,
 };
 pub use display::{histogram, to_rgba8_srgb, Histogram};
-pub use proxy::{build_plane_proxy, build_proxy, resize_plane, PREVIEW_EDGE, PROXY_EDGE};
+pub use proxy::{
+    build_plane_proxy, build_proxy, resize_plane, resize_to_long_edge, PREVIEW_EDGE, PROXY_EDGE,
+};
 pub use stages::{Stage, STAGE_ORDER};
 /// What a render starts from.
 #[derive(Debug, Clone)]

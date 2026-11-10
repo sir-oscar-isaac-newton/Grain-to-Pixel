@@ -78,6 +78,7 @@ mod tests {
             dest_dir: dir.join("out").to_string_lossy().into_owned(),
             template: "{roll}_{index:03}".into(),
             write_metadata: true,
+            long_edge: None,
         };
         let start = |ids: Vec<FrameId>, options: ExportOptions| {
             export_start(app.state(), app.state(), ids, options)
@@ -104,6 +105,10 @@ mod tests {
             },
             ExportOptions {
                 dest_dir: String::new(),
+                ..options.clone()
+            },
+            ExportOptions {
+                long_edge: Some(100),
                 ..options.clone()
             },
         ] {

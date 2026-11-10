@@ -1,5 +1,6 @@
-//! Export (docs/specification.md sections 6 and 11): edited frames written at full resolution as
-//! 16-bit TIFF or JPEG files with the ICC profile of the chosen colour space embedded.
+//! Export (docs/specification.md sections 6 and 11): edited frames written at full resolution (or
+//! scaled down to a chosen long edge, before the output sharpening) as 16-bit TIFF or JPEG files
+//! with the ICC profile of the chosen colour space embedded.
 //!
 //! One job exports the frames one after the other, so memory holds a single full-size image. Per
 //! frame: decode the original (and its infrared plane, for dust removal), render it with the saved recipe (the automatic one when the frame
@@ -23,7 +24,9 @@ use gtp_io::{encode_jpeg, encode_tiff16, JPEG_QUALITY};
 
 use crate::jobs::JobCtx;
 use crate::paths::{canonical_dir, display_path};
-use crate::pipeline::{analyze_with, build_proxy, render, PipelineInput, RenderTarget, PROXY_EDGE};
+use crate::pipeline::{
+    analyze_with, build_proxy, render, resize_to_long_edge, PipelineInput, RenderTarget, PROXY_EDGE,
+};
 use crate::services::counters;
 use crate::services::develop::{read_ir_or_skip, read_scan};
 use crate::services::export_metadata;
@@ -88,7 +91,16 @@ pub struct ExportOptions {
     /// app name into the file as Exif tags. Settings saved before this option existed load as on.
     #[serde(default = "default_write_metadata")]
     pub write_metadata: bool,
+    /// The size to write: none is the full size of the frame; a number scales the frame down so
+    /// its long edge has that length (the other edge follows, keeping the proportions). A frame
+    /// that is already that small or smaller is written at its own size: never enlarged. From 256
+    /// to 20000 pixels. Settings saved before this option existed load as none.
+    #[serde(default)]
+    pub long_edge: Option<u32>,
 }
+
+/// The shortest and longest long edge, in pixels, that the size option accepts.
+pub const LONG_EDGE: std::ops::RangeInclusive<u32> = 256..=20_000;
 
 /// The value of `write_metadata` when a saved set of options has none.
 fn default_write_metadata() -> bool {
@@ -221,6 +233,12 @@ impl ExportOptions {
                 self.jpeg_quality.to_string(),
             ));
         }
+        if let Some(edge) = self.long_edge.filter(|e| !LONG_EDGE.contains(e)) {
+            return Err(invalid(
+                "The long edge runs from 256 to 20000 pixels.",
+                edge.to_string(),
+            ));
+        }
         if self.dest_dir.trim().is_empty() {
             return Err(invalid("Choose a folder to export into.", String::new()));
         }
@@ -318,6 +336,11 @@ fn export_one(
     };
     let mut image = render(&input, &recipe, RenderTarget::Full)?;
     drop(input);
+    // The size option: scaled down (never up) before sharpening, so the sharpening is judged on the
+    // pixels that are written.
+    if let Some(long_edge) = options.long_edge {
+        image = resize_to_long_edge(image, long_edge)?;
+    }
     // Output sharpening belongs here, on the image at its final size, and nowhere else: the render
     // that previews and thumbnails use never sharpens.
     let sharpen = recipe.clone().clamped().output.sharpen;
@@ -444,6 +467,7 @@ mod tests {
             dest_dir: dir.display().to_string(),
             template: DEFAULT_TEMPLATE.into(),
             write_metadata: true,
+            long_edge: None,
         }
     }
 
@@ -594,6 +618,18 @@ mod tests {
             },
             ExportOptions {
                 template: "../x".into(),
+                ..good.clone()
+            },
+            ExportOptions {
+                long_edge: Some(255),
+                ..good.clone()
+            },
+            ExportOptions {
+                long_edge: Some(20_001),
+                ..good.clone()
+            },
+            ExportOptions {
+                long_edge: Some(0),
                 ..good.clone()
             },
         ] {
@@ -1002,6 +1038,153 @@ mod tests {
                 .sum()
         };
         assert!(activity(&sharp) > activity(&plain));
+    }
+
+    /// The width and height of a JPEG file, from its start-of-frame marker.
+    fn jpeg_size(path: &Path) -> (u32, u32) {
+        let bytes = std::fs::read(path).unwrap();
+        let mut at = 2;
+        while at + 9 < bytes.len() {
+            assert_eq!(bytes[at], 0xFF, "a marker at {at}");
+            let marker = bytes[at + 1];
+            let length = usize::from(u16::from_be_bytes([bytes[at + 2], bytes[at + 3]]));
+            if (0xC0..=0xCF).contains(&marker) && ![0xC4, 0xC8, 0xCC].contains(&marker) {
+                let height = u32::from(u16::from_be_bytes([bytes[at + 5], bytes[at + 6]]));
+                let width = u32::from(u16::from_be_bytes([bytes[at + 7], bytes[at + 8]]));
+                return (width, height);
+            }
+            at += 2 + length;
+        }
+        panic!("no frame header in the JPEG");
+    }
+
+    /// The size of the file an export of `id` wrote with `long_edge`, as TIFF and as JPEG.
+    fn sizes_with(t: &Fixture, id: FrameId, long_edge: Option<u32>) -> [(u32, u32); 2] {
+        let label = format!("{id}-{long_edge:?}");
+        let tiff_dir = t.dir.join(format!("size-tiff-{label}"));
+        let jpeg_dir = t.dir.join(format!("size-jpeg-{label}"));
+        for (dir, format) in [
+            (&tiff_dir, ExportFormat::Tiff16),
+            (&jpeg_dir, ExportFormat::Jpeg),
+        ] {
+            let opts = ExportOptions {
+                long_edge,
+                template: "out".into(),
+                ..options(dir, format, OutputSpace::Srgb)
+            };
+            let result = run(t, &[id], &opts).unwrap();
+            assert!(result.failed.is_empty(), "{:?}", result.failed);
+        }
+        let tiff = read_tiff16(&tiff_dir.join("out.tif"), &Limits::default()).unwrap();
+        [
+            (tiff.width, tiff.height),
+            jpeg_size(&jpeg_dir.join("out.jpg")),
+        ]
+    }
+
+    #[test]
+    fn a_long_edge_sets_the_size_of_the_file_and_keeps_the_proportions() {
+        let t = Fixture::new("export-long-edge");
+        let landscape = t.frame(1, 600, 400);
+        let portrait = t.frame(2, 400, 600);
+        for id in [landscape, portrait] {
+            let [(full_w, full_h), full_jpeg] = sizes_with(&t, id, None);
+            assert_eq!(full_jpeg, (full_w, full_h));
+            let long = full_w.max(full_h);
+            assert!(long > 300, "the fixture is bigger than the test edge");
+            let want_short =
+                (f64::from(full_w.min(full_h)) * 300.0 / f64::from(long)).round() as u32;
+            let want = if full_w >= full_h {
+                (300, want_short)
+            } else {
+                (want_short, 300)
+            };
+            let [tiff, jpeg] = sizes_with(&t, id, Some(300));
+            assert_eq!(tiff, want, "TIFF of {full_w}x{full_h}");
+            assert_eq!(jpeg, want, "JPEG of {full_w}x{full_h}");
+        }
+    }
+
+    #[test]
+    fn a_long_edge_at_or_above_the_frame_never_enlarges_it() {
+        let t = Fixture::new("export-no-enlarge");
+        let id = t.frame(1, 600, 400);
+        let [full, _] = sizes_with(&t, id, None);
+        let long = full.0.max(full.1);
+        for edge in [long, long + 1, 20_000] {
+            let [tiff, jpeg] = sizes_with(&t, id, Some(edge));
+            assert_eq!(tiff, full, "edge {edge}");
+            assert_eq!(jpeg, full, "edge {edge}");
+        }
+        // The pixels are those of the unsized export, not a resampled copy.
+        let plain = pixels(&export_to(&t, id, "unsized"));
+        let out = t.dir.join("same-size");
+        let opts = ExportOptions {
+            long_edge: Some(20_000),
+            ..options(&out, ExportFormat::Tiff16, OutputSpace::Srgb)
+        };
+        run(&t, &[id], &opts).unwrap();
+        assert_eq!(pixels(&out.join("Roll_001.tif")), plain);
+    }
+
+    #[test]
+    fn sharpening_runs_on_the_resized_image() {
+        let t = Fixture::new("export-resize-sharpen");
+        let id = t.frame_with(1, 600, 400, Pattern::Wedge);
+        let mut recipe = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        let export = |t: &Fixture, name: &str| {
+            let out = t.dir.join(name);
+            let opts = ExportOptions {
+                long_edge: Some(300),
+                ..options(&out, ExportFormat::Tiff16, OutputSpace::Srgb)
+            };
+            run(t, &[id], &opts).unwrap();
+            read_tiff16(&out.join("Roll_001.tif"), &Limits::default()).unwrap()
+        };
+        t.library.write(|c| c.save_recipe(id, &recipe)).unwrap();
+        let soft = export(&t, "soft");
+        recipe.output.sharpen.amount = 150.0;
+        recipe.output.sharpen.radius_px = 1.5;
+        t.library.write(|c| c.save_recipe(id, &recipe)).unwrap();
+        let sharp = export(&t, "sharp");
+        assert_eq!((soft.width, soft.height), (sharp.width, sharp.height));
+        assert_eq!(soft.width.max(soft.height), 300);
+        assert_ne!(soft.data, sharp.data, "the resized image was sharpened");
+        let activity = |data: &[u16]| -> u64 {
+            data.chunks(3)
+                .zip(data.chunks(3).skip(1))
+                .map(|(a, b)| u64::from(a[1].abs_diff(b[1])))
+                .sum()
+        };
+        assert!(activity(&sharp.data) > activity(&soft.data));
+    }
+
+    #[test]
+    fn options_saved_without_a_long_edge_load_as_the_full_size() {
+        let json = r#"{"format":"jpeg","space":"srgb","jpeg_quality":90,
+            "dest_dir":"","template":"{roll}"}"#;
+        let loaded: ExportOptions = serde_json::from_str(json).unwrap();
+        assert_eq!(loaded.long_edge, None);
+        assert!(loaded.write_metadata);
+        let with: ExportOptions = serde_json::from_str(&json.replace(
+            r#""template":"{roll}""#,
+            r#""template":"{roll}","long_edge":2048"#,
+        ))
+        .unwrap();
+        assert_eq!(with.long_edge, Some(2048));
+    }
+
+    #[test]
+    fn the_long_edge_range_includes_its_ends() {
+        let dir = std::env::temp_dir().join(format!("gtp-export-edge-{}", FrameId::new()));
+        for edge in [256, 20_000] {
+            let opts = ExportOptions {
+                long_edge: Some(edge),
+                ..options(&dir, ExportFormat::Jpeg, OutputSpace::Srgb)
+            };
+            assert!(opts.validate().is_ok(), "{edge}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

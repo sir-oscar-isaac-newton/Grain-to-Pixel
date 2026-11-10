@@ -16,7 +16,8 @@ export function findPreset(
 
 /**
  * Whether two sets of options are the same. The JPEG quality only counts when the format is JPEG
- * (it is not shown for TIFF), and `ignoreFolder` leaves the folder out.
+ * (it is not shown for TIFF), a missing size is the same as none (full size), and `ignoreFolder`
+ * leaves the folder out.
  */
 export function sameOptions(
   a: ExportOptions,
@@ -29,6 +30,7 @@ export function sameOptions(
     (a.format !== 'jpeg' || a.jpeg_quality === b.jpeg_quality) &&
     a.template === b.template &&
     a.write_metadata === b.write_metadata &&
+    (a.long_edge ?? null) === (b.long_edge ?? null) &&
     (ignoreFolder || a.dest_dir === b.dest_dir)
   );
 }
@@ -48,6 +50,7 @@ export function isModified(options: ExportOptions, preset: ExportPreset): boolea
 export function applyPreset(current: ExportOptions, preset: ExportPreset): ExportOptions {
   return {
     ...preset.options,
+    long_edge: preset.options.long_edge ?? null,
     dest_dir: preset.options.dest_dir === '' ? current.dest_dir : preset.options.dest_dir,
   };
 }

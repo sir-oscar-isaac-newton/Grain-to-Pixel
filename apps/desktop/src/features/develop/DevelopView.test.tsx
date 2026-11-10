@@ -627,7 +627,7 @@ describe('DevelopView', () => {
       await user.click(screen.getByRole('button', { name: 'Export…' }));
       const dialog = within(await screen.findByRole('dialog', { name: 'Export' }));
       expect(
-        dialog.getByText('Write 1 frame at full size, with the colour profile embedded.'),
+        dialog.getByText('Write 1 frame, with the colour profile embedded.'),
       ).toBeInTheDocument();
 
       await user.click(dialog.getByRole('button', { name: 'Choose folder…' }));

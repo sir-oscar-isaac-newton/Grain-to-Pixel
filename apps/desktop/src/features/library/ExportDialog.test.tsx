@@ -72,7 +72,7 @@ describe('ExportDialog', () => {
       await user.click(exportButton());
       expect(
         within(await screen.findByRole('dialog', { name: 'Export' })).getByText(
-          'Write 1 frame at full size, with the colour profile embedded.',
+          'Write 1 frame, with the colour profile embedded.',
         ),
       ).toBeInTheDocument();
     });
@@ -80,9 +80,7 @@ describe('ExportDialog', () => {
     it('starts with TIFF 16-bit and sRGB, and needs a folder before it can start', async () => {
       await openDialog();
       const d = within(dialog());
-      expect(
-        d.getByText('Write 2 frames at full size, with the colour profile embedded.'),
-      ).toBeInTheDocument();
+      expect(d.getByText('Write 2 frames, with the colour profile embedded.')).toBeInTheDocument();
       expect(d.getByRole('radio', { name: /TIFF, 16-bit/ })).toBeChecked();
       expect(d.getByRole('radio', { name: /JPEG/ })).not.toBeChecked();
       expect(d.getByRole('combobox', { name: /Colour space/ })).toHaveValue('srgb');
@@ -176,6 +174,7 @@ describe('ExportDialog', () => {
             dest_dir: '/films/Library',
             template: '{roll}_{index:03}',
             write_metadata: true,
+            long_edge: null,
           },
         },
       ]);

@@ -818,6 +818,13 @@ export type ExportOptions_Deserialize = {
 	 *  app name into the file as Exif tags. Settings saved before this option existed load as on.
 	 */
 	write_metadata?: boolean,
+	/**
+	 *  The size to write: none is the full size of the frame; a number scales the frame down so
+	 *  its long edge has that length (the other edge follows, keeping the proportions). A frame
+	 *  that is already that small or smaller is written at its own size: never enlarged. From 256
+	 *  to 20000 pixels. Settings saved before this option existed load as none.
+	 */
+	long_edge?: number | null,
 };
 
 /**  What to export and where. */
@@ -838,6 +845,13 @@ export type ExportOptions_Serialize = {
 	 *  app name into the file as Exif tags. Settings saved before this option existed load as on.
 	 */
 	write_metadata: boolean,
+	/**
+	 *  The size to write: none is the full size of the frame; a number scales the frame down so
+	 *  its long edge has that length (the other edge follows, keeping the proportions). A frame
+	 *  that is already that small or smaller is written at its own size: never enlarged. From 256
+	 *  to 20000 pixels. Settings saved before this option existed load as none.
+	 */
+	long_edge: number | null,
 };
 
 /**

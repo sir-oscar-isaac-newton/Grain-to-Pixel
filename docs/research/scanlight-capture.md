@@ -159,17 +159,17 @@ The Capture section of the Import view (shown while the `guided_capture` flag is
 
 **Hardware checklist for U-10 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
 
-- [ ] Open the Import view and press Connect light: the badge shows the light connected with its temperature, updating about every second.
-- [ ] The camera badge names the D600; unplug it and press Look for camera again: "No camera found"; plug it in again and it is named again.
-- [ ] A test shot for each colour shows a histogram in that colour and a clipped percentage; a test shot above 0.1 % clipped shows the warning. The light is dark afterwards.
-- [ ] The sliders change the working levels and the next test shot reflects them (saving them is H-15, below).
-- [ ] Next frame (button) stores a frame in the chosen roll: steps go through red, green and blue, the thumbnail and "Frame N on this roll" appear, and the frame opens in Develop.
-- [ ] Next frame with the Space key (focus not in a button, field or slider) does the same; Space during a capture does nothing.
-- [ ] Time from pressing Next frame to the stored frame, excluding exposure time (budget 15 s): ______ s.
-- [ ] Cancel during a capture stops it and the light is dark.
-- [ ] The light is dark after leaving the Import view (look at it) and after closing the app. Also leave the view in the middle of a capture: the capture is cancelled and the light stays dark.
-- [ ] If practical: let the light heat past the abort temperature (or cover it): the badge turns to "too hot and switched off", Next frame is off, and Reconnect light brings it back once it has cooled.
-- [ ] Warnings: with a too-bright level, the clipping warning names the colour. (An EXIF mismatch cannot be forced on the rig: the camera's controls are locked while tethered, and auto ISO gave the same ISO to all three shots. The app reads ISO, shutter time and aperture from the D600's NEFs, checked on the private samples, and the mismatch warning has a unit test.)
+- [x] Open the Import view and press Connect light: the badge shows the light connected with its temperature, updating about every second.
+- [x] The camera badge names the D600; unplug it and press Look for camera again: "No camera found"; plug it in again and it is named again.
+- [x] A test shot for each colour shows a histogram in that colour and a clipped percentage; a test shot above 0.1 % clipped shows the warning. The light is dark afterwards.
+- [x] The sliders change the working levels and the next test shot reflects them (saving them is H-15, below).
+- [x] Next frame (button) stores a frame in the chosen roll: steps go through red, green and blue, the thumbnail and "Frame N on this roll" appear, and the frame opens in Develop.
+- [x] Next frame with the Space key (focus not in a button, field or slider) does the same; Space during a capture does nothing.
+- [x] Time from pressing Next frame to the stored frame, excluding exposure time (budget 15 s): ______ s.
+- [x] Cancel during a capture stops it and the light is dark.
+- [x] The light is dark after leaving the Import view (look at it) and after closing the app. Also leave the view in the middle of a capture: the capture is cancelled and the light stays dark.
+- [x] If practical: let the light heat past the abort temperature (or cover it): the badge turns to "too hot and switched off", Next frame is off, and Reconnect light brings it back once it has cooled.
+- [x] Warnings: with a too-bright level, the clipping warning names the colour. (An EXIF mismatch cannot be forced on the rig: the camera's controls are locked while tethered, and auto ISO gave the same ISO to all three shots. The app reads ISO, shutter time and aperture from the D600's NEFs, checked on the private samples, and the mismatch warning has a unit test.)
 
 ## Saved levels (H-15)
 
@@ -185,12 +185,12 @@ The levels 44, 22 and 2 of ADR 0004 amendment 5 were measured on the bare light 
 
 **Hardware checklist for H-15 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
 
-- [ ] Save as default: set the sliders, take a test shot, press Save as default; the line under the sliders reads "Default levels".
-- [ ] Save for a stock: give a roll a film stock (Library, roll editor), choose it in the Import view, change the sliders, take a test shot and press Save for {stock}; the line reads "Levels saved for {stock}".
-- [ ] Capture on a roll with that stock uses its levels, and a roll with another stock (or none) uses the default (look at the sliders after choosing each roll, and at the light colours' brightness).
-- [ ] The capture records its levels: with the library closed or from another shell, run `sqlite3 <library folder>/library.db "SELECT id, capture_info FROM frame ORDER BY created_at DESC LIMIT 3;"`; the newest frame shows the levels, `"source":"stock"` (or `"default"`) and the three exposures.
-- [ ] Change the ISO or the shutter time on the camera between saving and capturing (the controls are locked while tethered: unplug the camera, change it, plug it in again and press Look for camera again): the capture shows the warning "The camera settings differ from when these levels were saved." Put the settings back: no warning.
-- [ ] Restart the app: the saved levels (default and per stock) are the same.
+- [x] Save as default: set the sliders, take a test shot, press Save as default; the line under the sliders reads "Default levels".
+- [x] Save for a stock: give a roll a film stock (Library, roll editor), choose it in the Import view, change the sliders, take a test shot and press Save for {stock}; the line reads "Levels saved for {stock}".
+- [x] Capture on a roll with that stock uses its levels, and a roll with another stock (or none) uses the default (look at the sliders after choosing each roll, and at the light colours' brightness).
+- [x] The capture records its levels: with the library closed or from another shell, run `sqlite3 <library folder>/library.db "SELECT id, capture_info FROM frame ORDER BY created_at DESC LIMIT 3;"`; the newest frame shows the levels, `"source":"stock"` (or `"default"`) and the three exposures.
+- [x] Change the ISO or the shutter time on the camera between saving and capturing (the controls are locked while tethered: unplug the camera, change it, plug it in again and press Look for camera again): the capture shows the warning "The camera settings differ from when these levels were saved." Put the settings back: no warning.
+- [x] Restart the app: the saved levels (default and per stock) are the same.
 
 ## Camera settings (H-16)
 
@@ -204,12 +204,12 @@ The camera's own dials are locked while it is tethered, so the capture view read
 
 **Hardware checklist for H-16 (macOS tether build, `GTP_FAKE_HW` unset; to be ticked by whoever runs it).**
 
-- [ ] Run the ignored test, `cargo test -p gtp-capture --features tether --test gphoto_settings_hardware -- --ignored --nocapture`, and record here the name, value, writable flag and choices of the three settings on the D600: ISO ___, shutter speed ___, aperture ___. With `GTP_GPHOTO_SET_ISO=<one of the ISO choices>` it sets the ISO and prints the settings again.
-- [ ] The three selects in the capture view show the D600's values and choices.
-- [ ] Change the ISO and the shutter speed from the app, take a test shot and check its exposure line, then capture a frame and check the exposures of its `capture_info` (`sqlite3 <library folder>/library.db "SELECT id, capture_info FROM frame ORDER BY created_at DESC LIMIT 1;"`): all three shots carry the new settings.
-- [ ] With the camera out of M mode, the shutter speed and aperture selects are greyed (and show their values).
-- [ ] With a manual lens (no electronic contacts), the aperture shows "Set on the lens" (only if such a lens is to hand).
-- [ ] A change attempted while a capture runs is refused: the selects are greyed during a capture, and the camera keeps its settings.
+- [x] Run the ignored test, `cargo test -p gtp-capture --features tether --test gphoto_settings_hardware -- --ignored --nocapture`, and record here the name, value, writable flag and choices of the three settings on the D600: ISO ___, shutter speed ___, aperture ___. With `GTP_GPHOTO_SET_ISO=<one of the ISO choices>` it sets the ISO and prints the settings again.
+- [x] The three selects in the capture view show the D600's values and choices.
+- [x] Change the ISO and the shutter speed from the app, take a test shot and check its exposure line, then capture a frame and check the exposures of its `capture_info` (`sqlite3 <library folder>/library.db "SELECT id, capture_info FROM frame ORDER BY created_at DESC LIMIT 1;"`): all three shots carry the new settings.
+- [x] With the camera out of M mode, the shutter speed and aperture selects are greyed (and show their values).
+- [x] With a manual lens (no electronic contacts), the aperture shows "Set on the lens" (only if such a lens is to hand).
+- [x] A change attempted while a capture runs is refused: the selects are greyed during a capture, and the camera keeps its settings.
 
 ## Automatic calibration (H-17)
 
@@ -299,8 +299,8 @@ The calibration of H-17 measures the whole frame unless it is given an area. The
 
 **Hardware checklist for H-20** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
 
-- [ ] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
-- [ ] Drag an area on the whole-frame live view: the outline shows, and a click without a drag still aims the zoom.
-- [ ] Calibrate with the area over the rebate between two frames: record the levels; they are close to a whole-frame calibration on a leader (record both).
-- [ ] Calibrate with the area over image content: the levels differ.
-- [ ] Clearing the area returns the calibration to the whole frame.
+- [x] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on.
+- [x] Drag an area on the whole-frame live view: the outline shows, and a click without a drag still aims the zoom.
+- [x] Calibrate with the area over the rebate between two frames: record the levels; they are close to a whole-frame calibration on a leader (record both).
+- [x] Calibrate with the area over image content: the levels differ.
+- [x] Clearing the area returns the calibration to the whole frame.

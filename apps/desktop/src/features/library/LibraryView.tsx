@@ -3,9 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { useUiStore } from '../../app/store';
 import { formatBytes } from '../../shared/format';
 import { ApplySettingsDialog } from './ApplySettingsDialog';
+import { DeleteFramesDialog } from './DeleteFramesDialog';
 import { ExportDialog } from './ExportDialog';
 import { FirstRunDialog } from './FirstRunDialog';
 import { FrameGrid } from './FrameGrid';
+import { FrameNote } from './FrameNote';
 import { JobsPanel } from './JobsPanel';
 import styles from './library.module.css';
 import { useLibraryStore } from './library-store';
@@ -27,6 +29,7 @@ export function LibraryView() {
   const rolls = useLibraryStore((s) => s.rolls);
   const selected = useLibraryStore((s) => s.selected);
   const selectedCount = selected.size;
+  const onlySelected = selectedCount === 1 ? [...selected][0] : undefined;
   const notice = useLibraryStore((s) => s.notice);
   const setNotice = useLibraryStore((s) => s.setNotice);
 
@@ -41,6 +44,7 @@ export function LibraryView() {
   const [found, setFound] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Nothing typed: the roll's frames in order. Otherwise the search, best match first.
   const { fetchPage, queryKey, filtered } = useLibraryQuery();
@@ -88,6 +92,13 @@ export function LibraryView() {
               >
                 {t('apply.open')}
               </button>
+              <button
+                type="button"
+                disabled={selectedCount === 0 || library.read_only}
+                onClick={() => setDeleting(true)}
+              >
+                {t('deleteFrames.open')}
+              </button>
             </div>
             {applying && (
               <ApplySettingsDialog
@@ -99,6 +110,13 @@ export function LibraryView() {
             )}
             {exporting && (
               <ExportDialog frameIds={[...selected]} open onClose={() => setExporting(false)} />
+            )}
+            {deleting && (
+              <DeleteFramesDialog
+                frameIds={[...selected]}
+                open
+                onClose={() => setDeleting(false)}
+              />
             )}
             {library.read_only && (
               <p role="status" className={styles.banner}>
@@ -116,6 +134,7 @@ export function LibraryView() {
             <JobsPanel />
             <SearchBar total={found} />
             {selectedCount > 0 && <SelectionTags />}
+            {onlySelected && <FrameNote key={onlySelected} frameId={onlySelected} />}
             <FrameGrid
               fetchPage={fetchPage}
               queryKey={queryKey}
@@ -123,6 +142,7 @@ export function LibraryView() {
               emptyText={emptyText}
               onTotal={setFound}
               onOpen={(frame, index) => openInDevelop(frame.id, index)}
+              onDelete={library.read_only ? undefined : () => setDeleting(true)}
             />
           </div>
         </div>

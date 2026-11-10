@@ -15,11 +15,17 @@ interface UiState {
   setView: (view: View) => void;
   /** Opens a frame in the Develop view (from the Library grid or the filmstrip). */
   openInDevelop: (id: string, index: number) => void;
+  /** Forgets the open frame when it is one of `ids` (they were deleted), so Develop shows none. */
+  closeDevelopFrame: (ids: readonly string[]) => void;
 }
 
-export const useUiStore = create<UiState>((set) => ({
+export const useUiStore = create<UiState>((set, get) => ({
   view: 'library',
   developFrame: null,
   setView: (view) => set({ view }),
   openInDevelop: (id, index) => set({ view: 'develop', developFrame: { id, index } }),
+  closeDevelopFrame: (ids) => {
+    const open = get().developFrame;
+    if (open && ids.includes(open.id)) set({ developFrame: null });
+  },
 }));

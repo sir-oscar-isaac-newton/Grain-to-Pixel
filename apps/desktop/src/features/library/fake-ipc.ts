@@ -637,6 +637,18 @@ export const ipc = {
     if (!found) throw new IpcError({ code: 'NotFound', message: 'No such frame.' });
     return found;
   }),
+  frameSetNote: vi.fn(async (id: string, note: string) => {
+    const found = state.frames.find((f) => f.id === id);
+    if (!found) throw new IpcError({ code: 'NotFound', message: 'No such frame.' });
+    const updated = { ...found, note };
+    state.frames = state.frames.map((f) => (f.id === id ? updated : f));
+    return updated;
+  }),
+  frameDelete: vi.fn(async (ids: string[]) => {
+    const gone = state.frames.filter((f) => ids.includes(f.id)).length;
+    state.frames = state.frames.filter((f) => !ids.includes(f.id));
+    return { frames_deleted: gone, files_left: [] as string[] };
+  }),
   recipeSave: vi.fn(async (id: string, recipe: Recipe) => {
     if (state.saveFails) throw new IpcError({ code: 'Io', message: state.saveFails });
     state.saved.push({ id, recipe });

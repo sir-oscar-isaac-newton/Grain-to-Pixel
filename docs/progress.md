@@ -833,6 +833,15 @@
       "status": "completed",
       "pr": 274,
       "commit": "1cc130c"
+    },
+    {
+      "id": "U-19",
+      "number": 268,
+      "title": "Delete frames and edit notes in the Library",
+      "branch": "feat/issue-268-frame-delete-notes",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

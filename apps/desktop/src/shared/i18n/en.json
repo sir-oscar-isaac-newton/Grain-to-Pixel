@@ -84,7 +84,13 @@
       "rollDeletedLeft_other": "Roll deleted, but {{count}} files could not be removed: {{files}}",
       "importFailed": "The import could not start: {{message}}",
       "flatFieldFailed": "The flat field could not be changed: {{message}}",
-      "deleteFailed": "The roll could not be deleted: {{message}}"
+      "deleteFailed": "The roll could not be deleted: {{message}}",
+      "framesDeleted_one": "{{count}} frame deleted.",
+      "framesDeleted_other": "{{count}} frames deleted.",
+      "framesDeletedLeft_one": "Frames deleted, but {{count}} file could not be removed: {{files}}",
+      "framesDeletedLeft_other": "Frames deleted, but {{count}} files could not be removed: {{files}}",
+      "framesDeleteFailed": "The frames could not be deleted: {{message}}",
+      "noteFailed": "The note could not be saved: {{message}}"
     }
   },
   "rollEditor": {
@@ -127,6 +133,17 @@
     "counting": "Counting the frames…",
     "confirm": "Delete roll",
     "cancel": "Cancel"
+  },
+  "deleteFrames": {
+    "open": "Delete",
+    "title": "Delete the selected frames?",
+    "body_one": "{{count}} frame will be removed from the library, with its original files on disk. This cannot be undone.",
+    "body_other": "{{count}} frames will be removed from the library, with their original files on disk. This cannot be undone.",
+    "confirm": "Delete frames",
+    "cancel": "Cancel"
+  },
+  "frameNote": {
+    "label": "Note for the selected frame"
   },
   "firstRun": {
     "title": "Set up your library",

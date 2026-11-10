@@ -64,7 +64,7 @@ pub fn build(dir: &Path, frames: u32, rolls: u32) -> Result<Built, AppError> {
     let mut shifted = Vec::new();
     for seed in 0..7 {
         let path = templates.join(format!("{seed}.jpg"));
-        encode_jpeg(&gradient(seed)?, OutputSpace::Srgb, 80, &path)?;
+        encode_jpeg(&gradient(seed)?, OutputSpace::Srgb, 80, &path, None)?;
         shifted.push(path);
     }
 

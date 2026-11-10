@@ -893,6 +893,15 @@
       "number": 277,
       "title": "Sync a roll to one frame, and compare two frames",
       "branch": "feat/issue-277-sync-compare",
+      "status": "completed",
+      "pr": 288,
+      "commit": "0371c79"
+    },
+    {
+      "id": "P-23",
+      "number": 273,
+      "title": "Metadata in exported files",
+      "branch": "feat/issue-273-export-metadata",
       "status": "in_progress",
       "pr": null,
       "commit": null

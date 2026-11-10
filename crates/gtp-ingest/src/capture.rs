@@ -275,7 +275,7 @@ pub mod testing {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        gtp_io::encode_jpeg(&image, OutputSpace::Srgb, 90, &path).expect("a JPEG");
+        gtp_io::encode_jpeg(&image, OutputSpace::Srgb, 90, &path, None).expect("a JPEG");
         let jpeg = std::fs::read(&path).expect("the JPEG");
         let _ = std::fs::remove_file(&path);
         let mut bytes = tiff_with_capture_time(Some(date), None, 0);

@@ -270,6 +270,7 @@ pub(crate) fn write_thumbnail(
         OutputSpace::Srgb,
         THUMB_QUALITY,
         &library.resolve(&thumb_rel(frame_id))?,
+        None,
     )
 }
 /// Imports one candidate; on any failure the frame's files are removed by the caller.

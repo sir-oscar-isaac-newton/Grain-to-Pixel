@@ -89,6 +89,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             OutputSpace::Srgb,
             90,
             &PathBuf::from(out).join(format!("{n:02}.jpg")),
+            None,
         )?;
     }
     println!(

@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let started = Instant::now();
     let positive = render(&input, &analysis.auto_recipe, RenderTarget::Full)?;
     println!("rendered in {:?}", started.elapsed());
-    encode_jpeg(&positive, OutputSpace::Srgb, 90, out)?;
+    encode_jpeg(&positive, OutputSpace::Srgb, 90, out, None)?;
     println!("wrote {}", out.display());
     Ok(())
 }

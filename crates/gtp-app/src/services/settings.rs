@@ -100,6 +100,7 @@ pub fn default_export_presets() -> Vec<ExportPreset> {
             jpeg_quality,
             dest_dir: String::new(),
             template: DEFAULT_TEMPLATE.to_owned(),
+            write_metadata: true,
         },
     };
     vec![
@@ -1089,6 +1090,55 @@ mod tests {
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
+    /// Removes every `write_metadata` key, as in a settings file written before the option.
+    fn without_write_metadata(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                map.remove("write_metadata");
+                map.values_mut().for_each(without_write_metadata);
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(without_write_metadata),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn export_options_saved_before_write_metadata_load_with_it_on() {
+        let path = temp_file("write-metadata");
+        let mut settings = Settings::default();
+        let mut off = preset("Off", ExportFormat::Jpeg);
+        off.options.write_metadata = false;
+        settings.export_presets.push(off);
+        settings.last_export = Some(LastExport {
+            options: ExportOptions {
+                write_metadata: false,
+                ..preset("x", ExportFormat::Tiff16).options
+            },
+            preset: None,
+        });
+        // With the key present, false stays false.
+        let mut json = serde_json::to_value(&settings).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, json.to_string()).unwrap();
+        let (kept, _) = SettingsStore::load(&path);
+        assert!(!kept.get().last_export.unwrap().options.write_metadata);
+        assert!(!kept.get().export_presets[2].options.write_metadata);
+
+        // Without the key, the presets and the last export load with it on.
+        without_write_metadata(&mut json);
+        std::fs::write(&path, json.to_string()).unwrap();
+        let (old, note) = SettingsStore::load(&path);
+        assert!(note.is_none(), "{note:?}");
+        let loaded = old.get();
+        assert!(loaded.last_export.unwrap().options.write_metadata);
+        assert_eq!(loaded.export_presets.len(), 3);
+        assert!(loaded
+            .export_presets
+            .iter()
+            .all(|p| p.options.write_metadata));
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
     fn preset(name: &str, format: ExportFormat) -> ExportPreset {
         ExportPreset {
             name: name.to_owned(),
@@ -1098,6 +1148,7 @@ mod tests {
                 jpeg_quality: 80,
                 dest_dir: "D:/Out".to_owned(),
                 template: "{roll}-{index}".to_owned(),
+                write_metadata: true,
             },
         }
     }
@@ -1131,6 +1182,7 @@ mod tests {
         assert!(presets
             .iter()
             .all(|p| p.options.template == "{roll}_{index:03}"));
+        assert!(presets.iter().all(|p| p.options.write_metadata));
         assert_eq!(store.get().last_export, None);
 
         std::fs::write(&path, r#"{"export_presets":[]}"#).unwrap();

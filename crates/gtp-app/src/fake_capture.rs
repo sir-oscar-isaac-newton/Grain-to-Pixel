@@ -141,7 +141,7 @@ pub fn fake_preview_frame(n: usize, view: &PreviewView) -> Result<Vec<u8>, AppEr
         }
     }
     let image = ImageF32::new(PREVIEW_WIDTH, PREVIEW_HEIGHT, 3, data)?;
-    encode_jpeg_bytes(&image, OutputSpace::Srgb, 80)
+    encode_jpeg_bytes(&image, OutputSpace::Srgb, 80, None)
 }
 
 /// Reads the staged pictures of the fake camera: the channel comes from the first letter of the

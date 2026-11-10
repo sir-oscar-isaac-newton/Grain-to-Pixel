@@ -7,6 +7,7 @@ pub mod counters;
 pub mod develop;
 pub mod diagnostics;
 pub mod export;
+mod export_metadata;
 pub mod flat_field;
 pub mod focus;
 pub mod import;

@@ -359,7 +359,7 @@ fn write_map(
         }
     }
     let image = ImageF32::new((w * 3) as u32, h as u32, 3, data)?;
-    encode_jpeg(&image, OutputSpace::Srgb, 85, path)
+    encode_jpeg(&image, OutputSpace::Srgb, 85, path, None)
 }
 
 /// The automatic colour balance a report measures (P-22).

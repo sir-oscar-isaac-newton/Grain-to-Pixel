@@ -26,6 +26,7 @@ use crate::paths::{canonical_dir, display_path};
 use crate::pipeline::{analyze_with, build_proxy, render, PipelineInput, RenderTarget, PROXY_EDGE};
 use crate::services::counters;
 use crate::services::develop::{read_ir_or_skip, read_scan};
+use crate::services::export_metadata;
 use crate::services::library::Library;
 use crate::services::roll_balance::with_frame_balance;
 
@@ -83,6 +84,15 @@ pub struct ExportOptions {
     /// The file name, without folders: `{roll}`, `{index}`, `{index:03}` (zero-padded to 3 digits,
     /// 1 to 9 allowed), `{frame}` and `{ext}`. The extension is added when the name lacks it.
     pub template: String,
+    /// Write the roll and frame details the user entered (film, camera, ISO, date, notes) and the
+    /// app name into the file as Exif tags. Settings saved before this option existed load as on.
+    #[serde(default = "default_write_metadata")]
+    pub write_metadata: bool,
+}
+
+/// The value of `write_metadata` when a saved set of options has none.
+fn default_write_metadata() -> bool {
+    true
 }
 
 /// The values a template can name.
@@ -318,9 +328,18 @@ fn export_one(
     ctx.check_cancelled()?;
 
     let path = free_path(dir, &name)?;
+    let metadata = options
+        .write_metadata
+        .then(|| export_metadata::build(&roll, &frame, env!("CARGO_PKG_VERSION")));
     match options.format {
-        ExportFormat::Tiff16 => encode_tiff16(&image, options.space, &path)?,
-        ExportFormat::Jpeg => encode_jpeg(&image, options.space, options.jpeg_quality, &path)?,
+        ExportFormat::Tiff16 => encode_tiff16(&image, options.space, &path, metadata.as_ref())?,
+        ExportFormat::Jpeg => encode_jpeg(
+            &image,
+            options.space,
+            options.jpeg_quality,
+            &path,
+            metadata.as_ref(),
+        )?,
     }
     progress(3.0);
     Ok(path)
@@ -424,6 +443,7 @@ mod tests {
             jpeg_quality: 90,
             dest_dir: dir.display().to_string(),
             template: DEFAULT_TEMPLATE.into(),
+            write_metadata: true,
         }
     }
 
@@ -585,6 +605,229 @@ mod tests {
             let err = run(&t, &ids, &good).unwrap_err();
             assert_eq!(err.code, ErrorCode::InvalidInput);
         }
+    }
+
+    fn read_exif(path: &Path) -> exif::Exif {
+        let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
+        exif::Reader::new()
+            .read_from_container(&mut reader)
+            .unwrap()
+    }
+
+    fn text(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {
+        match &exif.get_field(tag, exif::In::PRIMARY)?.value {
+            exif::Value::Ascii(parts) => Some(String::from_utf8_lossy(&parts[0]).into_owned()),
+            _ => None,
+        }
+    }
+
+    fn comment(exif: &exif::Exif) -> Option<Vec<u8>> {
+        match &exif
+            .get_field(exif::Tag::UserComment, exif::In::PRIMARY)?
+            .value
+        {
+            exif::Value::Undefined(bytes, _) => Some(bytes.clone()),
+            _ => None,
+        }
+    }
+
+    fn has(exif: &exif::Exif, tag: exif::Tag) -> bool {
+        exif.get_field(tag, exif::In::PRIMARY).is_some()
+    }
+
+    /// Fills in the roll's details and the note of a frame.
+    fn describe(t: &Fixture, id: FrameId) {
+        t.library
+            .write(|c| {
+                let mut roll = c.get_roll(t.roll)?;
+                roll.film_stock = Some("Kodak Portra 400".into());
+                roll.camera = Some("Nikon F3".into());
+                roll.iso_box = Some(400);
+                roll.iso_shot = Some(800);
+                roll.shot_from = Some("2026-07-14".into());
+                roll.shot_to = Some("2026-07-20".into());
+                roll.notes = "Rain all week".into();
+                c.update_roll(&roll)?;
+                c.set_frame_note(id, "Harbour at dusk")?;
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    /// Exports one frame in `format` with the metadata option as given into a folder of its own;
+    /// returns the file.
+    fn export_with(
+        t: &Fixture,
+        id: FrameId,
+        format: ExportFormat,
+        on: bool,
+        label: &str,
+    ) -> PathBuf {
+        let out = t.dir.join(format!("meta-{label}-{format:?}-{on}"));
+        let opts = ExportOptions {
+            write_metadata: on,
+            ..options(&out, format, OutputSpace::Srgb)
+        };
+        run(t, &[id], &opts).unwrap();
+        let file = std::fs::read_dir(&out).unwrap().next().unwrap().unwrap();
+        file.path()
+    }
+
+    const FORMATS: [ExportFormat; 2] = [ExportFormat::Tiff16, ExportFormat::Jpeg];
+
+    #[test]
+    fn metadata_on_writes_what_the_user_entered_and_nothing_else() {
+        let t = Fixture::new("export-meta-on");
+        let id = t.frame(1, 120, 80);
+        describe(&t, id);
+        let version = env!("CARGO_PKG_VERSION");
+        for format in FORMATS {
+            let path = export_with(&t, id, format, true, "full");
+            let exif = read_exif(&path);
+            assert_eq!(
+                text(&exif, exif::Tag::Software).unwrap(),
+                format!("Grain to Pixel {version}")
+            );
+            assert_eq!(
+                text(&exif, exif::Tag::ImageDescription).unwrap(),
+                "Kodak Portra 400 (box ISO 400, shot at ISO 800), Roll"
+            );
+            assert_eq!(text(&exif, exif::Tag::Make).unwrap(), "Nikon");
+            assert_eq!(text(&exif, exif::Tag::Model).unwrap(), "Nikon F3");
+            let iso = exif
+                .get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY)
+                .unwrap();
+            assert_eq!(iso.value.get_uint(0), Some(800), "shot ISO, not box ISO");
+            assert_eq!(
+                text(&exif, exif::Tag::DateTimeOriginal).unwrap(),
+                "2026:07:14 00:00:00"
+            );
+            assert_eq!(
+                comment(&exif).unwrap(),
+                b"ASCII\0\0\0Harbour at dusk\n\nRain all week"
+            );
+
+            // Nothing beyond that: no exposure data, lens, GPS, or text that holds a path.
+            for tag in [
+                exif::Tag::ExposureTime,
+                exif::Tag::FNumber,
+                exif::Tag::LensModel,
+                exif::Tag::LensMake,
+                exif::Tag::ShutterSpeedValue,
+                exif::Tag::ApertureValue,
+                exif::Tag::FocalLength,
+                exif::Tag::ISOSpeed,
+                exif::Tag::CameraOwnerName,
+                exif::Tag::BodySerialNumber,
+                exif::Tag::Artist,
+                exif::Tag::Copyright,
+            ] {
+                assert!(!has(&exif, tag), "{format:?} wrote {tag}");
+            }
+            let dir = t.dir.display().to_string();
+            let leaf = t.dir.file_name().unwrap().to_string_lossy().into_owned();
+            let allowed = [
+                exif::Tag::ExifVersion,
+                exif::Tag::PhotographicSensitivity,
+                exif::Tag::DateTimeOriginal,
+                exif::Tag::UserComment,
+            ];
+            for field in exif.fields() {
+                let tag = field.tag;
+                assert_ne!(tag.context(), exif::Context::Gps, "{format:?} wrote {tag}");
+                if tag.context() == exif::Context::Exif {
+                    assert!(
+                        allowed.contains(&tag),
+                        "{format:?} wrote the Exif tag {tag}"
+                    );
+                }
+                if let exif::Value::Ascii(parts) = &field.value {
+                    for part in parts {
+                        let value = String::from_utf8_lossy(part);
+                        assert!(
+                            !value.contains(&dir) && !value.contains(&leaf),
+                            "{format:?} {tag}: {value}"
+                        );
+                    }
+                }
+            }
+            let note = String::from_utf8_lossy(&comment(&exif).unwrap()).into_owned();
+            assert!(!note.contains(&dir) && !note.contains(&leaf));
+        }
+    }
+
+    #[test]
+    fn metadata_off_writes_none() {
+        let t = Fixture::new("export-meta-off");
+        let id = t.frame(1, 120, 80);
+        describe(&t, id);
+        let tags = [
+            exif::Tag::Software,
+            exif::Tag::ImageDescription,
+            exif::Tag::Make,
+            exif::Tag::Model,
+            exif::Tag::PhotographicSensitivity,
+            exif::Tag::DateTimeOriginal,
+            exif::Tag::UserComment,
+        ];
+        let tiff = export_with(&t, id, ExportFormat::Tiff16, false, "off");
+        let exif = read_exif(&tiff);
+        assert!(tags.iter().all(|&tag| !has(&exif, tag)));
+        let jpeg = std::fs::read(export_with(&t, id, ExportFormat::Jpeg, false, "off")).unwrap();
+        assert!(!jpeg.windows(6).any(|w| w == b"Exif\0\0"));
+    }
+
+    #[test]
+    fn a_roll_without_details_writes_the_app_and_the_roll_name_only() {
+        let t = Fixture::new("export-meta-empty");
+        let id = t.frame(1, 120, 80);
+        for format in FORMATS {
+            let exif = read_exif(&export_with(&t, id, format, true, "empty"));
+            assert!(text(&exif, exif::Tag::Software)
+                .unwrap()
+                .starts_with("Grain to Pixel "));
+            assert_eq!(text(&exif, exif::Tag::ImageDescription).unwrap(), "Roll");
+            for tag in [
+                exif::Tag::Make,
+                exif::Tag::Model,
+                exif::Tag::PhotographicSensitivity,
+                exif::Tag::DateTimeOriginal,
+                exif::Tag::UserComment,
+            ] {
+                assert!(!has(&exif, tag), "{format:?} wrote {tag}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_date_that_is_not_a_full_day_writes_no_date_tag() {
+        let t = Fixture::new("export-meta-date");
+        let id = t.frame(1, 120, 80);
+        for shot_from in ["2026-07", "2026"] {
+            t.library
+                .write(|c| {
+                    let mut roll = c.get_roll(t.roll)?;
+                    roll.shot_from = Some(shot_from.into());
+                    c.update_roll(&roll)?;
+                    Ok(())
+                })
+                .unwrap();
+            for format in FORMATS {
+                let path = export_with(&t, id, format, true, shot_from);
+                let exif = read_exif(&path);
+                assert!(!has(&exif, exif::Tag::DateTimeOriginal), "{shot_from}");
+            }
+        }
+    }
+
+    #[test]
+    fn options_saved_without_write_metadata_mean_on() {
+        let json = r#"{"format":"jpeg","space":"srgb","jpeg_quality":90,"dest_dir":"D:/Out","template":"x"}"#;
+        let options: ExportOptions = serde_json::from_str(json).unwrap();
+        assert!(options.write_metadata);
+        let off = json.replace('}', r#","write_metadata":false}"#);
+        let options: ExportOptions = serde_json::from_str(&off).unwrap();
+        assert!(!options.write_metadata);
     }
 
     #[test]

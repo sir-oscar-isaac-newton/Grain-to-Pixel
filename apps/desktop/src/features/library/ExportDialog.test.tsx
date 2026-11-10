@@ -91,6 +91,10 @@ describe('ExportDialog', () => {
       expect(d.getByRole('button', { name: 'Export' })).toBeDisabled();
       expect(d.getByRole('textbox', { name: /File name/ })).toHaveValue('{roll}_{index:03}');
       expect(d.getByText('Example: Roll_001.tif')).toBeInTheDocument();
+      expect(d.getByRole('checkbox', { name: 'Write metadata' })).toBeChecked();
+      expect(d.getByRole('checkbox', { name: 'Write metadata' })).toHaveAccessibleDescription(
+        /film, camera, ISO, first shooting date and notes you entered/,
+      );
     });
 
     it('shows the quality for JPEG, and says what each colour space is for', async () => {
@@ -171,6 +175,7 @@ describe('ExportDialog', () => {
             jpeg_quality: 92,
             dest_dir: '/films/Library',
             template: '{roll}_{index:03}',
+            write_metadata: true,
           },
         },
       ]);
@@ -197,6 +202,16 @@ describe('ExportDialog', () => {
       expect(d.getByText('Done')).toBeInTheDocument();
       expect(d.getByText('2 files written')).toBeInTheDocument();
       expect(d.queryByText(/could not be exported/)).not.toBeInTheDocument();
+    });
+
+    it('sends write_metadata off when the box is cleared, and remembers it', async () => {
+      const user = await openDialog();
+      const d = within(dialog());
+      await user.click(d.getByRole('checkbox', { name: 'Write metadata' }));
+      expect(d.getByRole('checkbox', { name: 'Write metadata' })).not.toBeChecked();
+      await start(user);
+      expect(state.exports[0]?.options.write_metadata).toBe(false);
+      expect(state.lastExport?.options.write_metadata).toBe(false);
     });
 
     it('lists the frames that could not be exported beside what was written', async () => {

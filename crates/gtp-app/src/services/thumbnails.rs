@@ -179,6 +179,7 @@ impl ThumbnailService {
             OutputSpace::Srgb,
             THUMB_QUALITY,
             &library.resolve(&thumb_rel(frame))?,
+            None,
         )?;
         self.shared.renders.fetch_add(1, Ordering::SeqCst);
         Ok(true)
@@ -354,7 +355,7 @@ mod tests {
         )
         .unwrap();
         let path = t.dir.join("direct.jpg");
-        encode_jpeg(&direct, OutputSpace::Srgb, THUMB_QUALITY, &path).unwrap();
+        encode_jpeg(&direct, OutputSpace::Srgb, THUMB_QUALITY, &path, None).unwrap();
         assert_eq!(
             without_profile_time(std::fs::read(path).unwrap()),
             without_profile_time(after)

@@ -8,6 +8,7 @@ const options = (over: Partial<ExportOptions> = {}): ExportOptions => ({
   jpeg_quality: 90,
   dest_dir: '/out',
   template: '{roll}_{index:03}',
+  write_metadata: true,
   ...over,
 });
 
@@ -41,6 +42,7 @@ describe('sameOptions', () => {
       { jpeg_quality: 80 },
       { dest_dir: '/other' },
       { template: 'x' },
+      { write_metadata: false },
     ] as const) {
       expect(sameOptions(options(), options(change))).toBe(false);
     }

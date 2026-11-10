@@ -7,6 +7,9 @@ publish = false
 [dependencies]
 gtp-core = { version = "0.0.0", path = "../gtp-core" }
 jpeg-encoder = "0.7.1"
+# Exif block for JPEG exports. Its writer is under `exif::experimental`, so the version is pinned:
+# a new version is a deliberate update. Already in the tree through gtp-ingest. BSD-2-Clause.
+kamadak-exif = "=0.6.1"
 # Little CMS, built from its bundled C source (`static`) so no system library is needed.
 lcms2 = { version = "6.2.0", features = ["static"] }
 # NEF decoding for RGB triplets (ADR 0007). LGPL-2.1: exception in deny.toml, notice in

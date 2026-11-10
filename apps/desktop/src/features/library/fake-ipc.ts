@@ -11,6 +11,7 @@ import type {
   CaptureStep,
   Counters,
   DeviceInfo,
+  ExportOptions,
   ExportPreset,
   FolderCheck,
   FramePage,
@@ -206,6 +207,7 @@ export const DEFAULT_EXPORT_PRESETS: ExportPreset[] = [
       jpeg_quality: 92,
       dest_dir: '',
       template: '{roll}_{index:03}',
+      write_metadata: true,
     },
   },
   {
@@ -216,6 +218,7 @@ export const DEFAULT_EXPORT_PRESETS: ExportPreset[] = [
       jpeg_quality: 90,
       dest_dir: '',
       template: '{roll}_{index:03}',
+      write_metadata: true,
     },
   },
 ];
@@ -307,7 +310,7 @@ export const state = {
   diagnosticsExports: [] as string[],
   diagnosticsFails: null as string | null,
   /** The exports started, in order. */
-  exports: [] as Array<{ frameIds: string[]; options: unknown }>,
+  exports: [] as Array<{ frameIds: string[]; options: ExportOptions }>,
   /** The time the fake stamps on frames it exports (RFC 3339, as the catalog writes it). */
   exportedAt: '2026-11-05T10:00:00Z',
   /** Starting an export is refused with this message when set. */
@@ -784,7 +787,7 @@ export const ipc = {
       throw new IpcError({ code: 'InvalidInput', message: state.applyRefused });
     }
   }),
-  exportStart: vi.fn(async (frameIds: string[], options: unknown) => {
+  exportStart: vi.fn(async (frameIds: string[], options: ExportOptions) => {
     state.exports.push({ frameIds, options });
     if (state.exportRefused) {
       throw new IpcError({ code: 'InvalidInput', message: state.exportRefused });

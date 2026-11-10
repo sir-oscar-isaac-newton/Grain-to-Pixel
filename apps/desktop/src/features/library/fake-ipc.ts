@@ -186,7 +186,6 @@ export const DEFAULT_FLAGS = {
   triplet_import: true,
   guided_capture: true,
   dev_overlay: false,
-  experimental_auto_levels: false,
   update_check: true,
 };
 

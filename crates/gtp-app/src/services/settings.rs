@@ -51,7 +51,6 @@ pub struct Flags {
     pub triplet_import: bool,
     pub guided_capture: bool,
     pub dev_overlay: bool,
-    pub experimental_auto_levels: bool,
     /// Ask GitHub Releases for a newer version at launch. The only network call the app makes.
     pub update_check: bool,
 }
@@ -63,7 +62,6 @@ impl Default for Flags {
             triplet_import: true,
             guided_capture: true,
             dev_overlay: false,
-            experimental_auto_levels: false,
             update_check: true,
         }
     }
@@ -122,7 +120,6 @@ pub struct FlagsPatch {
     pub triplet_import: Option<bool>,
     pub guided_capture: Option<bool>,
     pub dev_overlay: Option<bool>,
-    pub experimental_auto_levels: Option<bool>,
     pub update_check: Option<bool>,
 }
 
@@ -227,10 +224,6 @@ impl Settings {
                 (&mut flags.triplet_import, f.triplet_import),
                 (&mut flags.guided_capture, f.guided_capture),
                 (&mut flags.dev_overlay, f.dev_overlay),
-                (
-                    &mut flags.experimental_auto_levels,
-                    f.experimental_auto_levels,
-                ),
                 (&mut flags.update_check, f.update_check),
             ] {
                 if let Some(value) = value {
@@ -440,10 +433,32 @@ mod tests {
     fn defaults_follow_the_spec() {
         let flags = Settings::default().flags;
         assert!(flags.dust_removal && flags.triplet_import && flags.guided_capture);
-        assert!(!flags.dev_overlay && !flags.experimental_auto_levels);
+        assert!(!flags.dev_overlay);
         assert!(flags.update_check);
         assert_eq!(Settings::default().theme, Theme::System);
         assert_eq!(Settings::default().last_update_check, None);
+    }
+
+    #[test]
+    fn a_settings_file_with_the_removed_auto_levels_flag_still_loads() {
+        let path = temp_file("removed-flag");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"theme":"dark","flags":{"dev_overlay":true,"experimental_auto_levels":true,"update_check":false}}"#,
+        )
+        .unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none(), "the file is read, not set aside: {note:?}");
+        let settings = store.get();
+        assert_eq!(settings.theme, Theme::Dark);
+        assert!(settings.flags.dev_overlay && !settings.flags.update_check);
+        assert!(
+            settings.flags.dust_removal,
+            "flags left out keep their default"
+        );
+        assert!(!path.with_extension("json.bad").exists());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]

@@ -200,15 +200,15 @@ needs: hw
 adr: yes
 labels: spike
 spec: specification section 6.1; ADR 0004; docs/research/scanlight-capture.md
-desc: Confirm the Scanlight V4 binary serial protocol on the real device (rev B), measure timing and temperature, and capture packet recordings to use as test vectors.
+desc: Finish the Scanlight V4 serial spike. On macOS it is done: the light is a V4 rev A (hardware ID 1, firmware ID 0, no SET_FOCUS), colours, timing and temperature are measured, and its shutter pulse does not fire the D600. What remains is the Windows serial retest, with another cable and port, and saving the packet captures as test vectors.
 ac:
-- Serial port opens on macOS and Windows without extra drivers; firmware ID recorded (rev B expected)
-- Each colour lights alone via SET_COLOR with save flag 0; switch latency and needed settle time recorded
-- LED_TEMP over a 3-colour sequence recorded and warn/abort limits justified
-- Pulse length that reliably fires the D600 recorded, with or without SET_FOCUS, using the owned remote cable
-- Captured packets saved under samples/public/scanlight/ and the research note updated
+- Serial port opens on macOS without extra drivers and the light is recorded as a V4 rev A, hardware ID 1, firmware ID 0 (met, recorded in the research note); the Windows retest with another cable and another USB port is run and its result recorded, even if the port stays silent
+- Each colour lights alone via SET_COLOR with save flag 0; switch latency and settle time recorded (met on macOS: 0.5 s is enough)
+- LED_TEMP over a 3-colour sequence recorded and the warn/abort limits (45 and 55 degrees C) justified (met; the limits are approved, ADR 0004 amendment of 2026-11-09)
+- The shutter pulse is recorded as not firing the D600 on this rev A light (met by recording that result; the optional retest with a mono-to-stereo adapter is noted and does not block the issue)
+- Captured packets saved under samples/public/scanlight/ as test vectors and the research note updated
 tech:
-SCOPE: packet format `0xFE`, header, length, data. Host commands: SET_COLOR (header 0; R, G, B, W, IR, save flag; save always 0), GET_FW_VERSION (2), SHUTTER_PULSE (3; 10 ms units), SET_FOCUS (7; PCB 26a902b). Device packets: LED_TEMP (1, int32 millidegrees C), VBUS (2, mV), FW_VERSION (3). No acks, no VID/PID: probe ports with GET_FW_VERSION. Throwaway script (python/pyserial or Rust) outside crates/.
+SCOPE: packet format `0xFE`, header, length, data. Host commands: SET_COLOR (header 0; R, G, B, W, IR, save flag; save always 0), GET_FW_VERSION (2), SHUTTER_PULSE (3; 10 ms units; does not fire the D600, not used), SET_FOCUS (7; PCB 26a902b only, so absent on this rev A light). Device packets: LED_TEMP (1, int32 millidegrees C), VBUS (2, mV), FW_VERSION (3). No acks, no VID/PID: probe ports with GET_FW_VERSION. Throwaway script (python/pyserial or Rust) outside crates/. The camera is triggered over USB; the Scanlight is used for light only.
 OUTPUT: docs/research/scanlight-capture.md, ADR 0004 amendments, recorded packets as test vectors, follow-up issues. The light must be off at the end of every run.
 PROCESS: assistant prepares commands; human runs; assistant records; hardware items never ticked by the assistant.
 
@@ -248,14 +248,16 @@ needs: hw
 adr: no
 labels: spike
 spec: specification section 6.1
-desc: Confirm the Windows capture path: Scanlight pulse fires the D600, digiCamControl downloads the NEF into a session folder, and the app can watch that folder.
+desc: Confirm the Windows capture path: digiCamControl fires the D600 over USB and writes the NEF into a session folder, and the app can ask it to take a shot and watch that folder. The Scanlight is used for light only; its shutter pulse does not fire the D600 (ADR 0004 amendment). Windows capture is not required for v0.1.0.
 ac:
-- D600 recognized by digiCamControl; pulse-fired shots appear in the chosen folder without digiCamControl triggering them
-- Typical file write time and partial-file behaviour recorded
+- D600 recognized by digiCamControl; a shot fired by digiCamControl over USB appears as a NEF in the chosen folder
+- How the app asks digiCamControl to take a shot is found and recorded (its command line or its remote interface), with the exact command that worked
+- Typical file write time and partial-file behaviour (temp names, size growth) of the watched folder recorded
+- Whether digiCamControl offers live view and camera settings that the app could reach is recorded
 - docs/research/scanlight-capture.md updated
 tech:
-SCOPE: configure digiCamControl session folder; fire with SHUTTER_PULSE (length from R-02); observe temp/partial file naming and stable-size timing; note D600 support status of digiCamControl.
-OUTPUT: research note; recommendation for the WatchedFolder file-complete rule.
+SCOPE: configure the digiCamControl session folder; take a shot from the command line and, if it has one, its remote interface, and note which the app can call; observe temp/partial file naming and stable-size timing; check live view and camera settings access; note D600 support status of digiCamControl. No Scanlight pulse is used. The dependency on R-02 is only for the light: a Scanlight that answers on Windows (R-02 retests the serial port with another cable and port); the camera part of this spike does not need the light.
+OUTPUT: research note; recommendation for the WatchedFolder trigger and file-complete rule.
 PROCESS: human runs; assistant records.
 
 ## R-05
@@ -1306,11 +1308,12 @@ deps: H-08, R-04
 needs: hw
 adr: no
 spec: specification section 6.1
-desc: Camera backend that fires the shutter through the Scanlight pulse and waits for NEFs written to a user-selected folder (digiCamControl on Windows).
+desc: Camera backend whose trigger asks digiCamControl to fire the camera (the way R-04 found) and that waits for NEFs written to a user-selected folder (digiCamControl on Windows). The Scanlight is used for light only: no SHUTTER_PULSE, no SET_FOCUS. This backend is not required for v0.1.0.
 ac:
-- trigger sends SHUTTER_PULSE (and SET_FOCUS when the profile enables it); wait_for_image returns the first new .nef whose size is stable for 500 ms
+- trigger asks digiCamControl to take a shot, as recorded by R-04; wait_for_image returns the first new .nef in the watched folder whose size is stable for 500 ms
 - Partial or temp files are ignored; timeout returns a clear error
-- A triplet via pulse + digiCamControl works on Windows (human reports)
+- A triplet via digiCamControl works on Windows (human reports); this needs a Scanlight that answers on Windows (R-02)
+- Not required for v0.1.0: the release does not wait for this issue
 tech:
 FILES: crates/gtp-capture/src/watched.rs (`WatchedFolder { dir }`, `notify` crate).
 VALIDATION: watch dir canonicalized and user-selected; files validated like any import.
@@ -1436,11 +1439,11 @@ type: test
 size: M
 estimate: 1d
 legacy: GTP-093
-deps: U-10, U-11, U-07
+deps: U-10, U-11, U-07, H-13, H-20
 needs: human
 adr: no
 spec: specification section 13
-desc: Audit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views.
+desc: Audit and fix keyboard paths, focus, contrast, live regions and reduced motion across all views. It runs after the last issues that change the UI (H-13, H-20).
 ac:
 - vitest-axe passes for every view
 - Keyboard operation, visible focus, contrast at least 4.5:1, aria-live job status, prefers-reduced-motion respected
@@ -1502,6 +1505,8 @@ desc: Run the release checklist and prepare v0.1.0; the human tags and publishes
 ac:
 - All CI gates green on main; cargo deny and audit clean
 - Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)
+- CHANGELOG.md exists and covers v0.1.0, generated from the conventional commits (specification section 15)
+- Windows capture (R-04, H-10) is not a gate for v0.1.0
 - Release notes generated from commits; tag command prepared for the human
 - The human publishes; nothing is tagged or pushed without explicit instruction
 tech:
@@ -1665,7 +1670,7 @@ estimate: 1d
 deps: H-05
 adr: no
 spec: specification sections 4.2 step 1 and 11
-desc: Correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.
+desc: Superseded by P-21 (ADR 0010); closed without work. Original text: correct uneven illumination from the light panel in RGB triplet captures, using a reference exposure of the empty light, before the film base is normalized.
 ac:
 - A reference exposure per colour channel is stored with the roll or capture session
 - Dividing by the normalized reference makes a synthetic shaded flat field flat within 1 percent; a uniform reference is the identity
@@ -1951,7 +1956,7 @@ FILES: tools/scripts/issues/issues.src.txt (and the files it generates), docs/sp
 ROUTES: none new.
 MIGRATIONS: none.
 TESTS: the flag removal updates the Settings view and settings service tests; the workspace tests, pnpm -s check:progress and the issues build check pass.
-NOTES: out of scope: building the dev overlay, the frame delete and note UI, any new feature. dev_overlay stays as a flag. Updating the GitHub issues and closing P-16 is done by the human's upload step, not by this change.
+NOTES: out of scope: building the dev overlay, the frame delete and note UI, any new feature. dev_overlay stays as a flag. The GitHub issues are updated and P-16 is closed with `gh issue edit` and `gh issue close` after the merge; the upload script only creates issues.
 
 ## P-21
 title: Flat-field correction for camera triplets

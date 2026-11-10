@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-07",
+  "updated": "2026-11-09",
   "rules": "status is in_progress while the issue's branch exists or its PR is open; completed only after the PR is merged and closed (see docs/workflow.md section 10)",
   "issues": [
     {
@@ -763,6 +763,15 @@
       "commit": "3750b9e"
     },
     {
+      "id": "T-08",
+      "number": 248,
+      "title": "Dependabot pull requests without hand fixes",
+      "branch": "chore/issue-248-dependabot-prs",
+      "status": "completed",
+      "pr": 250,
+      "commit": "24d9de2"
+    },
+    {
       "id": "H-14",
       "number": 212,
       "title": "Live preview of the camera in the capture view",
@@ -803,6 +812,15 @@
       "number": 262,
       "title": "Clear the SQLite advisory RUSTSEC-2026-0459",
       "branch": "chore/issue-262-sqlite-advisory",
+      "status": "completed",
+      "pr": 265,
+      "commit": "1a3d9ed"
+    },
+    {
+      "id": "Q-10",
+      "number": 263,
+      "title": "Bring the plan in line with the hardware findings",
+      "branch": "docs/issue-263-plan-cleanup",
       "status": "in_progress",
       "pr": null,
       "commit": null

@@ -116,7 +116,7 @@ describe('SettingsView', () => {
   });
 
   describe('the feature flags', () => {
-    it('lists the six flags with what they do and their defaults', async () => {
+    it('lists the five flags with what they do and their defaults', async () => {
       openLibrary();
       render(<SettingsView />);
       const group = await screen.findByRole('group', { name: 'Feature flags' });
@@ -126,14 +126,12 @@ describe('SettingsView', () => {
         expect.stringContaining('RGB triplet import'),
         expect.stringContaining('Guided capture'),
         expect.stringContaining('Developer overlay'),
-        expect.stringContaining('Experimental auto levels'),
         expect.stringContaining('Check for updates'),
       ]);
       expect(switches.map((s) => (s as HTMLInputElement).checked)).toEqual([
         true,
         true,
         true,
-        false,
         false,
         true,
       ]);
@@ -181,13 +179,13 @@ describe('SettingsView', () => {
       state.settingsRefused = 'The disk is full.';
       const user = userEvent.setup();
       render(<SettingsView />);
-      await user.click(await screen.findByRole('switch', { name: /Experimental auto levels/ }));
+      await user.click(await screen.findByRole('switch', { name: /Developer overlay/ }));
       expect(await screen.findByRole('alert')).toHaveTextContent(
         'The setting could not be saved: The disk is full.',
       );
-      expect(flag(/Experimental auto levels/)).not.toBeChecked();
-      expect(flag(/Experimental auto levels/)).toBeEnabled();
-      expect(state.flags.experimental_auto_levels).toBe(false);
+      expect(flag(/Developer overlay/)).not.toBeChecked();
+      expect(flag(/Developer overlay/)).toBeEnabled();
+      expect(state.flags.dev_overlay).toBe(false);
     });
 
     it('resets every flag that is not at its default, and only those', async () => {

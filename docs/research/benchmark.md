@@ -326,3 +326,29 @@ export's encode and write (TIFF 16 and the colour conversion), dust removal at f
 and the NEF decode; the last is in [nef-decode.md](nef-decode.md) (0.36 to 0.46 s per triplet
 merge, 4.8 to 5.0 s per imported frame). A 4-core laptop will be slower than this 6-core desktop, so
 before release these should be re-run on the reference machine.
+
+## Calibration (Q-03)
+
+Machine: AMD Ryzen 5 5600X (6 cores, 12 threads), 32 GB, Windows 10, release build, commit 684503b.
+
+Invocation: `cargo build --release -p gtp-benchmark`, then
+`target/release/benchmark report --manifest <file> --look neutral|frontier --balance off|roll_median`.
+
+Each run below uses the setting the app uses: no balance for camera triplets, and grey world per frame followed by the roll median for scans (`crates/gtp-app/src/services/import.rs`).
+
+| Set and look | Measured median / p95 | Guard median / p95 | Frames compared |
+|---|---|---|---|
+| Triplets, Frontier (balance off) | 8.8 / 23.3 | <= 10 / <= 25 | 15 of 15 |
+| Triplets, Neutral (balance off) | 16.9 / 44.5 | <= 18 / <= 46 | 15 of 15 |
+| LS-50, Neutral (roll median) | 16.0 / 27.0 | <= 17 / <= 29 | 11 of 12 |
+| LS-50, Frontier (roll median) | 22.8 / 48.3 | <= 24 / <= 50 | 9 of 12 |
+
+All other runs and the speed benches equal the tables above within run-to-run noise.
+
+Decisions:
+
+1. ΔE2000 against another converter is a regression guard, not a quality target. It mostly measures a difference of look, and casts are dominated by lightness. The guards are the four rows above, and the number of compared frames must not drop. The quality gate is the author's blind side-by-side check. The reference set is private, so the guards cannot run in CI. They are a manual step before each release that touches the pipeline.
+2. The "at most 3 after manual tweaks" figure is dropped.
+3. The section 11 budget values stay unchanged, and the reference machine stays the 4-core/8 GB 2020-class laptop. The desktop numbers are recorded as measured. Still open before release: the run on the reference laptop, and the budgets not measured at all (cold start, idle memory, installer size, export encode and write, full-resolution dust removal, peak export memory, guided capture, colour switch, grid scrolling at 5,000 frames, search over 50,000 frames).
+
+Not part of Q-03, proposed as follow-ups: the three LS-50 frames that do not register under the Frontier look (Ek160 0002, V250D 0001, V250D 0004); triplet frame 15 under Frontier (20.8 against a median of 8.8, 15.4 % crop gap).

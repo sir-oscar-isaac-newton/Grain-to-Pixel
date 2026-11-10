@@ -1507,6 +1507,7 @@ ac:
 - Installers verified on clean machines; a full workflow completed (capture or scan, convert, edit, tag, search, export)
 - CHANGELOG.md exists and covers v0.1.0, generated from the conventional commits (specification section 15)
 - Windows capture (R-04, H-10) is not a gate for v0.1.0
+- The quality guards of specification section 1 are checked by hand with `benchmark report` on the private reference set, and the section 11 budgets on the reference machine, before the release
 - Release notes generated from commits; tag command prepared for the human
 - The human publishes; nothing is tagged or pushed without explicit instruction
 tech:

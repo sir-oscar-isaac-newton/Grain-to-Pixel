@@ -17,7 +17,7 @@
 
 **Success metrics**
 - *Activation:* a new user completes ingest, convert and export on their first session (measured locally, see §14).
-- *Quality:* results comparable to Nikon Scan 4 / Trichroma Lab. Proposed measure: on at least 10 reference frames, median ΔE2000 between our auto-converted output and the reference render is at most 6, and at most 3 after manual tweaks, plus a blind side-by-side check by the author. Calibrate the numbers in M1.
+- *Quality:* results comparable to Nikon Scan 4 / Trichroma Lab, judged by the author's blind side-by-side check. Median ΔE2000 against the reference renders is a regression guard, not a quality target, because it mostly measures a difference of look. Each guard uses the setting the app uses (balance off for camera triplets, roll median for scans), and the number of compared frames must not drop: Frontier on triplets, median <= 10 and 95th percentile <= 25, 15 of 15 frames; Neutral on triplets, <= 18 and <= 46, 15 of 15; Neutral on LS-50 scans, <= 17 and <= 29, 11 of 12; Frontier on LS-50 scans, <= 24 and <= 50, 9 of 12. The reference set is private, so the guards run by hand with `benchmark report` before each release that touches the pipeline, not in CI. Calibration and measurements: [benchmark note](research/benchmark.md).
 
 ### 1.1 Decisions confirmed
 
@@ -418,6 +418,8 @@ Reference machine: 4-core/8 GB laptop on SSD (2020-class). Measured in CI benchm
 | Library grid scrolling, 5,000 frames | 60 fps, thumbnails lazy-loaded |
 | Search over 50,000 frames | <= 100 ms |
 
+The budgets were calibrated in Q-03 and stay as listed. They were measured on a 6-core desktop ([benchmark note](research/benchmark.md)), and every measured budget is met there. Open before release (Q-07): the run on the reference laptop, and the rows with no measurement yet: cold start, idle memory, installer size, the export's encode and write and full-resolution dust removal (only the render is measured), peak memory during export, guided capture, colour switch, library grid scrolling and search over 50,000 frames.
+
 The scan itself is hardware-bound and not budgeted, but the UI must stay responsive and cancellable throughout. Implementation hints: `rayon` over rows, in-place f32 buffers, `fast_image_resize` for proxies, reuse buffers between renders. If CPU cannot meet the preview budget, first reduce the preview size, then consider GPU, and only then add complexity.
 
 ## 12. Observability and logging
@@ -462,7 +464,7 @@ The scan itself is hardware-bound and not budgeted, but the UI must stay respons
 | Milestone | Deliverable | Exit criteria |
 |---|---|---|
 | **M0 Foundations** | Tauri app skeleton in `apps/desktop`, CI (fmt, clippy, test, build on both OS), `tauri-specta` wiring, **nkscan hardware spike** ([research/nkscan.md](research/nkscan.md)), ADR 0002/0003 accepted | app launches on Windows x64 and macOS; spike answers: LS-50 detected and identified as an SA-30 roll adapter, 16-bit RGB + IR obtained, **and the modified roll transport advances across at least 3 frames**, on each OS. If advance fails, decide: contribute to nkscan, or rely on importing Nikon Scan 4 / VueScan TIFFs. **Capture spikes** ([research/scanlight-capture.md](research/scanlight-capture.md)): open the Scanlight over serial and light each colour; try the D600 with `SHUTTER_PULSE` (it did not fire the camera, so the camera is triggered over USB); capture and download a NEF with libgphoto2 on the Mac |
-| **M1 Pipeline on files** | `gtp-io`, `gtp-negative`, `gtp-edit` basics: load TIFF, film base, invert, colour, tone; golden tests; `tools/benchmark` ΔE report | quality metric calibrated; budgets for open/render/export met on fixtures |
+| **M1 Pipeline on files** | `gtp-io`, `gtp-negative`, `gtp-edit` basics: load TIFF, film base, invert, colour, tone; golden tests; `tools/benchmark` ΔE report | quality metric calibrated (Q-03); budgets for open/render/export met on fixtures |
 | **M2 Library** | `gtp-catalog`, library create/open, rolls, TIFF import with hashing + thumbnails, tags, FTS search, Library view | create library, import 36 frames, tag, search under budget |
 | **M3 Develop UI** | Develop view with all recipe panels, crop with auto-detect, before/after, copy settings to roll, export (TIFF16/JPEG + ICC) | full file-based workflow usable end to end |
 | **M4 LS-50 ingest** | `NkscanSource`, roll-scan job (1-40 frames, per-frame commit, cancel/resume), roll-level film base, IR dust removal, Import view | scan a full roll with IR on each OS; frames land in the library as they finish; dust visibly removed |

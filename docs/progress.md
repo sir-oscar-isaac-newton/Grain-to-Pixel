@@ -824,6 +824,15 @@
       "status": "completed",
       "pr": 266,
       "commit": "d469249"
+    },
+    {
+      "id": "Q-03",
+      "number": 25,
+      "title": "Calibrate quality metric and budgets",
+      "branch": "docs/issue-25-calibrate-budgets",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

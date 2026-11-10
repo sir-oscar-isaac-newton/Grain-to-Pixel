@@ -113,7 +113,7 @@ export function LibraryView() {
               </button>
               <button
                 type="button"
-                disabled={selectedCount < 2 || library.read_only}
+                disabled={selectedCount === 0 || library.read_only}
                 onClick={() => setApplying(true)}
               >
                 {t('apply.open')}

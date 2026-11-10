@@ -128,6 +128,7 @@ const tagOf = (recipe: Recipe) => (recipe as unknown as { tag?: string }).tag ??
 export const PIXELS: Record<string, [number, number, number]> = {
   saved: [10, 20, 30],
   auto: [200, 100, 50],
+  ref: [90, 160, 220],
 };
 
 /** A preview as the backend would answer: tiny, but sized like the real ones (3:2). */
@@ -247,6 +248,10 @@ export const state = {
   noScan: new Set<string>(),
   /** Frames whose automatic analysis fails. */
   noAnalysis: new Set<string>(),
+  /** The recipe Develop opens a frame with, by frame (a frame without an entry gets `saved`). */
+  recipes: {} as Record<string, Recipe>,
+  /** Frames whose renders fail in Develop, with the message. */
+  renderFails: {} as Record<string, string>,
   /** The roll's film base, as Develop opens a frame. */
   rollBase: null as [number, number, number] | null,
   /** How sure that base was (null: picked by hand, or none). */
@@ -624,7 +629,7 @@ export const ipc = {
       width: 5616,
       height: 3744,
       has_ir: state.hasIr,
-      recipe: makeRecipe('saved'),
+      recipe: state.recipes[id] ?? makeRecipe('saved'),
       roll_base: state.rollBase,
       roll_base_confidence: state.rollBaseConfidence,
     };
@@ -744,9 +749,11 @@ export const ipc = {
     return had;
   }),
   logClientEvent: vi.fn(async () => undefined),
-  developRender: vi.fn(async (_id: string, recipe: Recipe, maxEdge: number, seq: number) =>
-    makePreview(recipe, maxEdge, seq),
-  ),
+  developRender: vi.fn(async (id: string, recipe: Recipe, maxEdge: number, seq: number) => {
+    const failure = state.renderFails[id];
+    if (failure) throw new IpcError({ code: 'Internal', message: failure });
+    return makePreview(recipe, maxEdge, seq);
+  }),
   frameThumbnail: vi.fn(async (id: string) => {
     if (state.noThumb.has(id)) throw new IpcError({ code: 'NotFound', message: 'no thumbnail' });
     return new Uint8Array([0xff, 0xd8, 1, 2, 3]).buffer;
@@ -957,6 +964,8 @@ export function resetFake() {
   state.noThumb = new Set();
   state.noScan = new Set();
   state.noAnalysis = new Set();
+  state.recipes = {};
+  state.renderFails = {};
   state.sampledBase = [0.8, 0.5, 0.3];
   state.rollBase = null;
   state.rollBaseConfidence = null;

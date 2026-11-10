@@ -123,6 +123,10 @@ export function ApplySettingsDialog({
           : rollTargets && rollTargets.length > 0
             ? 'roll'
             : null;
+  // Only the source is selected (or nothing is): the roll is the one place to copy to, so the
+  // selection is not offered. A roll of that one frame has nothing to copy to, and says so.
+  const selectionOnlySource = selectionTargets.length === 0;
+  const aloneInRoll = selectionOnlySource && rollTargets !== null && rollTargets.length === 0;
   const targets =
     chosen === 'selection' ? selectionTargets : chosen === 'roll' ? rollTargets : null;
 
@@ -214,28 +218,36 @@ export function ApplySettingsDialog({
 
               <fieldset className={styles.fieldset}>
                 <legend>{t('apply.to')}</legend>
-                <label className={styles.radio}>
-                  <input
-                    type="radio"
-                    name="target"
-                    checked={chosen === 'selection'}
-                    disabled={selectionTargets.length === 0}
-                    onChange={() => setTarget('selection')}
-                  />
-                  {t('apply.selection', { count: selectionTargets.length })}
-                </label>
-                <label className={styles.radio}>
-                  <input
-                    type="radio"
-                    name="target"
-                    checked={chosen === 'roll'}
-                    disabled={!rollTargets || rollTargets.length === 0}
-                    onChange={() => setTarget('roll')}
-                  />
-                  {rollTargets
-                    ? t('apply.roll', { count: rollTargets.length, roll: rollName(rollId) })
-                    : t('apply.rollLoading')}
-                </label>
+                {!selectionOnlySource && (
+                  <label className={styles.radio}>
+                    <input
+                      type="radio"
+                      name="target"
+                      checked={chosen === 'selection'}
+                      disabled={selectionTargets.length === 0}
+                      onChange={() => setTarget('selection')}
+                    />
+                    {t('apply.selection', { count: selectionTargets.length })}
+                  </label>
+                )}
+                {aloneInRoll ? (
+                  <p className={styles.hint}>
+                    {t('apply.rollOnlyFrame', { roll: rollName(rollId) })}
+                  </p>
+                ) : (
+                  <label className={styles.radio}>
+                    <input
+                      type="radio"
+                      name="target"
+                      checked={chosen === 'roll'}
+                      disabled={!rollTargets || rollTargets.length === 0}
+                      onChange={() => setTarget('roll')}
+                    />
+                    {rollTargets
+                      ? t('apply.roll', { count: rollTargets.length, roll: rollName(rollId) })
+                      : t('apply.rollLoading')}
+                  </label>
+                )}
               </fieldset>
 
               {ready && targets && (

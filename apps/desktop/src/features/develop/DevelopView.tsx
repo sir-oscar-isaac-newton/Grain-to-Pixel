@@ -29,6 +29,7 @@ import { ExportDialog } from '../library/ExportDialog';
 import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
 import { Canvas, pictureStyle } from './Canvas';
+import { ComparePane } from './ComparePane';
 import { CropOverlay } from './CropOverlay';
 import {
   FREE_RATIO,
@@ -62,6 +63,7 @@ import {
   withCurve,
   withLevels,
 } from './recipe-parts';
+import { useCompare } from './use-compare';
 import { useDevelop, type PickView } from './use-develop';
 import { useKeyMap } from './use-keymap';
 import { usePicker } from './use-picker';
@@ -116,6 +118,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   const query = useLibraryQuery();
   const frames = useFrames(query.fetchPage, query.queryKey, revision);
   const develop = useDevelop(frame.id);
+  const compare = useCompare(frame.id);
   const { preview, recipe, info } = develop;
   const readOnly = useLibraryStore((s) => s.library?.read_only ?? false);
   // Frames edited here change on disk, so the filmstrip's thumbnails follow the events.
@@ -190,6 +193,16 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   const label = t('library.frameLabel', {
     n: summary?.id === frame.id ? summary.index_in_roll : frame.index + 1,
   });
+  const { reference } = compare;
+  const referenceSummary = reference ? frames.frameAt(reference.index) : undefined;
+  const referenceLabel = reference
+    ? t('library.frameLabel', {
+        n:
+          referenceSummary?.id === reference.id
+            ? referenceSummary.index_in_roll
+            : reference.index + 1,
+      })
+    : '';
 
   /** A region of the shown picture as the sample commands take it (see pick-geometry.ts). */
   const toFrame = (region: Fractions, recipe: Recipe): Fractions | null =>
@@ -351,6 +364,30 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     (next: FrameSummary, index: number) => openInDevelop(next.id, index),
     [openInDevelop],
   );
+  const { armed, choose, leave: leaveCompare } = compare;
+  /** A filmstrip click: chooses the reference while compare mode waits for one, else opens the frame. */
+  const pickFromStrip = useCallback(
+    (next: FrameSummary, index: number) => {
+      if (armed && !reference && next.id !== frame.id) choose({ id: next.id, index });
+      else open(next, index);
+    },
+    [armed, reference, frame.id, choose, open],
+  );
+  const { flush } = develop;
+  /**
+   * The reference becomes the open frame and the open frame the reference. The edit waiting to be
+   * saved is saved first, so the old frame is shown with it as its reference.
+   */
+  const swap = async () => {
+    if (!reference) return;
+    const saved = await flush();
+    if (!saved) {
+      setNotice({ tone: 'error', text: t('develop.compare.swapSaveFailed') });
+      return;
+    }
+    choose({ id: frame.id, index: frame.index });
+    openInDevelop(reference.id, reference.index);
+  };
   const { total, load } = frames;
   const step = useCallback(
     async (delta: -1 | 1) => {
@@ -410,8 +447,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
           void step(1);
           break;
         case 'develop.backToLibrary':
-          // Escape first cancels picking; only then does it leave the view.
+          // Escape first cancels picking, then leaves compare mode; only then does it leave the view.
           if (pick) setPick(null);
+          else if (armed) leaveCompare();
           else setView('library');
           break;
         case 'develop.fit':
@@ -450,6 +488,8 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     zoomIn,
     zoomOut,
     pick,
+    armed,
+    leaveCompare,
     readOnly,
     working,
     setRecipe,
@@ -509,6 +549,19 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         >
           {t('develop.before')}
         </button>
+        <button type="button" aria-pressed={armed} onClick={compare.toggle}>
+          {t('develop.compare.toggle')}
+        </button>
+        {armed && (
+          <>
+            <button type="button" disabled={!reference} onClick={() => void swap()}>
+              {t('develop.compare.swap')}
+            </button>
+            <button type="button" onClick={leaveCompare}>
+              {t('develop.compare.leave')}
+            </button>
+          </>
+        )}
         <button type="button" onClick={() => setExporting(true)}>
           {t('export.open')}
         </button>
@@ -542,68 +595,88 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         </button>
       </div>
 
+      {armed && !reference && (
+        <p role="status" className={styles.compareHint}>
+          {t('develop.compare.hint')}
+        </p>
+      )}
       <div className={styles.body}>
-        <div
-          ref={viewport.stageRef}
-          className={`${styles.stage} ${viewport.fitting || pick !== null ? '' : styles.pannable} ${
-            pick !== null && pick !== 'crop' && (develop.showingBase || develop.showingFrame)
-              ? styles.picking
-              : ''
-          }`}
-          aria-busy={develop.busy}
-        >
-          {preview && (
-            <Canvas
-              preview={preview}
-              label={
-                develop.showingScan
-                  ? t('develop.cropLabel')
-                  : develop.showingBase
-                    ? t('develop.base.scanLabel')
-                    : develop.showingFrame
-                      ? t('develop.pickFrameLabel')
-                      : label
-              }
-              view={viewport.view}
-            />
-          )}
-          {preview && recipe && pick === 'crop' && develop.showingScan && (
-            <CropOverlay
-              crop={geometryOf(recipe).crop}
-              style={pictureStyle(preview, viewport.view)}
-              disabled={readOnly || working}
-              lock={lock}
-              label={t('develop.crop.area')}
-              onChange={(crop, options) =>
-                setRecipe(withGeometry(recipe, { crop }), { ...options, preview: false })
-              }
-            />
-          )}
-          {preview && guide && pick === null && (
+        <div className={styles.panes}>
+          <div className={styles.pane}>
+            {reference && (
+              <p className={styles.paneCaption}>{t('develop.compare.current', { frame: label })}</p>
+            )}
             <div
-              className={styles.guide}
-              style={pictureStyle(preview, viewport.view)}
-              aria-hidden="true"
+              ref={viewport.stageRef}
+              className={`${styles.stage} ${viewport.fitting || pick !== null ? '' : styles.pannable} ${
+                pick !== null && pick !== 'crop' && (develop.showingBase || develop.showingFrame)
+                  ? styles.picking
+                  : ''
+              }`}
+              aria-busy={develop.busy}
+            >
+              {preview && (
+                <Canvas
+                  preview={preview}
+                  label={
+                    develop.showingScan
+                      ? t('develop.cropLabel')
+                      : develop.showingBase
+                        ? t('develop.base.scanLabel')
+                        : develop.showingFrame
+                          ? t('develop.pickFrameLabel')
+                          : label
+                  }
+                  view={viewport.view}
+                />
+              )}
+              {preview && recipe && pick === 'crop' && develop.showingScan && (
+                <CropOverlay
+                  crop={geometryOf(recipe).crop}
+                  style={pictureStyle(preview, viewport.view)}
+                  disabled={readOnly || working}
+                  lock={lock}
+                  label={t('develop.crop.area')}
+                  onChange={(crop, options) =>
+                    setRecipe(withGeometry(recipe, { crop }), { ...options, preview: false })
+                  }
+                />
+              )}
+              {preview && guide && pick === null && (
+                <div
+                  className={styles.guide}
+                  style={pictureStyle(preview, viewport.view)}
+                  aria-hidden="true"
+                />
+              )}
+              {pickBox && <div className={styles.pickBox} style={pickBox} />}
+              {develop.showingBefore && (
+                <span className={styles.badge}>{t('develop.beforeBadge')}</span>
+              )}
+              {develop.status === 'opening' && (
+                <p role="status" className={styles.message}>
+                  {t('develop.opening')}
+                </p>
+              )}
+              {develop.status === 'error' && (
+                <p role="alert" className={styles.message}>
+                  {t('develop.openFailed', { message: develop.error })}
+                </p>
+              )}
+              {develop.status === 'ready' && !preview && (
+                <p role="status" className={styles.message}>
+                  {t('develop.rendering')}
+                </p>
+              )}
+            </div>
+          </div>
+          {reference && (
+            <ComparePane
+              key={reference.id}
+              id={reference.id}
+              frameLabel={referenceLabel}
+              nextSeq={develop.nextSeq}
             />
-          )}
-          {pickBox && <div className={styles.pickBox} style={pickBox} />}
-          {develop.showingBefore && (
-            <span className={styles.badge}>{t('develop.beforeBadge')}</span>
-          )}
-          {develop.status === 'opening' && (
-            <p role="status" className={styles.message}>
-              {t('develop.opening')}
-            </p>
-          )}
-          {develop.status === 'error' && (
-            <p role="alert" className={styles.message}>
-              {t('develop.openFailed', { message: develop.error })}
-            </p>
-          )}
-          {develop.status === 'ready' && !preview && (
-            <p role="status" className={styles.message}>
-              {t('develop.rendering')}
-            </p>
           )}
         </div>
         <aside className={styles.side} aria-label={t('develop.side')}>
@@ -741,7 +814,8 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         frames={frames}
         currentId={frame.id}
         currentIndex={frame.index}
-        onOpen={open}
+        referenceId={reference?.id ?? null}
+        onOpen={pickFromStrip}
         onStep={(delta) => void step(delta)}
       />
     </div>

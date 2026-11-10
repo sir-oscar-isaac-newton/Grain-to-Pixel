@@ -44,13 +44,13 @@ describe('ApplySettingsDialog', () => {
   afterEach(() => restoreLayout());
 
   describe('the button in the Library', () => {
-    it('needs at least two frames selected: one to copy from and one to copy to', async () => {
+    it('needs a frame selected: one is enough to sync its roll', async () => {
       openLibrary();
       render(<LibraryView />);
       await screen.findAllByRole('gridcell');
       expect(applyButton()).toBeDisabled();
       select('summer-f00001');
-      expect(applyButton()).toBeDisabled();
+      expect(applyButton()).toBeEnabled();
       select('summer-f00001', 'summer-f00002');
       expect(applyButton()).toBeEnabled();
     });
@@ -59,8 +59,58 @@ describe('ApplySettingsDialog', () => {
       openLibrary({ read_only: true });
       render(<LibraryView />);
       await screen.findAllByRole('gridcell');
+      select('summer-f00001');
+      expect(applyButton()).toBeDisabled();
       select('summer-f00001', 'summer-f00002');
       expect(applyButton()).toBeDisabled();
+    });
+  });
+
+  describe('syncing a roll to one frame', () => {
+    it('opens with the frame as the source and the whole roll as the target', async () => {
+      await openDialog(['summer-f00002']);
+      const d = within(dialog());
+      expect(d.getByText('Copy from Frame 2 of Summer.')).toBeInTheDocument();
+      expect(d.queryByRole('combobox', { name: 'Copy from' })).not.toBeInTheDocument();
+      expect(d.queryByRole('radio', { name: /selected frame/ })).not.toBeInTheDocument();
+      expect(d.getByRole('radio', { name: 'All other frames of Summer (2)' })).toBeChecked();
+      expect(d.getByRole('button', { name: 'Apply colour and tone to 2 frames' })).toBeEnabled();
+    });
+
+    it('applies the settings to the other frames of the roll', async () => {
+      const user = await openDialog(['summer-f00002']);
+      const d = within(dialog());
+      await user.click(d.getByRole('button', { name: 'Apply colour and tone to 2 frames' }));
+      await waitFor(() => expect(state.applies).toHaveLength(1));
+      expect(state.applies[0]).toEqual({
+        source: 'summer-f00002',
+        frameIds: ['summer-f00001', 'summer-f00003'],
+        fields: ['Color', 'Tone'],
+      });
+      expect(await d.findByText('Applied to 2 frames.')).toBeInTheDocument();
+    });
+
+    it('says there is nothing to apply to when the roll has only that frame', async () => {
+      const user = userEvent.setup();
+      state.details = libraryDetails();
+      state.rolls = [makeRoll({ id: 'summer', name: 'Summer' })];
+      state.frames = makeFrames('summer', 1);
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      select('summer-f00001');
+      await user.click(applyButton());
+      const d = within(await screen.findByRole('dialog', { name: 'Apply settings' }));
+      expect(
+        await d.findByText('Summer has no other frame to apply the settings to.'),
+      ).toBeInTheDocument();
+      expect(d.queryByRole('radio')).not.toBeInTheDocument();
+      expect(d.getByRole('button', { name: 'Apply' })).toBeDisabled();
+      await expectNoA11yViolations(document.body);
+    });
+
+    it('has no accessibility violations with one frame as the source', async () => {
+      await openDialog(['summer-f00001']);
+      await expectNoA11yViolations(document.body);
     });
   });
 

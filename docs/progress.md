@@ -911,6 +911,15 @@
       "number": 292,
       "title": "Resize on export",
       "branch": "feat/issue-292-export-resize",
+      "status": "completed",
+      "pr": 297,
+      "commit": "83ebee6"
+    },
+    {
+      "id": "U-25",
+      "number": 293,
+      "title": "Develop reset clean-up after U-22",
+      "branch": "feat/issue-293-develop-reset-cleanup",
       "status": "in_progress",
       "pr": null,
       "commit": null

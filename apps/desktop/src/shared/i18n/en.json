@@ -687,8 +687,7 @@
       "flipH": "Flip horizontally",
       "flipV": "Flip vertically",
       "straighten": "Straighten",
-      "degrees": "{{value}}°",
-      "reset": "Reset turns and straighten"
+      "degrees": "{{value}}°"
     },
     "dust": {
       "heading": "Dust removal",
@@ -698,8 +697,7 @@
       "sensitivity": "Sensitivity",
       "grow": "Widen spots by",
       "percent": "{{value}} %",
-      "pixels": "{{value}} px",
-      "reset": "Reset dust removal"
+      "pixels": "{{value}} px"
     },
     "sharpen": {
       "heading": "Output sharpening",
@@ -707,8 +705,7 @@
       "amount": "Amount",
       "radius": "Radius",
       "percent": "{{value}}%",
-      "pixels": "{{value}} px",
-      "reset": "Reset sharpening"
+      "pixels": "{{value}} px"
     },
     "tone": {
       "heading": "Tone",
@@ -719,8 +716,7 @@
       "whites": "Whites",
       "blacks": "Blacks",
       "dehaze": "Dehaze",
-      "stops": "{{value}} EV",
-      "reset": "Reset tone"
+      "stops": "{{value}} EV"
     },
     "curve": {
       "heading": "Curves",

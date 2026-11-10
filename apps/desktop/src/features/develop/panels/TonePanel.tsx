@@ -29,7 +29,7 @@ interface TonePanelProps {
    */
   auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb or a curve point is being moved. */
-  onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
+  onChange: (recipe: Recipe, options: { dragging: boolean; merge?: boolean }) => void;
   /** Sets the master curve to the one of the Starting look (a flat start, or the plain line). */
   onApplyStartingLook: () => void;
 }
@@ -59,21 +59,7 @@ export function TonePanel({
   const stops = (value: number) => t('develop.tone.stops', { value: hundredths(value) });
   const autoTone = auto ? toneOf(auto) : undefined;
   const resetTo = (next: Recipe) => onChange(next, { dragging: false });
-  const untouched = Object.values(tone).every((v) => v === 0);
-
-  const reset = () =>
-    onChange(
-      withTone(recipe, {
-        exposure_ev: 0,
-        contrast: 0,
-        highlights: 0,
-        shadows: 0,
-        whites: 0,
-        blacks: 0,
-        dehaze: 0,
-      }),
-      { dragging: false },
-    );
+  const resetSlider = (next: Recipe) => onChange(next, { dragging: false, merge: true });
 
   return (
     <div className={styles.panel}>
@@ -98,7 +84,8 @@ export function TonePanel({
             format={stops}
             disabled={locked}
             onReset={
-              autoTone && (() => resetTo(withTone(recipe, { exposure_ev: autoTone.exposure_ev })))
+              autoTone &&
+              (() => resetSlider(withTone(recipe, { exposure_ev: autoTone.exposure_ev })))
             }
             onChange={(next, dragging) =>
               onChange(withTone(recipe, { exposure_ev: next }), { dragging })
@@ -114,17 +101,12 @@ export function TonePanel({
               step={1}
               format={whole}
               disabled={locked}
-              onReset={autoTone && (() => resetTo(withTone(recipe, { [key]: autoTone[key] })))}
+              onReset={autoTone && (() => resetSlider(withTone(recipe, { [key]: autoTone[key] })))}
               onChange={(next, dragging) =>
                 onChange(withTone(recipe, { [key]: next }), { dragging })
               }
             />
           ))}
-        </div>
-        <div className={styles.panelButtons}>
-          <button type="button" disabled={locked || untouched} onClick={reset}>
-            {t('develop.tone.reset')}
-          </button>
         </div>
       </section>
 

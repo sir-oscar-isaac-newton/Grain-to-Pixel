@@ -33,6 +33,13 @@ export const WHOLE_SCAN_GEOMETRY = {
   flip_v: false,
 };
 
+/** What {@link Develop.setRecipe} takes besides the recipe. */
+export interface SetRecipeOptions {
+  dragging?: boolean;
+  preview?: boolean;
+  merge?: boolean;
+}
+
 export type DevelopStatus = 'idle' | 'opening' | 'ready' | 'error';
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -138,8 +145,10 @@ export interface Develop {
    *
    * Every call goes through the undo history: a change with `dragging` false is one step, and a run
    * of `dragging` changes closed by the release is one step (whether or not a preview is asked for).
+   * With `merge` (a slider reset) the change replaces the newest step if that is recent and changed
+   * only the same fields (a double click on a slider's track is one step).
    */
-  setRecipe: (recipe: Recipe, options?: { dragging?: boolean; preview?: boolean }) => void;
+  setRecipe: (recipe: Recipe, options?: SetRecipeOptions) => void;
   /** Asks for a preview of the recipe as it is now. */
   rerender: () => void;
   /** The last change is undone (the recipe goes back to what it was; it is previewed and saved). */
@@ -371,10 +380,10 @@ export function useDevelop(frameId: string | null): Develop {
   );
 
   const setRecipe = useCallback(
-    (recipe: Recipe, options?: { dragging?: boolean; preview?: boolean }) => {
+    (recipe: Recipe, options?: SetRecipeOptions) => {
       const before = latestRecipe.current;
       if (!frame.current || !before) return;
-      record(before, recipe, options?.dragging === true);
+      record(before, recipe, options?.dragging === true, options?.merge === true);
       apply(recipe, options);
     },
     [record, apply],

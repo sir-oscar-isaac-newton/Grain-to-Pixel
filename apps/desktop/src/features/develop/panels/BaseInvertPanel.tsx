@@ -45,7 +45,7 @@ interface BaseInvertPanelProps {
    */
   auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
-  onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
+  onChange: (recipe: Recipe, options: { dragging: boolean; merge?: boolean }) => void;
   onAutoLevels: () => void;
   onUseAsRollDefault: () => void;
   /** Something is being done (finding auto levels, setting the roll's base). */
@@ -84,6 +84,7 @@ export function BaseInvertPanel({
   const picking = pick === 'base';
   const autoLevels = auto ? levelsOf(auto) : undefined;
   const resetTo = (next: Recipe) => onChange(next, { dragging: false });
+  const resetSlider = (next: Recipe) => onChange(next, { dragging: false, merge: true });
 
   return (
     <div className={styles.panel}>
@@ -199,7 +200,7 @@ export function BaseInvertPanel({
                   disabled={locked}
                   onReset={
                     autoLevels &&
-                    (() => resetTo(withLevel(recipe, kind, channel, autoLevels[kind][channel])))
+                    (() => resetSlider(withLevel(recipe, kind, channel, autoLevels[kind][channel])))
                   }
                   onChange={(next, dragging) =>
                     onChange(withLevel(recipe, kind, channel, next), { dragging })

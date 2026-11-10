@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support';
@@ -52,35 +52,39 @@ describe('TonePanel', () => {
     expect(toneOf(second).shadows).toBe(10);
   });
 
-  it('resets every slider, but not the curves', async () => {
+  it('has one reset, the header one, which puts the sliders and curves to the automatic ones', async () => {
     const user = userEvent.setup();
-    const { mocks } = setup({
-      recipe: makeRecipe('x', {
-        tone: {
-          exposure_ev: 1,
-          whites: 30,
-          curve: {
-            master: [
-              [0, 0.1],
-              [1, 1],
-            ],
-            r: [],
-            g: [],
-            b: [],
-          },
+    const auto = makeRecipe('auto', {
+      tone: {
+        exposure_ev: 0.2,
+        contrast: 5,
+        curve: {
+          master: [
+            [0, 0.05],
+            [1, 1],
+          ],
+          r: [],
+          g: [],
+          b: [],
         },
-      }),
+      },
     });
-    await user.click(screen.getByRole('button', { name: 'Reset tone' }));
+    const { mocks } = setup({
+      auto,
+      recipe: makeRecipe('x', { tone: { exposure_ev: 1, whites: 30 } }),
+    });
+    expect(screen.getAllByRole('button', { name: /^Reset(?! curve)/ })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Reset Tone to automatic' }));
     const [recipe, options] = mocks.onChange.mock.calls[0] ?? [];
-    expect(Object.values(toneOf(recipe)).every((v) => v === 0)).toBe(true);
-    expect(curvesOf(recipe).master[0]).toEqual([0, 0.1]);
+    expect(toneOf(recipe)).toEqual(toneOf(auto));
+    expect(curvesOf(recipe).master[0]).toEqual([0, 0.05]);
     expect(options).toEqual({ dragging: false });
   });
 
-  it('has nothing to reset when every slider is at 0', () => {
-    setup({ recipe: makeRecipe('x') });
-    expect(screen.getByRole('button', { name: 'Reset tone' })).toBeDisabled();
+  it('marks a slider reset as one to merge with a change just made', async () => {
+    const { mocks } = setup({ auto: makeRecipe('auto') });
+    fireEvent.doubleClick(slider('Contrast'));
+    expect(mocks.onChange.mock.calls[0]?.[1]).toEqual({ dragging: false, merge: true });
   });
 
   it('sends a changed curve with the rest of the tone block', async () => {

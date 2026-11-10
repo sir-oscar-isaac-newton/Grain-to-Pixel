@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-09",
+  "updated": "2026-11-10",
   "rules": "status is in_progress while the issue's branch exists or its PR is open; completed only after the PR is merged and closed (see docs/workflow.md section 10)",
   "issues": [
     {
@@ -902,9 +902,9 @@
       "number": 273,
       "title": "Metadata in exported files",
       "branch": "feat/issue-273-export-metadata",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 289,
+      "commit": "29b2aa0"
     }
   ]
 }

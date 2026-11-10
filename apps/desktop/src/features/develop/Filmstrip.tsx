@@ -16,10 +16,12 @@ interface ItemProps {
   frame: FrameSummary;
   index: number;
   current: boolean;
+  /** The frame compared with (marked, nothing else changes). */
+  reference: boolean;
   onOpen: (frame: FrameSummary, index: number) => void;
 }
 
-const Item = memo(function Item({ frame, index, current, onOpen }: ItemProps) {
+const Item = memo(function Item({ frame, index, current, reference, onOpen }: ItemProps) {
   const { t } = useTranslation();
   const thumbnail = useThumbnail(frame.id, frame.has_thumb);
   return (
@@ -29,7 +31,7 @@ const Item = memo(function Item({ frame, index, current, onOpen }: ItemProps) {
       aria-selected={current}
       aria-label={t('library.frameLabel', { n: frame.index_in_roll })}
       tabIndex={-1}
-      className={styles.item}
+      className={`${styles.item} ${reference ? styles.itemReference : ''}`}
       onClick={() => onOpen(frame, index)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -60,6 +62,8 @@ interface FilmstripProps {
   /** The open frame. */
   currentId: string | null;
   currentIndex: number;
+  /** The frame compared with, if any. */
+  referenceId?: string | null;
   onOpen: (frame: FrameSummary, index: number) => void;
   /** Moves to the previous (-1) or next (1) frame. */
   onStep: (delta: -1 | 1) => void;
@@ -70,7 +74,14 @@ interface FilmstripProps {
  * exist in the page; the rest load as the strip scrolls. `[` and `]` (handled by the view) and the
  * arrow keys on the strip move through it.
  */
-export function Filmstrip({ frames, currentId, currentIndex, onOpen, onStep }: FilmstripProps) {
+export function Filmstrip({
+  frames,
+  currentId,
+  currentIndex,
+  referenceId = null,
+  onOpen,
+  onStep,
+}: FilmstripProps) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const { total, ensure, frameAt } = frames;
@@ -127,6 +138,7 @@ export function Filmstrip({ frames, currentId, currentIndex, onOpen, onStep }: F
                 frame={frame}
                 index={item.index}
                 current={frame.id === currentId}
+                reference={frame.id === referenceId}
                 onOpen={onOpen}
               />
             </div>

@@ -153,6 +153,17 @@ export interface Develop {
    * afresh. The recipe being edited is kept.
    */
   refresh: () => Promise<void>;
+  /**
+   * Saves the edit that is waiting to be saved, now. Resolves true when nothing is left waiting
+   * (it was saved, or there was nothing), false when the save failed.
+   */
+  flush: () => Promise<boolean>;
+  /**
+   * The next sequence number for a render of any frame asked for next to this one. The backend
+   * drops a render older than the newest it saw for that frame, so the numbers must come from one
+   * counter when two frames take turns (as when compared and swapped).
+   */
+  nextSeq: () => number;
 }
 
 /** The detected frame as plain numbers (a NaN travels as null, and counts as no confidence). */
@@ -437,6 +448,16 @@ export function useDevelop(frameId: string | null): Develop {
     }
   }, [send]);
 
+  const flush = useCallback(async () => {
+    await flushSave(true, generation.current);
+    return pendingSave.current === null;
+  }, [flushSave]);
+
+  const nextSeq = useCallback(() => {
+    sequence.current += 1;
+    return sequence.current;
+  }, []);
+
   const showingPick = state.pickView !== null && state.pick !== null;
   const showingScan = showingPick && state.pickView === 'scan';
   const showingBase = showingPick && state.pickView === 'base';
@@ -470,5 +491,7 @@ export function useDevelop(frameId: string | null): Develop {
     canUndo,
     canRedo,
     refresh,
+    flush,
+    nextSeq,
   };
 }

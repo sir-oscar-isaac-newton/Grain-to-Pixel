@@ -586,7 +586,7 @@ describe('DevelopView', () => {
     it('copies from the open frame to the rest of its roll when nothing is selected', async () => {
       const { user, dialog } = await openApply();
       expect(dialog.getByText('Copy from Frame 1 of Summer.')).toBeInTheDocument();
-      expect(dialog.getByRole('radio', { name: 'The other selected frames (0)' })).toBeDisabled();
+      expect(dialog.queryByRole('radio', { name: /selected frame/ })).not.toBeInTheDocument();
       expect(dialog.getByRole('radio', { name: 'All other frames of Summer (4)' })).toBeChecked();
 
       await user.click(dialog.getByRole('button', { name: 'Apply colour and tone to 4 frames' }));

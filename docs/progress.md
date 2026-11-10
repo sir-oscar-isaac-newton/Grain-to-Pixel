@@ -884,6 +884,15 @@
       "number": 271,
       "title": "Export presets",
       "branch": "feat/issue-271-export-presets",
+      "status": "completed",
+      "pr": 287,
+      "commit": "dc7512c"
+    },
+    {
+      "id": "U-23",
+      "number": 277,
+      "title": "Sync a roll to one frame, and compare two frames",
+      "branch": "feat/issue-277-sync-compare",
       "status": "in_progress",
       "pr": null,
       "commit": null

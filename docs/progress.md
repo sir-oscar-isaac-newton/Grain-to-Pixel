@@ -803,9 +803,9 @@
       "number": 260,
       "title": "Choose the calibration area on the live view",
       "branch": "feat/issue-260-calibration-area",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 261,
+      "commit": "7f5461f"
     },
     {
       "id": "T-09",
@@ -821,9 +821,9 @@
       "number": 263,
       "title": "Bring the plan in line with the hardware findings",
       "branch": "docs/issue-263-plan-cleanup",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 266,
+      "commit": "d469249"
     }
   ]
 }

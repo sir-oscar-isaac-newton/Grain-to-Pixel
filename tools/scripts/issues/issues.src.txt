@@ -2260,3 +2260,27 @@ ROUTES: none new.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: the area is in fractions of the whole frame, so it does not depend on the live view's 640 x 424 size.
+
+## U-19
+title: Delete frames and edit notes in the Library
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: U-01
+adr: no
+spec: specification sections 6 and 7
+desc: The backend can delete frames (frame_delete removes the rows, then the originals and thumbnails) and set a frame's note (frame_set_note), but the Library calls neither. Add both to the Library view, so a bad frame can be removed and a note written without leaving the app.
+ac:
+- One or more selected frames can be deleted from the Library grid, by a menu item and the Delete key
+- A confirmation dialog states the number of frames and that the original files are removed from disk and cannot be restored
+- Files that could not be removed are listed to the user after the delete
+- The grid, the roll's frame count and the selection update without a reload; a frame open in Edit cannot be left pointing at a deleted frame
+- A frame's note can be read and edited in the Library, saves on blur or Enter, and is found by the existing search
+- Component tests cover delete (confirm, cancel, files left) and the note edit; strings are in en.json; axe clean
+tech:
+FILES: apps/desktop/src/features/library (the grid, a confirm dialog, the note field), apps/desktop/src/shared/ipc.ts (wrappers where missing), fake-ipc.ts, en.json.
+ROUTES: none new (frame_delete and frame_set_note exist).
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: out of scope: a recycle bin or undo of delete, pick or reject culling, editing the notes of many frames at once.

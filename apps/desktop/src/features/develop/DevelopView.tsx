@@ -149,7 +149,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     preview ? { width: preview.width, height: preview.height } : null,
     pick === null,
   );
-  const { toggleBefore, setPickView, setRecipe, rerender } = develop;
+  const { toggleBefore, setPickView, setRecipe, rerender, undo, redo, auto } = develop;
   const { fit, actual, zoomIn, zoomOut } = viewport;
 
   // A new frame starts fitted to the stage, with nothing being picked.
@@ -446,6 +446,41 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     setRecipe,
     rerender,
   ]);
+  /** Undo, redo and the resets need a recipe that may be changed and nothing else under way. */
+  const editable = recipe !== null && !readOnly && !working;
+  /** Puts the whole recipe back to the automatic one, as one step. */
+  const resetAll = () => {
+    if (!auto || !editable) return;
+    // While the crop is edited on the whole scan the edit is not drawn, as for any other change.
+    setRecipe(auto, pick === 'crop' ? { dragging: false, preview: false } : { dragging: false });
+  };
+
+  // Undo and redo: Ctrl or Cmd with Z, with Shift to redo (and Ctrl+Y). Fixed keys, not in the
+  // keymap. A text field keeps them for its own undo; so does an open dialog.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || !(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      const redoing = (key === 'z' && event.shiftKey) || (key === 'y' && event.ctrlKey);
+      const undoing = key === 'z' && !event.shiftKey;
+      if (!redoing && !undoing) return;
+      const target = event.target;
+      if (target instanceof Element) {
+        const field = target.closest('input, textarea, select, [contenteditable="true"]');
+        const pressable =
+          field instanceof HTMLInputElement &&
+          ['checkbox', 'radio', 'range', 'button'].includes(field.type);
+        if (field && !pressable) return;
+      }
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      event.preventDefault();
+      if (!editable) return;
+      if (redoing) redo();
+      else undo();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editable, undo, redo]);
   const bins = useMemo(() => (preview ? computeHistogram(preview.rgba) : null), [preview]);
   const lost = bins ? clipping(bins) : null;
   const zoomText = percent(i18n.language, viewport.view.zoom);
@@ -470,6 +505,15 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         </button>
         <button type="button" disabled={readOnly} onClick={() => setApplying(true)}>
           {t('apply.open')}
+        </button>
+        <button type="button" disabled={!editable || !develop.canUndo} onClick={undo}>
+          {t('develop.undo')}
+        </button>
+        <button type="button" disabled={!editable || !develop.canRedo} onClick={redo}>
+          {t('develop.redo')}
+        </button>
+        <button type="button" disabled={!editable || !auto} onClick={resetAll}>
+          {t('develop.resetAll')}
         </button>
         <span className={styles.spacer} />
         <button type="button" onClick={zoomOut} aria-label={t('develop.zoomOut')}>
@@ -608,6 +652,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 cropping={pick === 'crop'}
                 cropReady={develop.showingScan}
                 onCroppingChange={(on) => setPick(on ? 'crop' : null)}
+                auto={auto}
                 onUseAsRollFrameSize={() => void makeRollFrameSize()}
                 detected={develop.detected}
                 onGuideChange={setGuide}
@@ -620,6 +665,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               />
               <BaseInvertPanel
                 recipe={recipe}
+                auto={auto}
                 rollBase={info?.roll_base ? triple(info.roll_base, 1) : null}
                 rollBaseConfidence={info?.roll_base_confidence ?? null}
                 readOnly={readOnly}
@@ -634,6 +680,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               {info?.has_ir && (
                 <DustPanel
                   recipe={recipe}
+                  auto={auto}
                   readOnly={readOnly}
                   working={working}
                   flagOn={dustFlag}
@@ -642,6 +689,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               )}
               <ColourPanel
                 recipe={recipe}
+                auto={auto}
                 readOnly={readOnly}
                 working={working}
                 picking={pick === 'neutral'}
@@ -651,6 +699,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               />
               <TonePanel
                 recipe={recipe}
+                auto={auto}
                 readOnly={readOnly}
                 working={working}
                 onChange={(next, options) => setRecipe(next, options)}
@@ -658,6 +707,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               />
               <SharpenPanel
                 recipe={recipe}
+                auto={auto}
                 readOnly={readOnly}
                 working={working}
                 // Sharpening is applied at export: the picture on screen would not change.

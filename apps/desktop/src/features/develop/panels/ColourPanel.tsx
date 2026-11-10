@@ -10,6 +10,8 @@ import {
   type Channel,
   type ColourKey,
 } from '../recipe-parts';
+import { resetColour } from '../recipe-reset';
+import { ResetPanelButton } from './ResetPanelButton';
 
 /** The colour sliders that run from -100 to 100, in the order they are shown. */
 const BALANCE: readonly ColourKey[] = [
@@ -39,6 +41,11 @@ interface ColourPanelProps {
   /** The picture on screen is the one the pick is made on. */
   pickReady: boolean;
   onPickingChange: (on: boolean) => void;
+  /**
+   * The automatic recipe: what the sliders and "Reset" go back to. Null or missing until it is
+   * known; the resets are then off.
+   */
+  auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
   onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
 }
@@ -56,11 +63,15 @@ export function ColourPanel({
   pickReady,
   onPickingChange,
   onChange,
+  auto = null,
 }: ColourPanelProps) {
   const { t, i18n } = useTranslation();
   const colour = colourOf(recipe);
   const mono = monoOf(recipe);
   const locked = readOnly || working;
+  const autoColour = auto ? colourOf(auto) : undefined;
+  const autoMix = auto ? monoOf(auto).mix : undefined;
+  const resetTo = (next: Recipe) => onChange(next, { dragging: false });
   const whole = (value: number) =>
     new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 0 }).format(value);
   const hundredths = (value: number) =>
@@ -72,9 +83,16 @@ export function ColourPanel({
   return (
     <div className={styles.panel}>
       <section aria-labelledby="colour-heading" className={styles.panelSection}>
-        <h3 id="colour-heading" className={styles.panelTitle}>
-          {t('develop.colour.heading')}
-        </h3>
+        <div className={styles.panelHead}>
+          <h3 id="colour-heading" className={styles.panelTitle}>
+            {t('develop.colour.heading')}
+          </h3>
+          <ResetPanelButton
+            panel={t('develop.colour.heading')}
+            disabled={locked || !auto}
+            onClick={() => auto && resetTo(resetColour(recipe, auto))}
+          />
+        </div>
         <div className={styles.panelButtons}>
           <button
             type="button"
@@ -101,6 +119,9 @@ export function ColourPanel({
               step={1}
               format={whole}
               disabled={locked}
+              onReset={
+                autoColour && (() => resetTo(withColour(recipe, { [key]: autoColour[key] })))
+              }
               onChange={(next, dragging) =>
                 onChange(withColour(recipe, { [key]: next }), { dragging })
               }
@@ -116,6 +137,10 @@ export function ColourPanel({
                 step={MIX_STEP}
                 format={hundredths}
                 disabled={locked}
+                onReset={
+                  autoColour &&
+                  (() => resetTo(withColour(recipe, { saturation: autoColour.saturation })))
+                }
                 onChange={(next, dragging) =>
                   onChange(withColour(recipe, { saturation: next }), { dragging })
                 }
@@ -128,6 +153,10 @@ export function ColourPanel({
                 step={1}
                 format={whole}
                 disabled={locked}
+                onReset={
+                  autoColour &&
+                  (() => resetTo(withColour(recipe, { vibrance: autoColour.vibrance })))
+                }
                 onChange={(next, dragging) =>
                   onChange(withColour(recipe, { vibrance: next }), { dragging })
                 }
@@ -166,6 +195,14 @@ export function ColourPanel({
                 step={MIX_STEP}
                 format={hundredths}
                 disabled={locked}
+                onReset={
+                  autoMix &&
+                  (() => {
+                    const mix: [number, number, number] = [...mono.mix];
+                    mix[channel] = autoMix[channel];
+                    resetTo(withMono(recipe, { ...mono, mix }));
+                  })
+                }
                 onChange={(next, dragging) => {
                   const mix: [number, number, number] = [...mono.mix];
                   mix[channel] = next;

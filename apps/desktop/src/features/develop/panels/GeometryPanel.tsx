@@ -25,7 +25,9 @@ import {
 } from '../crop-ratio';
 import styles from '../develop.module.css';
 import { geometryOf, withGeometry } from '../recipe-parts';
+import { resetGeometry } from '../recipe-reset';
 import type { DetectedFrame } from '../use-develop';
+import { ResetPanelButton } from './ResetPanelButton';
 
 /** Below this the frame the analysis found is not trusted (the backend's own limit). */
 export const LOW_CONFIDENCE = 0.5;
@@ -55,6 +57,12 @@ interface GeometryPanelProps {
   onRatioChange: (ratio: RatioState) => void;
   /** The size of the scan, which the ratio of the crop depends on; null until it is known. */
   scan: ScanSize | null;
+  /**
+   * The automatic recipe: what the sliders and "Reset" go back to (Reset puts the whole geometry
+   * back: crop, straighten angle, turns and flips). Null or missing until it is known; the resets
+   * are then off.
+   */
+  auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
   onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
 }
@@ -78,11 +86,14 @@ export function GeometryPanel({
   onRatioChange,
   scan,
   onChange,
+  auto = null,
 }: GeometryPanelProps) {
   const { t, i18n } = useTranslation();
   const geometry = geometryOf(recipe);
   const locked = readOnly || working;
   const edges = edgesOf(geometry.crop);
+  const autoGeometry = auto ? geometryOf(auto) : undefined;
+  const autoEdges = autoGeometry ? edgesOf(autoGeometry.crop) : undefined;
   const percent = (value: number) =>
     new Intl.NumberFormat(i18n.language, {
       style: 'percent',
@@ -135,6 +146,9 @@ export function GeometryPanel({
           }).format(finished),
         });
   })();
+  /** The crop with one side moved, keeping the locked ratio if there is one. */
+  const moveTo = (edge: Edge, value: number): CropRect =>
+    k ? moveEdgeLocked(geometry.crop, edge, value, k) : moveEdge(geometry.crop, edge, value);
   const customInvalid = ratio.mode === 'custom' && customRatio(ratio.custom) === null;
 
   const confident = detected !== null && detected.confidence >= LOW_CONFIDENCE;
@@ -158,9 +172,16 @@ export function GeometryPanel({
   return (
     <div className={styles.panel}>
       <section aria-labelledby="crop-heading" className={styles.panelSection}>
-        <h3 id="crop-heading" className={styles.panelTitle}>
-          {t('develop.crop.heading')}
-        </h3>
+        <div className={styles.panelHead}>
+          <h3 id="crop-heading" className={styles.panelTitle}>
+            {t('develop.crop.heading')}
+          </h3>
+          <ResetPanelButton
+            panel={t('develop.geometry.panel')}
+            disabled={locked || !auto}
+            onClick={() => auto && onChange(resetGeometry(recipe, auto), { dragging: false })}
+          />
+        </div>
         {detected !== null && !confident && (
           <p className={styles.panelText} role="note">
             {t('develop.crop.lowConfidence')}
@@ -283,16 +304,8 @@ export function GeometryPanel({
                 step={0.001}
                 format={percent}
                 disabled={locked}
-                onChange={(next, dragging) =>
-                  change(
-                    {
-                      crop: k
-                        ? moveEdgeLocked(geometry.crop, edge, next, k)
-                        : moveEdge(geometry.crop, edge, next),
-                    },
-                    dragging,
-                  )
-                }
+                onReset={autoEdges && (() => change({ crop: moveTo(edge, autoEdges[edge]) }))}
+                onChange={(next, dragging) => change({ crop: moveTo(edge, next) }, dragging)}
               />
             );
           })}
@@ -336,6 +349,7 @@ export function GeometryPanel({
             step={0.1}
             format={degrees}
             disabled={locked}
+            onReset={autoGeometry && (() => change({ angle_deg: autoGeometry.angle_deg }))}
             onChange={(next, dragging) => change({ angle_deg: next }, dragging)}
           />
         </div>

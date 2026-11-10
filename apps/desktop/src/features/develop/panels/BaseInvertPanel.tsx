@@ -12,6 +12,8 @@ import {
   type LevelKind,
   type Triple,
 } from '../recipe-parts';
+import { resetBaseInvert } from '../recipe-reset';
+import { ResetPanelButton } from './ResetPanelButton';
 
 /** The levels sliders run from 0 to at least this, and to the value if it is higher. */
 const LEVEL_SLIDER_MAX = 4;
@@ -37,6 +39,11 @@ interface BaseInvertPanelProps {
   /** The picture on screen is the one the pick is made on. */
   pickReady: boolean;
   onPickChange: (pick: 'base' | LevelsPoint | null) => void;
+  /**
+   * The automatic recipe: what the sliders and "Reset" go back to. Null or missing until it is
+   * known; the resets are then off.
+   */
+  auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
   onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
   onAutoLevels: () => void;
@@ -62,6 +69,7 @@ export function BaseInvertPanel({
   onAutoLevels,
   onUseAsRollDefault,
   working,
+  auto = null,
 }: BaseInvertPanelProps) {
   const { t, i18n } = useTranslation();
   const base = baseOf(recipe);
@@ -74,13 +82,22 @@ export function BaseInvertPanel({
   const shown = base.source === 'manual' ? base.rgb : (rollBase ?? base.rgb);
   const locked = readOnly || working;
   const picking = pick === 'base';
+  const autoLevels = auto ? levelsOf(auto) : undefined;
+  const resetTo = (next: Recipe) => onChange(next, { dragging: false });
 
   return (
     <div className={styles.panel}>
       <section aria-labelledby="base-heading" className={styles.panelSection}>
-        <h3 id="base-heading" className={styles.panelTitle}>
-          {t('develop.base.heading')}
-        </h3>
+        <div className={styles.panelHead}>
+          <h3 id="base-heading" className={styles.panelTitle}>
+            {t('develop.base.heading')}
+          </h3>
+          <ResetPanelButton
+            panel={t('develop.base.heading')}
+            disabled={locked || !auto}
+            onClick={() => auto && resetTo(resetBaseInvert(recipe, auto))}
+          />
+        </div>
         <p className={styles.panelText}>
           {base.source === 'manual'
             ? t('develop.base.manual')
@@ -180,6 +197,10 @@ export function BaseInvertPanel({
                   step={LEVEL_STEP}
                   format={number}
                   disabled={locked}
+                  onReset={
+                    autoLevels &&
+                    (() => resetTo(withLevel(recipe, kind, channel, autoLevels[kind][channel])))
+                  }
                   onChange={(next, dragging) =>
                     onChange(withLevel(recipe, kind, channel, next), { dragging })
                   }

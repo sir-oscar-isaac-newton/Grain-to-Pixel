@@ -99,14 +99,30 @@ export function withMono(recipe: Recipe, mono: MonoSetting): Recipe {
 }
 
 export type ToneKey =
-  'exposure_ev' | 'contrast' | 'highlights' | 'shadows' | 'whites' | 'blacks' | 'dehaze';
+  | 'exposure_ev'
+  | 'contrast'
+  | 'highlights'
+  | 'shadows'
+  | 'whites'
+  | 'blacks'
+  | 'dehaze'
+  | 'vignette'
+  | 'vignette_midpoint';
 
 export type Tone = Record<ToneKey, number>;
 
-/** The tone sliders of a recipe, as plain numbers (0 when missing). */
+/** The vignette's own values when a recipe has none: no effect, midpoint in the middle. */
+export const VIGNETTE_DEFAULT = { amount: 0, midpoint: 50 };
+
+/**
+ * The tone sliders of a recipe, as plain numbers (0 when missing, the vignette midpoint 50). The
+ * vignette sliders are the recipe's `tone.vignette.amount` and `tone.vignette.midpoint`.
+ */
 export function toneOf(recipe: Recipe): Tone {
   const t = recipe.tone;
   return {
+    vignette: plain(t?.vignette?.amount, VIGNETTE_DEFAULT.amount),
+    vignette_midpoint: plain(t?.vignette?.midpoint, VIGNETTE_DEFAULT.midpoint),
     exposure_ev: plain(t?.exposure_ev, 0),
     contrast: plain(t?.contrast, 0),
     highlights: plain(t?.highlights, 0),
@@ -142,13 +158,18 @@ export function curvesOf(recipe: Recipe): CurveSet {
 
 /** The recipe with some of its tone sliders replaced, the rest of the tone block kept. */
 export function withTone(recipe: Recipe, values: Partial<Tone>): Recipe {
-  return { ...recipe, tone: { ...recipe.tone, ...toneOf(recipe), ...values } } as Recipe;
+  const { vignette, vignette_midpoint: midpoint, ...sliders } = { ...toneOf(recipe), ...values };
+  return {
+    ...recipe,
+    tone: { ...recipe.tone, ...sliders, vignette: { amount: vignette, midpoint } },
+  } as Recipe;
 }
 
 /** The recipe with one tone curve replaced. */
 export function withCurve(recipe: Recipe, channel: CurveChannel, points: CurvePoint[]): Recipe {
   const curve = { ...curvesOf(recipe), [channel]: points.map((p) => [...p]) };
-  return { ...recipe, tone: { ...recipe.tone, ...toneOf(recipe), curve } } as Recipe;
+  const base = withTone(recipe, {});
+  return { ...base, tone: { ...base.tone, curve } } as Recipe;
 }
 
 /** The output sharpening of a recipe: how much, in percent, and the radius in exported pixels. */

@@ -2335,13 +2335,13 @@ export type TiltSide =
 
 /**
  *  Tone sliders. Applied in this order: exposure, contrast, highlights and shadows, whites and
- *  blacks, dehaze, then the curves. The sliders from `contrast` on run from -100 to 100.
+ *  blacks, dehaze, then the curves; the vignette is a stage of its own after the geometry. The sliders from `contrast` on run from -100 to 100.
  */
 export type Tone = Tone_Serialize | Tone_Deserialize;
 
 /**
  *  Tone sliders. Applied in this order: exposure, contrast, highlights and shadows, whites and
- *  blacks, dehaze, then the curves. The sliders from `contrast` on run from -100 to 100.
+ *  blacks, dehaze, then the curves; the vignette is a stage of its own after the geometry. The sliders from `contrast` on run from -100 to 100.
  */
 export type Tone_Deserialize = {
 	exposure_ev?: number | null,
@@ -2357,11 +2357,13 @@ export type Tone_Deserialize = {
 	/**  Removes (positive) or adds (negative) a uniform veil such as film fog or scanner flare. */
 	dehaze?: number | null,
 	curve?: Curves_Deserialize,
+	/**  Darkens or lightens the corners (the last stage, after the geometry). */
+	vignette?: Vignette_Deserialize,
 };
 
 /**
  *  Tone sliders. Applied in this order: exposure, contrast, highlights and shadows, whites and
- *  blacks, dehaze, then the curves. The sliders from `contrast` on run from -100 to 100.
+ *  blacks, dehaze, then the curves; the vignette is a stage of its own after the geometry. The sliders from `contrast` on run from -100 to 100.
  */
 export type Tone_Serialize = {
 	exposure_ev: number | null,
@@ -2377,6 +2379,8 @@ export type Tone_Serialize = {
 	/**  Removes (positive) or adds (negative) a uniform veil such as film fog or scanner flare. */
 	dehaze: number | null,
 	curve: Curves_Serialize,
+	/**  Darkens or lightens the corners (the last stage, after the geometry). */
+	vignette: Vignette_Serialize,
 };
 
 /**
@@ -2545,6 +2549,34 @@ export type VerifyResult_Serialize = {
 	 *  empty, relative to the library (for example left by a crash). Never deleted.
 	 */
 	stray_folders: string[],
+};
+
+/**
+ *  Vignette: a gain on the distance from the centre of the final picture (docs/specification.md
+ *  section 4.2). A recipe saved before it existed loads with the defaults, which change nothing.
+ */
+export type Vignette = Vignette_Serialize | Vignette_Deserialize;
+
+/**
+ *  Vignette: a gain on the distance from the centre of the final picture (docs/specification.md
+ *  section 4.2). A recipe saved before it existed loads with the defaults, which change nothing.
+ */
+export type Vignette_Deserialize = {
+	/**  -100 to 100: negative darkens the corners, positive lightens them, 0 changes nothing. */
+	amount?: number | null,
+	/**  0 to 100: how far in towards the centre the effect reaches; lower reaches further in. */
+	midpoint?: number | null,
+};
+
+/**
+ *  Vignette: a gain on the distance from the centre of the final picture (docs/specification.md
+ *  section 4.2). A recipe saved before it existed loads with the defaults, which change nothing.
+ */
+export type Vignette_Serialize = {
+	/**  -100 to 100: negative darkens the corners, positive lightens them, 0 changes nothing. */
+	amount: number | null,
+	/**  0 to 100: how far in towards the centre the effect reaches; lower reaches further in. */
+	midpoint: number | null,
 };
 
 export type WindowSize = {

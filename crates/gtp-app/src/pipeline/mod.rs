@@ -2,7 +2,7 @@
 //!
 //! Stages run in the fixed order of [`STAGE_ORDER`]. The crop is applied early as an exact copy, so
 //! later stages work on the frame only, and auto levels never see the rebate; straighten, turns
-//! and flips come last, so there is still at most one resample. `render` never runs anything
+//! and flips come next, so there is still at most one resample; the vignette is last, so it is centred on the final picture. `render` never runs anything
 //! automatic: it uses the recipe as given, and [`analyze`] is what fills in the automatic values.
 
 mod analyze;
@@ -283,7 +283,8 @@ mod tests {
                 Stage::Invert,
                 Stage::Color,
                 Stage::Tone,
-                Stage::Geometry
+                Stage::Geometry,
+                Stage::Vignette
             ]
         );
     }
@@ -355,6 +356,119 @@ mod tests {
             straight.width < s.truth.frame.w,
             "straightening the frame costs a few percent"
         );
+    }
+
+    /// A flat scan whose positive is a uniform grey, so only the vignette makes it uneven.
+    fn flat_scan(width: u32, height: u32) -> Synthetic {
+        scan(&Params {
+            width,
+            height,
+            rebate: [0; 4],
+            ..Params::default()
+        })
+    }
+
+    fn at(image: &ImageF32, fx: f32, fy: f32) -> [f32; 3] {
+        let x = ((fx * image.width as f32) as u32).min(image.width - 1);
+        let y = ((fy * image.height as f32) as u32).min(image.height - 1);
+        let i = (y * image.width + x) as usize * 3;
+        [image.data[i], image.data[i + 1], image.data[i + 2]]
+    }
+
+    fn at_px(image: &ImageF32, x: u32, y: u32) -> [f32; 3] {
+        let i = (y * image.width + x) as usize * 3;
+        [image.data[i], image.data[i + 1], image.data[i + 2]]
+    }
+
+    #[test]
+    fn a_vignette_of_zero_changes_nothing() {
+        let s = scan(&Params {
+            width: 120,
+            height: 80,
+            rebate: [10; 4],
+            ..Params::default()
+        });
+        let recipe = true_recipe(&s);
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        let mut with_midpoint = recipe.clone();
+        with_midpoint.tone.vignette.midpoint = 10.0;
+        assert_eq!(
+            render(&input_of(&s, None), &with_midpoint, RenderTarget::Full).unwrap(),
+            plain
+        );
+        let mut dark = recipe;
+        dark.tone.vignette.amount = -80.0;
+        let darker = render(&input_of(&s, None), &dark, RenderTarget::Full).unwrap();
+        assert_ne!(darker, plain);
+        assert_eq!(
+            at(&darker, 0.5, 0.5),
+            at(&plain, 0.5, 0.5),
+            "the centre stays"
+        );
+    }
+
+    #[test]
+    fn the_vignette_is_centred_on_the_cropped_and_turned_picture() {
+        let s = scan(&Params {
+            width: 200,
+            height: 150,
+            rebate: [16, 10, 24, 12],
+            ..Params::default()
+        });
+        let mut recipe = true_recipe(&s);
+        recipe.geometry.rot90 = 1;
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        recipe.tone.vignette.amount = -100.0;
+        recipe.tone.vignette.midpoint = 20.0;
+        let out = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        assert_eq!((out.width, out.height), (plain.width, plain.height));
+        // It is the vignette of the finished (cropped and turned) picture, centred on it.
+        let mut want = plain.clone();
+        gtp_edit::apply_vignette(&mut want, &recipe.tone.vignette).unwrap();
+        assert_eq!(out, want);
+        // Every corner of the output is darkened by the same factor (the picture there may not be
+        // black: look for the first non-black pixel along the diagonal from each corner).
+        let (w, h) = (out.width, out.height);
+        let factor = |x: u32, y: u32| {
+            let (a, b) = (at_px(&out, x, y), at_px(&plain, x, y));
+            (a[1] > 0.0).then(|| a[1] / b[1])
+        };
+        let corners = [
+            factor(0, 0),
+            factor(w - 1, 0),
+            factor(0, h - 1),
+            factor(w - 1, h - 1),
+        ];
+        for g in corners.into_iter().flatten() {
+            assert!((g - 0.25).abs() < 0.03, "{g}");
+        }
+        assert!(corners.iter().flatten().count() >= 2, "{corners:?}");
+    }
+
+    #[test]
+    fn a_preview_and_a_full_render_agree_at_the_same_relative_positions() {
+        let s = flat_scan(800, 400);
+        let mut recipe = Recipe::default();
+        recipe.base.source = BaseSource::Manual;
+        recipe.base.rgb = s.truth.base;
+        recipe.invert = Invert {
+            black: s.truth.black,
+            white: s.truth.white,
+        };
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        let target = RenderTarget::Preview { max_edge: 200 };
+        let plain_preview = render(&input_of(&s, None), &recipe, target).unwrap();
+        recipe.tone.vignette.amount = -70.0;
+        recipe.tone.vignette.midpoint = 30.0;
+        let full = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        let preview = render(&input_of(&s, None), &recipe, target).unwrap();
+        assert_eq!((preview.width, preview.height), (200, 100));
+        for (fx, fy) in [(0.1, 0.2), (0.5, 0.5), (0.8, 0.9), (0.95, 0.5)] {
+            // The same gain, measured against the unvignetted full render.
+            let g_full = at(&full, fx, fy)[1] / at(&plain, fx, fy)[1];
+            let g_preview = at(&preview, fx, fy)[1] / at(&plain_preview, fx, fy)[1];
+            assert!((g_full - g_preview).abs() < 0.03, "({fx}, {fy})");
+        }
     }
 
     #[test]

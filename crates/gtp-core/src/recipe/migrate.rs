@@ -85,6 +85,8 @@ mod tests {
         assert_eq!(value["output"]["sharpen"]["radius_px"], 1.0);
         assert_eq!(value["color"]["vibrance"], 0.0);
         assert_eq!(value["tone"]["dehaze"], 0.0);
+        assert_eq!(value["tone"]["vignette"]["amount"], 0.0);
+        assert_eq!(value["tone"]["vignette"]["midpoint"], 50.0);
         assert_eq!(value["mono"]["enabled"], false);
         assert_eq!(value["mono"]["mix"].as_array().map(Vec::len), Some(3));
     }
@@ -114,6 +116,20 @@ mod tests {
             migrate(r#"{"v":1,"output":{"sharpen":{"amount":90,"radius_px":9}}}"#).unwrap();
         assert_eq!(recipe.output.sharpen.amount, 90.0);
         assert_eq!(recipe.output.sharpen.radius_px, 3.0);
+    }
+
+    #[test]
+    fn a_recipe_from_before_the_vignette_loads_with_the_defaults() {
+        let recipe = migrate(r#"{"v":1,"tone":{"contrast":10}}"#).unwrap();
+        assert_eq!(recipe.tone.vignette.amount, 0.0);
+        assert_eq!(recipe.tone.vignette.midpoint, 50.0);
+        let json = serde_json::to_value(&recipe).unwrap();
+        assert_eq!(json["tone"]["vignette"]["amount"], 0.0);
+        assert_eq!(json["tone"]["vignette"]["midpoint"], 50.0);
+        // A half-written vignette fills in the rest, and values are clamped on load.
+        let recipe = migrate(r#"{"v":1,"tone":{"vignette":{"amount":-300}}}"#).unwrap();
+        assert_eq!(recipe.tone.vignette.amount, -100.0);
+        assert_eq!(recipe.tone.vignette.midpoint, 50.0);
     }
 
     #[test]

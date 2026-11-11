@@ -35,8 +35,8 @@ interface TonePanelProps {
 }
 
 /**
- * The Tone panel: exposure in stops, contrast, highlights, shadows, whites, blacks and dehaze, and
- * the tone curves (master and one per colour channel).
+ * The Tone panel: exposure in stops, contrast, highlights, shadows, whites, blacks and dehaze, the vignette
+ * and its midpoint, and the tone curves (master and one per colour channel).
  */
 export function TonePanel({
   recipe,
@@ -107,6 +107,38 @@ export function TonePanel({
               }
             />
           ))}
+          <Slider
+            label={t('develop.tone.vignette')}
+            value={tone.vignette}
+            min={-100}
+            max={100}
+            step={1}
+            format={whole}
+            disabled={locked}
+            onReset={
+              autoTone && (() => resetSlider(withTone(recipe, { vignette: autoTone.vignette })))
+            }
+            onChange={(next, dragging) =>
+              onChange(withTone(recipe, { vignette: next }), { dragging })
+            }
+          />
+          <Slider
+            label={t('develop.tone.vignette_midpoint')}
+            value={tone.vignette_midpoint}
+            min={0}
+            max={100}
+            step={1}
+            format={whole}
+            disabled={locked}
+            onReset={
+              autoTone &&
+              (() =>
+                resetSlider(withTone(recipe, { vignette_midpoint: autoTone.vignette_midpoint })))
+            }
+            onChange={(next, dragging) =>
+              onChange(withTone(recipe, { vignette_midpoint: next }), { dragging })
+            }
+          />
         </div>
       </section>
 

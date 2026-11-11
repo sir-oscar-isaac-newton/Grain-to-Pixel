@@ -950,6 +950,15 @@
       "status": "completed",
       "pr": 300,
       "commit": "4efad24"
+    },
+    {
+      "id": "P-28",
+      "number": 305,
+      "title": "Vignette",
+      "branch": "feat/issue-305-vignette",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

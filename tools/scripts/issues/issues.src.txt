@@ -2708,3 +2708,28 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: the changed test, with a way to show it holds across a second boundary (for example comparing the files with the profile left out, or the parsed segments).
 NOTES: the differing byte was the seconds field of the date in the ICC profile header (47 against 48). Out of scope: making exports byte for byte reproducible.
+
+## P-29
+title: Wavelet noise reduction that keeps grain texture
+milestone: M6
+type: feature
+size: M
+estimate: 2d
+deps: P-27
+adr: yes
+spec: specification sections 4 and 7
+desc: P-27 reduces noise with a guided filter, which smooths flat areas well but treats fine grain and coarse grain alike, so a strong setting can leave a picture looking plastic. Wavelet shrinkage splits the picture into scales of detail and reduces each by its own amount, so coarse blotches can go while fine grain texture stays. The owner asked on 2026-11-11 for this as a later step. Decide by measurement whether it replaces the guided filter or sits beside it, and add it.
+ac:
+- An ADR compares wavelet shrinkage with the guided filter of P-27 on real scans of at least three film stocks (fine grain, coarse grain, pushed): what each keeps and removes, and the cost on a 24 megapixel frame; it decides whether the wavelet method replaces the guided filter or is offered beside it
+- The luminance noise reduction keeps fine grain texture at settings where coarse noise is clearly reduced, shown by a measure the ADR defines (for example the energy left in the finest scale against that in the coarser ones)
+- The existing sliders keep their meaning: a recipe saved with P-27 loads and renders as before, or the ADR states the change and the specification and the pull request say it plainly
+- Any new control (for example how much fine grain to keep) is a recipe field with a default that changes nothing, approved by the owner with the plan
+- With the amounts at 0 the stage does nothing and the render is bit for bit the same as without it
+- The export of a 24 megapixel frame stays within the export budget of the specification; the measured time is in the pull request
+- Tests: identity at 0, a flat noisy patch, a step edge, grain kept at the finest scale, preview against full size, old recipes loading, a timing test marked ignored; component tests for any new control; bindings regenerated if the recipe changes; axe clean
+tech:
+FILES: crates/gtp-edit (the wavelet transform and the shrinkage), crates/gtp-app/src/pipeline, crates/gtp-core/src/recipe only if a control is added, the Detail panel, en.json, rules/colour-pipeline.md, decisions.
+ROUTES: none new; the Recipe gains a field only if the plan asks for one and the owner approves it.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the method named in the ADR of P-27 as possible later. A usual form is the undecimated (a trous) transform with a B3 spline kernel and a soft threshold per scale, in the same working space as P-27. Written in Rust in gtp-edit; a new dependency needs the approval of the owner. No learned or AI model: that is a non-goal. Out of scope: grain synthesis, reduction by mask, removing dust or scratches.

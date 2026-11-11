@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Recipe } from '../../shared/ipc';
 import { ipc, makeRecipe, resetFake, state } from '../library/fake-ipc';
+import { MERGE_WINDOW_MS } from './history';
 import { SAVE_DELAY_MS, useDevelop } from './use-develop';
 
 vi.mock('../../shared/ipc', async () => (await import('../library/fake-ipc')).ipc);
@@ -46,6 +47,30 @@ describe('useDevelop undo history', () => {
     act(() => result.current.undo());
     expect(result.current.recipe).toEqual(makeRecipe('saved'));
     expect(result.current.canUndo).toBe(false);
+  });
+
+  it('replaces a recent change of the same field with a reset that asks to merge', async () => {
+    const { result } = await openFrame();
+    act(() => result.current.setRecipe(edited(1)));
+    act(() => result.current.setRecipe(edited(2), { merge: true }));
+    act(() => result.current.undo());
+    expect(result.current.recipe).toEqual(makeRecipe('saved'));
+    expect(result.current.canUndo).toBe(false);
+    act(() => result.current.redo());
+    expect(result.current.recipe).toEqual(edited(2));
+  });
+
+  it('keeps a reset that asks to merge as a step of its own after the window', async () => {
+    const { result } = await openFrame();
+    const start = Date.now();
+    let later = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => start + later);
+    act(() => result.current.setRecipe(edited(1)));
+    later = MERGE_WINDOW_MS + 1;
+    act(() => result.current.setRecipe(edited(2), { merge: true }));
+    act(() => result.current.undo());
+    expect(result.current.recipe).toEqual(edited(1));
+    vi.restoreAllMocks();
   });
 
   it('counts a change made without a preview as an edit', async () => {

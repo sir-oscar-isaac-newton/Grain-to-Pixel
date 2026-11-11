@@ -64,7 +64,7 @@ interface GeometryPanelProps {
    */
   auto?: Recipe | null;
   /** The recipe changed; `dragging` while a slider's thumb is being moved. */
-  onChange: (recipe: Recipe, options: { dragging: boolean }) => void;
+  onChange: (recipe: Recipe, options: { dragging: boolean; merge?: boolean }) => void;
 }
 
 /**
@@ -107,8 +107,8 @@ export function GeometryPanel({
         maximumFractionDigits: 1,
       }).format(value),
     });
-  const change = (values: Parameters<typeof withGeometry>[1], dragging = false) =>
-    onChange(withGeometry(recipe, values), { dragging });
+  const change = (values: Parameters<typeof withGeometry>[1], dragging = false, merge = false) =>
+    onChange(withGeometry(recipe, values), merge ? { dragging, merge } : { dragging });
 
   /** The crop's width over height, as fractions of the scan, for a ratio setting and a turn. */
   const fractionsFor = (state: RatioState, rot90: number): number | null => {
@@ -152,8 +152,6 @@ export function GeometryPanel({
   const customInvalid = ratio.mode === 'custom' && customRatio(ratio.custom) === null;
 
   const confident = detected !== null && detected.confidence >= LOW_CONFIDENCE;
-  const turned = geometry.rot90 !== 0 || geometry.flip_h || geometry.flip_v;
-  const levelled = geometry.angle_deg === 0;
 
   /** The range one side may be set to: it stays {@link MIN_CROP} from the opposite side. */
   const range = (edge: Edge): [number, number] => {
@@ -304,7 +302,9 @@ export function GeometryPanel({
                 step={0.001}
                 format={percent}
                 disabled={locked}
-                onReset={autoEdges && (() => change({ crop: moveTo(edge, autoEdges[edge]) }))}
+                onReset={
+                  autoEdges && (() => change({ crop: moveTo(edge, autoEdges[edge]) }, false, true))
+                }
                 onChange={(next, dragging) => change({ crop: moveTo(edge, next) }, dragging)}
               />
             );
@@ -349,26 +349,11 @@ export function GeometryPanel({
             step={0.1}
             format={degrees}
             disabled={locked}
-            onReset={autoGeometry && (() => change({ angle_deg: autoGeometry.angle_deg }))}
+            onReset={
+              autoGeometry && (() => change({ angle_deg: autoGeometry.angle_deg }, false, true))
+            }
             onChange={(next, dragging) => change({ angle_deg: next }, dragging)}
           />
-        </div>
-        <div className={styles.panelButtons}>
-          <button
-            type="button"
-            disabled={locked || (!turned && levelled)}
-            onClick={() =>
-              change({
-                rot90: 0,
-                flip_h: false,
-                flip_v: false,
-                angle_deg: 0,
-                crop: refit(ratio, 0),
-              })
-            }
-          >
-            {t('develop.geometry.reset')}
-          </button>
         </div>
       </section>
     </div>

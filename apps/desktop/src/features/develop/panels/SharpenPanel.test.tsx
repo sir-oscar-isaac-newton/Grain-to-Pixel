@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support';
@@ -99,22 +99,22 @@ describe('SharpenPanel', () => {
     expect(next.geometry).toBeDefined();
   });
 
-  it('resets both values, and has nothing to reset at the defaults', async () => {
+  it('has one reset, the header one, which puts both values to the automatic ones', async () => {
     const user = userEvent.setup();
-    const { props, mocks, rerender } = setup();
-    await user.click(screen.getByRole('button', { name: 'Reset sharpening' }));
-    expect(lastSharpen(mocks)).toEqual({ amount: 0, radius_px: 1 });
+    const auto = makeRecipe('auto', {
+      output: { space: 'srgb', sharpen: { amount: 25, radius_px: 0.8 } },
+    });
+    const { mocks } = setup({ auto });
+    expect(screen.getAllByRole('button', { name: /^Reset/ })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Reset Output sharpening to automatic' }));
+    expect(lastSharpen(mocks)).toEqual({ amount: 25, radius_px: 0.8 });
     expect(mocks.onChange.mock.calls[0]?.[1]).toEqual({ dragging: false });
-    rerender(<SharpenPanel {...props} recipe={makeRecipe('x')} />);
-    expect(screen.getByRole('button', { name: 'Reset sharpening' })).toBeDisabled();
-    // A radius that is not the default is something to reset, even at amount 0.
-    rerender(
-      <SharpenPanel
-        {...props}
-        recipe={makeRecipe('x', { output: { sharpen: { amount: 0, radius_px: 2 } } })}
-      />,
-    );
-    expect(screen.getByRole('button', { name: 'Reset sharpening' })).toBeEnabled();
+  });
+
+  it('marks a slider reset as one to merge with a change just made', () => {
+    const { mocks } = setup({ auto: makeRecipe('auto') });
+    fireEvent.doubleClick(slider('Amount'));
+    expect(mocks.onChange.mock.calls[0]?.[1]).toEqual({ dragging: false, merge: true });
   });
 
   describe('when nothing can be changed', () => {
@@ -123,7 +123,9 @@ describe('SharpenPanel', () => {
       ['something being done', { working: true }],
     ])('disables every control for %s', (_name, over) => {
       setup(over);
-      expect(screen.getByRole('button', { name: 'Reset sharpening' })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Reset Output sharpening to automatic' }),
+      ).toBeDisabled();
       for (const s of screen.getAllByRole('slider')) expect(s).toHaveAttribute('data-disabled');
     });
   });

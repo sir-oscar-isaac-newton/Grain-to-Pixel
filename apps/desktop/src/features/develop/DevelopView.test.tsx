@@ -627,7 +627,7 @@ describe('DevelopView', () => {
       await user.click(screen.getByRole('button', { name: 'Export…' }));
       const dialog = within(await screen.findByRole('dialog', { name: 'Export' }));
       expect(
-        dialog.getByText('Write 1 frame at full size, with the colour profile embedded.'),
+        dialog.getByText('Write 1 frame, with the colour profile embedded.'),
       ).toBeInTheDocument();
 
       await user.click(dialog.getByRole('button', { name: 'Choose folder…' }));
@@ -985,7 +985,7 @@ describe('DevelopView', () => {
         const user = await openFrame();
         screen.getByRole('slider', { name: 'Amount' }).focus();
         await user.keyboard('{End}');
-        const reset = screen.getByRole('button', { name: 'Reset sharpening' });
+        const reset = screen.getByRole('button', { name: 'Reset Output sharpening to automatic' });
         await waitFor(() => expect(reset).toBeEnabled());
         await user.click(reset);
         await waitFor(() => expect(sharpenOf(savedRecipe())).toEqual({ amount: 0, radius_px: 1 }), {
@@ -1003,7 +1003,9 @@ describe('DevelopView', () => {
         render(<DevelopView />);
         await canvas();
         expect(screen.getByRole('slider', { name: 'Amount' })).toHaveAttribute('data-disabled');
-        expect(screen.getByRole('button', { name: 'Reset sharpening' })).toBeDisabled();
+        expect(
+          screen.getByRole('button', { name: 'Reset Output sharpening to automatic' }),
+        ).toBeDisabled();
       });
 
       it('has no accessibility violations', async () => {

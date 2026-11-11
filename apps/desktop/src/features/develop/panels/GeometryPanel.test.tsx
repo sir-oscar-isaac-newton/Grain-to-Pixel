@@ -114,22 +114,27 @@ describe('GeometryPanel', () => {
       expect(mocks.onGuideChange).toHaveBeenLastCalledWith(false);
     });
 
-    it('resets the turns, flips and angle but not the crop', async () => {
+    it('has one reset, the header one, which puts crop, turns, flips and angle to the automatic ones', async () => {
       const user = userEvent.setup();
-      const { mocks } = setup();
-      await user.click(button('Reset turns and straighten'));
-      expect(lastGeometry(mocks)).toEqual({
-        crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
-        angle_deg: 0,
-        rot90: 0,
-        flip_h: false,
-        flip_v: false,
+      const auto = makeRecipe('auto', {
+        geometry: {
+          crop: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 },
+          angle_deg: 1.5,
+          rot90: 1,
+          flip_h: true,
+          flip_v: false,
+        },
       });
+      const { mocks } = setup({ auto });
+      expect(screen.getAllByRole('button', { name: /^Reset/ })).toHaveLength(1);
+      await user.click(button('Reset Crop, turn and straighten to automatic'));
+      expect(lastGeometry(mocks)).toEqual(geometryOf(auto));
     });
 
-    it('has nothing to reset when nothing is turned', () => {
-      setup({ recipe: whole });
-      expect(button('Reset turns and straighten')).toBeDisabled();
+    it('marks a slider reset as one to merge with a change just made', () => {
+      const { mocks } = setup({ auto: makeRecipe('auto') });
+      fireEvent.doubleClick(slider('Straighten'));
+      expect(mocks.onChange.mock.calls[0]?.[1]).toEqual({ dragging: false, merge: true });
     });
   });
 

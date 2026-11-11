@@ -335,9 +335,7 @@ describe('LibraryView: pick and reject', () => {
       );
       await user.click(await within(dialog).findByRole('checkbox', { name: optionName }));
       expect(
-        within(dialog).getByText(
-          'Write 2 picked frames at full size, with the colour profile embedded.',
-        ),
+        within(dialog).getByText('Write 2 picked frames, with the colour profile embedded.'),
       ).toBeInTheDocument();
       await user.click(within(dialog).getByRole('button', { name: 'Choose folder…' }));
       await within(dialog).findByText('/films/Library');

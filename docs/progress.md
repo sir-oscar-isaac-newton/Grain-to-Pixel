@@ -907,6 +907,24 @@
       "commit": "29b2aa0"
     },
     {
+      "id": "P-24",
+      "number": 292,
+      "title": "Resize on export",
+      "branch": "feat/issue-292-export-resize",
+      "status": "completed",
+      "pr": 297,
+      "commit": "83ebee6"
+    },
+    {
+      "id": "U-25",
+      "number": 293,
+      "title": "Develop reset clean-up after U-22",
+      "branch": "feat/issue-293-develop-reset-cleanup",
+      "status": "completed",
+      "pr": 298,
+      "commit": "3f63e1c"
+    },
+    {
       "id": "H-21",
       "number": 278,
       "title": "Calibration help at the rig",

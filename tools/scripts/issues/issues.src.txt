@@ -2470,3 +2470,95 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: reported by the owner on 2026-11-09. The unrotated view was deliberate, so that a click mapped straight to the sample region; this keeps the sample commands and moves the mapping to the frontend.
+
+## P-24
+title: Resize on export
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: P-12, U-21
+adr: no
+spec: specification sections 6 and 7
+desc: An export always writes the frame at its full size. A copy to share does not need the full scan, and U-21 left resizing out on purpose. Add an export option for the long edge in pixels, saved in presets.
+ac:
+- ExportOptions gains long_edge: none writes the full size; a number of pixels scales the frame down so its long edge has that length, keeping its proportions
+- A frame whose long edge is already that length or shorter is written at its own size; an export never enlarges
+- The frame is resized before output sharpening, so the sharpening radius is in pixels of the file written
+- The export dialog has a size choice (full size, or a long edge in pixels with a few common values and a free number); presets carry it, and saved presets and last used options without it load as full size
+- The built-in Share (JPEG sRGB) preset of a new settings file uses a long edge of 2048; settings files that already have presets are not changed
+- Tests: the size of the written TIFF and JPEG for a landscape and a portrait frame, no enlarging, sharpening after resizing, old settings loading as full size; component tests for the dialog and presets; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-app/src/services/export.rs (the option and the resize step), crates/gtp-app/src/services/settings.rs (the default preset), the export dialog, export-presets.ts, fake-ipc.ts, en.json, packages/ipc-types.
+ROUTES: none new; ExportOptions gains long_edge. Approved by the owner on 2026-11-10.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: fast_image_resize is already a dependency of gtp-app; resize in linear light with a filter fit for downscaling. Allowed range 256 to 20000 pixels, refused outside it. Out of scope: enlarging, sizes in centimetres or dpi, a short-edge or megapixel mode, several sizes in one run.
+
+## U-25
+title: Develop reset clean-up after U-22
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: U-22
+adr: no
+spec: specification section 7
+desc: U-22 added Reset to automatic to each panel, next to the older Reset tone, Reset sharpening, Reset dust removal and Reset turns and straighten buttons, which go to the defaults. Two resets per panel are confusing. Also, a double click on a slider track first moves the thumb and then resets, which makes two undo steps.
+ac:
+- The older reset buttons of the tone, sharpening, dust and geometry panels are removed; each panel keeps one reset, to the automatic values
+- The geometry panel's reset still covers turns, flips and the straighten angle, as U-22 defined it
+- A double click on a slider track resets the slider as one undo step; the value in between is not recorded
+- Strings that are no longer used are removed from en.json; the specification says one reset per panel
+- Component tests for the one reset per panel and for the single undo step; axe clean
+tech:
+FILES: apps/desktop/src/features/develop/panels, apps/desktop/src/features/develop (use-develop.ts, use-history.ts), packages/ui/src/Slider.tsx if the double click is handled there, en.json.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: both points were noted in the review of U-22 (PR 283). Out of scope: a reset to the bare defaults, new reset targets.
+
+## U-26
+title: Compare mode polish
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: U-23
+adr: no
+spec: specification section 7
+desc: The compare mode of U-23 shows the reference always fitted, does not notice when the reference's recipe changes, and marks the reference in the filmstrip by a border only. Link the two panes, keep the reference current, and label it.
+ac:
+- Zoom and pan are linked: the reference pane shows the same zoom and the same relative place as the current frame, and a switch turns the link off (the reference is then fitted, as today)
+- The reference is rendered at the size its zoom needs, within the existing render limits, and again only when its frame, its recipe, the zoom or the pane size changes
+- When the reference's saved recipe changes while it is shown (Apply settings, or a swap), the pane shows the new recipe without leaving compare mode
+- The reference in the filmstrip has an accessible label saying it is the reference, as well as its border
+- Component tests for linked zoom and pan, the switch, the refresh and the label; axe clean
+tech:
+FILES: apps/desktop/src/features/develop (ComparePane.tsx, use-compare.ts, use-viewport.ts, Filmstrip.tsx, DevelopView.tsx), en.json.
+ROUTES: none new; the reference is rendered with the existing develop commands.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the three limits were reported with U-23 (PR 288). The backend counts render sequence numbers per frame, so both panes keep drawing from the one counter of useDevelop. Out of scope: more than two frames, editing the reference, a split or wipe view.
+
+## U-27
+title: Described sliders in the shared UI package
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: H-21
+adr: no
+spec: specification section 7
+desc: The shared Slider takes a label but no description, so the headroom warning of H-21 sits under its slider as plain text that a screen reader does not connect to it. Let the Slider take a description and use it for the warning.
+ac:
+- The shared Slider takes an optional description, shown under it and linked to the slider control with aria-describedby
+- The headroom warning of the capture level sliders is passed as that description; its text and its threshold of 240 are unchanged
+- Sliders without a description render as before
+- Component tests for the Slider with and without a description, and for the linked warning in the capture view; axe clean
+tech:
+FILES: packages/ui/src/Slider.tsx and its test, apps/desktop/src/features/import/capture/LevelSliders.tsx, apps/desktop/src/features/import/import.module.css.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the change to packages/ui was approved by the owner on 2026-11-10. Start only after H-21 (PR 291) has merged. Out of scope: descriptions for the Develop panels' sliders, other shared components.

@@ -208,6 +208,7 @@ export const DEFAULT_EXPORT_PRESETS: ExportPreset[] = [
       dest_dir: '',
       template: '{roll}_{index:03}',
       write_metadata: true,
+      long_edge: null,
     },
   },
   {
@@ -219,6 +220,7 @@ export const DEFAULT_EXPORT_PRESETS: ExportPreset[] = [
       dest_dir: '',
       template: '{roll}_{index:03}',
       write_metadata: true,
+      long_edge: 2048,
     },
   },
 ];

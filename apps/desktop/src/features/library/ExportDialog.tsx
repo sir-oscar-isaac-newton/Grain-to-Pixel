@@ -23,6 +23,13 @@ type Space = ExportOptions['space'];
 const FORMATS: readonly Format[] = ['tiff16', 'jpeg'];
 const SPACES: readonly Space[] = ['srgb', 'adobe_rgb', 'prophoto'];
 const DEFAULT_TEMPLATE = '{roll}_{index:03}';
+/** The sizes the list offers, in pixels on the long edge; anything else is "Custom". */
+const SIZES: readonly number[] = [1600, 2048, 3000, 4000];
+/** The long edges the app accepts, in pixels (the same range as the backend). */
+const MIN_EDGE = 256;
+const MAX_EDGE = 20000;
+const FULL = 'full';
+const CUSTOM = 'custom';
 
 const DEFAULTS: ExportOptions = {
   format: 'tiff16',
@@ -31,6 +38,7 @@ const DEFAULTS: ExportOptions = {
   dest_dir: '',
   template: DEFAULT_TEMPLATE,
   write_metadata: true,
+  long_edge: null,
 };
 
 /** What the file name would be for a roll "Roll", frame 1; null when the template is not valid. */
@@ -52,6 +60,14 @@ function problemOf(options: ExportOptions): string | null {
   if (options.template.trim() === '') return 'export.errors.noTemplate';
   if (/[\\/]/.test(options.template)) return 'export.errors.folders';
   return null;
+}
+
+/** The translation key of what is wrong with a custom long edge typed as `text`, or null. */
+function sizeProblemOf(text: string): string | null {
+  const trimmed = text.trim();
+  if (!/^\d+$/.test(trimmed)) return 'export.errors.sizeWhole';
+  const edge = Number(trimmed);
+  return edge < MIN_EDGE || edge > MAX_EDGE ? 'export.errors.sizeRange' : null;
 }
 
 const PICKED_PAGE_SIZE = 500;
@@ -139,6 +155,10 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
   const [nameError, setNameError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const touched = useRef(false);
+  // The size list shows "Custom" once chosen, and for a size the list does not have. The text of
+  // the custom field is kept as typed (null: it follows the options).
+  const [sizeCustom, setSizeCustom] = useState(false);
+  const [customText, setCustomText] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const namingOpen = naming !== null;
   useEffect(() => {
@@ -146,6 +166,8 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
   }, [namingOpen]);
   const nameId = useId();
   const nameErrorId = useId();
+  const sizeId = useId();
+  const sizeErrorId = useId();
   useEffect(() => {
     let alive = true;
     settingsGet().then(
@@ -155,7 +177,9 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
         setPresets(list);
         const last = settings.last_export;
         if (last && !touched.current) {
-          setOptions(last.options);
+          setOptions({ ...last.options, long_edge: last.options.long_edge ?? null });
+          setSizeCustom(false);
+          setCustomText(null);
           setPresetName(findPreset(list, last.preset)?.name ?? null);
         }
       },
@@ -180,7 +204,32 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
     setConfirmingDelete(false);
     const preset = findPreset(presets, name);
     setPresetName(preset?.name ?? null);
-    if (preset) setOptions((o) => applyPreset(o, preset));
+    if (preset) {
+      setOptions((o) => applyPreset(o, preset));
+      setSizeCustom(false);
+      setCustomText(null);
+    }
+  };
+
+  const edge = options.long_edge ?? null;
+  const listed = edge === null || SIZES.includes(edge);
+  const customShown = sizeCustom || !listed;
+  const customValue = customText ?? (edge === null ? '' : String(edge));
+  const sizeProblem = customShown ? sizeProblemOf(customValue) : null;
+  const chooseSize = (value: string) => {
+    if (value === CUSTOM) {
+      setSizeCustom(true);
+      setCustomText(edge === null ? '' : String(edge));
+      return;
+    }
+    setSizeCustom(false);
+    setCustomText(null);
+    change({ long_edge: value === FULL ? null : Number(value) });
+  };
+  const typeSize = (text: string) => {
+    setCustomText(text);
+    // A number the field cannot make one of leaves no size set; the error blocks the export.
+    change({ long_edge: /^\d+$/.test(text.trim()) ? Number(text.trim()) : null });
   };
 
   /** Writes the whole list of presets; true when it was saved (the list shown is then the saved one). */
@@ -200,6 +249,7 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
   const saveAs = async () => {
     const name = (naming ?? '').trim();
     const problem = nameProblem(name, presets);
+    if (sizeProblem !== null) return;
     if (problem !== null) {
       setNameError(t(problem));
       return;
@@ -211,7 +261,7 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
     }
   };
   const update = async () => {
-    if (!chosenPreset) return;
+    if (!chosenPreset || sizeProblem !== null) return;
     await writePresets(
       presets.map((p) => (p === chosenPreset ? { name: p.name, options: shown() } : p)),
     );
@@ -239,7 +289,7 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
 
   const start = async (event: FormEvent) => {
     event.preventDefault();
-    if (problem !== null || starting) return;
+    if (problem !== null || sizeProblem !== null || starting) return;
     setStarting(true);
     setError(null);
     try {
@@ -333,10 +383,18 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
                 </select>
               </label>
               <div className={styles.buttons}>
-                <button type="button" onClick={() => setNaming('')} disabled={naming !== null}>
+                <button
+                  type="button"
+                  onClick={() => setNaming('')}
+                  disabled={naming !== null || sizeProblem !== null}
+                >
                   {t('export.presets.saveAs')}
                 </button>
-                <button type="button" onClick={() => void update()} disabled={!modified}>
+                <button
+                  type="button"
+                  onClick={() => void update()}
+                  disabled={!modified || sizeProblem !== null}
+                >
                   {t('export.presets.update')}
                 </button>
                 <button
@@ -375,7 +433,11 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
                     </p>
                   )}
                   <div className={styles.buttons}>
-                    <button type="button" onClick={() => void saveAs()}>
+                    <button
+                      type="button"
+                      onClick={() => void saveAs()}
+                      disabled={sizeProblem !== null}
+                    >
                       {t('export.presets.save')}
                     </button>
                     <button
@@ -436,6 +498,42 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
                 </select>
                 <span className={styles.hint}>{t(`export.spaceHint.${options.space}`)}</span>
               </label>
+
+              <label className={styles.field}>
+                {t('export.size')}
+                <select
+                  value={customShown ? CUSTOM : edge === null ? FULL : String(edge)}
+                  onChange={(e) => chooseSize(e.target.value)}
+                >
+                  <option value={FULL}>{t('export.sizeFull')}</option>
+                  {SIZES.map((size) => (
+                    <option key={size} value={String(size)}>
+                      {t('export.sizePixels', { pixels: size })}
+                    </option>
+                  ))}
+                  <option value={CUSTOM}>{t('export.sizeCustom')}</option>
+                </select>
+                <span className={styles.hint}>{t('export.sizeHint')}</span>
+              </label>
+              {customShown && (
+                <div className={styles.field}>
+                  <label htmlFor={sizeId}>{t('export.sizeCustomLabel')}</label>
+                  <input
+                    id={sizeId}
+                    type="number"
+                    inputMode="numeric"
+                    value={customValue}
+                    aria-invalid={sizeProblem !== null}
+                    aria-describedby={sizeProblem ? sizeErrorId : undefined}
+                    onChange={(e) => typeSize(e.target.value)}
+                  />
+                  {sizeProblem && (
+                    <p id={sizeErrorId} role="alert">
+                      {t(sizeProblem, { min: MIN_EDGE, max: MAX_EDGE })}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {options.format === 'jpeg' && (
                 <Slider
@@ -501,7 +599,10 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
               {problem !== null && !folderProblem && <p role="alert">{t(problem)}</p>}
               {error && <p role="alert">{error}</p>}
               <div className={styles.buttons}>
-                <button type="submit" disabled={problem !== null || starting}>
+                <button
+                  type="submit"
+                  disabled={problem !== null || sizeProblem !== null || starting}
+                >
                   {starting ? t('export.starting') : t('export.start')}
                 </button>
                 <button type="button" onClick={onClose}>

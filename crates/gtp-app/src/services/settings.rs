@@ -14,7 +14,7 @@ use gtp_core::{AppError, ErrorCode, ExposureInfo, Look};
 use serde::{Deserialize, Serialize};
 
 use super::capture_levels::{LevelsScope, SavedLevels};
-use super::export::{ExportFormat, ExportOptions};
+use super::export::{ExportFormat, ExportOptions, LONG_EDGE};
 use super::focus::{validate_reference, Map};
 
 /// Window sizes accepted, in logical pixels.
@@ -92,7 +92,7 @@ const DEFAULT_TEMPLATE: &str = "{roll}_{index:03}";
 /// The two presets a settings file without any starts with: an archive copy and a copy to share.
 /// Neither names a folder, so choosing one keeps the folder already chosen.
 pub fn default_export_presets() -> Vec<ExportPreset> {
-    let preset = |name: &str, format, space, jpeg_quality| ExportPreset {
+    let preset = |name: &str, format, space, jpeg_quality, long_edge| ExportPreset {
         name: name.to_owned(),
         options: ExportOptions {
             format,
@@ -101,6 +101,7 @@ pub fn default_export_presets() -> Vec<ExportPreset> {
             dest_dir: String::new(),
             template: DEFAULT_TEMPLATE.to_owned(),
             write_metadata: true,
+            long_edge,
         },
     };
     vec![
@@ -109,12 +110,14 @@ pub fn default_export_presets() -> Vec<ExportPreset> {
             ExportFormat::Tiff16,
             OutputSpace::Prophoto,
             92,
+            None,
         ),
         preset(
             "Share (JPEG sRGB)",
             ExportFormat::Jpeg,
             OutputSpace::Srgb,
             90,
+            Some(2048),
         ),
     ]
 }
@@ -222,14 +225,21 @@ pub struct SettingsPatch {
     pub last_export: Option<LastExport>,
 }
 
+/// Refuses a JPEG quality outside 1 to 100 and a long edge outside [`LONG_EDGE`].
 fn check_quality(options: &ExportOptions) -> Result<(), AppError> {
-    if (1..=100).contains(&options.jpeg_quality) {
-        Ok(())
-    } else {
-        Err(
+    if !(1..=100).contains(&options.jpeg_quality) {
+        return Err(
             AppError::new(ErrorCode::InvalidInput, "JPEG quality runs from 1 to 100.")
                 .with_details(options.jpeg_quality.to_string()),
+        );
+    }
+    match options.long_edge {
+        Some(edge) if !LONG_EDGE.contains(&edge) => Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "The long edge runs from 256 to 20000 pixels.",
         )
+        .with_details(edge.to_string())),
+        _ => Ok(()),
     }
 }
 
@@ -1149,8 +1159,75 @@ mod tests {
                 dest_dir: "D:/Out".to_owned(),
                 template: "{roll}-{index}".to_owned(),
                 write_metadata: true,
+                long_edge: None,
             },
         }
+    }
+
+    #[test]
+    fn the_share_preset_has_a_long_edge_and_the_archive_preset_none() {
+        let presets = default_export_presets();
+        assert_eq!(presets[0].name, "Archive (TIFF 16-bit)");
+        assert_eq!(presets[0].options.long_edge, None);
+        assert_eq!(presets[1].name, "Share (JPEG sRGB)");
+        assert_eq!(presets[1].options.long_edge, Some(2048));
+    }
+
+    #[test]
+    fn presets_saved_before_the_long_edge_load_with_none_and_are_not_changed() {
+        let path = temp_file("long-edge-old");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let old = r#"{"export_presets":[{"name":"Mine","options":{"format":"jpeg",
+            "space":"srgb","jpeg_quality":80,"dest_dir":"","template":"{roll}"}}],
+            "last_export":{"options":{"format":"jpeg","space":"srgb","jpeg_quality":80,
+            "dest_dir":"","template":"{roll}"},"preset":null}}"#;
+        std::fs::write(&path, old).unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none(), "{note:?}");
+        let loaded = store.get();
+        assert_eq!(loaded.export_presets.len(), 1);
+        assert_eq!(loaded.export_presets[0].options.long_edge, None);
+        assert_eq!(loaded.last_export.unwrap().options.long_edge, None);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_long_edge_outside_the_range_is_refused_in_presets_and_the_last_export() {
+        let path = temp_file("long-edge-range");
+        let (store, _) = SettingsStore::load(&path);
+        let before = store.get();
+        let edge = |edge: u32| ExportOptions {
+            long_edge: Some(edge),
+            ..preset("x", ExportFormat::Jpeg).options
+        };
+        for bad in [0, 255, 20_001, u32::MAX] {
+            let named = ExportPreset {
+                name: "Web".into(),
+                options: edge(bad),
+            };
+            let err = store.update(&with_presets(vec![named])).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{bad}");
+            let last = SettingsPatch {
+                last_export: Some(LastExport {
+                    options: edge(bad),
+                    preset: None,
+                }),
+                ..SettingsPatch::default()
+            };
+            assert_eq!(
+                store.update(&last).unwrap_err().code,
+                ErrorCode::InvalidInput
+            );
+        }
+        assert_eq!(store.get(), before);
+        for good in [256, 2048, 20_000] {
+            let named = ExportPreset {
+                name: format!("Web {good}"),
+                options: edge(good),
+            };
+            store.update(&with_presets(vec![named])).unwrap();
+        }
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     fn with_presets(presets: Vec<ExportPreset>) -> SettingsPatch {

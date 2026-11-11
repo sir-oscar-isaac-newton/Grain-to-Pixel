@@ -947,9 +947,9 @@
       "number": 294,
       "title": "Compare mode polish",
       "branch": "feat/issue-294-compare-polish",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 300,
+      "commit": "4efad24"
     }
   ]
 }

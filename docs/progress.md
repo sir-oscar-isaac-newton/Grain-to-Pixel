@@ -1028,9 +1028,9 @@
       "number": 322,
       "title": "Colour swatches on hue and band sliders",
       "branch": "feat/issue-322-slider-swatches",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 326,
+      "commit": "aa03488"
     }
   ]
 }

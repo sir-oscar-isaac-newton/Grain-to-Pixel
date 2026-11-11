@@ -133,12 +133,13 @@ describe('ApplySettingsDialog', () => {
       for (const [name, checked] of [
         ['Colour', true],
         ['Tone and curves', true],
+        ['Colour mixer', false],
         ['Crop and geometry', false],
         ['Film base', false],
         ['Levels', false],
         ['Dust removal', false],
       ] as const) {
-        const box = d.getByRole('checkbox', { name: new RegExp(`^${name}`) });
+        const box = d.getByRole('checkbox', { name: new RegExp(`^${name}(?! mixer)`) });
         if (checked) expect(box).toBeChecked();
         else expect(box).not.toBeChecked();
       }
@@ -147,7 +148,7 @@ describe('ApplySettingsDialog', () => {
     it('offers the output sharpening too, unticked, and copies it in the order of the groups', async () => {
       const user = await openDialog();
       const d = within(dialog());
-      expect(d.getAllByRole('checkbox')).toHaveLength(8);
+      expect(d.getAllByRole('checkbox')).toHaveLength(9);
       const output = d.getByRole('checkbox', { name: /^Output sharpening/ });
       expect(output).not.toBeChecked();
       expect(
@@ -164,13 +165,36 @@ describe('ApplySettingsDialog', () => {
       expect(state.applies[0]?.fields).toEqual(['Color', 'Tone', 'Output']);
     });
 
-    it('offers split toning as a part of its own, unticked, right after colour', async () => {
+    it('offers the colour mixer as a part of its own, unticked, right after colour', async () => {
+      const user = await openDialog();
+      const d = within(dialog());
+      const boxes = d.getAllByRole('checkbox');
+      const mixer = d.getByRole('checkbox', { name: /^Colour mixer/ });
+      expect(mixer).not.toBeChecked();
+      expect(boxes[boxes.indexOf(mixer) - 1]).toBe(
+        d.getByRole('checkbox', { name: /^Colour(?! mixer)/ }),
+      );
+      expect(
+        d.getByText('The hue, saturation and lightness of each band of colours.'),
+      ).toBeInTheDocument();
+
+      await user.click(mixer);
+      await user.click(
+        d.getByRole('button', { name: 'Apply colour, colour mixer, and tone to 1 frame' }),
+      );
+      await waitFor(() => expect(state.applies).toHaveLength(1));
+      expect(state.applies[0]?.fields).toEqual(['Color', 'Mixer', 'Tone']);
+    });
+
+    it('offers split toning as a part of its own, unticked, right after the colour mixer', async () => {
       const user = await openDialog();
       const d = within(dialog());
       const boxes = d.getAllByRole('checkbox');
       const split = d.getByRole('checkbox', { name: /^Split toning/ });
       expect(split).not.toBeChecked();
-      expect(boxes[boxes.indexOf(split) - 1]).toBe(d.getByRole('checkbox', { name: /^Colour/ }));
+      expect(boxes[boxes.indexOf(split) - 1]).toBe(
+        d.getByRole('checkbox', { name: /^Colour mixer/ }),
+      );
       expect(
         d.getByText('The tints of the highlights and the shadows, and the balance between them.'),
       ).toBeInTheDocument();
@@ -212,7 +236,7 @@ describe('ApplySettingsDialog', () => {
     it('cannot apply with no group chosen, and says so', async () => {
       const user = await openDialog();
       const d = within(dialog());
-      await user.click(d.getByRole('checkbox', { name: /^Colour/ }));
+      await user.click(d.getByRole('checkbox', { name: /^Colour(?! mixer)/ }));
       await user.click(d.getByRole('checkbox', { name: /^Tone and curves/ }));
       expect(d.getByRole('button', { name: 'Apply' })).toBeDisabled();
       expect(d.getByText('Choose at least one group of settings.')).toBeInTheDocument();

@@ -49,7 +49,7 @@ pub fn migrate(json: &str) -> Result<Recipe, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recipe::{OutputSpace, SplitTone};
+    use crate::recipe::{Mixer, OutputSpace, SplitTone};
 
     #[test]
     fn a_recipe_round_trips_through_json() {
@@ -147,6 +147,30 @@ mod tests {
         let recipe = migrate(r#"{"v":1,"color":{"split_tone":{"shadow_hue":500}}}"#).unwrap();
         assert_eq!(recipe.color.split_tone.shadow_hue, 360.0);
         assert_eq!(recipe.color.split_tone.highlight_hue, 40.0);
+    }
+
+    #[test]
+    fn a_recipe_from_before_the_mixer_loads_with_zeros() {
+        let recipe = migrate(r#"{"v":1,"color":{"temperature":10}}"#).unwrap();
+        assert_eq!(recipe.color.mixer, Mixer::default());
+        let json = serde_json::to_value(&recipe).unwrap();
+        assert_eq!(
+            json["color"]["mixer"]["hue"].as_array().map(Vec::len),
+            Some(8)
+        );
+        assert_eq!(json["color"]["mixer"]["lightness"][7], 0.0);
+        // A half-written mixer fills in the rest, and values are clamped on load.
+        let recipe =
+            migrate(r#"{"v":1,"color":{"mixer":{"saturation":[0,0,900,0,0,0,0,-900]}}}"#).unwrap();
+        assert_eq!(recipe.color.mixer.saturation[2], 100.0);
+        assert_eq!(recipe.color.mixer.saturation[7], -100.0);
+        assert_eq!(recipe.color.mixer.hue, [0.0; 8]);
+    }
+
+    #[test]
+    fn a_mixer_list_of_the_wrong_length_is_a_malformed_recipe() {
+        let err = migrate(r#"{"v":1,"color":{"mixer":{"hue":[1,2,3]}}}"#).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
     }
 
     #[test]

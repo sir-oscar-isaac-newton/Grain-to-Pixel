@@ -1,14 +1,20 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Slider } from '@gtp/ui';
 import type { Recipe } from '../../../shared/ipc';
 import styles from '../develop.module.css';
 import {
   colourOf,
+  mixerOf,
   monoOf,
   splitToneOf,
   withColour,
+  withMixerValue,
   withMono,
   withSplitTone,
+  MIXER_BANDS,
+  MIXER_MODES,
+  type MixerMode,
   type SplitToneKey,
   type Channel,
   type ColourKey,
@@ -68,9 +74,10 @@ interface ColourPanelProps {
 
 /**
  * The Colour panel: the three colour axes, temperature and tint, saturation and vibrance, a picker
- * that makes a clicked grey neutral, a black-and-white mode with a channel mix, and split toning.
- * In black-and-white mode saturation and vibrance do nothing, so they are not shown; split toning
- * still works there and stays.
+ * that makes a clicked grey neutral, a black-and-white mode with a channel mix, the colour mixer
+ * (hue, saturation or lightness for each of eight bands of colours) and split toning. In
+ * black-and-white mode saturation, vibrance and the colour mixer do nothing, so they are not shown;
+ * split toning still works there and stays.
  */
 export function ColourPanel({
   recipe,
@@ -90,6 +97,9 @@ export function ColourPanel({
   const autoMix = auto ? monoOf(auto).mix : undefined;
   const split = splitToneOf(recipe);
   const autoSplit = auto ? splitToneOf(auto) : undefined;
+  const [mixerMode, setMixerMode] = useState<MixerMode>('hue');
+  const mixer = mixerOf(recipe);
+  const autoMixer = auto ? mixerOf(auto) : undefined;
   const resetTo = (next: Recipe) => onChange(next, { dragging: false });
   const resetSlider = (next: Recipe) => onChange(next, { dragging: false, merge: true });
   const whole = (value: number) =>
@@ -234,6 +244,50 @@ export function ColourPanel({
           </div>
         )}
       </section>
+
+      {!mono.enabled && (
+        <section aria-labelledby="mixer-heading" className={styles.panelSection}>
+          <h3 id="mixer-heading" className={styles.panelTitle}>
+            {t('develop.mixer.heading')}
+          </h3>
+          <div role="group" aria-label={t('develop.mixer.mode')} className={styles.panelButtons}>
+            {MIXER_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={mixerMode === mode}
+                onClick={() => setMixerMode(mode)}
+              >
+                {t(`develop.mixer.${mode}`)}
+              </button>
+            ))}
+          </div>
+          <div className={styles.sliders}>
+            {MIXER_BANDS.map((band, index) => (
+              <Slider
+                key={`${mixerMode}-${band}`}
+                label={t(`develop.mixer.band.${band}`)}
+                value={mixer[mixerMode][index] ?? 0}
+                min={-100}
+                max={100}
+                step={1}
+                format={whole}
+                disabled={locked}
+                onReset={
+                  autoMixer &&
+                  (() =>
+                    resetSlider(
+                      withMixerValue(recipe, mixerMode, index, autoMixer[mixerMode][index] ?? 0),
+                    ))
+                }
+                onChange={(next, dragging) =>
+                  onChange(withMixerValue(recipe, mixerMode, index, next), { dragging })
+                }
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section aria-labelledby="split-tone-heading" className={styles.panelSection}>
         <h3 id="split-tone-heading" className={styles.panelTitle}>

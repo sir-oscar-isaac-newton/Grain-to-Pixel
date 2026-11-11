@@ -7,8 +7,9 @@ use super::{Color, Recipe};
 /// A group of settings that can be copied between frames: one panel of the Develop view.
 ///
 /// `Color` carries the colour balance and the black-and-white conversion (`mono`), which live in
-/// the same panel, but not the split toning, which is its own part (`SplitTone`); `Base` carries
-/// the base source together with its value.
+/// the same panel, but not the split toning or the colour mixer, which are parts of their own
+/// (`SplitTone`, `Mixer`); `Base` carries the base
+/// source together with its value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum RecipeField {
@@ -16,6 +17,7 @@ pub enum RecipeField {
     Base,
     Invert,
     Color,
+    Mixer,
     SplitTone,
     Tone,
     Dust,
@@ -35,10 +37,12 @@ impl Recipe {
                     // Every colour field but the split toning, which is a part of its own.
                     self.color = Color {
                         split_tone: self.color.split_tone,
+                        mixer: self.color.mixer,
                         ..source.color
                     };
                     self.mono = source.mono;
                 }
+                RecipeField::Mixer => self.color.mixer = source.color.mixer,
                 RecipeField::SplitTone => self.color.split_tone = source.color.split_tone,
                 RecipeField::Tone => self.tone = source.tone.clone(),
                 RecipeField::Dust => self.dust = source.dust,
@@ -64,6 +68,9 @@ mod tests {
         r.color.temperature = 12.0;
         r.color.split_tone.highlight_strength = 40.0;
         r.color.split_tone.shadow_hue = 200.0;
+        r.color.mixer.hue[1] = 25.0;
+        r.color.mixer.saturation[5] = -40.0;
+        r.color.mixer.lightness[7] = 10.0;
         r.mono.enabled = true;
         r.tone.exposure_ev = 0.7;
         r.tone.curve.master = vec![[0.0, 0.0], [0.5, 0.6], [1.0, 1.0]];
@@ -82,6 +89,7 @@ mod tests {
             RecipeField::Base,
             RecipeField::Invert,
             RecipeField::Color,
+            RecipeField::Mixer,
             RecipeField::SplitTone,
             RecipeField::Tone,
             RecipeField::Dust,
@@ -98,10 +106,12 @@ mod tests {
                 RecipeField::Color => {
                     want.color = Color {
                         split_tone: Default::default(),
+                        mixer: Default::default(),
                         ..source.color
                     };
                     want.mono = source.mono;
                 }
+                RecipeField::Mixer => want.color.mixer = source.color.mixer,
                 RecipeField::SplitTone => want.color.split_tone = source.color.split_tone,
                 RecipeField::Tone => want.tone = source.tone.clone(),
                 RecipeField::Dust => want.dust = source.dust,
@@ -124,6 +134,7 @@ mod tests {
                 RecipeField::Base,
                 RecipeField::Invert,
                 RecipeField::Color,
+                RecipeField::Mixer,
                 RecipeField::SplitTone,
                 RecipeField::Tone,
                 RecipeField::Dust,
@@ -171,5 +182,26 @@ mod tests {
         assert_eq!(target.color.split_tone, source.color.split_tone);
         assert_eq!(target.color.temperature, -5.0, "split toning is not colour");
         assert!(!target.mono.enabled);
+    }
+
+    #[test]
+    fn colour_and_the_mixer_are_independent_parts() {
+        let source = edited();
+        let mut own = Recipe::default();
+        own.color.mixer.hue[3] = -15.0;
+        let mut target = own.clone();
+        target.copy_fields_from(&source, &[RecipeField::Color]);
+        assert_eq!(target.color.temperature, 12.0);
+        assert_eq!(
+            target.color.mixer, own.color.mixer,
+            "the colour part leaves the mixer alone"
+        );
+
+        let mut target = Recipe::default();
+        target.color.temperature = -5.0;
+        target.copy_fields_from(&source, &[RecipeField::Mixer]);
+        assert_eq!(target.color.mixer, source.color.mixer);
+        assert_eq!(target.color.temperature, -5.0, "the mixer is not colour");
+        assert_eq!(target.color.split_tone, Default::default());
     }
 }

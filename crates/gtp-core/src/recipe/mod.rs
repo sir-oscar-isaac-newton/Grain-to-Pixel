@@ -15,7 +15,7 @@ pub use clamp::{
 pub use fields::RecipeField;
 pub use migrate::{migrate, CURRENT_VERSION};
 pub use v1::{
-    Base, BaseSource, Color, Crop, CurvePoint, Curves, Dust, Geometry, Invert, Mono, Output,
+    Base, BaseSource, Color, Crop, CurvePoint, Curves, Dust, Geometry, Invert, Mixer, Mono, Output,
     OutputSpace, Recipe, Sharpen, SplitTone, Tone, Vignette, DEFAULT_SHARPEN_RADIUS_PX,
-    REC2020_LUMA,
+    MIXER_BANDS, REC2020_LUMA,
 };

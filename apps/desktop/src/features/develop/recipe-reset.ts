@@ -9,6 +9,7 @@ import {
   dustOf,
   geometryOf,
   levelsOf,
+  mixerOf,
   monoOf,
   sharpenOf,
   splitToneOf,
@@ -18,16 +19,20 @@ import {
   withDust,
   withGeometry,
   withLevels,
+  withMixer,
   withMono,
   withSharpen,
   withSplitTone,
   withTone,
 } from './recipe-parts';
 
-/** The Colour panel: the colour sliders, the black-and-white setting and the split toning. */
+/**
+ * The Colour panel: the colour sliders, the black-and-white setting, the colour mixer and the
+ * split toning.
+ */
 export function resetColour(recipe: Recipe, auto: Recipe): Recipe {
   return withSplitTone(
-    withMono(withColour(recipe, colourOf(auto)), monoOf(auto)),
+    withMixer(withMono(withColour(recipe, colourOf(auto)), monoOf(auto)), mixerOf(auto)),
     splitToneOf(auto),
   );
 }

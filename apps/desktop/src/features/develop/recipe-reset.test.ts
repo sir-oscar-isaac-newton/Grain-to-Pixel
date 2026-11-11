@@ -28,6 +28,11 @@ const auto = makeRecipe('auto', {
       shadow_strength: 0,
       balance: 0,
     },
+    mixer: {
+      hue: [0, 0, 0, 0, 0, 0, 0, 0],
+      saturation: [0, 0, 0, 0, 0, 0, 0, 0],
+      lightness: [0, 0, 0, 0, 0, 0, 0, 0],
+    },
   },
   tone: {
     vignette: { amount: 0, midpoint: 50 },
@@ -52,6 +57,11 @@ const edited = makeRecipe('saved', {
       shadow_strength: 30,
       balance: 40,
     },
+    mixer: {
+      hue: [10, 0, 0, 0, 0, 0, 0, 0],
+      saturation: [0, 0, 0, 0, -50, 0, 0, 0],
+      lightness: [0, 0, 0, 0, 0, 0, 0, 25],
+    },
   },
   mono: { enabled: true, mix: [1, 0, 0] },
   tone: {
@@ -69,7 +79,7 @@ const edited = makeRecipe('saved', {
 });
 
 describe('what a panel reset puts back', () => {
-  it('Colour: the sliders, the black-and-white setting and the split toning, nothing else', () => {
+  it('Colour: the sliders, the black-and-white setting, the colour mixer and the split toning, nothing else', () => {
     const next = resetColour(edited, auto) as never as Record<string, Record<string, unknown>>;
     expect(next.color).toMatchObject({ red_cyan: 0, saturation: 1.1 });
     expect(next.mono).toMatchObject({ enabled: false });
@@ -80,6 +90,7 @@ describe('what a panel reset puts back', () => {
       shadow_strength: 0,
       balance: 0,
     });
+    expect(next.color?.mixer).toEqual(auto.color?.mixer);
     expect(next.tone).toEqual(edited.tone);
     expect(next.geometry).toEqual(edited.geometry);
   });

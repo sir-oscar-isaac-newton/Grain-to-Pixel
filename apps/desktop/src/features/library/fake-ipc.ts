@@ -508,8 +508,8 @@ type Blocks = Record<string, unknown>;
 
 /**
  * The target with the chosen parts copied from the source, as `Recipe::copy_fields_from` does: a
- * whole top-level block per part. Colour is `color` without `split_tone`, plus `mono`; split
- * toning is `color.split_tone`. (The real command also clamps; the fake does not.)
+ * whole top-level block per part. Colour is `color` without `split_tone` and `mixer`, plus
+ * `mono`; split toning is `color.split_tone`, the colour mixer `color.mixer`. (The real command also clamps; the fake does not.)
  */
 export function mergeFields(target: Recipe, source: Recipe, fields: RecipeField[]): Recipe {
   const to = structuredClone(target) as unknown as Blocks;
@@ -538,12 +538,22 @@ export function mergeFields(target: Recipe, source: Recipe, fields: RecipeField[
         copy('output');
         break;
       case 'Color': {
-        const keep = (to.color as Blocks | undefined)?.split_tone;
+        const own = to.color as Blocks | undefined;
         const color = { ...(structuredClone(from.color) as Blocks | undefined) };
-        delete color.split_tone;
-        if (keep !== undefined) color.split_tone = keep;
-        if ('color' in from) to.color = color;
+        // The split toning and the colour mixer are parts of their own: the target keeps its own.
+        const keep = { split_tone: own?.split_tone, mixer: own?.mixer };
+        const rest = Object.fromEntries(Object.entries(color).filter(([key]) => !(key in keep)));
+        Object.assign(rest, own?.split_tone === undefined ? {} : { split_tone: own.split_tone });
+        Object.assign(rest, own?.mixer === undefined ? {} : { mixer: own.mixer });
+        if ('color' in from) to.color = rest;
         copy('mono');
+        break;
+      }
+      case 'Mixer': {
+        const mixer = (from.color as Blocks | undefined)?.mixer;
+        if (mixer !== undefined) {
+          to.color = { ...(to.color as Blocks | undefined), mixer: structuredClone(mixer) };
+        }
         break;
       }
       case 'SplitTone': {

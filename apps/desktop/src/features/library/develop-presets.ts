@@ -4,6 +4,7 @@ import type { DevelopPreset, RecipeField } from '../../shared/ipc';
 /** The parts a preset can hold, in the order they are shown (the order of the Apply settings dialog). */
 export const PRESET_PARTS: readonly RecipeField[] = [
   'Color',
+  'Mixer',
   'SplitTone',
   'Tone',
   'Geometry',
@@ -14,7 +15,7 @@ export const PRESET_PARTS: readonly RecipeField[] = [
 ];
 
 /** Ticked when a preset is saved: the look of a frame, not its crop, base or levels. */
-export const DEFAULT_PRESET_PARTS: readonly RecipeField[] = ['Color', 'SplitTone', 'Tone'];
+export const DEFAULT_PRESET_PARTS: readonly RecipeField[] = ['Color', 'Mixer', 'SplitTone', 'Tone'];
 
 /** Names are compared without surrounding spaces and without case, as the app's settings do. */
 const keyOf = (name: string) => name.trim().toLowerCase();

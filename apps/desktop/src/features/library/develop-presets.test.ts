@@ -34,9 +34,10 @@ describe('develop presets helpers', () => {
     expect(presetNameProblem('Cool', presets, presets[0])).toBe('develop.presets.errors.exists');
   });
 
-  it('lists the parts in the shown order, and ticks colour, split toning and tone by default', () => {
+  it('lists the parts in the shown order, and ticks colour, the colour mixer, split toning and tone by default', () => {
     expect(orderedParts(['Output', 'Tone', 'Color'])).toEqual(['Color', 'Tone', 'Output']);
-    expect(DEFAULT_PRESET_PARTS).toEqual(['Color', 'SplitTone', 'Tone']);
-    expect(PRESET_PARTS).toHaveLength(8);
+    expect(DEFAULT_PRESET_PARTS).toEqual(['Color', 'Mixer', 'SplitTone', 'Tone']);
+    expect(PRESET_PARTS).toHaveLength(9);
+    expect(PRESET_PARTS.indexOf('Mixer')).toBe(PRESET_PARTS.indexOf('Color') + 1);
   });
 });

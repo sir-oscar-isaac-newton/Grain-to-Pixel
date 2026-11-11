@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support';
 import { makeRecipe } from '../../library/fake-ipc';
-import { colourOf, monoOf, splitToneOf } from '../recipe-parts';
+import { colourOf, mixerOf, monoOf, splitToneOf } from '../recipe-parts';
 import { ColourPanel } from './ColourPanel';
 
 type Props = Parameters<typeof ColourPanel>[0];
@@ -208,6 +208,121 @@ describe('ColourPanel', () => {
       const [recipe] = mocks.onChange.mock.calls[0] ?? [];
       expect(splitToneOf(recipe).shadow_strength).toBe(41);
       expect(monoOf(recipe).enabled).toBe(true);
+    });
+  });
+
+  describe('colour mixer', () => {
+    const BANDS = ['Red', 'Orange', 'Yellow', 'Green', 'Aqua', 'Blue', 'Purple', 'Magenta'];
+    const mixed = makeRecipe('x', {
+      color: {
+        mixer: {
+          hue: [10, 0, 0, 0, 0, 0, 0, -20],
+          saturation: [0, -30, 0, 0, 0, 0, 40, 0],
+          lightness: [0, 0, 5, 0, 0, 0, 0, 0],
+        },
+      },
+    });
+    const mode = (name: string) => screen.getByRole('button', { name });
+
+    it('has its own section before split toning, with a three-way switch on hue', () => {
+      setup({ recipe: mixed });
+      const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+      expect(headings.indexOf('Colour mixer')).toBeGreaterThan(-1);
+      expect(headings.indexOf('Colour mixer')).toBe(headings.indexOf('Split toning') - 1);
+      const group = screen.getByRole('group', { name: 'Change' });
+      expect(group).toContainElement(mode('Hue'));
+      expect(group).toContainElement(mode('Saturation'));
+      expect(group).toContainElement(mode('Lightness'));
+      expect(mode('Hue')).toHaveAttribute('aria-pressed', 'true');
+      expect(mode('Saturation')).toHaveAttribute('aria-pressed', 'false');
+      expect(mode('Lightness')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('shows eight sliders, one per band, for the chosen mode', async () => {
+      const user = userEvent.setup();
+      setup({ recipe: mixed });
+      for (const band of BANDS) {
+        expect(slider(band)).toHaveAttribute('aria-valuemin', '-100');
+        expect(slider(band)).toHaveAttribute('aria-valuemax', '100');
+      }
+      expect(slider('Red')).toHaveAttribute('aria-valuenow', '10');
+      expect(slider('Magenta')).toHaveAttribute('aria-valuenow', '-20');
+      expect(slider('Orange')).toHaveAttribute('aria-valuenow', '0');
+
+      await user.click(mode('Saturation'));
+      expect(mode('Saturation')).toHaveAttribute('aria-pressed', 'true');
+      expect(mode('Hue')).toHaveAttribute('aria-pressed', 'false');
+      expect(slider('Red')).toHaveAttribute('aria-valuenow', '0');
+      expect(slider('Orange')).toHaveAttribute('aria-valuenow', '-30');
+      expect(slider('Purple')).toHaveAttribute('aria-valuenow', '40');
+
+      await user.click(mode('Lightness'));
+      expect(slider('Yellow')).toHaveAttribute('aria-valuenow', '5');
+      expect(slider('Orange')).toHaveAttribute('aria-valuenow', '0');
+    });
+
+    it('shows zeros for a recipe without a mixer', () => {
+      setup();
+      for (const band of BANDS) expect(slider(band)).toHaveAttribute('aria-valuenow', '0');
+    });
+
+    it.each([
+      ['Hue', 'hue', 'Green', 3, 1],
+      ['Saturation', 'saturation', 'Aqua', 4, 1],
+      ['Lightness', 'lightness', 'Magenta', 7, 1],
+    ] as const)('changes only that band of the %s list', async (label, key, band, index, step) => {
+      const user = userEvent.setup();
+      const { mocks } = setup({ recipe: mixed });
+      await user.click(mode(label));
+      slider(band).focus();
+      await user.keyboard('{ArrowRight}');
+      const [recipe, options] = mocks.onChange.mock.calls[0] ?? [];
+      const before = mixerOf(mixed);
+      const after = mixerOf(recipe);
+      expect(after[key][index]).toBe((before[key][index] ?? 0) + step);
+      expect(after[key].filter((_, i) => i !== index)).toEqual(
+        before[key].filter((_, i) => i !== index),
+      );
+      for (const other of (['hue', 'saturation', 'lightness'] as const).filter((k) => k !== key)) {
+        expect(after[other]).toEqual(before[other]);
+      }
+      expect(options).toEqual({ dragging: false });
+      // The rest of the colour block is as it was.
+      expect(colourOf(recipe)).toEqual(colourOf(mixed));
+    });
+
+    it('resets one slider to the automatic recipe’s value, merging the change', async () => {
+      const user = userEvent.setup();
+      const { mocks } = setup({ recipe: mixed, auto: makeRecipe('auto') });
+      await user.click(mode('Saturation'));
+      fireEvent.doubleClick(slider('Purple'));
+      const [recipe, options] = mocks.onChange.mock.calls.at(-1) ?? [];
+      expect(mixerOf(recipe)).toEqual({
+        ...mixerOf(mixed),
+        saturation: [0, -30, 0, 0, 0, 0, 0, 0],
+      });
+      expect(options).toEqual({ dragging: false, merge: true });
+    });
+
+    it('is covered by the panel reset', async () => {
+      const user = userEvent.setup();
+      const { mocks } = setup({ recipe: mixed, auto: makeRecipe('auto') });
+      await user.click(screen.getByRole('button', { name: /Reset Colour/ }));
+      const [recipe] = mocks.onChange.mock.calls.at(-1) ?? [];
+      expect(mixerOf(recipe)).toEqual(mixerOf(makeRecipe('auto')));
+      expect(mixerOf(recipe).hue).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+    });
+
+    it('is hidden in black and white, which it does not act on', () => {
+      setup({ recipe: makeRecipe('x', { ...mono, color: mixed.color }) });
+      expect(screen.queryByRole('heading', { name: 'Colour mixer' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('group', { name: 'Change' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('slider', { name: 'Orange' })).not.toBeInTheDocument();
+    });
+
+    it('disables the sliders when nothing can be changed', () => {
+      setup({ recipe: mixed, readOnly: true });
+      for (const band of BANDS) expect(slider(band)).toHaveAttribute('data-disabled');
     });
   });
 

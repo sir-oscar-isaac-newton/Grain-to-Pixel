@@ -3,7 +3,9 @@
 //! Stages run in the fixed order of [`STAGE_ORDER`]. The crop is applied early as an exact copy, so
 //! later stages work on the frame only, and auto levels never see the rebate; straighten, turns
 //! and flips come next, so there is still at most one resample; the vignette is last, so it is
-//! centred on the final picture. Split toning follows the tone stage, so it tints the finished
+//! centred on the final picture. The colour mixer follows the colour stage (and does nothing in
+//! black and white), so the pickers and the automatic balance, which measure the frame before the
+//! colour stage, never see it. Split toning follows the tone stage, so it tints the finished
 //! tonal result before the geometry. `render` never runs anything automatic: it uses the recipe as
 //! given, and [`analyze`] is what fills in the automatic values.
 
@@ -284,6 +286,7 @@ mod tests {
                 Stage::Normalize,
                 Stage::Invert,
                 Stage::Color,
+                Stage::Mixer,
                 Stage::Tone,
                 Stage::SplitTone,
                 Stage::Geometry,
@@ -578,6 +581,134 @@ mod tests {
         recipe.color.split_tone.balance = 15.0;
         let full = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
         let target = RenderTarget::Preview { max_edge: 200 };
+        let preview = render(&input_of(&s, None), &recipe, target).unwrap();
+        assert_eq!((preview.width, preview.height), (200, 100));
+        for (fx, fy) in [(0.1, 0.2), (0.5, 0.5), (0.8, 0.9)] {
+            let (a, b) = (at(&full, fx, fy), at(&preview, fx, fy));
+            for i in 0..3 {
+                assert!((a[i] - b[i]).abs() <= 0.05 * a[i].max(0.05), "{a:?} {b:?}");
+            }
+        }
+    }
+
+    /// A mixer that changes every colourful pixel: every band desaturated, shifted and lightened.
+    fn loud_mixer() -> gtp_core::recipe::Mixer {
+        gtp_core::recipe::Mixer {
+            hue: [60.0; 8],
+            saturation: [-70.0; 8],
+            lightness: [40.0; 8],
+        }
+    }
+
+    /// The render of `recipe` through every stage but the mixer, run one by one.
+    fn render_without_the_mixer(s: &Synthetic, recipe: &Recipe) -> ImageF32 {
+        let input = input_of(s, None);
+        let recipe = recipe.clone().clamped();
+        let mut image = (*input.rgb).clone();
+        for stage in STAGE_ORDER {
+            if stage != Stage::Mixer {
+                image = stages::run_stage(stage, image, &input, &recipe).unwrap();
+            }
+        }
+        image
+    }
+
+    #[test]
+    fn a_colour_mixer_of_zeros_changes_nothing() {
+        let s = scan(&Params {
+            width: 120,
+            height: 80,
+            rebate: [10; 4],
+            ..Params::default()
+        });
+        let recipe = true_recipe(&s);
+        assert_eq!(recipe.color.mixer, gtp_core::recipe::Mixer::default());
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        assert_eq!(plain, render_without_the_mixer(&s, &recipe));
+    }
+
+    #[test]
+    fn the_colour_mixer_runs_between_the_colour_and_the_tone_stage() {
+        let s = scan(&Params {
+            width: 120,
+            height: 80,
+            rebate: [10; 4],
+            ..Params::default()
+        });
+        let mut recipe = true_recipe(&s);
+        recipe.color.red_cyan = 20.0;
+        recipe.tone.exposure_ev = 0.5;
+        recipe.tone.contrast = 30.0;
+        recipe.color.mixer = loud_mixer();
+        let input = input_of(&s, None);
+        let mixed = render(&input, &recipe, RenderTarget::Full).unwrap();
+        assert_ne!(mixed, render_without_the_mixer(&s, &recipe));
+        // The same stages by hand, with the mixer applied straight after the colour stage.
+        let clamped = recipe.clone().clamped();
+        let mut image = (*input.rgb).clone();
+        for stage in STAGE_ORDER {
+            if stage == Stage::Mixer {
+                gtp_edit::apply_mixer(&mut image, &clamped.color.mixer).unwrap();
+            } else {
+                image = stages::run_stage(stage, image, &input, &clamped).unwrap();
+            }
+        }
+        assert_eq!(mixed, image);
+    }
+
+    #[test]
+    fn the_colour_mixer_does_nothing_in_black_and_white() {
+        let s = scan(&Params {
+            width: 120,
+            height: 80,
+            rebate: [10; 4],
+            ..Params::default()
+        });
+        let mut recipe = true_recipe(&s);
+        recipe.mono.enabled = true;
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        recipe.color.mixer = loud_mixer();
+        let mixed = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        assert_eq!(mixed, plain);
+        recipe.mono.enabled = false;
+        let colour = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        assert_ne!(colour, render_without_the_mixer(&s, &recipe));
+    }
+
+    #[test]
+    fn the_frames_the_pickers_measure_do_not_see_the_colour_mixer() {
+        let s = scan(&Params::default());
+        let input = input_of(&s, None);
+        let mut recipe = true_recipe(&s);
+        let normalized = normalized_frame(&input, &recipe).unwrap();
+        let inverted = inverted_frame(&input, &recipe).unwrap();
+        recipe.color.mixer = loud_mixer();
+        assert_eq!(normalized_frame(&input, &recipe).unwrap(), normalized);
+        assert_eq!(inverted_frame(&input, &recipe).unwrap(), inverted);
+    }
+
+    #[test]
+    fn the_colour_mixer_agrees_between_a_preview_and_a_full_render() {
+        let s = flat_scan(800, 400);
+        let mut recipe = Recipe::default();
+        recipe.base.source = BaseSource::Manual;
+        recipe.base.rgb = s.truth.base;
+        recipe.invert = Invert {
+            black: s.truth.black,
+            white: s.truth.white,
+        };
+        recipe.color.mixer = loud_mixer();
+        let plain_recipe = Recipe {
+            color: gtp_core::recipe::Color {
+                mixer: Default::default(),
+                ..recipe.color
+            },
+            ..recipe.clone()
+        };
+        let target = RenderTarget::Preview { max_edge: 200 };
+        let full = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        let plain = render(&input_of(&s, None), &plain_recipe, RenderTarget::Full).unwrap();
+        assert_ne!(full, plain, "the mixer changes this picture");
         let preview = render(&input_of(&s, None), &recipe, target).unwrap();
         assert_eq!((preview.width, preview.height), (200, 100));
         for (fx, fy) in [(0.1, 0.2), (0.5, 0.5), (0.8, 0.9)] {

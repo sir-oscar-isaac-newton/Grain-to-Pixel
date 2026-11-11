@@ -19,7 +19,16 @@ const auto = makeRecipe('auto', {
   },
   base: { source: 'roll', rgb: [0.9, 0.8, 0.7] },
   invert: { black: [0.01, 0.02, 0.03], white: [0.5, 0.6, 0.7] },
-  color: { saturation: 1.1 },
+  color: {
+    saturation: 1.1,
+    split_tone: {
+      highlight_hue: 40,
+      highlight_strength: 0,
+      shadow_hue: 220,
+      shadow_strength: 0,
+      balance: 0,
+    },
+  },
   tone: {
     vignette: { amount: 0, midpoint: 50 },
     curve: {
@@ -33,7 +42,17 @@ const auto = makeRecipe('auto', {
   dust: { enabled: false, threshold: 0.3, grow_px: 1 },
 });
 const edited = makeRecipe('saved', {
-  color: { red_cyan: 40, saturation: 1.5 },
+  color: {
+    red_cyan: 40,
+    saturation: 1.5,
+    split_tone: {
+      highlight_hue: 10,
+      highlight_strength: 60,
+      shadow_hue: 200,
+      shadow_strength: 30,
+      balance: 40,
+    },
+  },
   mono: { enabled: true, mix: [1, 0, 0] },
   tone: {
     contrast: 30,
@@ -50,10 +69,17 @@ const edited = makeRecipe('saved', {
 });
 
 describe('what a panel reset puts back', () => {
-  it('Colour: the sliders and the black-and-white setting, nothing else', () => {
+  it('Colour: the sliders, the black-and-white setting and the split toning, nothing else', () => {
     const next = resetColour(edited, auto) as never as Record<string, Record<string, unknown>>;
     expect(next.color).toMatchObject({ red_cyan: 0, saturation: 1.1 });
     expect(next.mono).toMatchObject({ enabled: false });
+    expect(next.color?.split_tone).toEqual({
+      highlight_hue: 40,
+      highlight_strength: 0,
+      shadow_hue: 220,
+      shadow_strength: 0,
+      balance: 0,
+    });
     expect(next.tone).toEqual(edited.tone);
     expect(next.geometry).toEqual(edited.geometry);
   });

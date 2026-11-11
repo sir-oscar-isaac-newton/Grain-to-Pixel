@@ -2,12 +2,13 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::Recipe;
+use super::{Color, Recipe};
 
 /// A group of settings that can be copied between frames: one panel of the Develop view.
 ///
 /// `Color` carries the colour balance and the black-and-white conversion (`mono`), which live in
-/// the same panel; `Base` carries the base source together with its value.
+/// the same panel, but not the split toning, which is its own part (`SplitTone`); `Base` carries
+/// the base source together with its value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum RecipeField {
@@ -15,6 +16,7 @@ pub enum RecipeField {
     Base,
     Invert,
     Color,
+    SplitTone,
     Tone,
     Dust,
     Output,
@@ -30,9 +32,14 @@ impl Recipe {
                 RecipeField::Base => self.base = source.base,
                 RecipeField::Invert => self.invert = source.invert,
                 RecipeField::Color => {
-                    self.color = source.color;
+                    // Every colour field but the split toning, which is a part of its own.
+                    self.color = Color {
+                        split_tone: self.color.split_tone,
+                        ..source.color
+                    };
                     self.mono = source.mono;
                 }
+                RecipeField::SplitTone => self.color.split_tone = source.color.split_tone,
                 RecipeField::Tone => self.tone = source.tone.clone(),
                 RecipeField::Dust => self.dust = source.dust,
                 RecipeField::Output => self.output = source.output,
@@ -55,6 +62,8 @@ mod tests {
         r.base.rgb = [0.8, 0.5, 0.3];
         r.invert.black = [0.1, 0.1, 0.1];
         r.color.temperature = 12.0;
+        r.color.split_tone.highlight_strength = 40.0;
+        r.color.split_tone.shadow_hue = 200.0;
         r.mono.enabled = true;
         r.tone.exposure_ev = 0.7;
         r.tone.curve.master = vec![[0.0, 0.0], [0.5, 0.6], [1.0, 1.0]];
@@ -73,6 +82,7 @@ mod tests {
             RecipeField::Base,
             RecipeField::Invert,
             RecipeField::Color,
+            RecipeField::SplitTone,
             RecipeField::Tone,
             RecipeField::Dust,
             RecipeField::Output,
@@ -86,9 +96,13 @@ mod tests {
                 RecipeField::Base => want.base = source.base,
                 RecipeField::Invert => want.invert = source.invert,
                 RecipeField::Color => {
-                    want.color = source.color;
+                    want.color = Color {
+                        split_tone: Default::default(),
+                        ..source.color
+                    };
                     want.mono = source.mono;
                 }
+                RecipeField::SplitTone => want.color.split_tone = source.color.split_tone,
                 RecipeField::Tone => want.tone = source.tone.clone(),
                 RecipeField::Dust => want.dust = source.dust,
                 RecipeField::Output => want.output = source.output,
@@ -110,6 +124,7 @@ mod tests {
                 RecipeField::Base,
                 RecipeField::Invert,
                 RecipeField::Color,
+                RecipeField::SplitTone,
                 RecipeField::Tone,
                 RecipeField::Dust,
                 RecipeField::Output,
@@ -130,5 +145,31 @@ mod tests {
         target.copy_fields_from(&edited(), &[RecipeField::Geometry]);
         assert_eq!(target.tone.exposure_ev, -1.0, "tone is not geometry");
         assert_eq!(target.geometry.angle_deg, 2.0);
+    }
+
+    #[test]
+    fn colour_and_split_toning_are_independent_parts() {
+        let source = edited();
+        let mut target = Recipe::default();
+        target.color.split_tone.balance = -30.0;
+        target.copy_fields_from(&source, &[RecipeField::Color]);
+        assert_eq!(target.color.temperature, 12.0);
+        assert!(target.mono.enabled);
+        assert_eq!(
+            target.color.split_tone,
+            crate::recipe::SplitTone {
+                balance: -30.0,
+                ..Default::default()
+            },
+            "the colour part leaves the split toning alone"
+        );
+
+        let mut target = Recipe::default();
+        target.color.temperature = -5.0;
+        target.mono.enabled = false;
+        target.copy_fields_from(&source, &[RecipeField::SplitTone]);
+        assert_eq!(target.color.split_tone, source.color.split_tone);
+        assert_eq!(target.color.temperature, -5.0, "split toning is not colour");
+        assert!(!target.mono.enabled);
     }
 }

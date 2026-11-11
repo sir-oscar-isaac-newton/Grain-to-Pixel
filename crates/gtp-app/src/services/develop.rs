@@ -1459,6 +1459,36 @@ mod tests {
     }
 
     #[test]
+    fn colour_and_split_toning_are_applied_independently() {
+        let t = Fixture::new("apply-split-tone");
+        let (source, target) = (t.bare(1), t.bare(2));
+        let mut src = Recipe::default();
+        src.color.temperature = 20.0;
+        src.color.split_tone.highlight_strength = 60.0;
+        src.color.split_tone.shadow_hue = 200.0;
+        save_recipe(&t.library, source, src.clone()).unwrap();
+        let mut own = Recipe::default();
+        own.color.tint = -7.0;
+        own.color.split_tone.balance = 25.0;
+        save_recipe(&t.library, target, own.clone()).unwrap();
+
+        // Split toning alone leaves the colour as it was.
+        apply_recipe_to(&t.library, &[target], source, &[RecipeField::SplitTone]).unwrap();
+        let after = t.stored(target).unwrap();
+        assert_eq!(after.color.split_tone, src.color.split_tone);
+        assert_eq!(after.color.tint, -7.0);
+        assert_eq!(after.color.temperature, 0.0);
+
+        // Colour alone leaves the split toning as it was.
+        save_recipe(&t.library, target, own.clone()).unwrap();
+        apply_recipe_to(&t.library, &[target], source, &[RecipeField::Color]).unwrap();
+        let after = t.stored(target).unwrap();
+        assert_eq!(after.color.temperature, 20.0);
+        assert_eq!(after.color.tint, 0.0);
+        assert_eq!(after.color.split_tone, own.color.split_tone);
+    }
+
+    #[test]
     fn a_never_edited_source_counts_as_the_default_recipe() {
         let t = Fixture::new("apply-default");
         let (source, target) = (t.bare(1), t.bare(2));

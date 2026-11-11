@@ -49,7 +49,7 @@ pub fn migrate(json: &str) -> Result<Recipe, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recipe::OutputSpace;
+    use crate::recipe::{OutputSpace, SplitTone};
 
     #[test]
     fn a_recipe_round_trips_through_json() {
@@ -87,6 +87,9 @@ mod tests {
         assert_eq!(value["tone"]["dehaze"], 0.0);
         assert_eq!(value["tone"]["vignette"]["amount"], 0.0);
         assert_eq!(value["tone"]["vignette"]["midpoint"], 50.0);
+        assert_eq!(value["color"]["split_tone"]["highlight_hue"], 40.0);
+        assert_eq!(value["color"]["split_tone"]["shadow_hue"], 220.0);
+        assert_eq!(value["color"]["split_tone"]["balance"], 0.0);
         assert_eq!(value["mono"]["enabled"], false);
         assert_eq!(value["mono"]["mix"].as_array().map(Vec::len), Some(3));
     }
@@ -130,6 +133,20 @@ mod tests {
         let recipe = migrate(r#"{"v":1,"tone":{"vignette":{"amount":-300}}}"#).unwrap();
         assert_eq!(recipe.tone.vignette.amount, -100.0);
         assert_eq!(recipe.tone.vignette.midpoint, 50.0);
+    }
+
+    #[test]
+    fn a_recipe_from_before_split_toning_loads_with_the_defaults() {
+        let recipe = migrate(r#"{"v":1,"color":{"temperature":10}}"#).unwrap();
+        assert_eq!(recipe.color.temperature, 10.0);
+        assert_eq!(recipe.color.split_tone, SplitTone::default());
+        let json = serde_json::to_value(&recipe).unwrap();
+        assert_eq!(json["color"]["split_tone"]["highlight_strength"], 0.0);
+        assert_eq!(json["color"]["split_tone"]["shadow_strength"], 0.0);
+        // A half-written block fills in the rest, and values are clamped on load.
+        let recipe = migrate(r#"{"v":1,"color":{"split_tone":{"shadow_hue":500}}}"#).unwrap();
+        assert_eq!(recipe.color.split_tone.shadow_hue, 360.0);
+        assert_eq!(recipe.color.split_tone.highlight_hue, 40.0);
     }
 
     #[test]

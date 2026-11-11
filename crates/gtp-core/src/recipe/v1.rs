@@ -149,6 +149,8 @@ pub struct Color {
     pub saturation: f32,
     /// Saturation that spares colours which are already vivid; -100 to 100.
     pub vibrance: f32,
+    /// Tints the highlights and the shadows (a stage of its own after the tone).
+    pub split_tone: SplitTone,
 }
 
 impl Default for Color {
@@ -161,6 +163,39 @@ impl Default for Color {
             tint: 0.0,
             saturation: 1.0,
             vibrance: 0.0,
+            split_tone: SplitTone::default(),
+        }
+    }
+}
+
+/// Split toning: one tint for the highlights and one for the shadows, blended in at the same
+/// luma so brightness never changes (docs/specification.md section 4.2). A recipe saved before it
+/// existed loads with the defaults, which change nothing (both strengths are 0).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct SplitTone {
+    /// 0 to 360 degrees: the hue of the highlight tint.
+    pub highlight_hue: f32,
+    /// 0 to 100: how much of the highlight tint is blended in; 0 is off.
+    pub highlight_strength: f32,
+    /// 0 to 360 degrees: the hue of the shadow tint.
+    pub shadow_hue: f32,
+    /// 0 to 100: how much of the shadow tint is blended in; 0 is off.
+    pub shadow_strength: f32,
+    /// -100 to 100: moves the crossover; +100 gives the highlight tint to every tone, -100 the
+    /// shadow tint, 0 crosses at the middle.
+    pub balance: f32,
+}
+
+impl Default for SplitTone {
+    fn default() -> Self {
+        Self {
+            highlight_hue: 40.0,
+            highlight_strength: 0.0,
+            shadow_hue: 220.0,
+            shadow_strength: 0.0,
+            balance: 0.0,
         }
     }
 }

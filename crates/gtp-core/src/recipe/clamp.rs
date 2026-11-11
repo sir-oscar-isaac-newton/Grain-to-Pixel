@@ -3,8 +3,8 @@
 //! Clamping is idempotent: clamping an already clamped recipe changes nothing.
 
 use super::v1::{
-    Color, Crop, CurvePoint, Dust, Geometry, Invert, Mono, Output, Recipe, Tone, Vignette,
-    DEFAULT_SHARPEN_RADIUS_PX, REC2020_LUMA,
+    Color, Crop, CurvePoint, Dust, Geometry, Invert, Mono, Output, Recipe, SplitTone, Tone,
+    Vignette, DEFAULT_SHARPEN_RADIUS_PX, REC2020_LUMA,
 };
 
 #[cfg(test)]
@@ -25,6 +25,10 @@ pub const INVERT_GAP: f32 = 1e-3;
 pub const SLIDER_MAX: f32 = 100.0;
 /// Limit of the vignette midpoint (it runs from 0 to this).
 pub const VIGNETTE_MIDPOINT_MAX: f32 = 100.0;
+/// Limit of the split toning hues (they run from 0 to this, in degrees, and are not wrapped).
+pub const SPLIT_TONE_HUE_MAX: f32 = 360.0;
+/// Limit of the split toning strengths (they run from 0 to this).
+pub const SPLIT_TONE_STRENGTH_MAX: f32 = 100.0;
 pub const SATURATION_MAX: f32 = 2.0;
 pub const EXPOSURE_EV_MAX: f32 = 5.0;
 pub const CURVE_POINTS_MAX: usize = 16;
@@ -84,6 +88,23 @@ fn clamp_color(color: &mut Color) {
     color.tint = slider(color.tint);
     color.saturation = fin(color.saturation, 0.0, SATURATION_MAX, 1.0);
     color.vibrance = slider(color.vibrance);
+    let d = SplitTone::default();
+    let st = &mut color.split_tone;
+    st.highlight_hue = fin(st.highlight_hue, 0.0, SPLIT_TONE_HUE_MAX, d.highlight_hue);
+    st.highlight_strength = fin(
+        st.highlight_strength,
+        0.0,
+        SPLIT_TONE_STRENGTH_MAX,
+        d.highlight_strength,
+    );
+    st.shadow_hue = fin(st.shadow_hue, 0.0, SPLIT_TONE_HUE_MAX, d.shadow_hue);
+    st.shadow_strength = fin(
+        st.shadow_strength,
+        0.0,
+        SPLIT_TONE_STRENGTH_MAX,
+        d.shadow_strength,
+    );
+    st.balance = slider(st.balance);
 }
 
 /// Points are limited to the unit square, sorted by input, made unique by input and capped.
@@ -202,6 +223,13 @@ mod tests {
                         tint: n(),
                         saturation: n(),
                         vibrance: n(),
+                        split_tone: SplitTone {
+                            highlight_hue: n(),
+                            highlight_strength: n(),
+                            shadow_hue: n(),
+                            shadow_strength: n(),
+                            balance: n(),
+                        },
                     };
                     r.tone.exposure_ev = n();
                     r.tone.contrast = n();
@@ -275,8 +303,18 @@ mod tests {
             k.temperature,
             k.tint,
             k.vibrance,
+            k.split_tone.balance,
         ] {
             assert!(in_range(v, -SLIDER_MAX, SLIDER_MAX));
+        }
+        for v in [k.split_tone.highlight_hue, k.split_tone.shadow_hue] {
+            assert!(in_range(v, 0.0, SPLIT_TONE_HUE_MAX));
+        }
+        for v in [
+            k.split_tone.highlight_strength,
+            k.split_tone.shadow_strength,
+        ] {
+            assert!(in_range(v, 0.0, SPLIT_TONE_STRENGTH_MAX));
         }
         assert!(in_range(k.saturation, 0.0, SATURATION_MAX));
         let t = &r.tone;
@@ -343,6 +381,56 @@ mod tests {
         };
         let r = r.clamped();
         assert_eq!(r.output.sharpen, Sharpen::default());
+    }
+
+    #[test]
+    fn split_toning_is_off_by_default_and_its_values_are_clamped() {
+        let d = Recipe::default().color.split_tone;
+        assert_eq!(d.highlight_hue, 40.0);
+        assert_eq!(d.highlight_strength, 0.0);
+        assert_eq!(d.shadow_hue, 220.0);
+        assert_eq!(d.shadow_strength, 0.0);
+        assert_eq!(d.balance, 0.0);
+
+        let mut r = Recipe::default();
+        r.color.split_tone = SplitTone {
+            highlight_hue: 900.0,
+            highlight_strength: 500.0,
+            shadow_hue: 361.0,
+            shadow_strength: 101.0,
+            balance: 400.0,
+        };
+        let s = r.clamped().color.split_tone;
+        assert_eq!(
+            (s.highlight_hue, s.highlight_strength, s.shadow_hue),
+            (360.0, 100.0, 360.0)
+        );
+        assert_eq!((s.shadow_strength, s.balance), (100.0, 100.0));
+
+        let mut r = Recipe::default();
+        r.color.split_tone = SplitTone {
+            highlight_hue: -5.0,
+            highlight_strength: -5.0,
+            shadow_hue: -90.0,
+            shadow_strength: -1.0,
+            balance: -400.0,
+        };
+        let s = r.clamped().color.split_tone;
+        assert_eq!((s.highlight_hue, s.highlight_strength), (0.0, 0.0));
+        assert_eq!(
+            (s.shadow_hue, s.shadow_strength, s.balance),
+            (0.0, 0.0, -100.0)
+        );
+
+        let mut r = Recipe::default();
+        r.color.split_tone = SplitTone {
+            highlight_hue: f32::NAN,
+            highlight_strength: f32::INFINITY,
+            shadow_hue: f32::NAN,
+            shadow_strength: f32::NAN,
+            balance: f32::NAN,
+        };
+        assert_eq!(r.clamped().color.split_tone, SplitTone::default());
     }
 
     #[test]

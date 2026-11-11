@@ -1,4 +1,4 @@
-//! Edit stages over linear `ImageF32` buffers: colour balance, tone and vignette (in place) and geometry
+//! Edit stages over linear `ImageF32` buffers: colour balance, tone, split toning and vignette (in place) and geometry
 //! (a new buffer), IR dust removal and output sharpening. Per-pixel loops run in parallel with `rayon`; each
 //! pixel or output row is independent, so the result is the same as on one thread. Every tuning constant is a named, documented `pub const`
 //! so it can be calibrated against reference renders (issue Q-03).
@@ -11,6 +11,7 @@ mod frontier;
 mod geometry;
 mod look;
 mod sharpen;
+mod split_tone;
 mod tone;
 mod vignette;
 
@@ -43,6 +44,7 @@ pub use tone::{
     HIGHLIGHT_RANGE_STOPS, MID_GREY, REGION_STOPS, SHADOW_RANGE_STOPS, WHITES_RANGE,
 };
 
+pub use split_tone::{apply_split_tone, SPLIT_TONE_GAMMA, SPLIT_TONE_MAX_BLEND};
 pub use vignette::{apply_vignette, VIGNETTE_MAX_EV};
 
 use gtp_core::{AppError, ErrorCode, ImageF32};

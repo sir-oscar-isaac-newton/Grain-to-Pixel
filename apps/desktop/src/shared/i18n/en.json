@@ -434,6 +434,7 @@
     "groups": "Settings to copy",
     "group": {
       "Color": "Colour",
+      "SplitTone": "Split toning",
       "Tone": "Tone and curves",
       "Geometry": "Crop and geometry",
       "Base": "Film base",
@@ -442,7 +443,8 @@
       "Output": "Output sharpening"
     },
     "hint": {
-      "Color": "Balance, temperature, tint, saturation and black and white.",
+      "Color": "Balance, temperature, tint, saturation, vibrance and black and white.",
+      "SplitTone": "The tints of the highlights and the shadows, and the balance between them.",
       "Tone": "Exposure, contrast, highlights, shadows, whites, blacks, dehaze, vignette and the curves.",
       "Geometry": "The crop, turns, flips and straightening. Frames are not always cropped the same.",
       "Base": "Where the film base comes from, and its values.",
@@ -452,6 +454,7 @@
     },
     "short": {
       "Color": "colour",
+      "SplitTone": "split toning",
       "Tone": "tone",
       "Geometry": "geometry",
       "Base": "film base",
@@ -648,6 +651,14 @@
       "tint": "Tint",
       "saturation": "Saturation",
       "vibrance": "Vibrance"
+    },
+    "splitTone": {
+      "heading": "Split toning",
+      "highlight_hue": "Highlights hue",
+      "highlight_strength": "Highlights strength",
+      "shadow_hue": "Shadows hue",
+      "shadow_strength": "Shadows strength",
+      "balance": "Balance"
     },
     "crop": {
       "heading": "Crop",

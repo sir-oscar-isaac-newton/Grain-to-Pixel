@@ -16,6 +16,8 @@ describe('the default keys', () => {
   it('map the keys the spec names to their actions', () => {
     const map = effectiveKeys(undefined);
     expect(actionForKey(map, '\\')).toBe('develop.toggleBefore');
+    expect(actionForKey(map, 'j')).toBe('develop.toggleClipping');
+    expect(actionForKey(map, 'J')).toBe('develop.toggleClipping');
     expect(actionForKey(map, '[')).toBe('develop.previousFrame');
     expect(actionForKey(map, ']')).toBe('develop.nextFrame');
     expect(actionForKey(map, 'Escape')).toBe('develop.backToLibrary');

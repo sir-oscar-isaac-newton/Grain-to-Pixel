@@ -1010,6 +1010,15 @@
       "number": 319,
       "title": "Full-size detail view in Develop",
       "branch": "feat/issue-319-detail-view",
+      "status": "completed",
+      "pr": 324,
+      "commit": "64b6717"
+    },
+    {
+      "id": "U-30",
+      "number": 320,
+      "title": "Clipping overlay in Develop",
+      "branch": "feat/issue-320-clipping-overlay",
       "status": "in_progress",
       "pr": null,
       "commit": null

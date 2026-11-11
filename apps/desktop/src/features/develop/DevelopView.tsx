@@ -33,6 +33,8 @@ import { ExportDialog } from '../library/ExportDialog';
 import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
 import { Canvas, pictureStyle } from './Canvas';
+import { ClipLayer } from './ClipLayer';
+import { CLIP_COLOURS } from './clip';
 import { DetailLayer } from './DetailLayer';
 import { ComparePane, type LinkedTo } from './ComparePane';
 import { CropOverlay } from './CropOverlay';
@@ -45,7 +47,7 @@ import {
 } from './crop-ratio';
 import styles from './develop.module.css';
 import { Filmstrip } from './Filmstrip';
-import { clipping, computeHistogram } from './histogram';
+import { clipping as clippingShare, computeHistogram } from './histogram';
 import { BaseInvertPanel } from './panels/BaseInvertPanel';
 import { ColourPanel } from './panels/ColourPanel';
 import { DustPanel } from './panels/DustPanel';
@@ -167,6 +169,13 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     preview ? { width: preview.width, height: preview.height } : null,
     pick === null,
     oneToOne > 0 ? ceilingFor(oneToOne) : MAX_ZOOM,
+  );
+  // The clipping overlay is for one frame: another frame opens with it off. Not saved anywhere.
+  const [clippingFrame, setClippingFrame] = useState<string | null>(null);
+  const clipping = clippingFrame === frame.id;
+  const toggleClipping = useCallback(
+    () => setClippingFrame((current) => (current === frame.id ? null : frame.id)),
+    [frame.id],
   );
   const { toggleBefore, setPickView, setRecipe, rerender, undo, redo, auto } = develop;
   const { fit, actual, zoomIn, zoomOut, zoomToValue } = viewport;
@@ -516,6 +525,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         case 'develop.toggleBefore':
           toggleBefore();
           break;
+        case 'develop.toggleClipping':
+          toggleClipping();
+          break;
         case 'develop.previousFrame':
           void step(-1);
           break;
@@ -557,6 +569,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   }, [
     keyMap,
     toggleBefore,
+    toggleClipping,
     step,
     setView,
     fit,
@@ -615,7 +628,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [editable, undo, redo]);
   const bins = useMemo(() => (preview ? computeHistogram(preview.rgba) : null), [preview]);
-  const lost = bins ? clipping(bins) : null;
+  const lost = bins ? clippingShare(bins) : null;
   const zoomText = isOneToOne(viewport.view.zoom, oneToOne)
     ? t('develop.oneToOneText')
     : percent(i18n.language, viewport.view.zoom);
@@ -635,6 +648,34 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         >
           {t('develop.before')}
         </button>
+        <button
+          type="button"
+          aria-pressed={clipping}
+          disabled={develop.status !== 'ready'}
+          onClick={toggleClipping}
+        >
+          {t('develop.clipping.toggle')}
+        </button>
+        {clipping && (
+          <span className={styles.clipLegend}>
+            <span>
+              <span
+                className={styles.clipMark}
+                style={{ background: `rgb(${CLIP_COLOURS.white.join(' ')})` }}
+                aria-hidden="true"
+              />
+              {t('develop.clipping.highlights')}
+            </span>
+            <span>
+              <span
+                className={styles.clipMark}
+                style={{ background: `rgb(${CLIP_COLOURS.black.join(' ')})` }}
+                aria-hidden="true"
+              />
+              {t('develop.clipping.shadows')}
+            </span>
+          </span>
+        )}
         <button type="button" aria-pressed={armed} onClick={compare.toggle}>
           {t('develop.compare.toggle')}
         </button>
@@ -735,6 +776,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                   label={t('develop.detailLabel', { frame: label })}
                   view={viewport.view}
                 />
+              )}
+              {preview && clipping && pick === null && (
+                <ClipLayer preview={preview} view={viewport.view} />
               )}
               {preview && recipe && pick === 'crop' && develop.showingScan && (
                 <CropOverlay

@@ -158,6 +158,7 @@ impl FrameData {
             rgb: Arc::clone(&self.proxy),
             ir: None,
             film_base: Some(self.base),
+            full_long_edge: None,
         };
         let ours = srgb_floats(&render(&input, &recipe.clamped(), RenderTarget::Full)?)?;
         let ours = crop_resample(
@@ -277,6 +278,7 @@ pub fn run_with_budget(
                         rgb: Arc::new(load_frame(pair, flat.as_ref())?),
                         ir: None,
                         film_base: None,
+                        full_long_edge: None,
                     };
                     estimates.push(
                         analyze_with_levels(
@@ -307,6 +309,7 @@ pub fn run_with_budget(
             rgb: Arc::new(image),
             ir: None,
             film_base: Some(base),
+            full_long_edge: None,
         };
         let proxy = Arc::new(build_proxy(&input.rgb, FIT_PROXY_EDGE)?);
         let mut levels = Vec::new();
@@ -326,6 +329,7 @@ pub fn run_with_budget(
             rgb: Arc::clone(&proxy),
             ir: None,
             film_base: Some(base),
+            full_long_edge: None,
         };
         let full = srgb_floats(&render(&proxy_input, &neutral, RenderTarget::Full)?)?;
         let found = register_oriented(&luma(&full), &luma(&stored))
@@ -502,6 +506,7 @@ mod tests {
                 rgb: Arc::new(s.image.clone()),
                 ir: None,
                 film_base: Some(s.truth.base),
+                full_long_edge: None,
             };
             let levels =
                 analyze_with_levels(&input, None, Look::Neutral, LevelsPercentiles::DEFAULT)

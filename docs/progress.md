@@ -992,6 +992,15 @@
       "number": 302,
       "title": "Colour mixer",
       "branch": "feat/issue-302-colour-mixer",
+      "status": "completed",
+      "pr": 314,
+      "commit": "04cf8ed"
+    },
+    {
+      "id": "P-27",
+      "number": 304,
+      "title": "Noise reduction",
+      "branch": "feat/issue-304-noise-reduction",
       "status": "in_progress",
       "pr": null,
       "commit": null

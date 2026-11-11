@@ -11,6 +11,7 @@ export const PRESET_PARTS: readonly RecipeField[] = [
   'Base',
   'Invert',
   'Dust',
+  'Noise',
   'Output',
 ];
 

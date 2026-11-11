@@ -11,6 +11,7 @@ import {
   levelsOf,
   mixerOf,
   monoOf,
+  noiseOf,
   sharpenOf,
   splitToneOf,
   toneOf,
@@ -21,6 +22,7 @@ import {
   withLevels,
   withMixer,
   withMono,
+  withNoise,
   withSharpen,
   withSplitTone,
   withTone,
@@ -63,7 +65,7 @@ export function resetDust(recipe: Recipe, auto: Recipe): Recipe {
   return withDust(recipe, dustOf(auto));
 }
 
-/** The Sharpen panel: amount and radius. */
-export function resetSharpen(recipe: Recipe, auto: Recipe): Recipe {
-  return withSharpen(recipe, sharpenOf(auto));
+/** The Detail panel: the noise reduction and the output sharpening (amount and radius). */
+export function resetDetail(recipe: Recipe, auto: Recipe): Recipe {
+  return withSharpen(withNoise(recipe, noiseOf(auto)), sharpenOf(auto));
 }

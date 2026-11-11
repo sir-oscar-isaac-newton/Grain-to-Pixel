@@ -3,7 +3,10 @@
 //! Stages run in the fixed order of [`STAGE_ORDER`]. The crop is applied early as an exact copy, so
 //! later stages work on the frame only, and auto levels never see the rebate; straighten, turns
 //! and flips come next, so there is still at most one resample; the vignette is last, so it is
-//! centred on the final picture. The colour mixer follows the colour stage (and does nothing in
+//! centred on the final picture. Noise reduction follows the inversion, so it works on the
+//! positive before any colour change, at a scale that is the size of the image relative to the full
+//! scan (see [`render_scale`]); the pickers, which measure the frame before the colour stage, are
+//! unaffected by it, because it is not part of the frames they measure. The colour mixer follows the colour stage (and does nothing in
 //! black and white), so the pickers and the automatic balance, which measure the frame before the
 //! colour stage, never see it. Split toning follows the tone stage, so it tints the finished
 //! tonal result before the geometry. `render` never runs anything automatic: it uses the recipe as
@@ -37,6 +40,9 @@ pub struct PipelineInput {
     pub ir: Option<Arc<ImageF32>>,
     /// The roll's measured film base, if there is one.
     pub film_base: Option<[f32; 3]>,
+    /// The long edge, in pixels, of the full scan that `rgb` was made from, when `rgb` is a proxy;
+    /// `None` when `rgb` is the full scan. A render uses it to know its scale.
+    pub full_long_edge: Option<u32>,
 }
 
 /// How big the result should be.
@@ -77,11 +83,27 @@ pub(crate) fn render_traced(
         RenderTarget::Preview { max_edge } => build_proxy(&input.rgb, max_edge)?,
         RenderTarget::Full => (*input.rgb).clone(),
     };
+    // Measured before the crop, which comes first: the crop does not change the scale.
+    let scale = render_scale(image.width.max(image.height), input);
     for stage in STAGE_ORDER {
         trace(stage);
-        image = stages::run_stage(stage, image, input, &recipe)?;
+        image = stages::run_stage(stage, image, input, &recipe, scale)?;
     }
     Ok(image)
+}
+
+/// The size of the image a render starts from, relative to the full scan: `rendered_long_edge` (the
+/// long edge of the uncropped image the stages start with) over the long edge of the full scan.
+/// It is 1 for a full render of the scan itself (export), and below 1 for a preview, a proxy, or
+/// both. The crop is not part of it, so it is the same for every crop of the same picture.
+pub(crate) fn render_scale(rendered_long_edge: u32, input: &PipelineInput) -> f32 {
+    let full = input
+        .full_long_edge
+        .unwrap_or_else(|| input.rgb.width.max(input.rgb.height));
+    if full == 0 {
+        return 1.0;
+    }
+    (rendered_long_edge as f32 / full as f32).min(1.0)
 }
 
 /// The frame as the Invert stage receives it: `input` after dust removal, the crop and the film
@@ -94,7 +116,7 @@ pub(crate) fn normalized_frame(
     let recipe = recipe.clone().clamped();
     let mut image = (*input.rgb).clone();
     for stage in [Stage::Dust, Stage::Crop, Stage::Normalize] {
-        image = stages::run_stage(stage, image, input, &recipe)?;
+        image = stages::run_stage(stage, image, input, &recipe, 1.0)?;
     }
     Ok(image)
 }
@@ -104,7 +126,7 @@ pub(crate) fn normalized_frame(
 pub(crate) fn inverted_frame(input: &PipelineInput, recipe: &Recipe) -> Result<ImageF32, AppError> {
     let recipe = recipe.clone().clamped();
     let image = normalized_frame(input, &recipe)?;
-    stages::run_stage(Stage::Invert, image, input, &recipe)
+    stages::run_stage(Stage::Invert, image, input, &recipe, 1.0)
 }
 
 #[cfg(test)]
@@ -124,6 +146,7 @@ mod tests {
             rgb: Arc::new(s.image.clone()),
             ir: None,
             film_base,
+            full_long_edge: None,
         }
     }
 
@@ -285,6 +308,7 @@ mod tests {
                 Stage::Crop,
                 Stage::Normalize,
                 Stage::Invert,
+                Stage::Noise,
                 Stage::Color,
                 Stage::Mixer,
                 Stage::Tone,
@@ -331,6 +355,7 @@ mod tests {
             rgb: Arc::new(build_proxy(&s.image, 160).unwrap()),
             ir: None,
             film_base: None,
+            full_long_edge: None,
         };
         assert_eq!(
             preview,
@@ -607,7 +632,7 @@ mod tests {
         let mut image = (*input.rgb).clone();
         for stage in STAGE_ORDER {
             if stage != Stage::Mixer {
-                image = stages::run_stage(stage, image, &input, &recipe).unwrap();
+                image = stages::run_stage(stage, image, &input, &recipe, 1.0).unwrap();
             }
         }
         image
@@ -650,7 +675,7 @@ mod tests {
             if stage == Stage::Mixer {
                 gtp_edit::apply_mixer(&mut image, &clamped.color.mixer).unwrap();
             } else {
-                image = stages::run_stage(stage, image, &input, &clamped).unwrap();
+                image = stages::run_stage(stage, image, &input, &clamped, 1.0).unwrap();
             }
         }
         assert_eq!(mixed, image);
@@ -719,12 +744,191 @@ mod tests {
         }
     }
 
+    fn loud_noise() -> gtp_core::recipe::Noise {
+        gtp_core::recipe::Noise {
+            luminance: 100.0,
+            color: 100.0,
+        }
+    }
+
+    /// A noisy scan, so that noise reduction has something to do.
+    fn noisy_scan(width: u32, height: u32) -> Synthetic {
+        scan(&Params {
+            width,
+            height,
+            rebate: [0; 4],
+            noise: 0.08,
+            ..Params::default()
+        })
+    }
+
+    /// The render of `recipe` through every stage but `skipped`, run one by one.
+    fn render_without(s: &Synthetic, recipe: &Recipe, skipped: Stage) -> ImageF32 {
+        let input = input_of(s, None);
+        let recipe = recipe.clone().clamped();
+        let mut image = (*input.rgb).clone();
+        for stage in STAGE_ORDER {
+            if stage != skipped {
+                image = stages::run_stage(stage, image, &input, &recipe, 1.0).unwrap();
+            }
+        }
+        image
+    }
+
+    #[test]
+    fn noise_reduction_of_zeros_changes_nothing() {
+        let s = noisy_scan(120, 80);
+        let recipe = true_recipe(&s);
+        assert_eq!(recipe.noise, gtp_core::recipe::Noise::default());
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        assert_eq!(plain, render_without(&s, &recipe, Stage::Noise));
+    }
+
+    #[test]
+    fn noise_reduction_runs_between_the_inversion_and_the_colour_stage() {
+        let s = noisy_scan(120, 80);
+        let mut recipe = true_recipe(&s);
+        recipe.color.red_cyan = 20.0;
+        recipe.tone.exposure_ev = 0.5;
+        recipe.noise = loud_noise();
+        let input = input_of(&s, None);
+        let reduced = render(&input, &recipe, RenderTarget::Full).unwrap();
+        assert_ne!(reduced, render_without(&s, &recipe, Stage::Noise));
+        // The same stages by hand, with the reduction applied straight after the inversion.
+        let clamped = recipe.clone().clamped();
+        let mut image = (*input.rgb).clone();
+        for stage in STAGE_ORDER {
+            if stage == Stage::Noise {
+                gtp_edit::apply_noise_reduction(&mut image, &clamped.noise, 1.0).unwrap();
+            } else {
+                image = stages::run_stage(stage, image, &input, &clamped, 1.0).unwrap();
+            }
+        }
+        assert_eq!(reduced, image);
+    }
+
+    #[test]
+    fn the_frames_the_pickers_measure_do_not_see_noise_reduction() {
+        let s = noisy_scan(160, 100);
+        let input = input_of(&s, None);
+        let mut recipe = true_recipe(&s);
+        let normalized = normalized_frame(&input, &recipe).unwrap();
+        let inverted = inverted_frame(&input, &recipe).unwrap();
+        recipe.noise = loud_noise();
+        assert_eq!(normalized_frame(&input, &recipe).unwrap(), normalized);
+        assert_eq!(inverted_frame(&input, &recipe).unwrap(), inverted);
+    }
+
+    #[test]
+    fn noise_reduction_agrees_between_a_preview_and_a_full_render() {
+        let s = noisy_scan(800, 400);
+        let mut recipe = Recipe::default();
+        recipe.base.source = BaseSource::Manual;
+        recipe.base.rgb = s.truth.base;
+        recipe.invert = Invert {
+            black: s.truth.black,
+            white: s.truth.white,
+        };
+        let mut plain = recipe.clone();
+        recipe.noise = loud_noise();
+        plain.noise = Default::default();
+        let target = RenderTarget::Preview { max_edge: 200 };
+        let full = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        let unreduced = render(&input_of(&s, None), &plain, RenderTarget::Full).unwrap();
+        assert_ne!(full, unreduced, "the reduction changes this picture");
+        let preview = render(&input_of(&s, None), &recipe, target).unwrap();
+        assert_eq!((preview.width, preview.height), (200, 100));
+        // Averaged over blocks of 4 by 4 full-size pixels, so the remaining grain does not count:
+        // within 5 percent (and at least 0.02) of the full-size result.
+        for (fx, fy) in [(0.1, 0.2), (0.5, 0.5), (0.8, 0.9)] {
+            let (px, py) = (
+                (fx * preview.width as f32) as u32,
+                (fy * preview.height as f32) as u32,
+            );
+            let b = at_px(&preview, px, py);
+            let mut a = [0.0_f32; 3];
+            for (dx, dy) in (0..4).flat_map(|dy| (0..4).map(move |dx| (dx, dy))) {
+                let p = at_px(&full, px * 4 + dx, py * 4 + dy);
+                (0..3).for_each(|i| a[i] += p[i] / 16.0);
+            }
+            for i in 0..3 {
+                assert!((a[i] - b[i]).abs() <= 0.05 * a[i].max(0.4), "{a:?} {b:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_scale_is_one_at_export_and_below_one_for_a_preview() {
+        let s = flat_scan(800, 400);
+        // Export: the full scan, rendered in full.
+        let full = input_of(&s, None);
+        assert_eq!(render_scale(800, &full), 1.0);
+        // A preview made from the full scan itself.
+        assert_eq!(render_scale(200, &full), 0.25);
+        // A proxy of 1000 pixels from a scan of 4000: a full render of it, and a smaller preview.
+        let proxy = PipelineInput {
+            full_long_edge: Some(4000),
+            ..full
+        };
+        assert_eq!(render_scale(800, &proxy), 0.2);
+        assert_eq!(render_scale(400, &proxy), 0.1);
+        // A proxy that is as big as the scan, or a wrong size, never gives more than 1.
+        assert_eq!(
+            render_scale(
+                800,
+                &PipelineInput {
+                    full_long_edge: Some(100),
+                    ..proxy.clone()
+                }
+            ),
+            1.0
+        );
+        assert_eq!(
+            render_scale(
+                800,
+                &PipelineInput {
+                    full_long_edge: Some(0),
+                    ..proxy
+                }
+            ),
+            1.0
+        );
+    }
+
+    #[test]
+    fn a_render_of_a_proxy_reduces_noise_at_the_scale_of_the_scan() {
+        let s = noisy_scan(400, 200);
+        let mut recipe = true_recipe(&s);
+        recipe.noise = loud_noise();
+        // The same pixels, said to be a proxy of a scan twice as long: the scale is 0.5.
+        let proxy = PipelineInput {
+            full_long_edge: Some(800),
+            ..input_of(&s, None)
+        };
+        let got = render(&proxy, &recipe, RenderTarget::Full).unwrap();
+        let clamped = recipe.clone().clamped();
+        let mut want = (*proxy.rgb).clone();
+        for stage in STAGE_ORDER {
+            if stage == Stage::Noise {
+                gtp_edit::apply_noise_reduction(&mut want, &clamped.noise, 0.5).unwrap();
+            } else {
+                want = stages::run_stage(stage, want, &proxy, &clamped, 0.5).unwrap();
+            }
+        }
+        assert_eq!(got, want);
+        assert_ne!(
+            got,
+            render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap()
+        );
+    }
+
     #[test]
     fn bad_input_is_an_error() {
         let gray = PipelineInput {
             rgb: Arc::new(ImageF32::zeros(4, 4, 1).unwrap()),
             ir: None,
             film_base: None,
+            full_long_edge: None,
         };
         let err = render(&gray, &Recipe::default(), RenderTarget::Full).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);

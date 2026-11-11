@@ -186,6 +186,7 @@ fn analyze_inner(
         rgb: Arc::new(proxy),
         ir: None,
         film_base: input.film_base,
+        full_long_edge: None,
     };
     let preview = render(&proxy_input, &auto_recipe, RenderTarget::Full)?;
     let histogram = histogram(&to_rgba8_srgb(&preview)?);
@@ -202,7 +203,7 @@ fn analyze_inner(
 
 #[cfg(test)]
 mod tests {
-    use gtp_core::recipe::{Mixer, SplitTone, Vignette};
+    use gtp_core::recipe::{Mixer, Noise, SplitTone, Vignette};
     use gtp_core::testing::synthetic::{self, Params, Pattern, Synthetic};
     use gtp_core::ErrorCode;
     use gtp_core::ImageF32;
@@ -228,6 +229,7 @@ mod tests {
             rgb: Arc::new(s.image.clone()),
             ir: None,
             film_base,
+            full_long_edge: None,
         }
     }
 
@@ -308,6 +310,7 @@ mod tests {
             rgb: Arc::new(camera_capture(base)),
             ir: None,
             film_base: Some(base),
+            full_long_edge: None,
         };
         let plain = analyze(&input).unwrap();
         assert!(plain.frame.confidence < gtp_negative::MIN_CONFIDENCE);
@@ -344,6 +347,13 @@ mod tests {
         let s = scan(400, 300, 20);
         let a = analyze(&input_of(&s, None)).unwrap();
         assert_eq!(a.auto_recipe.color.mixer, Mixer::default());
+    }
+
+    #[test]
+    fn the_automatic_recipe_leaves_noise_reduction_at_zeros() {
+        let s = scan(400, 300, 20);
+        let a = analyze(&input_of(&s, None)).unwrap();
+        assert_eq!(a.auto_recipe.noise, Noise::default());
     }
 
     #[test]
@@ -497,6 +507,7 @@ mod tests {
             rgb: Arc::new(ImageF32::zeros(8, 8, 1).unwrap()),
             ir: None,
             film_base: None,
+            full_long_edge: None,
         };
         assert_eq!(analyze(&gray).unwrap_err().code, ErrorCode::InvalidInput);
     }
@@ -522,6 +533,7 @@ mod tests {
             rgb: Arc::new(big),
             ir: None,
             film_base: None,
+            full_long_edge: None,
         };
         let start = std::time::Instant::now();
         let a = analyze(&input).unwrap();

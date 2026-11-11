@@ -228,6 +228,7 @@ fn render_full(s: &Synthetic, recipe: &Recipe) -> Result<ImageF32, AppError> {
         rgb: Arc::new(s.image.clone()),
         ir: None,
         film_base: None,
+        full_long_edge: None,
     };
     render(&input, recipe, RenderTarget::Full)
 }
@@ -289,6 +290,7 @@ fn auto() -> Result<ImageF32, AppError> {
         rgb: Arc::new(s.image.clone()),
         ir: None,
         film_base: None,
+        full_long_edge: None,
     };
     let analysis = analyze(&input)?;
     render(&input, &analysis.auto_recipe, RenderTarget::Full)

@@ -1838,6 +1838,37 @@ export type Mono_Serialize = {
 	mix: [(number | null), (number | null), (number | null)],
 };
 
+/**
+ *  Noise reduction: a guided filter in Oklab on the positive, before the colour stage
+ *  (docs/specification.md section 4.2, ADR 0013). Both amounts run from 0 to 100 and 0 changes
+ *  nothing. A recipe saved before it existed loads with zeros.
+ */
+export type Noise = Noise_Serialize | Noise_Deserialize;
+
+/**
+ *  Noise reduction: a guided filter in Oklab on the positive, before the colour stage
+ *  (docs/specification.md section 4.2, ADR 0013). Both amounts run from 0 to 100 and 0 changes
+ *  nothing. A recipe saved before it existed loads with zeros.
+ */
+export type Noise_Deserialize = {
+	/**  0 to 100: how strongly the lightness is smoothed where it is flat; edges are kept. */
+	luminance?: number | null,
+	/**  0 to 100: how strongly the colour (the chroma channels) is smoothed, guided by the lightness. */
+	color?: number | null,
+};
+
+/**
+ *  Noise reduction: a guided filter in Oklab on the positive, before the colour stage
+ *  (docs/specification.md section 4.2, ADR 0013). Both amounts run from 0 to 100 and 0 changes
+ *  nothing. A recipe saved before it existed loads with zeros.
+ */
+export type Noise_Serialize = {
+	/**  0 to 100: how strongly the lightness is smoothed where it is flat; edges are kept. */
+	luminance: number | null,
+	/**  0 to 100: how strongly the colour (the chroma channels) is smoothed, guided by the lightness. */
+	color: number | null,
+};
+
 export type Output = Output_Serialize | Output_Deserialize;
 
 /**  Export colour space. */
@@ -1868,10 +1899,10 @@ export type Recipe = Recipe_Serialize | Recipe_Deserialize;
  * 
  *  `Color` carries the colour balance and the black-and-white conversion (`mono`), which live in
  *  the same panel, but not the split toning or the colour mixer, which are parts of their own
- *  (`SplitTone`, `Mixer`); `Base` carries the base
+ *  (`SplitTone`, `Mixer`); `Noise` is the noise reduction block; `Base` carries the base
  *  source together with its value.
  */
-export type RecipeField = "Geometry" | "Base" | "Invert" | "Color" | "Mixer" | "SplitTone" | "Tone" | "Dust" | "Output";
+export type RecipeField = "Geometry" | "Base" | "Invert" | "Color" | "Mixer" | "SplitTone" | "Tone" | "Dust" | "Noise" | "Output";
 
 export type Recipe_Deserialize = {
 	v?: number,
@@ -1882,6 +1913,8 @@ export type Recipe_Deserialize = {
 	mono?: Mono_Deserialize,
 	tone?: Tone_Deserialize,
 	dust?: Dust_Deserialize,
+	/**  Noise reduction (a stage of its own after the inversion, before the colour stage). */
+	noise?: Noise_Deserialize,
 	output?: Output_Deserialize,
 };
 
@@ -1894,6 +1927,8 @@ export type Recipe_Serialize = {
 	mono: Mono_Serialize,
 	tone: Tone_Serialize,
 	dust: Dust_Serialize,
+	/**  Noise reduction (a stage of its own after the inversion, before the colour stage). */
+	noise: Noise_Serialize,
 	output: Output_Serialize,
 };
 

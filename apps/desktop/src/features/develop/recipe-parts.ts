@@ -292,6 +292,30 @@ export function withSharpen(recipe: Recipe, values: Partial<SharpenSetting>): Re
   } as Recipe;
 }
 
+/** The noise reduction of a recipe: the luminance and the colour amount, each 0 to 100. */
+export interface NoiseSetting {
+  luminance: number;
+  color: number;
+}
+
+/** The range of each amount (the recipe's own limit); 0 changes nothing. */
+export const NOISE_MAX = 100;
+export const NOISE_DEFAULT: NoiseSetting = { luminance: 0, color: 0 };
+
+/** The noise reduction of a recipe as plain numbers, inside their range (off when missing). */
+export function noiseOf(recipe: Recipe): NoiseSetting {
+  const n = recipe.noise;
+  return {
+    luminance: clampTo(plain(n?.luminance, NOISE_DEFAULT.luminance), 0, NOISE_MAX),
+    color: clampTo(plain(n?.color, NOISE_DEFAULT.color), 0, NOISE_MAX),
+  };
+}
+
+/** The recipe with some of its noise reduction replaced. */
+export function withNoise(recipe: Recipe, values: Partial<NoiseSetting>): Recipe {
+  return { ...recipe, noise: { ...noiseOf(recipe), ...values } } as Recipe;
+}
+
 /** The dust removal of a recipe: on or off, the threshold (0 to 1) and the growth in pixels. */
 export interface DustSetting {
   enabled: boolean;

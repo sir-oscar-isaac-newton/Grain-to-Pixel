@@ -60,6 +60,7 @@ pub fn make_preview(preview: &RollPreview) -> Result<RollPreviewImage, AppError>
         rgb: std::sync::Arc::new(linear),
         ir: None,
         film_base: None,
+        full_long_edge: None,
     };
     // The automatic recipe over the whole strip: its base and levels, but no crop (the strip is the
     // whole roll, rebate and all).

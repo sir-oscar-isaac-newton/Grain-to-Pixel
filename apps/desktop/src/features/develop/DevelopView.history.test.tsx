@@ -359,18 +359,12 @@ describe('Develop undo, redo and reset', () => {
 
     it('has a button in the header of every panel', async () => {
       await openFrame();
-      for (const panel of [
-        'Crop, turn and straighten',
-        'Film base',
-        'Colour',
-        'Tone',
-        'Output sharpening',
-      ]) {
+      for (const panel of ['Crop, turn and straighten', 'Film base', 'Colour', 'Tone', 'Detail']) {
         expect(button(`Reset ${panel} to automatic`)).toBeEnabled();
       }
     });
 
-    it('puts the Colour and Sharpen panels back too', async () => {
+    it('puts the Colour and Detail panels back too', async () => {
       const { user } = await openFrame();
       await user.keyboard('q');
       await waitFor(() => expect(value('Cyan / red')).toBe(10));
@@ -379,7 +373,7 @@ describe('Develop undo, redo and reset', () => {
       slider('Amount').focus();
       await user.keyboard('{PageUp}');
       await waitFor(() => expect(value('Amount')).toBeGreaterThan(0));
-      await user.click(button('Reset Output sharpening to automatic'));
+      await user.click(button('Reset Detail to automatic'));
       await waitFor(() => expect(value('Amount')).toBe(0));
     });
 
@@ -403,7 +397,7 @@ describe('Develop undo, redo and reset', () => {
       expect(value('Straighten')).toBe(1.5);
     });
 
-    it('is the only reset of the Tone, Sharpen and Crop panels', async () => {
+    it('is the only reset of the Tone, Detail and Crop panels', async () => {
       await openFrame();
       for (const old of [
         'Reset tone',
@@ -418,7 +412,7 @@ describe('Develop undo, redo and reset', () => {
 
     it('is off while the automatic recipe is not known', async () => {
       await openFrame({ analysis: false });
-      for (const panel of ['Film base', 'Colour', 'Tone', 'Output sharpening']) {
+      for (const panel of ['Film base', 'Colour', 'Tone', 'Detail']) {
         expect(button(`Reset ${panel} to automatic`)).toBeDisabled();
       }
     });

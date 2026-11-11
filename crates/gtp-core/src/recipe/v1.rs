@@ -20,6 +20,9 @@ pub struct Recipe {
     pub mono: Mono,
     pub tone: Tone,
     pub dust: Dust,
+    /// Noise reduction (a stage of its own after the inversion, before the colour stage).
+    #[serde(default)]
+    pub noise: Noise,
     pub output: Output,
 }
 
@@ -34,6 +37,7 @@ impl Default for Recipe {
             mono: Mono::default(),
             tone: Tone::default(),
             dust: Dust::default(),
+            noise: Noise::default(),
             output: Output::default(),
         }
     }
@@ -364,6 +368,19 @@ pub enum OutputSpace {
 
 /// The radius of the output sharpening when none is chosen, in pixels of the exported image.
 pub const DEFAULT_SHARPEN_RADIUS_PX: f32 = 1.0;
+
+/// Noise reduction: a guided filter in Oklab on the positive, before the colour stage
+/// (docs/specification.md section 4.2, ADR 0013). Both amounts run from 0 to 100 and 0 changes
+/// nothing. A recipe saved before it existed loads with zeros.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct Noise {
+    /// 0 to 100: how strongly the lightness is smoothed where it is flat; edges are kept.
+    pub luminance: f32,
+    /// 0 to 100: how strongly the colour (the chroma channels) is smoothed, guided by the lightness.
+    pub color: f32,
+}
 
 /// Output sharpening: an unsharp mask on the luminance of the exported image. It is applied once,
 /// at export, to the image at its final size, never to the working image or the preview.

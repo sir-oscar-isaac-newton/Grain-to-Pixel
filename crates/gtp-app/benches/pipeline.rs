@@ -68,6 +68,7 @@ fn preview(c: &mut Criterion) {
         rgb: Arc::new(scan.image),
         ir: None,
         film_base: None,
+        full_long_edge: None,
     };
     let target = RenderTarget::Preview {
         max_edge: PREVIEW_EDGE,
@@ -86,6 +87,7 @@ fn analysis(c: &mut Criterion) {
         rgb: Arc::new(scan.image),
         ir: None,
         film_base: None,
+        full_long_edge: None,
     };
     c.bench_function("analyze a proxy", |b| {
         b.iter(|| black_box(analyze(black_box(&input))));
@@ -127,6 +129,7 @@ fn full_resolution(c: &mut Criterion) {
         rgb: Arc::new(scan.image),
         ir: None,
         film_base: None,
+        full_long_edge: None,
     };
     let mut group = c.benchmark_group("full resolution");
     group

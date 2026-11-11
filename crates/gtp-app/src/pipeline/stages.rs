@@ -17,6 +17,8 @@ pub enum Stage {
     Normalize,
     /// Density inversion with the recipe's black and white points.
     Invert,
+    /// Noise reduction (`noise`): a guided filter in Oklab on the positive, before the colour stage.
+    Noise,
     /// Colour axes, temperature, tint, black and white, saturation, vibrance.
     Color,
     /// Per-hue changes of hue, saturation and lightness (`color.mixer`); skipped in black and white.
@@ -32,11 +34,12 @@ pub enum Stage {
 }
 
 /// The order every render runs the stages in.
-pub const STAGE_ORDER: [Stage; 10] = [
+pub const STAGE_ORDER: [Stage; 11] = [
     Stage::Dust,
     Stage::Crop,
     Stage::Normalize,
     Stage::Invert,
+    Stage::Noise,
     Stage::Color,
     Stage::Mixer,
     Stage::Tone,
@@ -54,12 +57,15 @@ pub(crate) fn resolve_base(input: &PipelineInput, recipe: &Recipe) -> [f32; 3] {
     }
 }
 
-/// Runs one stage. Stages that change nothing for this recipe are skipped.
+/// Runs one stage. Stages that change nothing for this recipe are skipped. `scale` is the size of
+/// the image being rendered relative to the full scan (see [`super::render_scale`]); only the
+/// noise reduction uses it.
 pub(crate) fn run_stage(
     stage: Stage,
     mut image: ImageF32,
     input: &PipelineInput,
     recipe: &Recipe,
+    scale: f32,
 ) -> Result<ImageF32, AppError> {
     match stage {
         Stage::Dust => {
@@ -91,6 +97,7 @@ pub(crate) fn run_stage(
         }
         Stage::Normalize => gtp_negative::normalize(&mut image, resolve_base(input, recipe))?,
         Stage::Invert => gtp_negative::invert(&mut image, &recipe.invert)?,
+        Stage::Noise => gtp_edit::apply_noise_reduction(&mut image, &recipe.noise, scale)?,
         Stage::Color => gtp_edit::apply_color(&mut image, &recipe.color, &recipe.mono)?,
         Stage::Mixer => {
             if !recipe.mono.enabled {

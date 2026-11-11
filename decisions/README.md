@@ -16,5 +16,6 @@ Architecture Decision Records (ADRs), numbered, immutable once accepted (superse
 | [0010](0010-flat-field.md) | A flat field per roll, applied when a camera frame is read | Accepted |
 | [0011](0011-colour-balance.md) | One colour balance per roll of scanner frames, the median of their mid-tone estimates | Accepted |
 | [0012](0012-colour-mixer.md) | The colour mixer works in Oklch, with eight smoothly weighted hue bands | Accepted |
+| [0013](0013-noise-reduction.md) | Noise reduction is a guided filter in Oklab, between the inversion and the colour stage | Accepted |
 
 New ADR: copy [0000-template.md](0000-template.md), take the next number, add a row above.

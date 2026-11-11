@@ -49,7 +49,7 @@ pub fn migrate(json: &str) -> Result<Recipe, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recipe::{Mixer, OutputSpace, SplitTone};
+    use crate::recipe::{Mixer, Noise, OutputSpace, SplitTone};
 
     #[test]
     fn a_recipe_round_trips_through_json() {
@@ -90,6 +90,8 @@ mod tests {
         assert_eq!(value["color"]["split_tone"]["highlight_hue"], 40.0);
         assert_eq!(value["color"]["split_tone"]["shadow_hue"], 220.0);
         assert_eq!(value["color"]["split_tone"]["balance"], 0.0);
+        assert_eq!(value["noise"]["luminance"], 0.0);
+        assert_eq!(value["noise"]["color"], 0.0);
         assert_eq!(value["mono"]["enabled"], false);
         assert_eq!(value["mono"]["mix"].as_array().map(Vec::len), Some(3));
     }
@@ -165,6 +167,30 @@ mod tests {
         assert_eq!(recipe.color.mixer.saturation[2], 100.0);
         assert_eq!(recipe.color.mixer.saturation[7], -100.0);
         assert_eq!(recipe.color.mixer.hue, [0.0; 8]);
+    }
+
+    #[test]
+    fn a_recipe_from_before_noise_reduction_loads_with_zeros() {
+        let recipe = migrate(r#"{"v":1,"color":{"temperature":10}}"#).unwrap();
+        assert_eq!(recipe.v, 1);
+        assert_eq!(recipe.noise, Noise::default());
+        let json = serde_json::to_value(&recipe).unwrap();
+        assert_eq!(json["noise"]["luminance"], 0.0);
+        assert_eq!(json["noise"]["color"], 0.0);
+        // A half-written block fills in the rest, and values are clamped on load.
+        let recipe = migrate(r#"{"v":1,"noise":{"color":900}}"#).unwrap();
+        assert_eq!(recipe.noise.color, 100.0);
+        assert_eq!(recipe.noise.luminance, 0.0);
+        // The block round-trips.
+        let recipe = Recipe {
+            noise: Noise {
+                luminance: 40.0,
+                color: 60.0,
+            },
+            ..Recipe::default()
+        };
+        let again = migrate(&serde_json::to_string(&recipe).unwrap()).unwrap();
+        assert_eq!(again.noise, recipe.noise);
     }
 
     #[test]

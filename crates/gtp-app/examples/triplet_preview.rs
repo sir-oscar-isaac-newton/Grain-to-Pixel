@@ -38,6 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         rgb: Arc::new(merged.image),
         ir: None,
         film_base: None,
+        full_long_edge: None,
     };
     let started = Instant::now();
     let analysis = analyze(&input)?;

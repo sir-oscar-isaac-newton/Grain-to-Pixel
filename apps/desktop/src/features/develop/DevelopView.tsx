@@ -48,7 +48,7 @@ import { BaseInvertPanel } from './panels/BaseInvertPanel';
 import { ColourPanel } from './panels/ColourPanel';
 import { DustPanel } from './panels/DustPanel';
 import { GeometryPanel } from './panels/GeometryPanel';
-import { SharpenPanel } from './panels/SharpenPanel';
+import { DetailPanel } from './panels/DetailPanel';
 import { TonePanel } from './panels/TonePanel';
 import type { Fractions } from './picker';
 import { regionToFrame, regionToScan } from './pick-geometry';
@@ -819,13 +819,12 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 onChange={(next, options) => setRecipe(next, options)}
                 onApplyStartingLook={() => void applyStartingLook()}
               />
-              <SharpenPanel
+              <DetailPanel
                 recipe={recipe}
                 auto={auto}
                 readOnly={readOnly}
                 working={working}
-                // Sharpening is applied at export: the picture on screen would not change.
-                onChange={(next, options) => setRecipe(next, { ...options, preview: false })}
+                onChange={(next, options) => setRecipe(next, options)}
               />
             </>
           )}

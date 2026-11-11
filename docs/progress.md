@@ -1001,9 +1001,9 @@
       "number": 304,
       "title": "Noise reduction",
       "branch": "feat/issue-304-noise-reduction",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 317,
+      "commit": "98c7870"
     }
   ]
 }

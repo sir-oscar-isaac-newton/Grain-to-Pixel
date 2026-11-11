@@ -33,15 +33,15 @@ export function LevelSliders({ levels, onChange, disabled }: LevelSlidersProps) 
               step={1}
               disabled={disabled}
               onChange={(value) => onChange(levels.map((v, j) => (j === i ? value : v)) as Levels)}
+              description={
+                level >= LEVEL_HEADROOM_WARNING
+                  ? t('import.capture.levels.headroom', {
+                      channel: t(`import.capture.calibrate.channel.${channel}`),
+                      level,
+                    })
+                  : undefined
+              }
             />
-            {level >= LEVEL_HEADROOM_WARNING && (
-              <p className={styles.captureHeadroom}>
-                {t('import.capture.levels.headroom', {
-                  channel: t(`import.capture.calibrate.channel.${channel}`),
-                  level,
-                })}
-              </p>
-            )}
           </div>
         );
       })}

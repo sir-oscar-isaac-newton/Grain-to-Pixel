@@ -929,6 +929,15 @@
       "number": 278,
       "title": "Calibration help at the rig",
       "branch": "feat/issue-278-calibration-help",
+      "status": "completed",
+      "pr": 291,
+      "commit": "c0232f6"
+    },
+    {
+      "id": "U-27",
+      "number": 295,
+      "title": "Described sliders in the shared UI package",
+      "branch": "feat/issue-295-slider-description",
       "status": "in_progress",
       "pr": null,
       "commit": null

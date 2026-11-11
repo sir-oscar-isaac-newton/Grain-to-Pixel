@@ -1,5 +1,5 @@
 import * as RadixSlider from '@radix-ui/react-slider';
-import { useId, useRef } from 'react';
+import { useId, useRef, type ReactNode } from 'react';
 import styles from './Slider.module.css';
 
 interface SliderProps {
@@ -26,6 +26,12 @@ interface SliderProps {
    * Without it, neither gesture does anything. Not called while `disabled`.
    */
   onReset?: () => void;
+  /**
+   * Text shown under the track, for example a warning about the current value. It is linked to the
+   * thumb (`aria-describedby`), so assistive technology reads it as the slider's description, and
+   * it is not a live region. Nothing is rendered for undefined, null, false or an empty string.
+   */
+  description?: ReactNode;
 }
 
 /** A labelled slider with its value beside it (Radix: keyboard, pointer and touch). */
@@ -39,8 +45,15 @@ export function Slider({
   format = String,
   disabled = false,
   onReset,
+  description,
 }: SliderProps) {
   const id = useId();
+  const descriptionId = useId();
+  const hasDescription =
+    description !== undefined &&
+    description !== null &&
+    description !== false &&
+    description !== '';
   const text = format(value);
   // For a key press Radix reports the release before the move, with the same value. Taking the
   // move after it as "still dragging" would leave a rough result on screen, so it is ignored.
@@ -87,8 +100,18 @@ export function Slider({
         <RadixSlider.Track className={styles.track}>
           <RadixSlider.Range className={styles.range} />
         </RadixSlider.Track>
-        <RadixSlider.Thumb className={styles.thumb} aria-labelledby={id} aria-valuetext={text} />
+        <RadixSlider.Thumb
+          className={styles.thumb}
+          aria-labelledby={id}
+          aria-describedby={hasDescription ? descriptionId : undefined}
+          aria-valuetext={text}
+        />
       </RadixSlider.Root>
+      {hasDescription && (
+        <p id={descriptionId} className={styles.description}>
+          {description}
+        </p>
+      )}
     </div>
   );
 }

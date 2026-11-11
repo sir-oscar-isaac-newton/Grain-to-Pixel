@@ -211,7 +211,7 @@ impl Default for Curves {
 }
 
 /// Tone sliders. Applied in this order: exposure, contrast, highlights and shadows, whites and
-/// blacks, dehaze, then the curves. The sliders from `contrast` on run from -100 to 100.
+/// blacks, dehaze, then the curves; the vignette is a stage of its own after the geometry. The sliders from `contrast` on run from -100 to 100.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
@@ -229,6 +229,29 @@ pub struct Tone {
     /// Removes (positive) or adds (negative) a uniform veil such as film fog or scanner flare.
     pub dehaze: f32,
     pub curve: Curves,
+    /// Darkens or lightens the corners (the last stage, after the geometry).
+    pub vignette: Vignette,
+}
+
+/// Vignette: a gain on the distance from the centre of the final picture (docs/specification.md
+/// section 4.2). A recipe saved before it existed loads with the defaults, which change nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct Vignette {
+    /// -100 to 100: negative darkens the corners, positive lightens them, 0 changes nothing.
+    pub amount: f32,
+    /// 0 to 100: how far in towards the centre the effect reaches; lower reaches further in.
+    pub midpoint: f32,
+}
+
+impl Default for Vignette {
+    fn default() -> Self {
+        Self {
+            amount: 0.0,
+            midpoint: 50.0,
+        }
+    }
 }
 
 impl Default for Tone {
@@ -242,6 +265,7 @@ impl Default for Tone {
             blacks: 0.0,
             dehaze: 0.0,
             curve: Curves::default(),
+            vignette: Vignette::default(),
         }
     }
 }

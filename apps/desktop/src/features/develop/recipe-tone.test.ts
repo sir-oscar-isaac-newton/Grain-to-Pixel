@@ -13,6 +13,8 @@ describe('the tone parts of a recipe', () => {
       whites: 0,
       blacks: 0,
       dehaze: 0,
+      vignette: 0,
+      vignette_midpoint: 50,
     });
     expect(curvesOf(bare)).toEqual({
       master: [
@@ -67,6 +69,22 @@ describe('the tone parts of a recipe', () => {
     expect(toneOf(next)).toMatchObject({ exposure_ev: 0.5, dehaze: -20, contrast: 5 });
     expect(curvesOf(next).master[0]).toEqual([0, 0.1]);
     expect(toneOf(recipe).exposure_ev).toBe(0);
+  });
+
+  it('keeps the vignette inside tone.vignette, and keeps the other half when one changes', () => {
+    const recipe = makeRecipe('x', { tone: { vignette: { amount: -30, midpoint: 70 } } });
+    expect(toneOf(recipe)).toMatchObject({ vignette: -30, vignette_midpoint: 70 });
+    const next = withTone(recipe, { vignette: 20 });
+    expect(next.tone?.vignette).toEqual({ amount: 20, midpoint: 70 });
+    expect(next.tone).not.toHaveProperty('vignette_midpoint');
+    const bare = withTone(makeRecipe('y'), { vignette_midpoint: 10 });
+    expect(bare.tone?.vignette).toEqual({ amount: 0, midpoint: 10 });
+    // A curve change keeps it too.
+    const curved = withCurve(recipe, 'g', [
+      [0, 0],
+      [1, 1],
+    ]);
+    expect(curved.tone?.vignette).toEqual({ amount: -30, midpoint: 70 });
   });
 
   it('replaces one curve with a copy and keeps the others', () => {

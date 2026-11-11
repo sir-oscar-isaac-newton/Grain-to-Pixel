@@ -23,10 +23,12 @@ pub enum Stage {
     Tone,
     /// Straighten, quarter turns and flips (the crop was applied earlier).
     Geometry,
+    /// Darken or lighten the corners of the final picture (`tone.vignette`).
+    Vignette,
 }
 
 /// The order every render runs the stages in.
-pub const STAGE_ORDER: [Stage; 7] = [
+pub const STAGE_ORDER: [Stage; 8] = [
     Stage::Dust,
     Stage::Crop,
     Stage::Normalize,
@@ -34,6 +36,7 @@ pub const STAGE_ORDER: [Stage; 7] = [
     Stage::Color,
     Stage::Tone,
     Stage::Geometry,
+    Stage::Vignette,
 ];
 
 /// The film base to normalize with: the recipe's own value when it was sampled for this frame
@@ -93,6 +96,7 @@ pub(crate) fn run_stage(
                 image = gtp_edit::apply_geometry(&image, &turn_only)?;
             }
         }
+        Stage::Vignette => gtp_edit::apply_vignette(&mut image, &recipe.tone.vignette)?,
     }
     Ok(image)
 }

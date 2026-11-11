@@ -202,6 +202,7 @@ fn analyze_inner(
 
 #[cfg(test)]
 mod tests {
+    use gtp_core::recipe::Vignette;
     use gtp_core::testing::synthetic::{self, Params, Pattern, Synthetic};
     use gtp_core::ErrorCode;
     use gtp_core::ImageF32;
@@ -322,6 +323,13 @@ mod tests {
         assert!(a.frame.measured_size.is_none());
         // The levels now come from the picture, so its darkest and brightest values are used.
         assert!(a.auto_recipe.geometry.crop == a.frame.rect);
+    }
+
+    #[test]
+    fn the_automatic_recipe_leaves_the_vignette_at_its_defaults() {
+        let s = scan(400, 300, 20);
+        let a = analyze(&input_of(&s, None)).unwrap();
+        assert_eq!(a.auto_recipe.tone.vignette, Vignette::default());
     }
 
     #[test]

@@ -3,7 +3,7 @@
 //! Clamping is idempotent: clamping an already clamped recipe changes nothing.
 
 use super::v1::{
-    Color, Crop, CurvePoint, Dust, Geometry, Invert, Mono, Output, Recipe, Tone,
+    Color, Crop, CurvePoint, Dust, Geometry, Invert, Mono, Output, Recipe, Tone, Vignette,
     DEFAULT_SHARPEN_RADIUS_PX, REC2020_LUMA,
 };
 
@@ -23,6 +23,8 @@ pub const INVERT_MAX: f32 = 10.0;
 pub const INVERT_GAP: f32 = 1e-3;
 /// Limit of the colour and tone sliders (temperature, tint, CMY, contrast, highlights, ...).
 pub const SLIDER_MAX: f32 = 100.0;
+/// Limit of the vignette midpoint (it runs from 0 to this).
+pub const VIGNETTE_MIDPOINT_MAX: f32 = 100.0;
 pub const SATURATION_MAX: f32 = 2.0;
 pub const EXPOSURE_EV_MAX: f32 = 5.0;
 pub const CURVE_POINTS_MAX: usize = 16;
@@ -104,6 +106,13 @@ fn clamp_tone(tone: &mut Tone) {
     tone.whites = slider(tone.whites);
     tone.blacks = slider(tone.blacks);
     tone.dehaze = slider(tone.dehaze);
+    tone.vignette.amount = slider(tone.vignette.amount);
+    tone.vignette.midpoint = fin(
+        tone.vignette.midpoint,
+        0.0,
+        VIGNETTE_MIDPOINT_MAX,
+        Vignette::default().midpoint,
+    );
     clamp_curve(&mut tone.curve.master);
     clamp_curve(&mut tone.curve.r);
     clamp_curve(&mut tone.curve.g);
@@ -201,6 +210,10 @@ mod tests {
                     r.tone.whites = n();
                     r.tone.blacks = n();
                     r.tone.dehaze = n();
+                    r.tone.vignette = Vignette {
+                        amount: n(),
+                        midpoint: n(),
+                    };
                     r.mono = Mono {
                         enabled: flag,
                         mix: [n(), n(), n()],
@@ -278,9 +291,11 @@ mod tests {
             t.whites,
             t.blacks,
             t.dehaze,
+            t.vignette.amount,
         ] {
             assert!(in_range(v, -SLIDER_MAX, SLIDER_MAX));
         }
+        assert!(in_range(t.vignette.midpoint, 0.0, VIGNETTE_MIDPOINT_MAX));
         for curve in [&t.curve.master, &t.curve.r, &t.curve.g, &t.curve.b] {
             assert!(curve_is_valid(curve));
         }
@@ -328,6 +343,38 @@ mod tests {
         };
         let r = r.clamped();
         assert_eq!(r.output.sharpen, Sharpen::default());
+    }
+
+    #[test]
+    fn the_vignette_is_off_by_default_and_its_values_are_clamped() {
+        let defaults = Recipe::default().tone.vignette;
+        assert_eq!(defaults.amount, 0.0);
+        assert_eq!(defaults.midpoint, 50.0);
+
+        let mut r = Recipe::default();
+        r.tone.vignette = Vignette {
+            amount: 500.0,
+            midpoint: 400.0,
+        };
+        let r = r.clamped();
+        assert_eq!(r.tone.vignette.amount, 100.0);
+        assert_eq!(r.tone.vignette.midpoint, 100.0);
+
+        let mut r = Recipe::default();
+        r.tone.vignette = Vignette {
+            amount: -500.0,
+            midpoint: -4.0,
+        };
+        let r = r.clamped();
+        assert_eq!(r.tone.vignette.amount, -100.0);
+        assert_eq!(r.tone.vignette.midpoint, 0.0);
+
+        let mut r = Recipe::default();
+        r.tone.vignette = Vignette {
+            amount: f32::NAN,
+            midpoint: f32::INFINITY,
+        };
+        assert_eq!(r.clamped().tone.vignette, Vignette::default());
     }
 
     #[test]

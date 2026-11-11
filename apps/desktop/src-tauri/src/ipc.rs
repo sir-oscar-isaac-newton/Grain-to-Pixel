@@ -66,6 +66,8 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::develop::develop_sample_neutral,
             commands::develop::recipe_save,
             commands::develop::recipe_apply_to,
+            commands::develop::recipe_apply_values_to,
+            commands::develop::recipe_merge_fields,
             commands::tags::tag_list,
             commands::tags::roll_tags,
             commands::tags::frames_own_tags,

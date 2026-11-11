@@ -111,6 +111,14 @@
       "flagFailed": "The flag could not be changed: {{message}}",
       "noRejected": "No frame in this view is rejected.",
       "selectRejectedFailed": "The rejected frames could not be read: {{message}}"
+    },
+    "applyPreset": {
+      "open": "Apply preset…",
+      "title": "Apply preset",
+      "description": "Apply a Develop preset to the selected frames. This replaces the settings the preset holds on those frames.",
+      "empty": "There are no presets yet. Create them in the Develop view.",
+      "done_one": "Applied “{{name}}” to {{count}} frame.",
+      "done_other": "Applied “{{name}}” to {{count}} frames."
     }
   },
   "rollEditor": {
@@ -769,6 +777,42 @@
     "filmstrip": {
       "label": "Frames of the current Library view",
       "referenceLabel": "Frame {{n}}, reference"
+    },
+    "presets": {
+      "open": "Presets…",
+      "title": "Develop presets",
+      "description": "Save the settings of this edit under a name and apply them to this frame later. Presets belong to the app, not to a library.",
+      "list": "Presets",
+      "empty": "There are no presets yet. Save the current edit as a preset to make one.",
+      "noApply": "A preset cannot be applied now: this frame cannot be edited. Presets can still be saved and changed.",
+      "apply": "Apply",
+      "applyLabel": "Apply the preset {{name}}",
+      "update": "Update",
+      "updateLabel": "Update the preset {{name}} with the current edit",
+      "rename": "Rename",
+      "renameLabel": "Rename the preset {{name}}",
+      "renameSave": "Rename preset",
+      "delete": "Delete",
+      "deleteLabel": "Delete the preset {{name}}",
+      "saveAs": "Save current edit as preset…",
+      "name": "Preset name",
+      "parts": "Settings to save",
+      "noParts": "Choose at least one group of settings.",
+      "save": "Save preset",
+      "cancel": "Cancel",
+      "close": "Close",
+      "confirmLabel": "Delete preset",
+      "confirmDelete": "Delete the preset “{{name}}”? This cannot be undone.",
+      "confirm": "Delete preset",
+      "keep": "Keep it",
+      "applied": "Applied the preset “{{name}}” to this frame.",
+      "failed": "The presets could not be saved: {{message}}",
+      "loadFailed": "The presets could not be loaded: {{message}}",
+      "applyFailed": "The preset could not be applied: {{message}}",
+      "errors": {
+        "noName": "Type a name for the preset.",
+        "exists": "A preset with that name already exists."
+      }
     }
   },
   "import": {
@@ -912,7 +956,11 @@
         "label": "Focus check",
         "running": "Checking…",
         "taking": "Taking a picture…",
-        "channel": { "red": "Red", "green": "Green", "blue": "Blue" },
+        "channel": {
+          "red": "Red",
+          "green": "Green",
+          "blue": "Blue"
+        },
         "help": "Takes one picture in the chosen colour and shows the middle of it at full size, with a sharpness number and a map of how sharp each part of the frame is. Nothing is stored.",
         "cropAlt": "The middle of the {{channel}} picture at full size",
         "sharpness": "Sharpness {{value}}.",
@@ -921,8 +969,16 @@
         "resetBest": "Reset best",
         "map": "Sharpness of each part of the frame, the sharpest part is 100 %",
         "mapAgainst": "Sharpness of each part of the frame against the flat reference, the best part is 100 %",
-        "row": { "top": "Top", "middle": "Middle", "bottom": "Bottom" },
-        "column": { "left": "Left", "centre": "Centre", "right": "Right" },
+        "row": {
+          "top": "Top",
+          "middle": "Middle",
+          "bottom": "Bottom"
+        },
+        "column": {
+          "left": "Left",
+          "centre": "Centre",
+          "right": "Right"
+        },
         "againstReference": "Compared with the flat reference.",
         "pattern": {
           "flat": "The film looks flat and square to the camera.",

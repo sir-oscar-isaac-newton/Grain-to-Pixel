@@ -138,16 +138,8 @@ pub fn save_recipe(library: &Library, frame: FrameId, recipe: Recipe) -> Result<
     Ok(recipe)
 }
 
-/// Copies the chosen groups of settings from `source`'s recipe onto each of `frames`, all or
-/// nothing; whatever else a target frame has is kept. A frame that was never edited counts as
-/// having the default recipe, both as a source and as a target. The source itself, if listed, is
-/// skipped.
-pub fn apply_recipe_to(
-    library: &Library,
-    frames: &[FrameId],
-    source: FrameId,
-    fields: &[RecipeField],
-) -> Result<(), AppError> {
+/// Refuses an empty list of frames or of groups of settings.
+fn check_apply_request(frames: &[FrameId], fields: &[RecipeField]) -> Result<(), AppError> {
     if frames.is_empty() {
         return Err(AppError::new(
             ErrorCode::InvalidInput,
@@ -160,21 +152,70 @@ pub fn apply_recipe_to(
             "Choose at least one group of settings to copy.",
         ));
     }
+    Ok(())
+}
+
+/// Copies the chosen groups of `from` onto each of `frames` (except `skip`, and repeated ones)
+/// and saves them in one go; a frame without a saved recipe starts from the default.
+fn copy_fields_onto(
+    c: &mut gtp_catalog::Catalog,
+    frames: &[FrameId],
+    skip: Option<FrameId>,
+    from: &Recipe,
+    fields: &[RecipeField],
+) -> Result<(), AppError> {
+    let mut seen = std::collections::HashSet::new();
+    let mut updated = Vec::new();
+    for frame in frames {
+        if Some(*frame) == skip || !seen.insert(*frame) {
+            continue;
+        }
+        let mut recipe = c.load_recipe(*frame)?.unwrap_or_default();
+        recipe.copy_fields_from(from, fields);
+        updated.push((*frame, recipe));
+    }
+    c.save_recipes(&updated)
+}
+
+/// Copies the chosen groups of settings from `source`'s recipe onto each of `frames`, all or
+/// nothing; whatever else a target frame has is kept. A frame that was never edited counts as
+/// having the default recipe, both as a source and as a target. The source itself, if listed, is
+/// skipped.
+pub fn apply_recipe_to(
+    library: &Library,
+    frames: &[FrameId],
+    source: FrameId,
+    fields: &[RecipeField],
+) -> Result<(), AppError> {
+    check_apply_request(frames, fields)?;
     library.write(|c| {
         c.get_frame(source)?;
         let from = c.load_recipe(source)?.unwrap_or_default();
-        let mut seen = std::collections::HashSet::new();
-        let mut updated = Vec::new();
-        for frame in frames {
-            if *frame == source || !seen.insert(*frame) {
-                continue;
-            }
-            let mut recipe = c.load_recipe(*frame)?.unwrap_or_default();
-            recipe.copy_fields_from(&from, fields);
-            updated.push((*frame, recipe));
-        }
-        c.save_recipes(&updated)
+        copy_fields_onto(c, frames, Some(source), &from, fields)
     })
+}
+
+/// Like [`apply_recipe_to`], but the settings come from `recipe` (a saved Develop preset) and not
+/// from a frame, so every listed frame is a target. A frame never edited starts from the default
+/// recipe. The given `recipe` is clamped into range before its groups are copied.
+pub fn apply_recipe_values_to(
+    library: &Library,
+    frames: &[FrameId],
+    recipe: &Recipe,
+    fields: &[RecipeField],
+) -> Result<(), AppError> {
+    check_apply_request(frames, fields)?;
+    // The values come over IPC, so they are clamped here, as `save_recipe` does for an edit.
+    let recipe = recipe.clone().clamped();
+    library.write(|c| copy_fields_onto(c, frames, None, &recipe, fields))
+}
+
+/// `target` with the chosen groups of settings copied from `source`, clamped into range. Pure:
+/// nothing is read or saved (the Develop view applies a preset to the open edit with it).
+pub fn merge_recipe_fields(target: Recipe, source: &Recipe, fields: &[RecipeField]) -> Recipe {
+    let mut merged = target;
+    merged.copy_fields_from(source, fields);
+    merged.clamped()
 }
 
 /// A film base must be finite and within the range a recipe holds.
@@ -1562,6 +1603,144 @@ mod tests {
         );
         assert_eq!((t.stored(a), t.stored(b)), (None, None));
         assert!(!t.edited(a) && !t.edited(b));
+    }
+
+    #[test]
+    fn values_are_applied_to_every_listed_frame_and_a_frame_without_a_recipe_starts_from_default() {
+        let t = Fixture::new("apply-values");
+        let (edited, fresh) = (t.bare(1), t.bare(2));
+        let mut own = Recipe::default();
+        own.color.temperature = 15.0;
+        own.geometry.angle_deg = -1.0;
+        save_recipe(&t.library, edited, own.clone()).unwrap();
+        assert!(!t.edited(fresh));
+
+        apply_recipe_values_to(
+            &t.library,
+            &[edited, fresh, fresh],
+            &source_recipe(),
+            &[RecipeField::Tone, RecipeField::Output],
+        )
+        .unwrap();
+
+        let want = |base: &Recipe| {
+            let mut r = base.clone();
+            r.tone = source_recipe().tone;
+            r.output = source_recipe().output;
+            r
+        };
+        assert_eq!(t.stored(edited), Some(want(&own)));
+        assert_eq!(t.stored(fresh), Some(want(&Recipe::default())));
+        assert!(t.edited(edited) && t.edited(fresh), "targets are stamped");
+    }
+
+    #[test]
+    fn applying_values_needs_frames_and_fields_and_known_frames() {
+        let t = Fixture::new("apply-values-bad");
+        let (a, b) = (t.bare(1), t.bare(2));
+        let recipe = source_recipe();
+        let code = |r: Result<(), AppError>| r.unwrap_err().code;
+        assert_eq!(
+            code(apply_recipe_values_to(
+                &t.library,
+                &[],
+                &recipe,
+                &[RecipeField::Tone]
+            )),
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(
+            code(apply_recipe_values_to(&t.library, &[a], &recipe, &[])),
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(
+            code(apply_recipe_values_to(
+                &t.library,
+                &[a, FrameId::new(), b],
+                &recipe,
+                &[RecipeField::Tone]
+            )),
+            ErrorCode::NotFound
+        );
+        assert_eq!((t.stored(a), t.stored(b)), (None, None));
+    }
+
+    #[test]
+    fn applying_values_is_refused_in_a_read_only_library() {
+        let dir = std::env::temp_dir().join(format!(
+            "gtp-develop-values-read-only-{}-{}",
+            std::process::id(),
+            FrameId::new()
+        ));
+        let library = Library::create(&dir, "Develop").unwrap();
+        let roll = crate::services::roll_frame::roll_create(
+            &library,
+            crate::services::roll_frame::RollInput {
+                name: "Roll".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let frame = crate::services::testkit::add_frame(&library, roll, 1, 64, 48);
+        drop(library);
+        {
+            use std::io::{Seek, SeekFrom, Write};
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .open(dir.join(crate::library_fs::DB_FILE))
+                .unwrap();
+            file.seek(SeekFrom::Start(60)).unwrap();
+            file.write_all(&(gtp_catalog::SCHEMA_VERSION + 1).to_be_bytes())
+                .unwrap();
+        }
+        let library = Library::open(&dir).unwrap();
+        assert!(library.is_read_only());
+        let err =
+            apply_recipe_values_to(&library, &[frame], &source_recipe(), &[RecipeField::Tone])
+                .unwrap_err();
+        assert_eq!(err.code, ErrorCode::LibraryTooNew);
+        drop(library);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn merging_copies_only_the_chosen_parts_and_clamps() {
+        let mut source = source_recipe();
+        source.color.temperature = 20.0;
+        source.color.split_tone.highlight_strength = 60.0;
+        let mut target = Recipe::default();
+        target.color.split_tone.shadow_hue = 100.0;
+
+        // Colour alone leaves the split toning, tone and geometry of the target.
+        let merged = merge_recipe_fields(target.clone(), &source, &[RecipeField::Color]);
+        assert_eq!(merged.color.temperature, 20.0);
+        assert_eq!(merged.color.split_tone, target.color.split_tone);
+        assert_eq!(merged.tone, target.tone);
+        assert_eq!(merged.geometry, target.geometry);
+
+        // Split toning alone leaves the rest of the colour.
+        let merged = merge_recipe_fields(target.clone(), &source, &[RecipeField::SplitTone]);
+        assert_eq!(merged.color.split_tone, source.color.split_tone);
+        assert_eq!(merged.color.temperature, target.color.temperature);
+
+        let merged = merge_recipe_fields(target.clone(), &source, &[RecipeField::Tone]);
+        assert_eq!(merged.tone, source.tone);
+        assert_eq!(merged.color, target.color);
+        assert_eq!(merged.output, target.output);
+
+        let merged = merge_recipe_fields(target.clone(), &source, &[RecipeField::Geometry]);
+        assert_eq!(merged.geometry.angle_deg, 2.0);
+        assert_eq!(merged.tone, target.tone);
+
+        // No parts: the target comes back as it was.
+        assert_eq!(merge_recipe_fields(target.clone(), &source, &[]), target);
+
+        // An out-of-range value is clamped.
+        let mut wild = Recipe::default();
+        wild.tone.exposure_ev = 5000.0;
+        let merged = merge_recipe_fields(Recipe::default(), &wild, &[RecipeField::Tone]);
+        assert_ne!(merged.tone.exposure_ev, 5000.0);
     }
 
     /// A 1600 px preview of a 2048 px proxy, as the Develop view asks for while a slider moves, for

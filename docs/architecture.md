@@ -241,7 +241,7 @@ Forward-only; the library backs up to `library.db.bak-v<N>` before migrating; pr
 | frame | `frame_list(FrameQuery) → Page<FrameSummary>`, `frame_get(FrameId)`, `frame_delete(FrameId[])`, `frame_set_note(FrameId, String)` | RollFrame | 2.2 |
 | ingest | `import_files(paths, RollId, ImportKind) → JobId`, `triplet_group(paths) → TripletCandidate[]`, `scanner_list() → DeviceInfo[]`, `scan_start(ScanParams, RollId) → JobId` | Import, Scan | 2.3, 4.1, 5.1 |
 | capture | `light_list()`, `light_connect(port?) → LightInfo`, `light_set([u8;3])`, `light_off()`, `camera_list()`, `capture_profile_get/set`, `capture_test(Channel) → TestShot`, `capture_triplet(RollId) → JobId` | Capture | 6.3 |
-| develop | `develop_open(FrameId) → DevelopInfo`, `develop_analyze(FrameId) → DevelopAnalysis`, `develop_render(FrameId, Recipe, max_edge, seq) → bytes`, `recipe_save(FrameId, Recipe)`, `recipe_apply_to(FrameId[], source, RecipeField[])` | Develop | 3.1, 3.3 |
+| develop | `develop_open(FrameId) → DevelopInfo`, `develop_analyze(FrameId) → DevelopAnalysis`, `develop_render(FrameId, Recipe, max_edge, seq) → bytes`, `recipe_save(FrameId, Recipe)`, `recipe_apply_to(FrameId[], source, RecipeField[])`, `recipe_apply_values_to(FrameId[], Recipe, RecipeField[])`, `recipe_merge_fields(Recipe, Recipe, RecipeField[]) → Recipe` | Develop | 3.1, 3.3 |
 | tags | `tag_list()`, `roll_tags(RollId)`, `frames_own_tags(FrameId[])`, `tag_apply(FrameId[], add[], remove[])`, `tag_apply_roll`, `tag_rename`, `tag_delete` | TagsSearch | 2.4 |
 | search | `search(SearchQuery, page) → Page<FrameSummary>` | TagsSearch | 2.4 |
 | export | `export_start(FrameId[], ExportOptions) → JobId` | Export | 3.3 |

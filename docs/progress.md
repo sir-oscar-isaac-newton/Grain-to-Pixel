@@ -974,6 +974,15 @@
       "number": 303,
       "title": "Split toning",
       "branch": "feat/issue-303-split-toning",
+      "status": "completed",
+      "pr": 312,
+      "commit": "03c0421"
+    },
+    {
+      "id": "U-28",
+      "number": 306,
+      "title": "Develop presets",
+      "branch": "feat/issue-306-develop-presets",
       "status": "in_progress",
       "pr": null,
       "commit": null

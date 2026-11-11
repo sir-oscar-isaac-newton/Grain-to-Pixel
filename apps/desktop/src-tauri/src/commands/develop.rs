@@ -134,6 +134,35 @@ pub fn recipe_apply_to(
     Ok(())
 }
 
+/// Copies the chosen groups of settings from a saved preset's recipe onto the frames, all or
+/// nothing, like `recipe_apply_to` but with no source frame: every listed frame is a target.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn recipe_apply_values_to(
+    ctx: State<'_, AppContext>,
+    events: State<'_, EventsState>,
+    frame_ids: Vec<FrameId>,
+    recipe: Recipe,
+    fields: Vec<RecipeField>,
+) -> CmdResult<()> {
+    develop::apply_recipe_values_to(&*ctx.library()?, &frame_ids, &recipe, &fields)?;
+    events.0.library_changed(None);
+    ctx.regenerate_thumbnails(Arc::clone(&events.0), frame_ids)?;
+    Ok(())
+}
+
+/// `target` with the chosen groups of settings copied from `source`, clamped. Reads and saves
+/// nothing: the Develop view applies a preset to the open edit with it.
+#[tauri::command]
+#[specta::specta]
+pub fn recipe_merge_fields(
+    target: Recipe,
+    source: Recipe,
+    fields: Vec<RecipeField>,
+) -> CmdResult<Recipe> {
+    Ok(develop::merge_recipe_fields(target, &source, &fields))
+}
+
 #[cfg(test)]
 mod tests {
     use gtp_app::services::roll_frame::{roll_create, RollInput};
@@ -265,6 +294,38 @@ mod tests {
         assert_eq!(err.code, ErrorCode::InvalidInput);
         let json = serde_json::to_value(&err).unwrap();
         assert_eq!(json["code"], "InvalidInput");
+
+        // A preset's values go onto frames with no source frame.
+        let mut preset = Recipe::default();
+        preset.tone.exposure_ev = 0.9;
+        recipe_apply_values_to(
+            app.state(),
+            app.state(),
+            vec![frames[0], frames[1]],
+            preset.clone(),
+            vec![RecipeField::Tone],
+        )
+        .unwrap();
+        for frame in &frames {
+            let got = library.read(|c| c.load_recipe(*frame)).unwrap().unwrap();
+            assert_eq!(got.tone, preset.tone);
+        }
+        let err = recipe_apply_values_to(
+            app.state(),
+            app.state(),
+            vec![frames[1]],
+            preset.clone(),
+            vec![],
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+
+        // Merging is pure.
+        let merged =
+            recipe_merge_fields(Recipe::default(), preset.clone(), vec![RecipeField::Tone])
+                .unwrap();
+        assert_eq!(merged.tone, preset.tone);
+        assert_eq!(merged.color, Recipe::default().color);
 
         drop(library);
         drop(app);

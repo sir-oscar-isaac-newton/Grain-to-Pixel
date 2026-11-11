@@ -1004,6 +1004,15 @@
       "status": "completed",
       "pr": 317,
       "commit": "98c7870"
+    },
+    {
+      "id": "U-29",
+      "number": 319,
+      "title": "Full-size detail view in Develop",
+      "branch": "feat/issue-319-detail-view",
+      "status": "in_progress",
+      "pr": null,
+      "commit": null
     }
   ]
 }

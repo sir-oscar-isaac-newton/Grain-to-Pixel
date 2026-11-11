@@ -99,6 +99,26 @@ pub fn develop_render(
     Ok(tauri::ipc::Response::new(bytes))
 }
 
+/// A region of the frame at full size, as raw bytes: the picture rendered as a full-size export
+/// renders it (output sharpening included), cut to `region` (fractions of the whole picture, at
+/// most 4096 pixels a side). A 32-byte little-endian header (`seq` u64, region `width` and
+/// `height` u32, region origin `x` and `y` u32, full picture `width` and `height` u32) is followed
+/// by RGBA8 sRGB pixels. A request superseded by a newer `seq` for the same frame is `Cancelled`.
+/// Not in the typed bindings (see `ipc::RAW_COMMANDS`).
+#[tauri::command(async)]
+pub fn develop_render_detail(
+    ctx: State<'_, AppContext>,
+    frame_id: FrameId,
+    recipe: Recipe,
+    region: Crop,
+    seq: u64,
+) -> CmdResult<tauri::ipc::Response> {
+    let bytes = ctx
+        .develop()
+        .render_detail(&*ctx.library()?, frame_id, &recipe, region, seq)?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 /// Saves a frame's recipe, clamped into range, and marks the frame edited. Returns the recipe as
 /// stored. A recipe that could not be rendered (a tone curve with a single point) is refused.
 #[tauri::command(async)]

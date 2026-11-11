@@ -32,6 +32,7 @@ import { ExportDialog } from '../library/ExportDialog';
 import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
 import { Canvas, pictureStyle } from './Canvas';
+import { DetailLayer } from './DetailLayer';
 import { ComparePane, type LinkedTo } from './ComparePane';
 import { CropOverlay } from './CropOverlay';
 import {
@@ -67,10 +68,12 @@ import {
   withLevels,
 } from './recipe-parts';
 import { useCompare } from './use-compare';
+import { useDetail, type FullSize } from './use-detail';
 import { useDevelop, type PickView } from './use-develop';
 import { useKeyMap } from './use-keymap';
 import { usePicker } from './use-picker';
 import { useViewport } from './use-viewport';
+import { MAX_ZOOM, ceilingFor, isOneToOne, oneToOneZoom } from './viewport';
 
 /** What is being picked on the picture: the film base, the white or black point, or a neutral grey. */
 type PickTarget = 'base' | 'neutral' | 'crop' | LevelsPoint;
@@ -154,12 +157,60 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   const [ratio, setRatio] = useState<RatioState>(FREE_RATIO);
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  // The size of the full-size picture, as the detail view reported it (the preview does not know it).
+  // It sets the 1:1 zoom and, with it, how far the view may zoom in.
+  const [fullSize, setFullSize] = useState<FullSize | null>(null);
+  const known = fullSize?.frameId === frame.id ? fullSize : null;
+  const oneToOne = known ? oneToOneZoom(Math.max(known.width, known.height)) : 0;
   const viewport = useViewport(
     preview ? { width: preview.width, height: preview.height } : null,
     pick === null,
+    oneToOne > 0 ? ceilingFor(oneToOne) : MAX_ZOOM,
   );
   const { toggleBefore, setPickView, setRecipe, rerender, undo, redo, auto } = develop;
-  const { fit, actual, zoomIn, zoomOut } = viewport;
+  const { fit, actual, zoomIn, zoomOut, zoomToValue } = viewport;
+  const onFullSize = useCallback(
+    (size: FullSize) =>
+      setFullSize((was) =>
+        was &&
+        was.frameId === size.frameId &&
+        was.width === size.width &&
+        was.height === size.height
+          ? was
+          : size,
+      ),
+    [],
+  );
+  // At 1:1 or closer the picture is asked for at full size. It is the recipe the canvas shows, so
+  // "before" shows the automatic one. Cropping and the pickers work on the preview.
+  const detail = useDetail({
+    frameId: frame.id,
+    recipe: develop.showingBefore && auto ? auto : recipe,
+    version: info,
+    settled: !develop.dragging,
+    enabled: develop.status === 'ready' && pick === null,
+    view: viewport.view,
+    stage: viewport.stage,
+    picture: viewport.image,
+    full: known,
+    onFull: onFullSize,
+  });
+  // "1:1" before the size is known asks for it, and zooms once it arrives.
+  const [wantOneToOne, setWantOneToOne] = useState(false);
+  const { learnSize } = detail;
+  const goOneToOne = () => {
+    if (oneToOne > 0) zoomToValue(oneToOne);
+    else {
+      setWantOneToOne(true);
+      learnSize();
+    }
+  };
+  useEffect(() => {
+    if (!wantOneToOne || oneToOne <= 0) return;
+    setWantOneToOne(false);
+    zoomToValue(oneToOne);
+  }, [wantOneToOne, oneToOne, zoomToValue]);
+  useEffect(() => setWantOneToOne(false), [frame.id]);
   // Compare mode: the reference follows the zoom and pan of this frame (kept across frames and
   // references), and its saved recipe is read again when `referenceRevision` changes.
   const [linkZoom, setLinkZoom] = useState(true);
@@ -556,7 +607,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   }, [editable, undo, redo]);
   const bins = useMemo(() => (preview ? computeHistogram(preview.rgba) : null), [preview]);
   const lost = bins ? clipping(bins) : null;
-  const zoomText = percent(i18n.language, viewport.view.zoom);
+  const zoomText = isOneToOne(viewport.view.zoom, oneToOne)
+    ? t('develop.oneToOneText')
+    : percent(i18n.language, viewport.view.zoom);
 
   return (
     <div className={styles.frameView}>
@@ -623,6 +676,13 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         <button type="button" onClick={actual}>
           {t('develop.actual')}
         </button>
+        <button
+          type="button"
+          disabled={develop.status !== 'ready' || pick !== null}
+          onClick={goOneToOne}
+        >
+          {t('develop.oneToOne')}
+        </button>
       </div>
 
       {armed && !reference && (
@@ -657,6 +717,13 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                           ? t('develop.pickFrameLabel')
                           : label
                   }
+                  view={viewport.view}
+                />
+              )}
+              {detail.layer && (
+                <DetailLayer
+                  detail={detail.layer}
+                  label={t('develop.detailLabel', { frame: label })}
                   view={viewport.view}
                 />
               )}
@@ -736,6 +803,17 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                       ? t('develop.updating')
                       : ''}
             </p>
+            {detail.rendering && (
+              <p role="status" className={styles.state}>
+                {t('develop.detailRendering')}
+              </p>
+            )}
+            {detail.layer && <p className={styles.state}>{t('develop.detailNotice')}</p>}
+            {detail.error && (
+              <p role="alert" className={styles.state}>
+                {t('develop.detailFailed', { message: detail.error })}
+              </p>
+            )}
             {develop.renderError && (
               <p role="alert" className={styles.state}>
                 {t('develop.renderFailed', { message: develop.renderError })}

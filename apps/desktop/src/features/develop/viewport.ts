@@ -46,10 +46,36 @@ export function fitZoom(stage: Size, image: Size): number {
   return Math.min(stage.width / reference.width, stage.height / reference.height);
 }
 
-/** The smallest and largest zoom: the fit zoom, and 400% (or the fit zoom, if that is larger). */
-export function zoomLimits(stage: Size, image: Size): { min: number; max: number } {
+/**
+ * The zoom at which one pixel of the full-size picture is one screen pixel (1:1), given the long
+ * edge of that picture in pixels. The zoom's unit is the picture at `PROXY_EDGE`, so it is the ratio
+ * of the two. CSS pixels count as screen pixels, as they do for 100%.
+ */
+export function oneToOneZoom(fullLongEdge: number): number {
+  return fullLongEdge > 0 ? fullLongEdge / PROXY_EDGE : 0;
+}
+
+/** The largest zoom once the full-size picture is known: 200% of its pixels, but at least 400%. */
+export function ceilingFor(oneToOne: number): number {
+  return Math.max(MAX_ZOOM, 2 * oneToOne);
+}
+
+/** Whether `zoom` is the 1:1 zoom, to what a readout can tell apart. */
+export function isOneToOne(zoom: number, oneToOne: number): boolean {
+  return oneToOne > 0 && Math.abs(zoom - oneToOne) <= oneToOne * 0.0005;
+}
+
+/**
+ * The smallest and largest zoom: the fit zoom, and `ceiling` (400% unless the full-size picture
+ * allows more; or the fit zoom, if that is larger).
+ */
+export function zoomLimits(
+  stage: Size,
+  image: Size,
+  ceiling: number = MAX_ZOOM,
+): { min: number; max: number } {
   const fit = fitZoom(stage, image);
-  return { min: fit, max: Math.max(MAX_ZOOM, fit) };
+  return { min: fit, max: Math.max(ceiling, fit) };
 }
 
 /** Keeps the image from being dragged away: it stays centred along an axis it does not fill. */
@@ -66,9 +92,14 @@ export function clampOffset(offset: Point, zoom: number, stage: Size, image: Siz
 }
 
 /** The view as it is drawn: a fitting view follows the stage, any other is clamped to it. */
-export function resolveView(view: View, stage: Size, image: Size): View {
+export function resolveView(
+  view: View,
+  stage: Size,
+  image: Size,
+  ceiling: number = MAX_ZOOM,
+): View {
   if (view.fit) return { fit: true, zoom: fitZoom(stage, image), offset: { x: 0, y: 0 } };
-  const { min, max } = zoomLimits(stage, image);
+  const { min, max } = zoomLimits(stage, image, ceiling);
   const zoom = Math.min(max, Math.max(min, view.zoom));
   return { fit: false, zoom, offset: clampOffset(view.offset, zoom, stage, image) };
 }
@@ -77,9 +108,16 @@ export function resolveView(view: View, stage: Size, image: Size): View {
  * Zooms to `target`, keeping the image point under `anchor` (a point relative to the centre of the
  * stage) where it is. Reaching the fit zoom goes back to a fitting view.
  */
-export function zoomTo(view: View, target: number, anchor: Point, stage: Size, image: Size): View {
-  const current = resolveView(view, stage, image);
-  const { min, max } = zoomLimits(stage, image);
+export function zoomTo(
+  view: View,
+  target: number,
+  anchor: Point,
+  stage: Size,
+  image: Size,
+  ceiling: number = MAX_ZOOM,
+): View {
+  const current = resolveView(view, stage, image, ceiling);
+  const { min, max } = zoomLimits(stage, image, ceiling);
   const zoom = Math.min(max, Math.max(min, target));
   if (zoom <= min + 1e-9) return FIT_VIEW;
   const ratio = zoom / current.zoom;
@@ -91,9 +129,15 @@ export function zoomTo(view: View, target: number, anchor: Point, stage: Size, i
 }
 
 /** Moves the image by `delta` screen pixels. A fitting view does not move. */
-export function panBy(view: View, delta: Point, stage: Size, image: Size): View {
+export function panBy(
+  view: View,
+  delta: Point,
+  stage: Size,
+  image: Size,
+  ceiling: number = MAX_ZOOM,
+): View {
   if (view.fit) return view;
-  const current = resolveView(view, stage, image);
+  const current = resolveView(view, stage, image, ceiling);
   return {
     ...current,
     offset: clampOffset(
@@ -106,8 +150,8 @@ export function panBy(view: View, delta: Point, stage: Size, image: Size): View 
 }
 
 /** The view at 100% (one proxy pixel per screen pixel), or a fitting view when that is as big. */
-export function actualSize(view: View, stage: Size, image: Size): View {
-  return zoomTo(view, 1, { x: 0, y: 0 }, stage, image);
+export function actualSize(view: View, stage: Size, image: Size, ceiling: number = MAX_ZOOM): View {
+  return zoomTo(view, 1, { x: 0, y: 0 }, stage, image, ceiling);
 }
 
 /**

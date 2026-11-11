@@ -699,6 +699,80 @@ export async function developRender(
   return parsePreview(await invokeRaw('develop_render', { frameId, recipe, maxEdge, seq }));
 }
 
+/** The most pixels a detail region may have on a side (the backend refuses more). */
+export const MAX_DETAIL_EDGE = 4096;
+
+/** A part of the picture as fractions of the whole picture (each 0 to 1). */
+export interface DetailRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * A part of a frame rendered at full size: RGBA8 sRGB pixels, where the part is (in pixels of the
+ * full picture) and how big the full picture is.
+ */
+export interface Detail {
+  /** The sequence number of the request this answers. */
+  seq: number;
+  /** The size of the part. */
+  width: number;
+  height: number;
+  /** Where the part starts in the full picture. */
+  x: number;
+  y: number;
+  /** The size of the full picture. */
+  fullWidth: number;
+  fullHeight: number;
+  rgba: Uint8ClampedArray;
+}
+
+const DETAIL_HEADER_BYTES = 32;
+
+/**
+ * Reads a detail region from the bytes of `develop_render_detail`: a little-endian header (`seq`
+ * u64, region `width`, `height`, `x`, `y`, full picture `width`, `height`, each u32) and then the
+ * RGBA8 pixels.
+ */
+export function parseDetail(buffer: ArrayBuffer): Detail {
+  if (buffer.byteLength < DETAIL_HEADER_BYTES) throw new Error('The detail is incomplete.');
+  const header = new DataView(buffer);
+  const word = (i: number) => header.getUint32(8 + i * 4, true);
+  const width = word(0);
+  const height = word(1);
+  if (buffer.byteLength !== DETAIL_HEADER_BYTES + width * height * 4) {
+    throw new Error('The detail does not match its size.');
+  }
+  return {
+    seq: Number(header.getBigUint64(0, true)),
+    width,
+    height,
+    x: word(2),
+    y: word(3),
+    fullWidth: word(4),
+    fullHeight: word(5),
+    rgba: new Uint8ClampedArray(buffer, DETAIL_HEADER_BYTES, width * height * 4),
+  };
+}
+
+/**
+ * Renders the part `region` of the frame at full size with `recipe`, as a full-size export would
+ * (output sharpening included). The first request for a recipe renders the whole picture, which
+ * takes seconds; later regions of the same recipe are cut from it. Numbers `seq` upwards: a request
+ * a newer one replaced rejects with an `IpcError` whose code is `Cancelled`, which is not a
+ * failure. Raw-bytes command like `developRender`, so not in the generated bindings.
+ */
+export async function developRenderDetail(
+  frameId: string,
+  recipe: Recipe,
+  region: DetailRegion,
+  seq: number,
+): Promise<Detail> {
+  return parseDetail(await invokeRaw('develop_render_detail', { frameId, recipe, region, seq }));
+}
+
 /** The activation counters of the open library; null when no library is open. */
 export async function countersGet(): Promise<Counters | null> {
   return unwrap(await commands.countersGet());

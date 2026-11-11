@@ -613,6 +613,12 @@
     "zoomLevel": "Zoom level",
     "fit": "Fit",
     "actual": "100%",
+    "oneToOne": "1:1",
+    "oneToOneText": "1:1",
+    "detailLabel": "{{frame}} at full size",
+    "detailRendering": "Rendering detail…",
+    "detailFailed": "The full-size detail could not be drawn: {{message}}",
+    "detailNotice": "Full size, with output sharpening as in a full-size export.",
     "base": {
       "heading": "Film base",
       "fromRoll": "Following the roll’s film base.",

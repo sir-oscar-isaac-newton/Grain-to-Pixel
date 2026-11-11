@@ -100,7 +100,12 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
 
 /// Commands whose result is raw bytes (`tauri::ipc::Response`), which specta cannot describe. They
 /// are left out of the typed bindings and called by name from `shared/ipc.ts`.
-const RAW_COMMANDS: [&str; 3] = ["frame_thumbnail", "develop_render", "camera_preview_frame"];
+const RAW_COMMANDS: [&str; 4] = [
+    "frame_thumbnail",
+    "develop_render",
+    "develop_render_detail",
+    "camera_preview_frame",
+];
 
 /// The handler of the raw-byte commands (a function of its own, so the closure's type is known).
 fn raw_handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static
@@ -108,6 +113,7 @@ fn raw_handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
     tauri::generate_handler![
         commands::frame::frame_thumbnail,
         commands::develop::develop_render,
+        commands::develop::develop_render_detail,
         commands::capture::camera_preview_frame
     ]
 }
@@ -450,6 +456,25 @@ mod tests {
         };
         assert_eq!(render(1600, frame.id).unwrap_err()["code"], "NotFound");
         assert_eq!(render(10, frame.id).unwrap_err()["code"], "InvalidInput");
+        // So is the detail view's full-size region: a frame without a scan is `NotFound`, a region
+        // outside the picture `InvalidInput`.
+        let detail = |region: serde_json::Value| {
+            call(
+                &webview,
+                "develop_render_detail",
+                serde_json::json!({ "frameId": frame.id, "recipe": recipe, "region": region, "seq": 1 }),
+            )
+        };
+        assert_eq!(
+            detail(serde_json::json!({ "x": 0.0, "y": 0.0, "w": 0.5, "h": 0.5 })).unwrap_err()
+                ["code"],
+            "NotFound"
+        );
+        assert_eq!(
+            detail(serde_json::json!({ "x": 0.5, "y": 0.0, "w": 0.9, "h": 0.5 })).unwrap_err()
+                ["code"],
+            "InvalidInput"
+        );
         let opened = call(
             &webview,
             "develop_open",

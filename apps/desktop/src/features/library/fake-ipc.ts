@@ -3,6 +3,8 @@
 import { vi } from 'vitest';
 import type {
   AppError,
+  Detail,
+  DetailRegion,
   CameraInfo,
   CameraSetting,
   CameraSettingKind,
@@ -144,6 +146,29 @@ export function makePreview(recipe: Recipe, maxEdge: number, seq: number): Previ
   return { seq, width, height, rgba };
 }
 
+/**
+ * A detail region as the backend would answer it, for a full picture of `full` pixels: the region
+ * (fractions) rounded outwards to whole pixels, filled with the colour of the recipe's tag.
+ */
+export function makeDetail(
+  recipe: Recipe,
+  region: DetailRegion,
+  seq: number,
+  full: { width: number; height: number },
+): Detail {
+  const span = (origin: number, size: number, whole: number) => {
+    const first = Math.min(whole - 1, Math.floor(origin * whole));
+    const last = Math.min(whole, Math.ceil((origin + size) * whole));
+    return [first, Math.max(1, last - first)] as const;
+  };
+  const [x, width] = span(region.x, region.w, full.width);
+  const [y, height] = span(region.y, region.h, full.height);
+  const [r, g, b] = PIXELS[tagOf(recipe)] ?? [128, 128, 128];
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < width * height; i += 1) rgba.set([r, g, b, 255], i * 4);
+  return { seq, width, height, x, y, fullWidth: full.width, fullHeight: full.height, rgba };
+}
+
 /** The master curve the fake gives for the Film log look (the shape matters, not the values). */
 export const FILM_LOG_CURVE: Array<[number, number]> = [
   [0, 0.03],
@@ -260,6 +285,14 @@ export const state = {
   recipes: {} as Record<string, Recipe>,
   /** Frames whose renders fail in Develop, with the message. */
   renderFails: {} as Record<string, string>,
+  /** The size of the full-size picture `developRenderDetail` answers for (3:2, 2 x the proxy). */
+  detailFull: { width: 4096, height: 2731 },
+  /** A detail request waits for this to settle before it answers (null: answers at once). */
+  detailGate: null as Promise<void> | null,
+  /** What a detail request fails with (null: it answers). */
+  detailFail: null as string | null,
+  /** A detail request answers `Cancelled`, as when a newer one replaced it. */
+  detailCancel: false,
   /** The roll's film base, as Develop opens a frame. */
   rollBase: null as [number, number, number] | null,
   /** How sure that base was (null: picked by hand, or none). */
@@ -836,6 +869,19 @@ export const ipc = {
     if (failure) throw new IpcError({ code: 'Internal', message: failure });
     return makePreview(recipe, maxEdge, seq);
   }),
+  developRenderDetail: vi.fn(
+    async (id: string, recipe: Recipe, region: DetailRegion, seq: number): Promise<Detail> => {
+      if (state.detailGate) await state.detailGate;
+      if (state.detailCancel) {
+        throw new IpcError({ code: 'Cancelled', message: 'A newer request replaced this one.' });
+      }
+      if (state.detailFail) throw new IpcError({ code: 'Internal', message: state.detailFail });
+      if (state.renderFails[id]) {
+        throw new IpcError({ code: 'Internal', message: state.renderFails[id] });
+      }
+      return makeDetail(recipe, region, seq, state.detailFull);
+    },
+  ),
   frameThumbnail: vi.fn(async (id: string) => {
     if (state.noThumb.has(id)) throw new IpcError({ code: 'NotFound', message: 'no thumbnail' });
     return new Uint8Array([0xff, 0xd8, 1, 2, 3]).buffer;
@@ -1057,6 +1103,10 @@ export function resetFake() {
   state.noAnalysis = new Set();
   state.recipes = {};
   state.renderFails = {};
+  state.detailFull = { width: 4096, height: 2731 };
+  state.detailGate = null;
+  state.detailFail = null;
+  state.detailCancel = false;
   state.sampledBase = [0.8, 0.5, 0.3];
   state.rollBase = null;
   state.rollBaseConfidence = null;

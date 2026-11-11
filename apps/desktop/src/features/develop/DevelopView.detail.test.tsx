@@ -358,6 +358,25 @@ describe('Develop: full-size detail', () => {
     });
   });
 
+  describe('leaving', () => {
+    it('releases the backend picture when the view closes, and not when the frame changes', async () => {
+      const { unmount } = await atOneToOne();
+      expect(ipc.developReleaseDetail).not.toHaveBeenCalled();
+      act(() => useUiStore.setState({ developFrame: { id: F2, index: 1 } }));
+      await waitFor(() => expect(screen.getByRole('img', { name: 'Frame 2' })).toBeInTheDocument());
+      expect(ipc.developReleaseDetail).not.toHaveBeenCalled();
+      unmount();
+      expect(ipc.developReleaseDetail).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a failure of the release', async () => {
+      const { unmount } = await openFrame();
+      ipc.developReleaseDetail.mockRejectedValueOnce(new Error('gone'));
+      expect(() => unmount()).not.toThrow();
+      await act(async () => {});
+    });
+  });
+
   describe('accessibility', () => {
     it('has no violations with the layer and its notice on screen', async () => {
       const { container } = await atOneToOne();

@@ -773,6 +773,14 @@ export async function developRenderDetail(
   return parseDetail(await invokeRaw('develop_render_detail', { frameId, recipe, region, seq }));
 }
 
+/**
+ * Releases the full-size picture the backend keeps for the detail view (about 4 bytes a pixel).
+ * Called when the Develop view is left; harmless with nothing cached.
+ */
+export async function developReleaseDetail(): Promise<void> {
+  unwrap(await commands.developReleaseDetail());
+}
+
 /** The activation counters of the open library; null when no library is open. */
 export async function countersGet(): Promise<Counters | null> {
   return unwrap(await commands.countersGet());

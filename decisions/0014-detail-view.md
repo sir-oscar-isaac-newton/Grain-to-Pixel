@@ -36,10 +36,13 @@ tied to the export so the two cannot drift apart, and when the memory is given b
    render that is already running finishes and keeps its picture unless the newer request brought
    another recipe, so a pan (same recipe, new region) wastes nothing.
 5. **Release.** The picture is cleared with the proxy cache when another library opens, replaced when
-   another frame is asked for, and dropped after `DETAIL_IDLE_SECS` = 300 s without a request. The
-   check runs lazily on the next detail request and on `develop_open`, with the time passed in so a
-   test does not wait; no timer thread is added (the Develop view has no close call, and a thread
-   for one check is not worth its cost).
+   another frame is asked for, dropped when the Develop view is left (the command
+   `develop_release_detail`, approved with this ADR's follow-up; the proxy cache stays), and dropped
+   after `DETAIL_IDLE_SECS` = 300 s without a request. The idle check runs lazily on the next detail
+   request and on `develop_open`, with the time passed in so a test does not wait; no timer thread
+   is added. A release does not wait for a render in flight: it bumps a release generation, and a
+   render that began before it discards its picture when it ends (the caller gets `Cancelled`), so
+   nothing is stored after the view has gone.
 6. **The UI** asks for the visible part grown by half its size on each side once the recipe has
    settled, hides the layer while a drag runs or the picture on hand belongs to another recipe, and
    keeps the pickers and the crop on the preview, since their regions are in preview coordinates.
@@ -60,7 +63,7 @@ tied to the export so the two cannot drift apart, and when the memory is given b
   scan with every tool on, on 6 cores (measured 2.8 s without the decode, see the specification's
   section 11). A region from the cached picture takes a few milliseconds. The enlarged preview shows
   in the meantime, with a status line.
-- The service holds up to 96 MB more (24 megapixels) while a frame is looked at, and during a render
+- The service holds up to 96 MB more (24 megapixels) while the Develop view is open, and during a render
   the float working images are alive as well (a peak like an export's). The old picture is dropped
   before the new one is made, so two are never held at once.
 - A resized export sharpens at its smaller size, so it differs from the detail, which is always at

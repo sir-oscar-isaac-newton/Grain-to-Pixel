@@ -869,6 +869,7 @@ export const ipc = {
     if (failure) throw new IpcError({ code: 'Internal', message: failure });
     return makePreview(recipe, maxEdge, seq);
   }),
+  developReleaseDetail: vi.fn(async () => undefined),
   developRenderDetail: vi.fn(
     async (id: string, recipe: Recipe, region: DetailRegion, seq: number): Promise<Detail> => {
       if (state.detailGate) await state.detailGate;

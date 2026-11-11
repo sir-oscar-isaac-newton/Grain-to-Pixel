@@ -200,6 +200,11 @@ export const commands = {
 	 */
 	developOpen: (frameId: FrameId) => typedError<DevelopInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("develop_open", { frameId })),
 	/**
+	 *  Drops the full-size picture the detail view keeps (the proxy cache stays). The Develop view
+	 *  calls it when it is left. Harmless with nothing cached.
+	 */
+	developReleaseDetail: () => typedError<null, AppError_Serialize>(__TAURI_INVOKE("develop_release_detail")),
+	/**
 	 *  Finds the frame, film base and levels of a frame, and the recipe they make. With `base` (three
 	 *  linear scan values above 0, such as one picked on the rebate) the levels are fitted to that base
 	 *  instead of the roll's or a measured one. The automatic recipe carries the tone curve of `look`,

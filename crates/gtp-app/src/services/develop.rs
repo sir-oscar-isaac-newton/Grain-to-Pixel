@@ -357,6 +357,8 @@ struct DetailState {
     latest: Mutex<HashMap<FrameId, (u64, Recipe)>>,
     /// One detail render at a time, so two requests for the same recipe render once.
     turn: Mutex<()>,
+    /// Bumped by every release: a render that began before one does not keep its picture.
+    generation: AtomicU64,
     /// How many full-size renders were made (for tests).
     renders: std::sync::atomic::AtomicUsize,
 }
@@ -834,6 +836,7 @@ impl DevelopService {
         detail_pixels(region, 1, 1)?;
         let recipe = recipe.clone().clamped();
         let detail = &self.detail;
+        let generation = detail.generation.load(Ordering::SeqCst);
         {
             let mut latest = detail.latest.lock().unwrap_or_else(PoisonError::into_inner);
             let entry = latest.entry(id).or_insert_with(|| (seq, recipe.clone()));
@@ -873,7 +876,11 @@ impl DevelopService {
             let picture = self.render_detail_picture(library, id, &recipe, context, now)?;
             detail.renders.fetch_add(1, Ordering::SeqCst);
             let (newest_seq, newest_recipe) = newest().unwrap_or((seq, recipe.clone()));
-            // Kept unless another recipe was asked for meanwhile.
+            // Kept unless another recipe was asked for meanwhile, or the view released it.
+            let released = detail.generation.load(Ordering::SeqCst) != generation;
+            if released {
+                return Err(superseded());
+            }
             if newest_recipe == recipe {
                 *slot = Some(picture);
             }
@@ -967,6 +974,23 @@ impl DevelopService {
     /// Memory held by the cached proxies.
     pub fn cached_bytes(&self) -> usize {
         self.cache().iter().map(|(_, e)| e.bytes()).sum()
+    }
+
+    /// Drops the detail picture and forgets the detail requests' sequence numbers (the Develop view
+    /// was left); the proxy cache stays. Safe with nothing cached. It does not wait for a render in
+    /// flight: it bumps the release generation first, so a render that began before it discards its
+    /// picture when it ends (and answers `Cancelled`), and then drops the picture if no render is
+    /// holding it.
+    pub fn release_detail(&self) {
+        self.detail.generation.fetch_add(1, Ordering::SeqCst);
+        self.detail
+            .latest
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
+        if let Ok(mut slot) = self.detail.picture.try_lock() {
+            *slot = None;
+        }
     }
 
     /// Forgets every proxy and the detail picture (another library was opened).
@@ -1938,6 +1962,55 @@ mod tests {
         t.service.set_dust_removal(false);
         ask(4);
         assert_eq!(t.service.detail_renders(), 3);
+    }
+
+    #[test]
+    fn releasing_drops_the_detail_picture_and_is_safe_with_nothing_cached() {
+        let t = Fixture::new("detail-release");
+        let id = t.frame(1, 300, 200);
+        t.service.release_detail();
+        assert_eq!(t.service.detail_bytes(), 0);
+        t.service
+            .render_detail(&t.library, id, &Recipe::default(), WHOLE, 1)
+            .unwrap();
+        t.service.open(&t.library, id).unwrap();
+        assert!(t.service.detail_bytes() > 0);
+        t.service.release_detail();
+        assert_eq!(t.service.detail_bytes(), 0);
+        // The proxy stays, and a later request renders again (its number may be lower: the
+        // sequence numbers were forgotten).
+        assert_eq!(t.service.cached(), vec![id]);
+        t.service
+            .render_detail(&t.library, id, &Recipe::default(), WHOLE, 1)
+            .unwrap();
+        assert!(t.service.detail_bytes() > 0);
+        assert_eq!(t.service.detail_renders(), 2);
+    }
+
+    #[test]
+    fn a_detail_render_that_began_before_a_release_does_not_keep_its_picture() {
+        let t = Fixture::new("detail-release-flight");
+        let id = t.frame(1, 300, 200);
+        let recipe = Recipe::default();
+        // Holding the turn stands in for a render that is running: the request has read the
+        // generation and registered itself, and waits.
+        let turn = t.service.detail.turn.lock().unwrap();
+        let result = std::thread::scope(|scope| {
+            let a = scope.spawn(|| t.service.render_detail(&t.library, id, &recipe, WHOLE, 1));
+            while t.service.detail.latest.lock().unwrap().get(&id).is_none() {
+                std::thread::yield_now();
+            }
+            t.service.release_detail();
+            drop(turn);
+            a.join().unwrap()
+        });
+        assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+        assert_eq!(t.service.detail_bytes(), 0);
+        // A request made after the release is a new one and keeps its picture.
+        t.service
+            .render_detail(&t.library, id, &recipe, WHOLE, 1)
+            .unwrap();
+        assert!(t.service.detail_bytes() > 0);
     }
 
     #[test]

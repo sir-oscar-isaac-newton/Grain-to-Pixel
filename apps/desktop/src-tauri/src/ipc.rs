@@ -60,6 +60,7 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::capture::capture_calibrate,
             commands::export::export_start,
             commands::develop::develop_open,
+            commands::develop::develop_release_detail,
             commands::develop::develop_analyze,
             commands::develop::develop_sample_base,
             commands::develop::develop_sample_levels,
@@ -482,6 +483,11 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(opened["code"], "NotFound");
+        // Releasing the detail picture takes no arguments and is fine with nothing cached.
+        match call(&webview, "develop_release_detail", serde_json::json!({})).unwrap() {
+            InvokeResponseBody::Json(json) => assert_eq!(json, "null"),
+            other => unreachable!("expected JSON, got {other:?}"),
+        }
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);
     }

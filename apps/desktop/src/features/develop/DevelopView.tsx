@@ -4,6 +4,7 @@ import { Histogram } from '@gtp/ui';
 import { useUiStore, type DevelopFrame } from '../../app/store';
 import {
   developAnalyze,
+  developReleaseDetail,
   developSampleBase,
   developSampleLevels,
   developSampleNeutral,
@@ -179,6 +180,14 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
           ? was
           : size,
       ),
+    [],
+  );
+  // Leaving the view (not a mere change of frame, whose first detail request replaces the picture)
+  // gives the backend's full-size picture back. A failure is not worth telling the user.
+  useEffect(
+    () => () => {
+      developReleaseDetail().catch(() => {});
+    },
     [],
   );
   // At 1:1 or closer the picture is asked for at full size. It is the recipe the canvas shows, so

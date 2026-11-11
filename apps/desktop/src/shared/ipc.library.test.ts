@@ -64,6 +64,8 @@ import {
   developSampleNeutral,
   exportStart,
   developRender,
+  developRenderDetail,
+  parseDetail,
   folderCheck,
   frameThumbnail,
   jobCancel,
@@ -163,6 +165,49 @@ describe('shared/ipc: library helpers', () => {
       });
       expect(preview.seq).toBe(5);
       expect([...preview.rgba]).toEqual([9, 8, 7, 255]);
+    });
+
+    /** The bytes of `develop_render_detail`: seq u64, six u32 (size, origin, full size), RGBA8. */
+    const detailBytes = (seq: number, words: number[], pixels: number[] = []) => {
+      const bytes = new ArrayBuffer(32 + pixels.length);
+      const view = new DataView(bytes);
+      view.setBigUint64(0, BigInt(seq), true);
+      words.forEach((word, i) => view.setUint32(8 + i * 4, word, true));
+      new Uint8Array(bytes, 32).set(pixels);
+      return bytes;
+    };
+
+    it('reads a detail region: its size, where it is and the size of the full picture', () => {
+      const pixels = [1, 2, 3, 255, 4, 5, 6, 255];
+      const detail = parseDetail(detailBytes(7, [2, 1, 30, 40, 6000, 4000], pixels));
+      expect(detail).toMatchObject({
+        seq: 7,
+        width: 2,
+        height: 1,
+        x: 30,
+        y: 40,
+        fullWidth: 6000,
+        fullHeight: 4000,
+      });
+      expect([...detail.rgba]).toEqual(pixels);
+      expect(() => parseDetail(new ArrayBuffer(31))).toThrow('incomplete');
+      expect(() => parseDetail(detailBytes(1, [2, 2, 0, 0, 9, 9], [1, 2, 3, 4]))).toThrow(
+        'does not match',
+      );
+    });
+
+    it('renders a detail through the raw command with camel-case arguments', async () => {
+      invokeMock.mockResolvedValue(detailBytes(3, [1, 1, 0, 0, 10, 10], [9, 8, 7, 255]));
+      const recipe = { v: 1 } as unknown as Parameters<typeof developRenderDetail>[1];
+      const region = { x: 0.1, y: 0.2, w: 0.3, h: 0.4 };
+      const detail = await developRenderDetail('f1', recipe, region, 3);
+      expect(invokeMock).toHaveBeenCalledWith('develop_render_detail', {
+        frameId: 'f1',
+        recipe,
+        region,
+        seq: 3,
+      });
+      expect(detail.seq).toBe(3);
     });
 
     it('turns a dropped render into an IpcError with the Cancelled code', async () => {

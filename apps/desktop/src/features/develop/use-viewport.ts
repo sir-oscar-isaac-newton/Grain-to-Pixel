@@ -9,6 +9,7 @@ import {
 } from 'react';
 import {
   FIT_VIEW,
+  MAX_ZOOM,
   ZOOM_STEP,
   actualSize,
   panBy,
@@ -31,6 +32,8 @@ export interface Viewport {
   fitting: boolean;
   fit: () => void;
   actual: () => void;
+  /** Zooms to `zoom` about the centre of the stage (1:1 is one zoom, see `oneToOneZoom`). */
+  zoomToValue: (zoom: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
 }
@@ -40,7 +43,11 @@ export interface Viewport {
  * pan, and commands for the buttons and keys. The zoom is kept when the preview changes size (see
  * `viewport.ts`), so a sharper preview replaces a rougher one without the picture moving.
  */
-export function useViewport(image: Size | null, panEnabled = true): Viewport {
+export function useViewport(
+  image: Size | null,
+  panEnabled = true,
+  ceiling: number = MAX_ZOOM,
+): Viewport {
   const stageRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<Size>({ width: 0, height: 0 });
   const [view, setView] = useState<View>(FIT_VIEW);
@@ -61,15 +68,18 @@ export function useViewport(image: Size | null, panEnabled = true): Viewport {
   }, []);
 
   // Latest values for the listeners below, which are attached once.
-  const live = useRef({ view, stage, size, panEnabled });
-  live.current = { view, stage, size, panEnabled };
+  const live = useRef({ view, stage, size, panEnabled, ceiling });
+  live.current = { view, stage, size, panEnabled, ceiling };
 
-  const resolved = useMemo(() => resolveView(view, stage, size), [view, stage, size]);
+  const resolved = useMemo(
+    () => resolveView(view, stage, size, ceiling),
+    [view, stage, size, ceiling],
+  );
 
   const zoomBy = useCallback((factor: number, anchor?: Point) => {
-    const { view: v, stage: s, size: i } = live.current;
-    const current = resolveView(v, s, i);
-    setView(zoomTo(v, current.zoom * factor, anchor ?? { x: 0, y: 0 }, s, i));
+    const { view: v, stage: s, size: i, ceiling: c } = live.current;
+    const current = resolveView(v, s, i, c);
+    setView(zoomTo(v, current.zoom * factor, anchor ?? { x: 0, y: 0 }, s, i, c));
   }, []);
 
   // The wheel zooms around the cursor. It needs a listener that may cancel the page scroll, which
@@ -92,15 +102,15 @@ export function useViewport(image: Size | null, panEnabled = true): Viewport {
     // no keyboard handling.)
     const onMouseDown = (event: MouseEvent) => {
       if (event.button !== 0 || !live.current.panEnabled) return;
-      const { view: v, stage: s, size: i } = live.current;
-      if (resolveView(v, s, i).fit) return;
+      const { view: v, stage: s, size: i, ceiling: c } = live.current;
+      if (resolveView(v, s, i, c).fit) return;
       event.preventDefault();
       let last = { x: event.clientX, y: event.clientY };
       const move = (e: MouseEvent) => {
         const delta = { x: e.clientX - last.x, y: e.clientY - last.y };
         last = { x: e.clientX, y: e.clientY };
         const now = live.current;
-        setView(panBy(now.view, delta, now.stage, now.size));
+        setView(panBy(now.view, delta, now.stage, now.size, now.ceiling));
       };
       const stop = () => {
         window.removeEventListener('mousemove', move);
@@ -118,8 +128,12 @@ export function useViewport(image: Size | null, panEnabled = true): Viewport {
 
   const fit = useCallback(() => setView(FIT_VIEW), []);
   const actual = useCallback(() => {
-    const { view: v, stage: s, size: i } = live.current;
-    setView(actualSize(v, s, i));
+    const { view: v, stage: s, size: i, ceiling: c } = live.current;
+    setView(actualSize(v, s, i, c));
+  }, []);
+  const zoomToValue = useCallback((zoom: number) => {
+    const { view: v, stage: s, size: i, ceiling: c } = live.current;
+    setView(zoomTo(v, zoom, { x: 0, y: 0 }, s, i, c));
   }, []);
   const zoomIn = useCallback(() => zoomBy(ZOOM_STEP), [zoomBy]);
   const zoomOut = useCallback(() => zoomBy(1 / ZOOM_STEP), [zoomBy]);
@@ -132,6 +146,7 @@ export function useViewport(image: Size | null, panEnabled = true): Viewport {
     fitting: resolved.fit,
     fit,
     actual,
+    zoomToValue,
     zoomIn,
     zoomOut,
   };

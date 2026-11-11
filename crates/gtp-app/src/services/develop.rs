@@ -10,10 +10,16 @@
 //! `Cancelled` and its pixels are thrown away. (A render already running finishes first; stopping
 //! it midway would mean threading cancellation through every pipeline stage.) The recipe is clamped
 //! by the pipeline, so values from the UI can never reach the stages out of range.
+//!
+//! The detail view (U-29) shows the picture at full size. The service keeps one such picture (the
+//! frame being looked at, rendered as an export renders it, as RGBA8 sRGB) and cuts the regions the
+//! view asks for out of it; see [`DevelopService::render_detail`].
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +37,7 @@ use crate::pipeline::{
     to_rgba8_srgb, Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
 };
 use crate::services::counters;
+use crate::services::export::{read_full, render_full};
 use crate::services::flat_field::apply_flat_field;
 use crate::services::library::Library;
 use crate::services::roll_balance;
@@ -44,6 +51,14 @@ pub const MAX_EDGE: u32 = 4096;
 /// Bytes before the pixels of a rendered preview: `seq` (u64), `width` (u32), `height` (u32), all
 /// little-endian.
 pub const HEADER_BYTES: usize = 16;
+/// Bytes before the pixels of a detail region (U-29), all little-endian: `seq` (u64), the region's
+/// `width` and `height` (u32 each), the region's origin `x` and `y` in the full picture (u32 each),
+/// and the full picture's `width` and `height` (u32 each).
+pub const DETAIL_HEADER_BYTES: usize = 32;
+/// The most pixels a detail region may have on a side.
+pub const MAX_DETAIL_EDGE: u32 = 4096;
+/// A detail picture nobody asked for in this many seconds is released.
+pub const DETAIL_IDLE_SECS: u64 = 300;
 
 /// Which end of the levels a picked area sets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -308,6 +323,100 @@ pub struct DevelopService {
     cache: Mutex<Vec<(FrameId, Arc<Entry>)>>,
     /// The `dust_removal` feature flag is off (see [`Self::set_dust_removal`]).
     dust_off: AtomicBool,
+    /// The one full-size picture of the detail view, and the state of its requests.
+    detail: DetailState,
+}
+
+/// A frame at full size as the detail view shows it.
+struct DetailPicture {
+    frame_id: FrameId,
+    /// The clamped recipe it was rendered with.
+    recipe: Recipe,
+    /// What else the picture depends on: the roll's film base and the dust removal flag.
+    context: DetailContext,
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+    /// When a request last used it.
+    used: Instant,
+}
+
+/// What a detail picture depends on besides the frame and the recipe.
+#[derive(Clone, Copy, PartialEq)]
+struct DetailContext {
+    film_base: Option<[f32; 3]>,
+    dust_removal: bool,
+}
+
+/// The detail picture and the sequence numbers of the requests for it. These are separate from the
+/// previews', so a detail request never cancels a preview and the reverse.
+#[derive(Default)]
+struct DetailState {
+    picture: Mutex<Option<DetailPicture>>,
+    /// The newest request per frame: its sequence number and its clamped recipe.
+    latest: Mutex<HashMap<FrameId, (u64, Recipe)>>,
+    /// One detail render at a time, so two requests for the same recipe render once.
+    turn: Mutex<()>,
+    /// Bumped by every release: a render that began before one does not keep its picture.
+    generation: AtomicU64,
+    /// How many full-size renders were made (for tests).
+    renders: std::sync::atomic::AtomicUsize,
+}
+
+/// Converts fractions of the picture into whole pixels `(x, y, w, h)`: the origin is rounded down
+/// and the far edge up, both clamped to the picture. NaN, negative values, an empty region or one
+/// beyond the picture are `InvalidInput`, and so is one over [`MAX_DETAIL_EDGE`] on a side.
+fn detail_pixels(region: Crop, width: u32, height: u32) -> Result<(u32, u32, u32, u32), AppError> {
+    // A little slack, so fractions that were summed in f32 are not refused for rounding.
+    const SLACK: f64 = 1e-4;
+    let [x, y, w, h] = [region.x, region.y, region.w, region.h].map(f64::from);
+    let valid = [x, y, w, h].iter().all(|v| v.is_finite())
+        && x >= 0.0
+        && y >= 0.0
+        && w > 0.0
+        && h > 0.0
+        && x + w <= 1.0 + SLACK
+        && y + h <= 1.0 + SLACK;
+    if !valid {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "The detail region must lie inside the picture.",
+        )
+        .with_details(format!("x {x} y {y} w {w} h {h}")));
+    }
+    let span = |origin: f64, size: f64, full: u32| {
+        let full_f = f64::from(full);
+        let first = (origin * full_f).floor().min(full_f - 1.0);
+        let last = ((origin + size) * full_f).ceil().min(full_f);
+        (first as u32, (last - first).max(1.0) as u32)
+    };
+    let (px, pw) = span(x, w, width);
+    let (py, ph) = span(y, h, height);
+    if pw > MAX_DETAIL_EDGE || ph > MAX_DETAIL_EDGE {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "A detail region may be at most 4096 pixels on a side.",
+        )
+        .with_details(format!("{pw}x{ph}")));
+    }
+    Ok((px, py, pw, ph))
+}
+
+impl DetailPicture {
+    /// The header and pixels of the region `(x, y, w, h)`.
+    fn cut(&self, seq: u64, (x, y, w, h): (u32, u32, u32, u32)) -> Vec<u8> {
+        let mut out = Vec::with_capacity(DETAIL_HEADER_BYTES + (w * h * 4) as usize);
+        out.extend_from_slice(&seq.to_le_bytes());
+        for value in [w, h, x, y, self.width, self.height] {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        let stride = self.width as usize * 4;
+        for row in y..y + h {
+            let start = row as usize * stride + x as usize * 4;
+            out.extend_from_slice(&self.rgba[start..start + w as usize * 4]);
+        }
+        out
+    }
 }
 
 fn superseded() -> AppError {
@@ -532,6 +641,7 @@ impl DevelopService {
     /// Opens a frame for editing: decodes the original into the cache (when it is not there) and
     /// returns what the view needs. The roll's film base and the saved recipe are read fresh.
     pub fn open(&self, library: &Library, id: FrameId) -> Result<DevelopInfo, AppError> {
+        self.release_idle_detail();
         let entry = self.ensure(library, id)?;
         let (frame, recipe, roll) = library.read(|c| {
             let frame = c.get_frame(id)?;
@@ -691,6 +801,171 @@ impl DevelopService {
         Ok(out)
     }
 
+    /// Renders the frame at full size, as an export would (see `export::render_full`), and returns
+    /// the part of it in `region` as the header and RGBA8 bytes described at
+    /// [`DETAIL_HEADER_BYTES`]. `region` is in fractions of the whole rendered picture (each from
+    /// 0 to 1), rounded outwards to whole pixels, and at most [`MAX_DETAIL_EDGE`] pixels a side.
+    ///
+    /// One picture is kept: while the frame and the (clamped) recipe stay the same, regions are cut
+    /// from it; any other frame or recipe renders afresh and replaces it. A picture nobody asked for
+    /// in [`DETAIL_IDLE_SECS`] is released. `seq` supersedes older requests for the same frame, which
+    /// come back as `Cancelled`; a render that was already running finishes, and its picture is kept
+    /// unless a newer request brought another recipe.
+    pub fn render_detail(
+        &self,
+        library: &Library,
+        id: FrameId,
+        recipe: &Recipe,
+        region: Crop,
+        seq: u64,
+    ) -> Result<Vec<u8>, AppError> {
+        self.render_detail_at(library, id, recipe, region, seq, Instant::now())
+    }
+
+    /// [`Self::render_detail`] with the time given, so a test does not have to wait.
+    fn render_detail_at(
+        &self,
+        library: &Library,
+        id: FrameId,
+        recipe: &Recipe,
+        region: Crop,
+        seq: u64,
+        now: Instant,
+    ) -> Result<Vec<u8>, AppError> {
+        // Refused before anything is rendered; the size in pixels is checked once it is known.
+        detail_pixels(region, 1, 1)?;
+        let recipe = recipe.clone().clamped();
+        let detail = &self.detail;
+        let generation = detail.generation.load(Ordering::SeqCst);
+        {
+            let mut latest = detail.latest.lock().unwrap_or_else(PoisonError::into_inner);
+            let entry = latest.entry(id).or_insert_with(|| (seq, recipe.clone()));
+            if seq >= entry.0 {
+                *entry = (seq, recipe.clone());
+            }
+        }
+        let newest = || {
+            detail
+                .latest
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(&id)
+                .cloned()
+        };
+        let _turn = detail.turn.lock().unwrap_or_else(PoisonError::into_inner);
+        if newest().is_some_and(|(n, _)| n > seq) {
+            return Err(superseded());
+        }
+        let mut slot = detail
+            .picture
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        Self::release_if_idle(&mut slot, now);
+        let context = DetailContext {
+            film_base: library
+                .read(|c| c.get_roll(c.get_frame(id)?.roll_id))?
+                .film_base_rgb,
+            dust_removal: self.dust_removal(),
+        };
+        let held = slot
+            .as_ref()
+            .is_some_and(|p| p.frame_id == id && p.recipe == recipe && p.context == context);
+        if !held {
+            // The old picture goes before the new one is made, so two never coexist.
+            *slot = None;
+            let picture = self.render_detail_picture(library, id, &recipe, context, now)?;
+            detail.renders.fetch_add(1, Ordering::SeqCst);
+            let (newest_seq, newest_recipe) = newest().unwrap_or((seq, recipe.clone()));
+            // Kept unless another recipe was asked for meanwhile, or the view released it.
+            let released = detail.generation.load(Ordering::SeqCst) != generation;
+            if released {
+                return Err(superseded());
+            }
+            if newest_recipe == recipe {
+                *slot = Some(picture);
+            }
+            if newest_seq > seq || newest_recipe != recipe {
+                return Err(superseded());
+            }
+        }
+        let Some(picture) = slot.as_mut() else {
+            return Err(superseded());
+        };
+        picture.used = now;
+        let pixels = detail_pixels(region, picture.width, picture.height)?;
+        Ok(picture.cut(seq, pixels))
+    }
+
+    /// Decodes and renders the frame at full size with `recipe`, the way an export does.
+    fn render_detail_picture(
+        &self,
+        library: &Library,
+        id: FrameId,
+        recipe: &Recipe,
+        context: DetailContext,
+        now: Instant,
+    ) -> Result<DetailPicture, AppError> {
+        let (frame, sources) = library.read(|c| Ok((c.get_frame(id)?, c.sources_of(id)?)))?;
+        let (full, ir) = read_full(library, &frame, &sources, context.dust_removal)?;
+        let input = PipelineInput {
+            rgb: Arc::new(full),
+            ir: ir.map(Arc::new),
+            film_base: context.film_base,
+            full_long_edge: None,
+        };
+        let image = render_full(input, recipe, None)?;
+        let rgba = to_rgba8_srgb(&image)?;
+        Ok(DetailPicture {
+            frame_id: id,
+            recipe: recipe.clone(),
+            context,
+            width: image.width,
+            height: image.height,
+            rgba,
+            used: now,
+        })
+    }
+
+    fn release_if_idle(slot: &mut Option<DetailPicture>, now: Instant) {
+        let idle = Duration::from_secs(DETAIL_IDLE_SECS);
+        if slot
+            .as_ref()
+            .is_some_and(|p| now.saturating_duration_since(p.used) >= idle)
+        {
+            *slot = None;
+        }
+    }
+
+    /// Releases the detail picture when nobody has used it for [`DETAIL_IDLE_SECS`]. Called when a
+    /// frame is opened (`develop_open`) and before every detail request; there is no timer thread.
+    pub fn release_idle_detail(&self) {
+        self.release_idle_detail_at(Instant::now());
+    }
+
+    fn release_idle_detail_at(&self, now: Instant) {
+        let mut slot = self
+            .detail
+            .picture
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        Self::release_if_idle(&mut slot, now);
+    }
+
+    /// Memory held by the detail picture (0 when there is none).
+    pub fn detail_bytes(&self) -> usize {
+        self.detail
+            .picture
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map_or(0, |p| p.rgba.len())
+    }
+
+    /// How many full-size detail renders have been made (for tests).
+    pub fn detail_renders(&self) -> usize {
+        self.detail.renders.load(Ordering::SeqCst)
+    }
+
     /// The cached frames, most recently used first.
     pub fn cached(&self) -> Vec<FrameId> {
         self.cache().iter().map(|(id, _)| *id).collect()
@@ -701,9 +976,36 @@ impl DevelopService {
         self.cache().iter().map(|(_, e)| e.bytes()).sum()
     }
 
-    /// Forgets every proxy (another library was opened).
+    /// Drops the detail picture and forgets the detail requests' sequence numbers (the Develop view
+    /// was left); the proxy cache stays. Safe with nothing cached. It does not wait for a render in
+    /// flight: it bumps the release generation first, so a render that began before it discards its
+    /// picture when it ends (and answers `Cancelled`), and then drops the picture if no render is
+    /// holding it.
+    pub fn release_detail(&self) {
+        self.detail.generation.fetch_add(1, Ordering::SeqCst);
+        self.detail
+            .latest
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
+        if let Ok(mut slot) = self.detail.picture.try_lock() {
+            *slot = None;
+        }
+    }
+
+    /// Forgets every proxy and the detail picture (another library was opened).
     pub fn clear(&self) {
         self.cache().clear();
+        *self
+            .detail
+            .picture
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
+        self.detail
+            .latest
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
     }
 }
 
@@ -711,6 +1013,7 @@ impl DevelopService {
 mod tests {
     use std::sync::atomic::Ordering;
 
+    use gtp_core::testing::synthetic::Pattern;
     use gtp_core::FrameKind;
 
     use super::*;
@@ -1435,6 +1738,513 @@ mod tests {
         let scan = t.frame(2, 400, 300);
         save_recipe(&t.library, scan, recipe.clone()).unwrap();
         assert_eq!(t.service.open(&t.library, scan).unwrap().recipe, recipe);
+    }
+
+    // --- The detail view (U-29) ---
+
+    const WHOLE: Crop = Crop {
+        x: 0.0,
+        y: 0.0,
+        w: 1.0,
+        h: 1.0,
+    };
+
+    fn crop(x: f32, y: f32, w: f32, h: f32) -> Crop {
+        Crop { x, y, w, h }
+    }
+
+    /// The header of a detail buffer: seq, then region size, region origin, full picture size.
+    fn detail_header(bytes: &[u8]) -> (u64, [u32; 6]) {
+        let word = |i: usize| u32::from_le_bytes(bytes[8 + i * 4..12 + i * 4].try_into().unwrap());
+        (
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            [word(0), word(1), word(2), word(3), word(4), word(5)],
+        )
+    }
+
+    fn detail_pixels_of(bytes: &[u8]) -> &[u8] {
+        &bytes[DETAIL_HEADER_BYTES..]
+    }
+
+    /// The rectangle `(x, y, w, h)` of an RGBA picture `width` wide.
+    fn rectangle(rgba: &[u8], width: u32, (x, y, w, h): (u32, u32, u32, u32)) -> Vec<u8> {
+        (y..y + h)
+            .flat_map(|row| {
+                let start = (row * width + x) as usize * 4;
+                rgba[start..start + w as usize * 4].iter().copied()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_detail_region_is_a_header_then_the_pixels_of_that_part_of_the_picture() {
+        let t = Fixture::new("detail-region");
+        let id = t.frame(1, 600, 400);
+        let recipe = Recipe::default();
+        let whole = t
+            .service
+            .render_detail(&t.library, id, &recipe, WHOLE, 1)
+            .unwrap();
+        let (seq, [w, h, x, y, full_w, full_h]) = detail_header(&whole);
+        assert_eq!((seq, x, y), (1, 0, 0));
+        assert_eq!((w, h), (full_w, full_h));
+        assert_eq!(whole.len(), DETAIL_HEADER_BYTES + (w * h * 4) as usize);
+        assert!(detail_pixels_of(&whole).chunks(4).all(|px| px[3] == 255));
+
+        // A region inside, one touching the far corner, one touching the near corner.
+        for (n, (region, pixels)) in [
+            (
+                crop(0.25, 0.5, 0.5, 0.25),
+                (full_w / 4, full_h / 2, full_w / 2, full_h / 4),
+            ),
+            (
+                crop(0.75, 0.75, 0.25, 0.25),
+                (full_w * 3 / 4, full_h * 3 / 4, full_w / 4, full_h / 4),
+            ),
+            (crop(0.0, 0.0, 0.5, 0.5), (0, 0, full_w / 2, full_h / 2)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let seq = 2 + n as u64;
+            let cut = t
+                .service
+                .render_detail(&t.library, id, &recipe, region, seq)
+                .unwrap();
+            let (got, header) = detail_header(&cut);
+            assert_eq!(got, seq);
+            assert_eq!(
+                header,
+                [pixels.2, pixels.3, pixels.0, pixels.1, full_w, full_h]
+            );
+            assert_eq!(
+                detail_pixels_of(&cut),
+                rectangle(detail_pixels_of(&whole), full_w, pixels)
+            );
+        }
+        // All of them came from the one picture.
+        assert_eq!(t.service.detail_renders(), 1);
+    }
+
+    #[test]
+    fn a_fractional_region_is_rounded_outwards_to_whole_pixels() {
+        // 0.3125 and 0.625 of 16 are 5 and 10: pixels 5 to 9.
+        assert_eq!(
+            detail_pixels(crop(0.3125, 0.0, 0.3125, 1.0), 16, 4).unwrap(),
+            (5, 0, 5, 4)
+        );
+        // 2.6 rounds down to 2, 7.6 up to 8.
+        assert_eq!(
+            detail_pixels(crop(0.26, 0.5, 0.5, 0.26), 10, 10).unwrap(),
+            (2, 5, 6, 3)
+        );
+        // The far edge is clamped to the picture; a hair beyond 1 (f32 sums) is accepted.
+        assert_eq!(
+            detail_pixels(crop(0.875, 0.875, 0.125_01, 0.125), 8, 8).unwrap(),
+            (7, 7, 1, 1)
+        );
+        // A region thinner than a pixel still covers one.
+        assert_eq!(
+            detail_pixels(crop(0.51, 0.51, 0.001, 0.001), 10, 10).unwrap(),
+            (5, 5, 1, 1)
+        );
+    }
+
+    #[test]
+    fn a_region_outside_the_picture_or_empty_or_too_big_is_refused() {
+        let invalid = |region: Crop, w: u32, h: u32| {
+            let err = detail_pixels(region, w, h).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{region:?}");
+        };
+        invalid(crop(f32::NAN, 0.0, 0.5, 0.5), 100, 100);
+        invalid(crop(0.0, 0.0, f32::INFINITY, 0.5), 100, 100);
+        invalid(crop(-0.1, 0.0, 0.5, 0.5), 100, 100);
+        invalid(crop(0.0, 0.0, 0.0, 0.5), 100, 100);
+        invalid(crop(0.0, 0.0, 0.5, -0.5), 100, 100);
+        invalid(crop(0.6, 0.0, 0.5, 0.5), 100, 100);
+        invalid(crop(0.0, 0.5, 0.5, 0.6), 100, 100);
+        // The cap: 4096 is allowed, one more is not, on either side.
+        assert!(detail_pixels(WHOLE, MAX_DETAIL_EDGE, 100).is_ok());
+        invalid(WHOLE, MAX_DETAIL_EDGE + 1, 100);
+        invalid(WHOLE, 100, MAX_DETAIL_EDGE + 1);
+        assert!(detail_pixels(crop(0.0, 0.0, 0.5, 1.0), 2 * MAX_DETAIL_EDGE, 100).is_ok());
+
+        // Through the service, before anything is rendered.
+        let t = Fixture::new("detail-refused");
+        let id = t.frame(1, 300, 200);
+        let err = t
+            .service
+            .render_detail(
+                &t.library,
+                id,
+                &Recipe::default(),
+                crop(0.5, 0.5, 0.6, 0.2),
+                1,
+            )
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert_eq!(t.service.detail_renders(), 0);
+    }
+
+    #[test]
+    fn a_frame_without_a_scan_is_not_found_for_a_detail() {
+        let t = Fixture::new("detail-missing");
+        let id = t.bare(1);
+        let err = t
+            .service
+            .render_detail(&t.library, id, &Recipe::default(), WHOLE, 1)
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        assert_eq!(t.service.detail_bytes(), 0);
+    }
+
+    #[test]
+    fn the_same_frame_and_recipe_render_once_and_a_new_recipe_or_frame_replaces_the_picture() {
+        let t = Fixture::new("detail-cache");
+        let one = t.frame(1, 300, 200);
+        let two = t.frame(2, 300, 200);
+        let recipe = Recipe::default();
+        let ask = |id, recipe: &Recipe, seq| {
+            t.service
+                .render_detail(&t.library, id, recipe, crop(0.0, 0.0, 0.5, 0.5), seq)
+                .unwrap()
+        };
+        assert_eq!(t.service.detail_bytes(), 0);
+        ask(one, &recipe, 1);
+        let bytes = t.service.detail_bytes();
+        assert!(bytes >= 300 * 200 * 4, "{bytes}");
+        ask(one, &recipe, 2);
+        // A recipe that clamps to the same values is the same recipe.
+        let mut wild = recipe.clone();
+        wild.tone.exposure_ev = 1000.0;
+        let mut clamped = recipe.clone();
+        clamped.tone.exposure_ev = wild.clone().clamped().tone.exposure_ev;
+        ask(one, &wild, 3);
+        ask(one, &clamped, 4);
+        assert_eq!(
+            t.service.detail_renders(),
+            2,
+            "the wild recipe is another one"
+        );
+
+        let mut brighter = recipe.clone();
+        brighter.tone.exposure_ev = 0.5;
+        let after = ask(one, &brighter, 5);
+        assert_eq!(t.service.detail_renders(), 3);
+        assert_eq!(t.service.detail_bytes(), bytes);
+        let before = ask(one, &recipe, 6);
+        assert_eq!(t.service.detail_renders(), 4);
+        assert_ne!(detail_pixels_of(&after), detail_pixels_of(&before));
+
+        ask(two, &recipe, 1);
+        assert_eq!(t.service.detail_renders(), 5);
+        ask(one, &recipe, 7);
+        assert_eq!(t.service.detail_renders(), 6);
+        assert_eq!(t.service.detail_bytes(), bytes);
+    }
+
+    #[test]
+    fn a_new_film_base_or_the_dust_flag_renders_the_detail_again() {
+        let t = Fixture::new("detail-context");
+        let id = t.frame(1, 300, 200);
+        let recipe = Recipe::default();
+        let ask = |seq| {
+            t.service
+                .render_detail(&t.library, id, &recipe, WHOLE, seq)
+                .unwrap()
+        };
+        ask(1);
+        ask(2);
+        assert_eq!(t.service.detail_renders(), 1);
+        roll_set_film_base(&t.library, t.roll, Some([0.8, 0.5, 0.3])).unwrap();
+        ask(3);
+        assert_eq!(t.service.detail_renders(), 2);
+        t.service.set_dust_removal(false);
+        ask(4);
+        assert_eq!(t.service.detail_renders(), 3);
+    }
+
+    #[test]
+    fn releasing_drops_the_detail_picture_and_is_safe_with_nothing_cached() {
+        let t = Fixture::new("detail-release");
+        let id = t.frame(1, 300, 200);
+        t.service.release_detail();
+        assert_eq!(t.service.detail_bytes(), 0);
+        t.service
+            .render_detail(&t.library, id, &Recipe::default(), WHOLE, 1)
+            .unwrap();
+        t.service.open(&t.library, id).unwrap();
+        assert!(t.service.detail_bytes() > 0);
+        t.service.release_detail();
+        assert_eq!(t.service.detail_bytes(), 0);
+        // The proxy stays, and a later request renders again (its number may be lower: the
+        // sequence numbers were forgotten).
+        assert_eq!(t.service.cached(), vec![id]);
+        t.service
+            .render_detail(&t.library, id, &Recipe::default(), WHOLE, 1)
+            .unwrap();
+        assert!(t.service.detail_bytes() > 0);
+        assert_eq!(t.service.detail_renders(), 2);
+    }
+
+    #[test]
+    fn a_detail_render_that_began_before_a_release_does_not_keep_its_picture() {
+        let t = Fixture::new("detail-release-flight");
+        let id = t.frame(1, 300, 200);
+        let recipe = Recipe::default();
+        // Holding the turn stands in for a render that is running: the request has read the
+        // generation and registered itself, and waits.
+        let turn = t.service.detail.turn.lock().unwrap();
+        let result = std::thread::scope(|scope| {
+            let a = scope.spawn(|| t.service.render_detail(&t.library, id, &recipe, WHOLE, 1));
+            while t.service.detail.latest.lock().unwrap().get(&id).is_none() {
+                std::thread::yield_now();
+            }
+            t.service.release_detail();
+            drop(turn);
+            a.join().unwrap()
+        });
+        assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+        assert_eq!(t.service.detail_bytes(), 0);
+        // A request made after the release is a new one and keeps its picture.
+        t.service
+            .render_detail(&t.library, id, &recipe, WHOLE, 1)
+            .unwrap();
+        assert!(t.service.detail_bytes() > 0);
+    }
+
+    #[test]
+    fn the_detail_picture_is_released_after_the_idle_time_and_by_clear() {
+        let t = Fixture::new("detail-idle");
+        let id = t.frame(1, 300, 200);
+        let recipe = Recipe::default();
+        let start = Instant::now();
+        let ask = |at: Instant, seq| {
+            t.service
+                .render_detail_at(&t.library, id, &recipe, WHOLE, seq, at)
+                .unwrap()
+        };
+        ask(start, 1);
+        assert!(t.service.detail_bytes() > 0);
+
+        // Used again just before the limit: kept, and the clock starts over.
+        let almost = start + Duration::from_secs(DETAIL_IDLE_SECS - 1);
+        ask(almost, 2);
+        t.service
+            .release_idle_detail_at(almost + Duration::from_secs(DETAIL_IDLE_SECS - 1));
+        assert!(t.service.detail_bytes() > 0);
+        assert_eq!(t.service.detail_renders(), 1);
+
+        // Idle for the limit: released, and a request after that renders again.
+        let later = almost + Duration::from_secs(DETAIL_IDLE_SECS);
+        t.service.release_idle_detail_at(later);
+        assert_eq!(t.service.detail_bytes(), 0);
+        ask(later, 3);
+        assert_eq!(t.service.detail_renders(), 2);
+        // Released by the request itself when nothing else did.
+        ask(later + Duration::from_secs(DETAIL_IDLE_SECS), 4);
+        assert_eq!(t.service.detail_renders(), 3);
+
+        t.service.clear();
+        assert_eq!(t.service.detail_bytes(), 0);
+    }
+
+    #[test]
+    fn an_older_detail_request_is_cancelled_and_previews_are_not_touched() {
+        let t = Fixture::new("detail-seq");
+        let id = t.frame(1, 300, 200);
+        let recipe = Recipe::default();
+        let half = crop(0.0, 0.0, 0.5, 0.5);
+        t.service
+            .render_detail(&t.library, id, &recipe, half, 10)
+            .unwrap();
+        let err = t
+            .service
+            .render_detail(&t.library, id, &recipe, half, 9)
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::Cancelled);
+
+        // A preview numbered below the detail requests is rendered, and a detail request numbered
+        // below a newer preview is too: the two counters are separate.
+        t.service.render(&t.library, id, &recipe, 400, 3).unwrap();
+        t.service
+            .render_detail(&t.library, id, &recipe, half, 11)
+            .unwrap();
+        t.service.render(&t.library, id, &recipe, 400, 40).unwrap();
+        t.service
+            .render_detail(&t.library, id, &recipe, half, 12)
+            .unwrap();
+        // Another frame has its own numbers.
+        let other = t.frame(2, 300, 200);
+        t.service
+            .render_detail(&t.library, other, &recipe, half, 1)
+            .unwrap();
+    }
+
+    /// Runs two detail requests that queue behind a held turn, the older first, and releases the
+    /// turn once both are waiting. Returns their results.
+    fn queued_details(
+        t: &Fixture,
+        id: FrameId,
+        older: &Recipe,
+        newer: &Recipe,
+    ) -> (Result<Vec<u8>, AppError>, Result<Vec<u8>, AppError>) {
+        let half = crop(0.0, 0.0, 0.5, 0.5);
+        let newest = |at: u64| {
+            while t
+                .service
+                .detail
+                .latest
+                .lock()
+                .unwrap()
+                .get(&id)
+                .is_none_or(|(n, _)| *n < at)
+            {
+                std::thread::yield_now();
+            }
+        };
+        // Holding the turn stands in for a render that is running.
+        let turn = t.service.detail.turn.lock().unwrap();
+        std::thread::scope(|scope| {
+            let a = scope.spawn(|| t.service.render_detail(&t.library, id, older, half, 1));
+            newest(1);
+            let b = scope.spawn(|| t.service.render_detail(&t.library, id, newer, half, 2));
+            newest(2);
+            drop(turn);
+            (a.join().unwrap(), b.join().unwrap())
+        })
+    }
+
+    #[test]
+    fn a_detail_request_that_waits_its_turn_is_dropped_when_a_newer_one_arrives() {
+        let t = Fixture::new("detail-queue");
+        let id = t.frame(1, 300, 200);
+        let recipe = Recipe::default();
+        let (older, newer) = queued_details(&t, id, &recipe, &recipe);
+        assert_eq!(older.unwrap_err().code, ErrorCode::Cancelled);
+        assert!(newer.is_ok());
+        // Two requests, one render.
+        assert_eq!(t.service.detail_renders(), 1);
+
+        let t = Fixture::new("detail-queue-recipe");
+        let id = t.frame(1, 300, 200);
+        let mut brighter = recipe.clone();
+        brighter.tone.exposure_ev = 0.5;
+        let (older, newer) = queued_details(&t, id, &recipe, &brighter);
+        assert_eq!(older.unwrap_err().code, ErrorCode::Cancelled);
+        assert!(newer.is_ok());
+        assert_eq!(
+            t.service.detail_renders(),
+            1,
+            "the dropped one never rendered"
+        );
+    }
+
+    #[test]
+    fn output_sharpening_and_noise_reduction_are_part_of_the_detail() {
+        let t = Fixture::new("detail-stages");
+        let id = t.frame_with(1, 300, 200, Pattern::Wedge);
+        let plain = Recipe::default();
+        let mut sharp = plain.clone();
+        sharp.output.sharpen.amount = 100.0;
+        let mut quiet = plain.clone();
+        quiet.noise.luminance = 60.0;
+        quiet.noise.color = 60.0;
+        let get = |recipe: &Recipe, seq| {
+            t.service
+                .render_detail(&t.library, id, recipe, WHOLE, seq)
+                .unwrap()
+        };
+        let base = get(&plain, 1);
+        assert_ne!(
+            detail_pixels_of(&get(&sharp, 2)),
+            detail_pixels_of(&base),
+            "output sharpening applies"
+        );
+        assert_ne!(
+            detail_pixels_of(&get(&quiet, 3)),
+            detail_pixels_of(&base),
+            "noise reduction applies"
+        );
+    }
+
+    /// Times the detail render of a 24 megapixel frame with every tool on, and a region cut from
+    /// the picture afterwards; run with
+    /// `cargo test -p gtp-app --release -- --ignored --nocapture time_a_detail_render`.
+    /// The synthetic generator stops at 4096 px a side, so the picture is built in memory and goes
+    /// through the shared full-size render (`export::render_full`), then the same conversion and cut
+    /// the service makes; only the decode of the scan is left out. The budget is 3 s
+    /// (docs/specification.md section 11).
+    #[test]
+    #[ignore = "timing run, not a check"]
+    fn time_a_detail_render() {
+        let (width, height) = (6000u32, 4000u32);
+        let data: Vec<f32> = (0..width * height * 3)
+            .map(|i| {
+                let px = i / 3;
+                let (x, y) = (px % width, px / width);
+                let noise = ((px.wrapping_mul(2_654_435_761) >> 16) & 0xff) as f32 / 4000.0;
+                0.05 + 0.6 * (x as f32 / width as f32) * (0.5 + 0.5 * (y as f32 / height as f32))
+                    + noise
+            })
+            .collect();
+        let scan = ImageF32::new(width, height, 3, data).unwrap();
+        let mut recipe = Recipe::default();
+        recipe.noise.luminance = 50.0;
+        recipe.noise.color = 50.0;
+        recipe.color.mixer.hue[0] = 10.0;
+        recipe.color.mixer.saturation[2] = 20.0;
+        recipe.color.mixer.lightness[5] = -10.0;
+        recipe.color.split_tone.shadow_hue = 220.0;
+        recipe.color.split_tone.shadow_strength = 20.0;
+        recipe.color.split_tone.highlight_hue = 40.0;
+        recipe.color.split_tone.highlight_strength = 15.0;
+        recipe.tone.vignette.amount = -30.0;
+        recipe.geometry.angle_deg = 0.5;
+        recipe.output.sharpen.amount = 60.0;
+        let input = PipelineInput {
+            rgb: Arc::new(scan),
+            ir: None,
+            film_base: None,
+            full_long_edge: None,
+        };
+        let start = Instant::now();
+        let image = render_full(input, &recipe, None).unwrap();
+        let rendered = start.elapsed();
+        let rgba = to_rgba8_srgb(&image).unwrap();
+        let converted = start.elapsed();
+        eprintln!(
+            "detail {}x{}: render and sharpen {rendered:?}, with conversion to RGBA8 {converted:?}, {} MB held",
+            image.width,
+            image.height,
+            rgba.len() / 1_000_000
+        );
+        let picture = DetailPicture {
+            frame_id: FrameId::new(),
+            recipe: recipe.clone(),
+            context: DetailContext {
+                film_base: None,
+                dust_removal: true,
+            },
+            width: image.width,
+            height: image.height,
+            rgba,
+            used: Instant::now(),
+        };
+        let start = Instant::now();
+        let runs = 20;
+        for _ in 0..runs {
+            let cut = picture.cut(1, (1000, 1000, 2400, 1600));
+            assert!(!cut.is_empty());
+        }
+        eprintln!(
+            "a 2400x1600 region cut from the picture: {:?}",
+            start.elapsed() / runs
+        );
+        eprintln!(
+            "cores: {}",
+            std::thread::available_parallelism().map_or(0, std::num::NonZero::get)
+        );
     }
 
     #[test]

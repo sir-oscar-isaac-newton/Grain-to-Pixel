@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use gtp_core::recipe::OutputSpace;
 use gtp_core::{
-    AppError, ErrorCode, ExportResult, ExportedFile, FailedExport, FrameId, ImageF32, Recipe,
+    AppError, ErrorCode, ExportResult, ExportedFile, FailedExport, Frame, FrameId, ImageF32,
+    Recipe, SourceFile,
 };
 use gtp_edit::apply_sharpen;
 use gtp_io::{encode_jpeg, encode_tiff16, JPEG_QUALITY};
@@ -276,6 +277,51 @@ impl From<AppError> for FrameError {
     }
 }
 
+/// Decodes a frame at full size for a render that is not a preview: its scan (divided by the roll's
+/// flat field when it has one) and, when `dust_removal` is on and the frame has a usable infrared
+/// plane, that plane. The export and the Develop view's detail view both start here.
+pub(crate) fn read_full(
+    library: &Library,
+    frame: &Frame,
+    sources: &[SourceFile],
+    dust_removal: bool,
+) -> Result<(ImageF32, Option<ImageF32>), AppError> {
+    let flat = library.read(|c| c.get_flat_field(frame.roll_id))?;
+    let full = read_scan(library, sources, flat.as_ref())?;
+    // The infrared plane, at full size like the scan; a plane that cannot be used is skipped.
+    let ir = if dust_removal {
+        read_ir_or_skip(library, sources, frame, (full.width, full.height))
+    } else {
+        None
+    };
+    Ok((full, ir))
+}
+
+/// The picture an export writes, before it is encoded: `input` rendered at full size with `recipe`,
+/// scaled down (never up) to `long_edge` when given, and then sharpened for output. The input is
+/// consumed so the full-size scan is freed before the resize. The detail view calls this with no
+/// `long_edge`, so what it shows is what a full-size export writes.
+pub(crate) fn render_full(
+    input: PipelineInput,
+    recipe: &Recipe,
+    long_edge: Option<u32>,
+) -> Result<ImageF32, AppError> {
+    let mut image = render(&input, recipe, RenderTarget::Full)?;
+    drop(input);
+    // The size option: scaled down (never up) before sharpening, so the sharpening is judged on the
+    // pixels that are written.
+    if let Some(long_edge) = long_edge {
+        image = resize_to_long_edge(image, long_edge)?;
+    }
+    // Output sharpening belongs here, on the image at its final size, and nowhere else: the render
+    // that previews and thumbnails use never sharpens.
+    let sharpen = recipe.clone().clamped().output.sharpen;
+    if sharpen.amount > 0.0 {
+        apply_sharpen(&mut image, &sharpen)?;
+    }
+    Ok(image)
+}
+
 /// Renders one frame at full size and writes it; returns the file.
 fn export_one(
     library: &Library,
@@ -305,14 +351,7 @@ fn export_one(
         },
     )?;
 
-    let flat = library
-        .read(|c| c.get_flat_field(roll.id))
-        .map_err(FrameError::from)?;
-    let full: ImageF32 = read_scan(library, &sources, flat.as_ref())?;
-    // The infrared plane, at full size like the scan; a plane that cannot be used is skipped.
-    let ir = read_ir_or_skip(library, &sources, &frame, (full.width, full.height))
-        .filter(|_| dust_removal)
-        .map(Arc::new);
+    let (full, ir) = read_full(library, &frame, &sources, dust_removal)?;
     progress(1.0);
     ctx.check_cancelled()?;
     let recipe: Recipe = match saved {
@@ -332,23 +371,11 @@ fn export_one(
     };
     let input = PipelineInput {
         rgb: Arc::new(full),
-        ir,
+        ir: ir.map(Arc::new),
         film_base: roll.film_base_rgb,
         full_long_edge: None,
     };
-    let mut image = render(&input, &recipe, RenderTarget::Full)?;
-    drop(input);
-    // The size option: scaled down (never up) before sharpening, so the sharpening is judged on the
-    // pixels that are written.
-    if let Some(long_edge) = options.long_edge {
-        image = resize_to_long_edge(image, long_edge)?;
-    }
-    // Output sharpening belongs here, on the image at its final size, and nowhere else: the render
-    // that previews and thumbnails use never sharpens.
-    let sharpen = recipe.clone().clamped().output.sharpen;
-    if sharpen.amount > 0.0 {
-        apply_sharpen(&mut image, &sharpen)?;
-    }
+    let image = render_full(input, &recipe, options.long_edge)?;
     progress(2.0);
     ctx.check_cancelled()?;
 
@@ -1105,6 +1132,59 @@ mod tests {
             assert_eq!(tiff, want, "TIFF of {full_w}x{full_h}");
             assert_eq!(jpeg, want, "JPEG of {full_w}x{full_h}");
         }
+    }
+
+    #[test]
+    fn the_detail_picture_is_what_a_full_size_export_writes() {
+        use crate::services::develop::{save_recipe, DETAIL_HEADER_BYTES};
+        use gtp_core::recipe::Crop;
+
+        let t = Fixture::new("export-detail");
+        let id = t.frame_with(1, 400, 300, Pattern::Blobs);
+        let mut recipe = Recipe::default();
+        recipe.tone.exposure_ev = 0.4;
+        recipe.noise.luminance = 50.0;
+        recipe.noise.color = 50.0;
+        recipe.output.sharpen.amount = 80.0;
+        recipe.geometry.angle_deg = 1.5;
+        save_recipe(&t.library, id, recipe.clone()).unwrap();
+        let tiff = read_tiff16(&export_to(&t, id, "detail-out"), &Limits::default()).unwrap();
+
+        let whole = Crop {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        };
+        let bytes = t
+            .service
+            .render_detail(&t.library, id, &recipe, whole, 1)
+            .unwrap();
+        let width = u32::from_le_bytes(bytes[24..28].try_into().unwrap());
+        let height = u32::from_le_bytes(bytes[28..32].try_into().unwrap());
+        assert_eq!((width, height), (tiff.width, tiff.height));
+        let pixels = &bytes[DETAIL_HEADER_BYTES..];
+
+        // The same code path: what the export renders from the scan it decodes, converted the way
+        // the previews are, is the detail picture exactly.
+        let (frame, sources) = t
+            .library
+            .read(|c| Ok((c.get_frame(id)?, c.sources_of(id)?)))
+            .unwrap();
+        let (scan, _) = read_full(&t.library, &frame, &sources, true).unwrap();
+        let input = PipelineInput {
+            rgb: Arc::new(scan),
+            ir: None,
+            film_base: None,
+            full_long_edge: None,
+        };
+        let shared = render_full(input, &recipe, None).unwrap();
+        assert_eq!(pixels, crate::pipeline::to_rgba8_srgb(&shared).unwrap());
+
+        // The file has the same size. Its colours are not compared pixel by pixel: the export
+        // converts with the colour profiles (`gtp_io::to_output`) and the previews with a matrix and
+        // a clip, which is how the previews have always differed from a file.
+        assert_eq!(tiff.channels, 3);
     }
 
     #[test]

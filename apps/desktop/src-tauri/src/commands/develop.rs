@@ -19,6 +19,15 @@ pub fn develop_open(ctx: State<'_, AppContext>, frame_id: FrameId) -> CmdResult<
     ctx.develop().open(&*ctx.library()?, frame_id)
 }
 
+/// Drops the full-size picture the detail view keeps (the proxy cache stays). The Develop view
+/// calls it when it is left. Harmless with nothing cached.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn develop_release_detail(ctx: State<'_, AppContext>) -> CmdResult<()> {
+    ctx.develop().release_detail();
+    Ok(())
+}
+
 /// Finds the frame, film base and levels of a frame, and the recipe they make. With `base` (three
 /// linear scan values above 0, such as one picked on the rebate) the levels are fitted to that base
 /// instead of the roll's or a measured one. The automatic recipe carries the tone curve of `look`,
@@ -96,6 +105,26 @@ pub fn develop_render(
     let bytes = ctx
         .develop()
         .render(&*ctx.library()?, frame_id, &recipe, max_edge, seq)?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// A region of the frame at full size, as raw bytes: the picture rendered as a full-size export
+/// renders it (output sharpening included), cut to `region` (fractions of the whole picture, at
+/// most 4096 pixels a side). A 32-byte little-endian header (`seq` u64, region `width` and
+/// `height` u32, region origin `x` and `y` u32, full picture `width` and `height` u32) is followed
+/// by RGBA8 sRGB pixels. A request superseded by a newer `seq` for the same frame is `Cancelled`.
+/// Not in the typed bindings (see `ipc::RAW_COMMANDS`).
+#[tauri::command(async)]
+pub fn develop_render_detail(
+    ctx: State<'_, AppContext>,
+    frame_id: FrameId,
+    recipe: Recipe,
+    region: Crop,
+    seq: u64,
+) -> CmdResult<tauri::ipc::Response> {
+    let bytes = ctx
+        .develop()
+        .render_detail(&*ctx.library()?, frame_id, &recipe, region, seq)?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 

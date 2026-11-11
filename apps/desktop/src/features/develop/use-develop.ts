@@ -79,6 +79,8 @@ interface State {
   saveError: string | null;
   /** Renders asked for and not answered yet. */
   pending: number;
+  /** The last change was part of a drag (or a held key) that has not been let go yet. */
+  dragging: boolean;
 }
 
 const EMPTY: State = {
@@ -98,6 +100,7 @@ const EMPTY: State = {
   saveStatus: 'idle',
   saveError: null,
   pending: 0,
+  dragging: false,
 };
 
 export interface Develop {
@@ -126,6 +129,8 @@ export interface Develop {
   /** The picture on screen is the frame as edited, for the neutral and levels pickers. */
   showingFrame: boolean;
   busy: boolean;
+  /** A slider is being dragged (or a colour key held): the recipe is not settled yet. */
+  dragging: boolean;
   renderError: string | null;
   /** Whether the recipe is being saved, was saved, or could not be. */
   saveStatus: SaveStatus;
@@ -358,6 +363,7 @@ export function useDevelop(frameId: string | null): Develop {
       setState((s) => ({
         ...s,
         recipe,
+        dragging: options?.dragging === true,
         saveStatus: s.saveStatus === 'error' ? 'idle' : s.saveStatus,
       }));
       clearTimeout(timer.current);
@@ -404,7 +410,10 @@ export function useDevelop(frameId: string | null): Develop {
   const rerender = useCallback(() => {
     const id = frame.current;
     const recipe = latestRecipe.current;
-    if (id && recipe) void send(id, recipe, RELEASE_EDGE, 'after', generation.current);
+    if (id && recipe) {
+      setState((s) => (s.dragging ? { ...s, dragging: false } : s));
+      void send(id, recipe, RELEASE_EDGE, 'after', generation.current);
+    }
   }, [send]);
 
   const toggleBefore = useCallback(() => {
@@ -488,6 +497,7 @@ export function useDevelop(frameId: string | null): Develop {
     showingBase,
     showingFrame,
     busy: state.pending > 0,
+    dragging: state.dragging,
     renderError: state.renderError,
     saveStatus: state.saveStatus,
     saveError: state.saveError,

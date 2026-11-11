@@ -131,6 +131,11 @@
   user-select: none;
 }
 
+/* The full-size region over the enlarged preview takes no mouse events: the stage pans. */
+.detail {
+  pointer-events: none;
+}
+
 /* Past 100% the pixels are enlarged as they are, not smoothed. */
 .enlarged {
   image-rendering: pixelated;

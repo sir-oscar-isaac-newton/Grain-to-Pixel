@@ -366,6 +366,22 @@ describe('CaptureSection', () => {
         expect(warning('Blue')).toHaveTextContent('Blue is at level 255');
       });
 
+      it('is the accessible description of the slider of that colour, and only from 240', async () => {
+        state.profile.levels = [239, 240, 2];
+        openLibrary();
+        const { container } = render(<Capture />);
+        const red = await screen.findByRole('slider', { name: 'Red level' });
+        expect(red).not.toHaveAttribute('aria-describedby');
+        expect(red).toHaveAccessibleDescription('');
+        expect(screen.getByRole('slider', { name: 'Green level' })).toHaveAccessibleDescription(
+          'Green is at level 240, which leaves little headroom before 255. A longer shutter speed gives the light room.',
+        );
+        expect(screen.getByRole('slider', { name: 'Blue level' })).not.toHaveAttribute(
+          'aria-describedby',
+        );
+        await expectNoA11yViolations(container);
+      });
+
       it('follows the slider', async () => {
         state.profile.levels = [239, 22, 2];
         const user = userEvent.setup();

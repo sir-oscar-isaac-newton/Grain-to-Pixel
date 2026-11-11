@@ -111,6 +111,22 @@ describe('Slider', () => {
     });
   });
 
+  describe('description', () => {
+    it('is shown and is the accessible description of the slider', async () => {
+      const { container } = setup({ description: 'Little headroom left.' });
+      expect(screen.getByText('Little headroom left.')).toBeInTheDocument();
+      expect(screen.getByRole('slider')).toHaveAccessibleDescription('Little headroom left.');
+      await expectNoA11yViolations(container);
+    });
+
+    it.each([undefined, null, false, ''])('adds nothing for %j', async (description) => {
+      const { container } = setup({ description });
+      expect(screen.getByRole('slider')).not.toHaveAttribute('aria-describedby');
+      expect(container.querySelector('p')).toBeNull();
+      await expectNoA11yViolations(container);
+    });
+  });
+
   it('has no accessibility violations', async () => {
     const { container } = setup();
     await expectNoA11yViolations(container);

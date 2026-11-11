@@ -920,6 +920,15 @@
       "number": 293,
       "title": "Develop reset clean-up after U-22",
       "branch": "feat/issue-293-develop-reset-cleanup",
+      "status": "completed",
+      "pr": 298,
+      "commit": "3f63e1c"
+    },
+    {
+      "id": "H-21",
+      "number": 278,
+      "title": "Calibration help at the rig",
+      "branch": "feat/issue-278-calibration-help",
       "status": "in_progress",
       "pr": null,
       "commit": null

@@ -258,6 +258,157 @@ describe('CaptureSection', () => {
     });
   });
 
+  describe('calibration help', () => {
+    const NOTICE_NO_STOCK = /This roll has no film stock, so no levels are saved for it/;
+    const NOTICE_STOCK = /No levels are saved for this film stock\./;
+    const noticeButton = () => screen.queryByRole('button', { name: 'Start calibration' });
+
+    function openStockRoll(filmStock: string) {
+      const roll = makeRoll({ name: 'Portra roll', film_stock: filmStock });
+      state.rolls = [roll];
+      state.details = libraryDetails();
+      useLibraryStore.setState({
+        phase: 'ready',
+        library: state.details,
+        rolls: [roll],
+        rollId: roll.id,
+      });
+      return roll;
+    }
+
+    it('shows for default levels on a roll without a film stock', async () => {
+      await ready();
+      const text = await screen.findByText(NOTICE_NO_STOCK);
+      expect(text.closest('[role="status"]')).not.toBeNull();
+    });
+
+    it('shows for default levels on a roll with a film stock that has none saved', async () => {
+      openStockRoll('Portra 400');
+      render(<Capture />);
+      expect(await screen.findByText(NOTICE_STOCK)).toBeInTheDocument();
+    });
+
+    it('is hidden when levels are saved for the film stock', async () => {
+      openStockRoll('Portra 400');
+      state.savedStocks['portra 400'] = {
+        levels: [60, 30, 4],
+        source: 'stock',
+        stock: 'Portra 400',
+        exposure: null,
+      };
+      render(<Capture />);
+      await screen.findByText('Levels saved for Portra 400');
+      expect(noticeButton()).not.toBeInTheDocument();
+      expect(screen.queryByText(NOTICE_STOCK)).not.toBeInTheDocument();
+    });
+
+    it('goes away when a level is changed by hand', async () => {
+      const { user } = await ready();
+      await screen.findByText(NOTICE_NO_STOCK);
+      const red = screen.getByRole('slider', { name: 'Red level' });
+      red.focus();
+      await user.keyboard('{ArrowRight}');
+      expect(screen.queryByText(NOTICE_NO_STOCK)).not.toBeInTheDocument();
+      expect(noticeButton()).not.toBeInTheDocument();
+    });
+
+    it('starts the same calibration as the Calibrate button, and goes away when it finishes', async () => {
+      const { roll, user } = await ready();
+      await screen.findByText(NOTICE_NO_STOCK);
+      await user.click(noticeButton() as HTMLElement);
+      await waitFor(() => expect(ipc.captureCalibrate).toHaveBeenCalledTimes(1));
+      expect(ipc.captureCalibrate).toHaveBeenCalledWith(roll.id, [44, 22, 2], null);
+      await waitFor(() => expect(useLibraryStore.getState().jobs).toHaveLength(1));
+      // While it runs the button is disabled, like Calibrate.
+      expect(noticeButton()).toBeDisabled();
+      expect(calibrateButton()).toBeDisabled();
+      // One calibration: the same progress display.
+      calibrationProgress(state.calibrationJob, 'Red: shot 1, level 44', 1 / 18);
+      expect(await screen.findAllByText('Red: shot 1, level 44')).toHaveLength(1);
+      calibrationDone(state.calibrationJob);
+      await screen.findByText('Red 212: 93 % of full scale in 3 shots');
+      expect(screen.queryByText(NOTICE_NO_STOCK)).not.toBeInTheDocument();
+    });
+
+    it('is gone after a calibration that finds the default levels again', async () => {
+      const { user } = await ready();
+      await user.click(noticeButton() as HTMLElement);
+      await waitFor(() => expect(useLibraryStore.getState().jobs).toHaveLength(1));
+      calibrationDone(state.calibrationJob, { ...CALIBRATED, levels: [44, 22, 2], warnings: [] });
+      await screen.findByText('Red 44: 93 % of full scale in 3 shots');
+      expect(screen.queryByText(NOTICE_NO_STOCK)).not.toBeInTheDocument();
+    });
+
+    it('is disabled when the light is not connected, as Calibrate is', async () => {
+      openLibrary();
+      render(<Capture />);
+      await screen.findByText('Camera: Nikon D600');
+      expect(await screen.findByText(NOTICE_NO_STOCK)).toBeInTheDocument();
+      expect(calibrateButton()).toBeDisabled();
+      expect(noticeButton()).toBeDisabled();
+    });
+
+    describe('headroom warning', () => {
+      const warning = (channel: string) =>
+        screen.queryByText(
+          new RegExp(`^${channel} is at level \\d+, which leaves little headroom`),
+        );
+
+      it('shows per channel from 240 up, and not at 239', async () => {
+        state.profile.levels = [239, 240, 255];
+        openLibrary();
+        render(<Capture />);
+        await screen.findByRole('slider', { name: 'Red level' });
+        expect(warning('Red')).not.toBeInTheDocument();
+        expect(warning('Green')).toHaveTextContent(
+          'Green is at level 240, which leaves little headroom before 255. A longer shutter speed gives the light room.',
+        );
+        expect(warning('Blue')).toHaveTextContent('Blue is at level 255');
+      });
+
+      it('follows the slider', async () => {
+        state.profile.levels = [239, 22, 2];
+        const user = userEvent.setup();
+        openLibrary();
+        render(<Capture />);
+        const red = await screen.findByRole('slider', { name: 'Red level' });
+        expect(warning('Red')).not.toBeInTheDocument();
+        red.focus();
+        await user.keyboard('{ArrowRight}');
+        expect(warning('Red')).toBeInTheDocument();
+      });
+
+      it('shows in the calibration result for a level of 240 or more only', async () => {
+        const { user } = await ready();
+        await user.click(noticeButton() as HTMLElement);
+        await waitFor(() => expect(useLibraryStore.getState().jobs).toHaveLength(1));
+        calibrationDone(state.calibrationJob, { ...CALIBRATED, levels: [240, 239, 255] });
+        await screen.findByText('Red 240: 93 % of full scale in 3 shots');
+        // The sliders now hold the found levels too: each message is in the sliders and the result.
+        expect(screen.getAllByText(/^Red is at level 240,/)).toHaveLength(2);
+        expect(screen.queryAllByText(/^Green is at level/)).toHaveLength(0);
+        expect(screen.getAllByText(/^Blue is at level 255,/)).toHaveLength(2);
+      });
+
+      it('shows no warning in the result for levels below 240', async () => {
+        const { user } = await ready();
+        await user.click(noticeButton() as HTMLElement);
+        await waitFor(() => expect(useLibraryStore.getState().jobs).toHaveLength(1));
+        calibrationDone(state.calibrationJob);
+        await screen.findByText('Red 212: 93 % of full scale in 3 shots');
+        expect(screen.queryByText(/leaves little headroom/)).not.toBeInTheDocument();
+      });
+    });
+
+    it('has no accessibility violations with the notice and a warning visible', async () => {
+      state.profile.levels = [250, 22, 2];
+      const { container } = await ready();
+      await screen.findByText(NOTICE_NO_STOCK);
+      await screen.findByText(/^Red is at level 250,/);
+      await expectNoA11yViolations(container);
+    });
+  });
+
   describe('saving levels', () => {
     it('is not possible while a capture runs', async () => {
       const { user } = await ready();

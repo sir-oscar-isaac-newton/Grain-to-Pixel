@@ -90,6 +90,11 @@ function Capture() {
   // The part of the frame a calibration measures, drawn on the live view; kept, not saved.
   const [calibrationArea, setCalibrationArea] = useState<Area | null>(null);
   const liveStop = useRef<(() => void) | null>(null);
+  // Starts the calibration of the Calibrate control, for the notice about default levels.
+  const calibrateStart = useRef<(() => void) | null>(null);
+  // True once the levels were changed by hand or calibrated: the notice about default levels has
+  // done its job. Choosing a roll resolves the levels again and brings it back.
+  const [levelsHandled, setLevelsHandled] = useState(false);
 
   const refreshCameras = useCallback(async () => {
     try {
@@ -113,6 +118,7 @@ function Capture() {
       setSaved(null);
       setLevels(profileLevels);
       setShotExposure(null);
+      setLevelsHandled(false);
       return;
     }
     let alive = true;
@@ -122,6 +128,7 @@ function Capture() {
         setSaved(resolved);
         setLevels(resolved.levels);
         setShotExposure(null);
+        setLevelsHandled(false);
       },
       (e: unknown) => {
         if (alive) setError(messageOf(e));
@@ -189,6 +196,14 @@ function Capture() {
 
   const savedExposure = formatExposure(saved?.exposure ?? null);
   const usable = light.connected && light.status?.tripped !== true && cameras.length > 0;
+  const showDefaultNotice =
+    levels !== null &&
+    saved?.source === 'default' &&
+    !levelsHandled &&
+    sameLevels(levels, saved.levels);
+  // The notice button is disabled whenever the Calibrate button is.
+  const calibrateDisabled =
+    !(usable && !settingsChanging) || running || calibrating || roll === null || levels === null;
 
   return (
     <section aria-labelledby="import-capture" className={styles.section}>
@@ -264,6 +279,7 @@ function Capture() {
             onChange={(next) => {
               setLevels(next);
               setShotExposure(null);
+              setLevelsHandled(true);
             }}
             disabled={running}
           />
@@ -274,6 +290,24 @@ function Capture() {
                 : t('import.capture.levels.source.default')
               : t('import.capture.levels.source.changed')}
           </p>
+          {showDefaultNotice && (
+            <div role="status" className={styles.captureNotice}>
+              <p>
+                {t(
+                  stock
+                    ? 'import.capture.levels.defaultNotice'
+                    : 'import.capture.levels.defaultNoticeNoStock',
+                )}
+              </p>
+              <button
+                type="button"
+                disabled={calibrateDisabled}
+                onClick={() => calibrateStart.current?.()}
+              >
+                {t('import.capture.levels.defaultNoticeAction')}
+              </button>
+            </div>
+          )}
         </>
       )}
       {levels && (
@@ -300,9 +334,11 @@ function Capture() {
           roll={roll}
           levels={levels}
           onBusyChange={setCalibrating}
+          startRef={calibrateStart}
           onCalibrated={(found, exposure) => {
             setLevels(found);
             setShotExposure(exposure);
+            setLevelsHandled(true);
           }}
         />
       )}

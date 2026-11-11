@@ -834,7 +834,11 @@
         "saveStock": "Save for {{stock}}",
         "needTest": "Take a test shot at these levels to save them.",
         "saved": "Levels saved.",
-        "exposureDiffers": "The camera settings differ from when these levels were saved."
+        "exposureDiffers": "The camera settings differ from when these levels were saved.",
+        "defaultNotice": "No levels are saved for this film stock. These are the default levels; calibrate for this roll.",
+        "defaultNoticeNoStock": "This roll has no film stock, so no levels are saved for it. These are the default levels; calibrate for this roll.",
+        "defaultNoticeAction": "Start calibration",
+        "headroom": "{{channel}} is at level {{level}}, which leaves little headroom before 255. A longer shutter speed gives the light room."
       },
       "liveView": {
         "heading": "Live view",

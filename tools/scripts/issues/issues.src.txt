@@ -2686,3 +2686,25 @@ ROUTES: none new if recipe_apply_to can take the values of a preset; otherwise o
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: named Develop presets, not looks, so they are not confused with the film looks of P-19 and P-20, which are starting points of the conversion. Out of scope: built-in presets, import and export of preset files, presets per film stock applied on import.
+
+## T-11
+title: Export metadata test that depends on the clock
+milestone: M6
+type: test
+size: S
+estimate: 0.5d
+deps: P-23
+adr: no
+spec: none
+desc: The test export::tests::without_metadata_there_are_no_tags in gtp-io writes the same JPEG twice, once without metadata and once with empty metadata, and compares the two files byte for byte. The embedded colour profile carries its creation time in seconds, so the files differ in one byte whenever the clock ticks between the two writes. It failed that way on ci (windows-latest) for PR 308 on 2026-11-11. The exported files are right; the comparison is too strict.
+ac:
+- The test no longer depends on the time at which it runs: it passes when the two writes fall in different seconds
+- It still proves that empty metadata writes no Exif block to a JPEG, and that the picture data of the two files is the same
+- Other tests in the workspace that compare two written files byte for byte are checked for the same fault and fixed in the same way; the pull request lists what was found
+- No change to the exported files or to any code outside tests, unless the check finds that the creation time of the profile should be fixed for another reason, which is then reported and not done here
+tech:
+FILES: crates/gtp-io/src/export.rs (the test), other test modules only if the check finds the same fault.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: the changed test, with a way to show it holds across a second boundary (for example comparing the files with the profile left out, or the parsed segments).
+NOTES: the differing byte was the seconds field of the date in the ICC profile header (47 against 48). Out of scope: making exports byte for byte reproducible.

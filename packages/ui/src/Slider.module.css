@@ -64,3 +64,42 @@
 .root[data-disabled] {
   opacity: 0.5;
 }
+
+.labelGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Decoration beside the label; the colour is set at runtime through --swatch. */
+.swatch {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 0.75em;
+  height: 0.75em;
+  background: var(--swatch);
+  border: 1px solid var(--text-muted);
+}
+
+/* A gradient track (--track-gradient): the range would hide it, so it is transparent. */
+.track[data-gradient] {
+  height: 8px;
+  background: var(--track-gradient);
+  border-radius: 4px;
+}
+
+.range[data-gradient] {
+  background: transparent;
+}
+
+/*
+ * On a gradient the thumb is light with a dark outline and a light halo. Any colour is at least
+ * 3:1 against black or against white, so either the dark outline or the halo stands out.
+ */
+.thumb[data-gradient] {
+  box-sizing: border-box;
+  background: #fff;
+  border: 2px solid #000;
+  box-shadow: 0 0 0 1px #fff;
+}

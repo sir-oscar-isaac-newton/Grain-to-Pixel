@@ -127,6 +127,48 @@ describe('Slider', () => {
     });
   });
 
+  describe('swatch and trackGradient', () => {
+    const GRADIENT = 'linear-gradient(to right, rgb(255 0 0), rgb(0 0 255))';
+
+    it('shows a decorative swatch beside the label without changing the name', async () => {
+      const { container } = setup({ swatch: 'rgb(255 0 0)' });
+      const swatch = container.querySelector('[data-swatch]');
+      expect(swatch).not.toBeNull();
+      expect(swatch).toHaveAttribute('aria-hidden', 'true');
+      expect(swatch?.getAttribute('style')).toContain('rgb(255 0 0)');
+      expect(swatch).toHaveTextContent('');
+      expect(screen.getByRole('slider', { name: 'Black point, red' })).toBeInTheDocument();
+      expect(screen.getByText('Black point, red')).not.toContainElement(swatch as HTMLElement);
+      await expectNoA11yViolations(container);
+    });
+
+    it('puts a gradient on the track, clears the range and marks the thumb', async () => {
+      const { container } = setup({ trackGradient: GRADIENT });
+      const marked = container.querySelectorAll('[data-gradient]');
+      // The track, the filled range and the thumb.
+      expect(marked).toHaveLength(3);
+      expect(marked[0]?.getAttribute('style')).toContain(GRADIENT);
+      expect(screen.getByRole('slider')).toHaveAttribute('data-gradient');
+      expect(container.querySelector('[data-swatch]')).toBeNull();
+      expect(screen.getByRole('slider', { name: 'Black point, red' })).toBeInTheDocument();
+      await expectNoA11yViolations(container);
+    });
+
+    it('adds nothing without either', async () => {
+      const { container } = setup();
+      expect(container.querySelector('[data-swatch]')).toBeNull();
+      expect(container.querySelector('[data-gradient]')).toBeNull();
+      // Radix sets its own styles on the root and the thumb; the track has none of ours.
+      // The thumb sits in a wrapper inside the root, after the track.
+      const track = screen.getByRole('slider').parentElement?.parentElement?.firstElementChild;
+      expect(track).toBeDefined();
+      expect(track).not.toHaveAttribute('style');
+      expect(container.innerHTML).not.toContain('--track-gradient');
+      expect(container.innerHTML).not.toContain('--swatch');
+      await expectNoA11yViolations(container);
+    });
+  });
+
   it('has no accessibility violations', async () => {
     const { container } = setup();
     await expectNoA11yViolations(container);

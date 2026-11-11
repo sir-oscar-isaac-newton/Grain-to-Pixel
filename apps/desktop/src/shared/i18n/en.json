@@ -443,7 +443,7 @@
     },
     "hint": {
       "Color": "Balance, temperature, tint, saturation and black and white.",
-      "Tone": "Exposure, contrast, highlights, shadows, whites, blacks, dehaze and the curves.",
+      "Tone": "Exposure, contrast, highlights, shadows, whites, blacks, dehaze, vignette and the curves.",
       "Geometry": "The crop, turns, flips and straightening. Frames are not always cropped the same.",
       "Base": "Where the film base comes from, and its values.",
       "Invert": "The black and white points of the inversion.",
@@ -717,6 +717,8 @@
       "whites": "Whites",
       "blacks": "Blacks",
       "dehaze": "Dehaze",
+      "vignette": "Vignette",
+      "vignette_midpoint": "Vignette midpoint",
       "stops": "{{value}} EV"
     },
     "curve": {

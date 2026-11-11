@@ -21,6 +21,7 @@ const auto = makeRecipe('auto', {
   invert: { black: [0.01, 0.02, 0.03], white: [0.5, 0.6, 0.7] },
   color: { saturation: 1.1 },
   tone: {
+    vignette: { amount: 0, midpoint: 50 },
     curve: {
       master: [
         [0, 0.1],
@@ -37,6 +38,7 @@ const edited = makeRecipe('saved', {
   tone: {
     contrast: 30,
     exposure_ev: 1,
+    vignette: { amount: -40, midpoint: 20 },
     curve: {
       r: [
         [0, 0.2],
@@ -59,6 +61,7 @@ describe('what a panel reset puts back', () => {
   it('Tone: the sliders and all the curves, nothing else', () => {
     const next = resetTone(edited, auto) as never as Record<string, Record<string, unknown>>;
     expect(next.tone).toMatchObject({ contrast: 0, exposure_ev: 0 });
+    expect(next.tone?.vignette).toEqual({ amount: 0, midpoint: 50 });
     expect((next.tone?.curve as Record<string, unknown>).master).toEqual([
       [0, 0.1],
       [1, 1],

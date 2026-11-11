@@ -277,6 +277,7 @@ describe('Develop undo, redo and reset', () => {
             whites: 0,
             blacks: 0,
             dehaze: 0,
+            vignette: { amount: 0, midpoint: 50 },
           },
         });
         const { user } = await openFrame();

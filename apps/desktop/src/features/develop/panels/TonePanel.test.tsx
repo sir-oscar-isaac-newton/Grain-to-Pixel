@@ -36,6 +36,73 @@ describe('TonePanel', () => {
     }
   });
 
+  it('has the two vignette sliders, with their ranges, below the others', () => {
+    setup({
+      recipe: makeRecipe('x', { tone: { vignette: { amount: -35, midpoint: 60 } } }),
+    });
+    expect(slider('Vignette')).toHaveAttribute('aria-valuenow', '-35');
+    expect(slider('Vignette')).toHaveAttribute('aria-valuemin', '-100');
+    expect(slider('Vignette')).toHaveAttribute('aria-valuemax', '100');
+    expect(slider('Vignette midpoint')).toHaveAttribute('aria-valuenow', '60');
+    expect(slider('Vignette midpoint')).toHaveAttribute('aria-valuemin', '0');
+    expect(slider('Vignette midpoint')).toHaveAttribute('aria-valuemax', '100');
+    const follows = (a: HTMLElement, b: HTMLElement) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(slider('Dehaze'), slider('Vignette'))).toBe(true);
+    expect(follows(slider('Vignette'), slider('Vignette midpoint'))).toBe(true);
+  });
+
+  it('shows the vignette defaults for a recipe that has none', () => {
+    setup({ recipe: makeRecipe('x') });
+    expect(slider('Vignette')).toHaveAttribute('aria-valuenow', '0');
+    expect(slider('Vignette midpoint')).toHaveAttribute('aria-valuenow', '50');
+  });
+
+  it('changes the vignette in the recipe, one step at a time, keeping the rest', async () => {
+    const user = userEvent.setup();
+    const { mocks } = setup({
+      recipe: makeRecipe('x', { tone: { contrast: 4, vignette: { amount: 0, midpoint: 50 } } }),
+    });
+    slider('Vignette').focus();
+    await user.keyboard('{ArrowLeft}');
+    const [first, options] = mocks.onChange.mock.calls[0] ?? [];
+    expect(first.tone.vignette).toEqual({ amount: -1, midpoint: 50 });
+    expect(toneOf(first).contrast).toBe(4);
+    expect(options).toEqual({ dragging: false });
+
+    slider('Vignette midpoint').focus();
+    await user.keyboard('{PageDown}');
+    const [second] = mocks.onChange.mock.calls[1] ?? [];
+    expect(second.tone.vignette).toEqual({ amount: 0, midpoint: 40 });
+  });
+
+  it('resets each vignette slider on a double click to the automatic one, merging', () => {
+    const auto = makeRecipe('auto', { tone: { vignette: { amount: 0, midpoint: 50 } } });
+    const { mocks } = setup({
+      auto,
+      recipe: makeRecipe('x', { tone: { vignette: { amount: -60, midpoint: 10 } } }),
+    });
+    fireEvent.doubleClick(slider('Vignette'));
+    const [first, firstOptions] = mocks.onChange.mock.calls[0] ?? [];
+    expect(first.tone.vignette).toEqual({ amount: 0, midpoint: 10 });
+    expect(firstOptions).toEqual({ dragging: false, merge: true });
+    fireEvent.doubleClick(slider('Vignette midpoint'));
+    const [second, secondOptions] = mocks.onChange.mock.calls[1] ?? [];
+    expect(second.tone.vignette).toEqual({ amount: -60, midpoint: 50 });
+    expect(secondOptions).toEqual({ dragging: false, merge: true });
+  });
+
+  it('puts the vignette back to the automatic one with the panel reset', async () => {
+    const user = userEvent.setup();
+    const { mocks } = setup({
+      auto: makeRecipe('auto', { tone: { vignette: { amount: 0, midpoint: 50 } } }),
+      recipe: makeRecipe('x', { tone: { vignette: { amount: 45, midpoint: 5 } } }),
+    });
+    await user.click(screen.getByRole('button', { name: 'Reset Tone to automatic' }));
+    const [recipe] = mocks.onChange.mock.calls[0] ?? [];
+    expect(recipe.tone.vignette).toEqual({ amount: 0, midpoint: 50 });
+  });
+
   it('moves exposure by 0.01 and the others by one step, ten with Page Up', async () => {
     const user = userEvent.setup();
     const { mocks } = setup();

@@ -2,8 +2,10 @@
 //!
 //! Stages run in the fixed order of [`STAGE_ORDER`]. The crop is applied early as an exact copy, so
 //! later stages work on the frame only, and auto levels never see the rebate; straighten, turns
-//! and flips come next, so there is still at most one resample; the vignette is last, so it is centred on the final picture. `render` never runs anything
-//! automatic: it uses the recipe as given, and [`analyze`] is what fills in the automatic values.
+//! and flips come next, so there is still at most one resample; the vignette is last, so it is
+//! centred on the final picture. Split toning follows the tone stage, so it tints the finished
+//! tonal result before the geometry. `render` never runs anything automatic: it uses the recipe as
+//! given, and [`analyze`] is what fills in the automatic values.
 
 mod analyze;
 mod display;
@@ -283,6 +285,7 @@ mod tests {
                 Stage::Invert,
                 Stage::Color,
                 Stage::Tone,
+                Stage::SplitTone,
                 Stage::Geometry,
                 Stage::Vignette
             ]
@@ -468,6 +471,120 @@ mod tests {
             let g_full = at(&full, fx, fy)[1] / at(&plain, fx, fy)[1];
             let g_preview = at(&preview, fx, fy)[1] / at(&plain_preview, fx, fy)[1];
             assert!((g_full - g_preview).abs() < 0.03, "({fx}, {fy})");
+        }
+    }
+
+    fn luma_of(p: [f32; 3]) -> f32 {
+        let [wr, wg, wb] = gtp_core::recipe::REC2020_LUMA;
+        wr * p[0] + wg * p[1] + wb * p[2]
+    }
+
+    #[test]
+    fn split_toning_with_both_strengths_at_zero_changes_nothing() {
+        let s = scan(&Params {
+            width: 120,
+            height: 80,
+            rebate: [10; 4],
+            ..Params::default()
+        });
+        let recipe = true_recipe(&s);
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        let mut other = recipe.clone();
+        other.color.split_tone.highlight_hue = 300.0;
+        other.color.split_tone.shadow_hue = 10.0;
+        other.color.split_tone.balance = 60.0;
+        assert_eq!(
+            render(&input_of(&s, None), &other, RenderTarget::Full).unwrap(),
+            plain
+        );
+        other.color.split_tone.shadow_strength = 80.0;
+        let toned = render(&input_of(&s, None), &other, RenderTarget::Full).unwrap();
+        assert_ne!(toned, plain);
+        assert_eq!((toned.width, toned.height), (plain.width, plain.height));
+    }
+
+    #[test]
+    fn split_toning_runs_after_the_tone_stage_and_keeps_the_luma() {
+        let s = scan(&Params {
+            width: 120,
+            height: 80,
+            rebate: [10; 4],
+            ..Params::default()
+        });
+        let mut recipe = true_recipe(&s);
+        recipe.tone.exposure_ev = 0.5;
+        recipe.tone.contrast = 30.0;
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        recipe.color.split_tone.highlight_strength = 70.0;
+        recipe.color.split_tone.shadow_strength = 60.0;
+        let toned = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        // Applying the stage to the render without it gives the same picture: it comes after the
+        // tone stage and does not depend on anything earlier.
+        let mut want = plain.clone();
+        gtp_edit::apply_split_tone(&mut want, &recipe.color.split_tone).unwrap();
+        assert_eq!(toned, want);
+        for (a, b) in plain.data.chunks(3).zip(toned.data.chunks(3)) {
+            let (ya, yb) = (luma_of([a[0], a[1], a[2]]), luma_of([b[0], b[1], b[2]]));
+            assert!((ya - yb).abs() <= 1e-4 * ya.max(1e-3), "{ya} vs {yb}");
+        }
+    }
+
+    #[test]
+    fn split_toning_tints_a_black_and_white_picture_without_changing_its_luma() {
+        let s = scan(&Params {
+            width: 120,
+            height: 80,
+            rebate: [10; 4],
+            ..Params::default()
+        });
+        let mut recipe = true_recipe(&s);
+        recipe.mono.enabled = true;
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        assert!(
+            plain.data.chunks(3).all(|p| p[0] == p[1] && p[1] == p[2]),
+            "mono is neutral without the tint"
+        );
+        recipe.color.split_tone.highlight_hue = 30.0;
+        recipe.color.split_tone.highlight_strength = 80.0;
+        recipe.color.split_tone.shadow_hue = 220.0;
+        recipe.color.split_tone.shadow_strength = 80.0;
+        let toned = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        let coloured = toned
+            .data
+            .chunks(3)
+            .filter(|p| (p[0] - p[2]).abs() > 1e-3 * p[1].max(1e-3))
+            .count();
+        assert!(coloured > toned.data.len() / 3 / 2, "{coloured}");
+        for (a, b) in plain.data.chunks(3).zip(toned.data.chunks(3)) {
+            let (ya, yb) = (luma_of([a[0], a[1], a[2]]), luma_of([b[0], b[1], b[2]]));
+            assert!((ya - yb).abs() <= 1e-4 * ya.max(1e-3), "{ya} vs {yb}");
+        }
+    }
+
+    #[test]
+    fn split_toning_agrees_between_a_preview_and_a_full_render() {
+        let s = flat_scan(800, 400);
+        let mut recipe = Recipe::default();
+        recipe.base.source = BaseSource::Manual;
+        recipe.base.rgb = s.truth.base;
+        recipe.invert = Invert {
+            black: s.truth.black,
+            white: s.truth.white,
+        };
+        recipe.color.split_tone.highlight_hue = 20.0;
+        recipe.color.split_tone.highlight_strength = 90.0;
+        recipe.color.split_tone.shadow_hue = 230.0;
+        recipe.color.split_tone.shadow_strength = 90.0;
+        recipe.color.split_tone.balance = 15.0;
+        let full = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        let target = RenderTarget::Preview { max_edge: 200 };
+        let preview = render(&input_of(&s, None), &recipe, target).unwrap();
+        assert_eq!((preview.width, preview.height), (200, 100));
+        for (fx, fy) in [(0.1, 0.2), (0.5, 0.5), (0.8, 0.9)] {
+            let (a, b) = (at(&full, fx, fy), at(&preview, fx, fy));
+            for i in 0..3 {
+                assert!((a[i] - b[i]).abs() <= 0.05 * a[i].max(0.05), "{a:?} {b:?}");
+            }
         }
     }
 

@@ -21,6 +21,8 @@ pub enum Stage {
     Color,
     /// Exposure, contrast, highlights, shadows, whites, blacks, dehaze, curves.
     Tone,
+    /// Blend the highlights and the shadows towards two tints of the same luma (`color.split_tone`).
+    SplitTone,
     /// Straighten, quarter turns and flips (the crop was applied earlier).
     Geometry,
     /// Darken or lighten the corners of the final picture (`tone.vignette`).
@@ -28,13 +30,14 @@ pub enum Stage {
 }
 
 /// The order every render runs the stages in.
-pub const STAGE_ORDER: [Stage; 8] = [
+pub const STAGE_ORDER: [Stage; 9] = [
     Stage::Dust,
     Stage::Crop,
     Stage::Normalize,
     Stage::Invert,
     Stage::Color,
     Stage::Tone,
+    Stage::SplitTone,
     Stage::Geometry,
     Stage::Vignette,
 ];
@@ -87,6 +90,7 @@ pub(crate) fn run_stage(
         Stage::Invert => gtp_negative::invert(&mut image, &recipe.invert)?,
         Stage::Color => gtp_edit::apply_color(&mut image, &recipe.color, &recipe.mono)?,
         Stage::Tone => gtp_edit::apply_tone(&mut image, &recipe.tone)?,
+        Stage::SplitTone => gtp_edit::apply_split_tone(&mut image, &recipe.color.split_tone)?,
         Stage::Geometry => {
             let turn_only = Geometry {
                 crop: Crop::default(),

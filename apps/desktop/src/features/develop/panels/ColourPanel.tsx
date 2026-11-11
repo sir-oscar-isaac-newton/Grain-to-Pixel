@@ -5,8 +5,11 @@ import styles from '../develop.module.css';
 import {
   colourOf,
   monoOf,
+  splitToneOf,
   withColour,
   withMono,
+  withSplitTone,
+  type SplitToneKey,
   type Channel,
   type ColourKey,
 } from '../recipe-parts';
@@ -24,6 +27,19 @@ const BALANCE: readonly ColourKey[] = [
 const SATURATION_MAX = 2;
 const MIX_MAX = 2;
 const MIX_STEP = 0.01;
+/** The split toning sliders in the order they are shown: label key, range and whether it is a hue. */
+const SPLIT_TONE_SLIDERS: ReadonlyArray<{
+  key: SplitToneKey;
+  min: number;
+  max: number;
+  hue: boolean;
+}> = [
+  { key: 'highlight_hue', min: 0, max: 360, hue: true },
+  { key: 'highlight_strength', min: 0, max: 100, hue: false },
+  { key: 'shadow_hue', min: 0, max: 360, hue: true },
+  { key: 'shadow_strength', min: 0, max: 100, hue: false },
+  { key: 'balance', min: -100, max: 100, hue: false },
+];
 const CHANNELS: ReadonlyArray<{ channel: Channel; name: 'red' | 'green' | 'blue' }> = [
   { channel: 0, name: 'red' },
   { channel: 1, name: 'green' },
@@ -52,8 +68,9 @@ interface ColourPanelProps {
 
 /**
  * The Colour panel: the three colour axes, temperature and tint, saturation and vibrance, a picker
- * that makes a clicked grey neutral, and a black-and-white mode with a channel mix. In
- * black-and-white mode saturation and vibrance do nothing, so they are not shown.
+ * that makes a clicked grey neutral, a black-and-white mode with a channel mix, and split toning.
+ * In black-and-white mode saturation and vibrance do nothing, so they are not shown; split toning
+ * still works there and stays.
  */
 export function ColourPanel({
   recipe,
@@ -71,10 +88,13 @@ export function ColourPanel({
   const locked = readOnly || working;
   const autoColour = auto ? colourOf(auto) : undefined;
   const autoMix = auto ? monoOf(auto).mix : undefined;
+  const split = splitToneOf(recipe);
+  const autoSplit = auto ? splitToneOf(auto) : undefined;
   const resetTo = (next: Recipe) => onChange(next, { dragging: false });
   const resetSlider = (next: Recipe) => onChange(next, { dragging: false, merge: true });
   const whole = (value: number) =>
     new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 0 }).format(value);
+  const degrees = (value: number) => `${whole(value)}°`;
   const hundredths = (value: number) =>
     new Intl.NumberFormat(i18n.language, {
       minimumFractionDigits: 2,
@@ -213,6 +233,32 @@ export function ColourPanel({
             ))}
           </div>
         )}
+      </section>
+
+      <section aria-labelledby="split-tone-heading" className={styles.panelSection}>
+        <h3 id="split-tone-heading" className={styles.panelTitle}>
+          {t('develop.splitTone.heading')}
+        </h3>
+        <div className={styles.sliders}>
+          {SPLIT_TONE_SLIDERS.map(({ key, min, max, hue }) => (
+            <Slider
+              key={key}
+              label={t(`develop.splitTone.${key}`)}
+              value={split[key]}
+              min={min}
+              max={max}
+              step={1}
+              format={hue ? degrees : whole}
+              disabled={locked}
+              onReset={
+                autoSplit && (() => resetSlider(withSplitTone(recipe, { [key]: autoSplit[key] })))
+              }
+              onChange={(next, dragging) =>
+                onChange(withSplitTone(recipe, { [key]: next }), { dragging })
+              }
+            />
+          ))}
+        </div>
       </section>
     </div>
   );

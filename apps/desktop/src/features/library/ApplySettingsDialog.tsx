@@ -8,6 +8,7 @@ import { messageOf, useLibraryStore } from './library-store';
 /** The groups of settings that can be copied, in the order they are shown. */
 const GROUPS: readonly RecipeField[] = [
   'Color',
+  'SplitTone',
   'Tone',
   'Geometry',
   'Base',

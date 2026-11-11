@@ -965,6 +965,15 @@
       "number": 309,
       "title": "Export metadata test that depends on the clock",
       "branch": "test/issue-309-export-test-clock",
+      "status": "completed",
+      "pr": 311,
+      "commit": "4d33d54"
+    },
+    {
+      "id": "P-26",
+      "number": 303,
+      "title": "Split toning",
+      "branch": "feat/issue-303-split-toning",
       "status": "in_progress",
       "pr": null,
       "commit": null

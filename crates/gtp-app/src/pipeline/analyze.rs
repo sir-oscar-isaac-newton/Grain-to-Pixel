@@ -202,7 +202,7 @@ fn analyze_inner(
 
 #[cfg(test)]
 mod tests {
-    use gtp_core::recipe::Vignette;
+    use gtp_core::recipe::{SplitTone, Vignette};
     use gtp_core::testing::synthetic::{self, Params, Pattern, Synthetic};
     use gtp_core::ErrorCode;
     use gtp_core::ImageF32;
@@ -330,6 +330,13 @@ mod tests {
         let s = scan(400, 300, 20);
         let a = analyze(&input_of(&s, None)).unwrap();
         assert_eq!(a.auto_recipe.tone.vignette, Vignette::default());
+    }
+
+    #[test]
+    fn the_automatic_recipe_leaves_split_toning_at_its_defaults() {
+        let s = scan(400, 300, 20);
+        let a = analyze(&input_of(&s, None)).unwrap();
+        assert_eq!(a.auto_recipe.color.split_tone, SplitTone::default());
     }
 
     #[test]

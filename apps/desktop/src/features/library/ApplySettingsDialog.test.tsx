@@ -147,7 +147,7 @@ describe('ApplySettingsDialog', () => {
     it('offers the output sharpening too, unticked, and copies it in the order of the groups', async () => {
       const user = await openDialog();
       const d = within(dialog());
-      expect(d.getAllByRole('checkbox')).toHaveLength(7);
+      expect(d.getAllByRole('checkbox')).toHaveLength(8);
       const output = d.getByRole('checkbox', { name: /^Output sharpening/ });
       expect(output).not.toBeChecked();
       expect(
@@ -162,6 +162,25 @@ describe('ApplySettingsDialog', () => {
       );
       await waitFor(() => expect(state.applies).toHaveLength(1));
       expect(state.applies[0]?.fields).toEqual(['Color', 'Tone', 'Output']);
+    });
+
+    it('offers split toning as a part of its own, unticked, right after colour', async () => {
+      const user = await openDialog();
+      const d = within(dialog());
+      const boxes = d.getAllByRole('checkbox');
+      const split = d.getByRole('checkbox', { name: /^Split toning/ });
+      expect(split).not.toBeChecked();
+      expect(boxes[boxes.indexOf(split) - 1]).toBe(d.getByRole('checkbox', { name: /^Colour/ }));
+      expect(
+        d.getByText('The tints of the highlights and the shadows, and the balance between them.'),
+      ).toBeInTheDocument();
+
+      await user.click(split);
+      await user.click(
+        d.getByRole('button', { name: 'Apply colour, split toning, and tone to 1 frame' }),
+      );
+      await waitFor(() => expect(state.applies).toHaveLength(1));
+      expect(state.applies[0]?.fields).toEqual(['Color', 'SplitTone', 'Tone']);
     });
 
     it('counts the frames it would change, and defaults to the selection', async () => {

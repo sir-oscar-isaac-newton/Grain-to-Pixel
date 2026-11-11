@@ -592,6 +592,8 @@ export type Color_Deserialize = {
 	saturation?: number | null,
 	/**  Saturation that spares colours which are already vivid; -100 to 100. */
 	vibrance?: number | null,
+	/**  Tints the highlights and the shadows (a stage of its own after the tone). */
+	split_tone?: SplitTone_Deserialize,
 };
 
 /**
@@ -608,6 +610,8 @@ export type Color_Serialize = {
 	saturation: number | null,
 	/**  Saturation that spares colours which are already vivid; -100 to 100. */
 	vibrance: number | null,
+	/**  Tints the highlights and the shadows (a stage of its own after the tone). */
+	split_tone: SplitTone_Serialize,
 };
 
 /**  The counters of one library. The `first_*` values are RFC 3339 times, set once. */
@@ -1782,9 +1786,10 @@ export type Recipe = Recipe_Serialize | Recipe_Deserialize;
  *  A group of settings that can be copied between frames: one panel of the Develop view.
  * 
  *  `Color` carries the colour balance and the black-and-white conversion (`mono`), which live in
- *  the same panel; `Base` carries the base source together with its value.
+ *  the same panel, but not the split toning, which is its own part (`SplitTone`); `Base` carries
+ *  the base source together with its value.
  */
-export type RecipeField = "Geometry" | "Base" | "Invert" | "Color" | "Tone" | "Dust" | "Output";
+export type RecipeField = "Geometry" | "Base" | "Invert" | "Color" | "SplitTone" | "Tone" | "Dust" | "Output";
 
 export type Recipe_Deserialize = {
 	v?: number,
@@ -2255,6 +2260,55 @@ export type SkippedFile_Serialize = {
 
 /**  Which plane or exposure a source file holds. */
 export type SourceRole = "rgb" | "ir" | "r" | "g" | "b";
+
+/**
+ *  Split toning: one tint for the highlights and one for the shadows, blended in at the same
+ *  luma so brightness never changes (docs/specification.md section 4.2). A recipe saved before it
+ *  existed loads with the defaults, which change nothing (both strengths are 0).
+ */
+export type SplitTone = SplitTone_Serialize | SplitTone_Deserialize;
+
+/**
+ *  Split toning: one tint for the highlights and one for the shadows, blended in at the same
+ *  luma so brightness never changes (docs/specification.md section 4.2). A recipe saved before it
+ *  existed loads with the defaults, which change nothing (both strengths are 0).
+ */
+export type SplitTone_Deserialize = {
+	/**  0 to 360 degrees: the hue of the highlight tint. */
+	highlight_hue?: number | null,
+	/**  0 to 100: how much of the highlight tint is blended in; 0 is off. */
+	highlight_strength?: number | null,
+	/**  0 to 360 degrees: the hue of the shadow tint. */
+	shadow_hue?: number | null,
+	/**  0 to 100: how much of the shadow tint is blended in; 0 is off. */
+	shadow_strength?: number | null,
+	/**
+	 *  -100 to 100: moves the crossover; +100 gives the highlight tint to every tone, -100 the
+	 *  shadow tint, 0 crosses at the middle.
+	 */
+	balance?: number | null,
+};
+
+/**
+ *  Split toning: one tint for the highlights and one for the shadows, blended in at the same
+ *  luma so brightness never changes (docs/specification.md section 4.2). A recipe saved before it
+ *  existed loads with the defaults, which change nothing (both strengths are 0).
+ */
+export type SplitTone_Serialize = {
+	/**  0 to 360 degrees: the hue of the highlight tint. */
+	highlight_hue: number | null,
+	/**  0 to 100: how much of the highlight tint is blended in; 0 is off. */
+	highlight_strength: number | null,
+	/**  0 to 360 degrees: the hue of the shadow tint. */
+	shadow_hue: number | null,
+	/**  0 to 100: how much of the shadow tint is blended in; 0 is off. */
+	shadow_strength: number | null,
+	/**
+	 *  -100 to 100: moves the crossover; +100 gives the highlight tint to every tone, -100 the
+	 *  shadow tint, 0 crosses at the middle.
+	 */
+	balance: number | null,
+};
 
 /**  Where a captured picture is in its step, for the `capture://step` event. */
 export type StepState = 

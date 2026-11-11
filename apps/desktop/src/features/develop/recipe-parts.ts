@@ -78,6 +78,40 @@ export function colourOf(recipe: Recipe): Colour {
   };
 }
 
+export type SplitToneKey =
+  'highlight_hue' | 'highlight_strength' | 'shadow_hue' | 'shadow_strength' | 'balance';
+
+export type SplitToneSetting = Record<SplitToneKey, number>;
+
+/** The split toning values when a recipe has none: both strengths 0 (off), the usual hues. */
+export const SPLIT_TONE_DEFAULT: SplitToneSetting = {
+  highlight_hue: 40,
+  highlight_strength: 0,
+  shadow_hue: 220,
+  shadow_strength: 0,
+  balance: 0,
+};
+
+/** The split toning of a recipe (`color.split_tone`), as plain numbers (the defaults when missing). */
+export function splitToneOf(recipe: Recipe): SplitToneSetting {
+  const s = recipe.color?.split_tone;
+  return {
+    highlight_hue: plain(s?.highlight_hue, SPLIT_TONE_DEFAULT.highlight_hue),
+    highlight_strength: plain(s?.highlight_strength, SPLIT_TONE_DEFAULT.highlight_strength),
+    shadow_hue: plain(s?.shadow_hue, SPLIT_TONE_DEFAULT.shadow_hue),
+    shadow_strength: plain(s?.shadow_strength, SPLIT_TONE_DEFAULT.shadow_strength),
+    balance: plain(s?.balance, SPLIT_TONE_DEFAULT.balance),
+  };
+}
+
+/** The recipe with some of its split toning replaced, the rest of the colour block kept. */
+export function withSplitTone(recipe: Recipe, values: Partial<SplitToneSetting>): Recipe {
+  return {
+    ...recipe,
+    color: { ...recipe.color, split_tone: { ...splitToneOf(recipe), ...values } },
+  } as Recipe;
+}
+
 /** The black-and-white setting of a recipe. */
 export function monoOf(recipe: Recipe): MonoSetting {
   const mono = recipe.mono;

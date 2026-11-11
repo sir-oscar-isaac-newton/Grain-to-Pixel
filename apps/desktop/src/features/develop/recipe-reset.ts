@@ -11,6 +11,7 @@ import {
   levelsOf,
   monoOf,
   sharpenOf,
+  splitToneOf,
   toneOf,
   withBase,
   withColour,
@@ -19,12 +20,16 @@ import {
   withLevels,
   withMono,
   withSharpen,
+  withSplitTone,
   withTone,
 } from './recipe-parts';
 
-/** The Colour panel: the colour sliders and the black-and-white setting. */
+/** The Colour panel: the colour sliders, the black-and-white setting and the split toning. */
 export function resetColour(recipe: Recipe, auto: Recipe): Recipe {
-  return withMono(withColour(recipe, colourOf(auto)), monoOf(auto));
+  return withSplitTone(
+    withMono(withColour(recipe, colourOf(auto)), monoOf(auto)),
+    splitToneOf(auto),
+  );
 }
 
 /** The Tone panel: the tone sliders and all four curves. */

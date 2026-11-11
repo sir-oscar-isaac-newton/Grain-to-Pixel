@@ -20,6 +20,7 @@ import {
   type Counters,
   type CrashNote,
   type DeviceInfo,
+  type DevelopPreset_Serialize,
   type ExportedFile,
   type ExportOptions_Serialize,
   type ExportPreset_Serialize,
@@ -260,6 +261,9 @@ export type Settings = Settings_Serialize;
 
 /** A named set of export options kept in the settings. */
 export type ExportPreset = ExportPreset_Serialize;
+
+/** A named group of Develop settings (a recipe and the parts of it to copy) kept in the settings. */
+export type DevelopPreset = Omit<DevelopPreset_Serialize, 'recipe'> & { recipe: Recipe };
 
 /** The options and preset of the export started last, kept in the settings. */
 export type LastExport = LastExport_Serialize;
@@ -628,6 +632,24 @@ export async function recipeSave(...args: Args<'recipeSave'>): Promise<Data<'rec
  */
 export async function recipeApplyTo(...args: Args<'recipeApplyTo'>): Promise<void> {
   unwrap(await commands.recipeApplyTo(...args));
+}
+
+/**
+ * Copies the chosen groups of settings from a preset's `recipe` onto the frames, all or nothing,
+ * like {@link recipeApplyTo} but with no source frame: every frame listed is a target.
+ */
+export async function recipeApplyValuesTo(...args: Args<'recipeApplyValuesTo'>): Promise<void> {
+  unwrap(await commands.recipeApplyValuesTo(...args));
+}
+
+/**
+ * The `target` recipe with the chosen groups of settings copied from `source`, clamped. Reads and
+ * saves nothing; the Develop view applies a preset to the open edit with it.
+ */
+export async function recipeMergeFields(
+  ...args: Args<'recipeMergeFields'>
+): Promise<Data<'recipeMergeFields'>> {
+  return unwrap(await commands.recipeMergeFields(...args));
 }
 
 /** A rendered preview: RGBA8 sRGB pixels, ready for `new ImageData(rgba, width, height)`. */

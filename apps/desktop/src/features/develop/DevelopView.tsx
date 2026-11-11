@@ -8,9 +8,11 @@ import {
   developSampleLevels,
   developSampleNeutral,
   frameGet,
+  recipeMergeFields,
   rollSetFilmBase,
   rollSetFrameSize,
   settingsGet,
+  type DevelopPreset,
   type FrameSummary,
   type LevelsPoint,
   type Recipe,
@@ -25,6 +27,7 @@ import {
 import { useLibraryStore } from '../library/library-store';
 import { useFrames } from '../library/use-frames';
 import { ApplySettingsDialog } from '../library/ApplySettingsDialog';
+import { DevelopPresetsDialog } from '../library/DevelopPresetsDialog';
 import { ExportDialog } from '../library/ExportDialog';
 import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
@@ -144,6 +147,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   const [pick, setPick] = useState<PickTarget | null>(null);
   const [exporting, setExporting] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [presetsOpen, setPresetsOpen] = useState(false);
   const selection = useLibraryStore((s) => s.selected);
   const [guide, setGuide] = useState(false);
   // The aspect ratio the crop is locked to: an editing aid for this frame, not part of the recipe.
@@ -509,6 +513,14 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   ]);
   /** Undo, redo and the resets need a recipe that may be changed and nothing else under way. */
   const editable = recipe !== null && !readOnly && !working;
+
+  /** Applies a preset to the open edit as one undo step; it previews and saves like any edit. */
+  const applyPreset = async (preset: DevelopPreset): Promise<string> => {
+    if (!recipe) return '';
+    const merged = await recipeMergeFields(recipe, preset.recipe, preset.fields);
+    setRecipe(merged);
+    return t('develop.presets.applied', { name: preset.name });
+  };
   /** Puts the whole recipe back to the automatic one, as one step. */
   const resetAll = () => {
     if (!auto || !editable) return;
@@ -582,6 +594,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         </button>
         <button type="button" disabled={readOnly} onClick={() => setApplying(true)}>
           {t('apply.open')}
+        </button>
+        <button type="button" onClick={() => setPresetsOpen(true)}>
+          {t('develop.presets.open')}
         </button>
         <button type="button" disabled={!editable || !develop.canUndo} onClick={undo}>
           {t('develop.undo')}
@@ -825,6 +840,16 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
           onApplied={refreshReference}
           sources={[frame.id]}
           selected={[...selection]}
+        />
+      )}
+
+      {presetsOpen && (
+        <DevelopPresetsDialog
+          mode="manage"
+          onClose={() => setPresetsOpen(false)}
+          onApply={applyPreset}
+          canApply={editable}
+          current={recipe}
         />
       )}
 

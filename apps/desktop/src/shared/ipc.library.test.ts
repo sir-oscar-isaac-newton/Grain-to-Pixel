@@ -12,6 +12,8 @@ const developSampleNeutralMock = vi.fn();
 const exportStartMock = vi.fn();
 const recipeSaveMock = vi.fn();
 const recipeApplyToMock = vi.fn();
+const recipeApplyValuesToMock = vi.fn();
+const recipeMergeFieldsMock = vi.fn();
 const handlers: Record<string, (event: { payload: unknown }) => void> = {};
 const stop = vi.fn();
 
@@ -41,6 +43,8 @@ vi.mock('@gtp/ipc-types', () => {
       exportStart: (...args: unknown[]) => exportStartMock(...args),
       recipeSave: (...args: unknown[]) => recipeSaveMock(...args),
       recipeApplyTo: (...args: unknown[]) => recipeApplyToMock(...args),
+      recipeApplyValuesTo: (...args: unknown[]) => recipeApplyValuesToMock(...args),
+      recipeMergeFields: (...args: unknown[]) => recipeMergeFieldsMock(...args),
     },
     events: {
       libraryChanged: listener('libraryChanged'),
@@ -71,6 +75,8 @@ import {
   pickFolder,
   pickTiffFiles,
   recipeApplyTo,
+  recipeApplyValuesTo,
+  recipeMergeFields,
   recipeSave,
 } from './ipc';
 
@@ -127,6 +133,8 @@ describe('shared/ipc: library helpers', () => {
       exportStartMock.mockReset();
       recipeSaveMock.mockReset();
       recipeApplyToMock.mockReset();
+      recipeApplyValuesToMock.mockReset();
+      recipeMergeFieldsMock.mockReset();
     });
 
     it('reads the header and the pixels of a preview', () => {
@@ -189,6 +197,28 @@ describe('shared/ipc: library helpers', () => {
         error: { code: 'NotFound', message: 'No such frame.' },
       });
       await expect(recipeApplyTo(['x'], 'f1', ['Tone'])).rejects.toBeInstanceOf(IpcError);
+    });
+
+    it('applies a preset recipe to frames with no source frame', async () => {
+      const recipe = { v: 1 } as unknown as Parameters<typeof recipeApplyValuesTo>[1];
+      recipeApplyValuesToMock.mockResolvedValueOnce({ status: 'ok', data: null });
+      await expect(recipeApplyValuesTo(['f2'], recipe, ['Tone'])).resolves.toBeUndefined();
+      expect(recipeApplyValuesToMock).toHaveBeenCalledWith(['f2'], recipe, ['Tone']);
+
+      recipeApplyValuesToMock.mockResolvedValueOnce({
+        status: 'error',
+        error: { code: 'LibraryTooNew', message: 'Read-only.' },
+      });
+      await expect(recipeApplyValuesTo(['f2'], recipe, ['Tone'])).rejects.toBeInstanceOf(IpcError);
+    });
+
+    it('merges chosen groups of one recipe into another', async () => {
+      const target = { v: 1 } as unknown as Parameters<typeof recipeMergeFields>[0];
+      const source = { v: 1, tag: 's' } as unknown as Parameters<typeof recipeMergeFields>[1];
+      const merged = { v: 1, tag: 'merged' };
+      recipeMergeFieldsMock.mockResolvedValueOnce({ status: 'ok', data: merged });
+      await expect(recipeMergeFields(target, source, ['Tone'])).resolves.toBe(merged);
+      expect(recipeMergeFieldsMock).toHaveBeenCalledWith(target, source, ['Tone']);
     });
 
     it('samples the base from an area of the scan, in fractions of it', async () => {

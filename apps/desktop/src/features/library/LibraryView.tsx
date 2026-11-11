@@ -2,9 +2,15 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUiStore } from '../../app/store';
 import { formatBytes } from '../../shared/format';
-import { frameSetFlag, type FrameFlag } from '../../shared/ipc';
+import {
+  frameSetFlag,
+  recipeApplyValuesTo,
+  type DevelopPreset,
+  type FrameFlag,
+} from '../../shared/ipc';
 import { ApplySettingsDialog } from './ApplySettingsDialog';
 import { DeleteFramesDialog } from './DeleteFramesDialog';
+import { DevelopPresetsDialog } from './DevelopPresetsDialog';
 import { ExportDialog } from './ExportDialog';
 import { FirstRunDialog } from './FirstRunDialog';
 import { FrameGrid } from './FrameGrid';
@@ -45,6 +51,7 @@ export function LibraryView() {
   const [found, setFound] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [applyingPreset, setApplyingPreset] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   // Nothing typed: the roll's frames in order. Otherwise the search, best match first.
@@ -120,6 +127,13 @@ export function LibraryView() {
               </button>
               <button
                 type="button"
+                disabled={selectedCount === 0 || library.read_only}
+                onClick={() => setApplyingPreset(true)}
+              >
+                {t('library.applyPreset.open')}
+              </button>
+              <button
+                type="button"
                 disabled={selectingRejected}
                 onClick={() => void selectRejected()}
               >
@@ -139,6 +153,18 @@ export function LibraryView() {
                 onClose={() => setApplying(false)}
                 sources={[...selected]}
                 selected={[...selected]}
+              />
+            )}
+            {applyingPreset && (
+              <DevelopPresetsDialog
+                mode="apply"
+                onClose={() => setApplyingPreset(false)}
+                onApply={async (preset: DevelopPreset) => {
+                  const ids = [...selected];
+                  await recipeApplyValuesTo(ids, preset.recipe, preset.fields);
+                  return t('library.applyPreset.done', { count: ids.length, name: preset.name });
+                }}
+                canApply={selectedCount > 0 && !library.read_only}
               />
             )}
             {exporting && (

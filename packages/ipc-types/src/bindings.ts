@@ -235,6 +235,16 @@ export const commands = {
 	 *  nothing. Whatever else a target has is kept.
 	 */
 	recipeApplyTo: (frameIds: FrameId[], source: FrameId, fields: RecipeField[]) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("recipe_apply_to", { frameIds, source, fields })),
+	/**
+	 *  Copies the chosen groups of settings from a saved preset's recipe onto the frames, all or
+	 *  nothing, like `recipe_apply_to` but with no source frame: every listed frame is a target.
+	 */
+	recipeApplyValuesTo: (frameIds: FrameId[], recipe: Recipe_Deserialize, fields: RecipeField[]) => typedError<null, AppError_Serialize>(__TAURI_INVOKE("recipe_apply_values_to", { frameIds, recipe, fields })),
+	/**
+	 *  `target` with the chosen groups of settings copied from `source`, clamped. Reads and saves
+	 *  nothing: the Develop view applies a preset to the open edit with it.
+	 */
+	recipeMergeFields: (target: Recipe_Deserialize, source: Recipe_Deserialize, fields: RecipeField[]) => typedError<Recipe_Serialize, AppError_Serialize>(__TAURI_INVOKE("recipe_merge_fields", { target, source, fields })),
 	/**  All tags, in name order. */
 	tagList: () => typedError<Tag[], AppError_Serialize>(__TAURI_INVOKE("tag_list")),
 	/**  The tags of a roll, in name order. */
@@ -762,6 +772,32 @@ export type DevelopInfo_Serialize = {
 	 *  hand, or there is none. Below 0.5 the base is a guess.
 	 */
 	roll_base_confidence: number | null,
+};
+
+/**
+ *  A named group of Develop settings (U-28): the recipe of the edit it was saved from, and the
+ *  parts of it that applying the preset copies. The name is plain text the user typed.
+ */
+export type DevelopPreset = DevelopPreset_Serialize | DevelopPreset_Deserialize;
+
+/**
+ *  A named group of Develop settings (U-28): the recipe of the edit it was saved from, and the
+ *  parts of it that applying the preset copies. The name is plain text the user typed.
+ */
+export type DevelopPreset_Deserialize = {
+	name: string,
+	fields: RecipeField[],
+	recipe: Recipe_Deserialize,
+};
+
+/**
+ *  A named group of Develop settings (U-28): the recipe of the edit it was saved from, and the
+ *  parts of it that applying the preset copies. The name is plain text the user typed.
+ */
+export type DevelopPreset_Serialize = {
+	name: string,
+	fields: RecipeField[],
+	recipe: Recipe_Serialize,
 };
 
 /**  A scanner the app can use. */
@@ -2098,6 +2134,12 @@ export type SettingsPatch_Deserialize = {
 	export_presets?: ExportPreset_Deserialize[] | null,
 	/**  Records the options of the export just started and the preset they came from. */
 	last_export?: LastExport_Deserialize | null,
+	/**
+	 *  Replaces the whole list of Develop presets (names are trimmed, and must be unique without
+	 *  regard to case; each needs at least one part, none twice; at most
+	 *  [`MAX_DEVELOP_PRESETS`]). The stored recipes are clamped.
+	 */
+	develop_presets?: DevelopPreset_Deserialize[] | null,
 };
 
 /**  Settings to change; fields left out keep their value. The last library is set by opening one. */
@@ -2119,6 +2161,12 @@ export type SettingsPatch_Serialize = {
 	export_presets: ExportPreset_Serialize[] | null,
 	/**  Records the options of the export just started and the preset they came from. */
 	last_export: LastExport_Serialize | null,
+	/**
+	 *  Replaces the whole list of Develop presets (names are trimmed, and must be unique without
+	 *  regard to case; each needs at least one part, none twice; at most
+	 *  [`MAX_DEVELOP_PRESETS`]). The stored recipes are clamped.
+	 */
+	develop_presets: DevelopPreset_Serialize[] | null,
 };
 
 export type Settings_Deserialize = {
@@ -2147,6 +2195,11 @@ export type Settings_Deserialize = {
 	export_presets?: ExportPreset_Deserialize[],
 	/**  What the export dialog starts from: the options of the last export and their preset. */
 	last_export?: LastExport_Deserialize | null,
+	/**
+	 *  The Develop presets (U-28). A file without this key has none; a preset that cannot be read
+	 *  (a part name from a newer version, say) is dropped on load and the rest are kept.
+	 */
+	develop_presets?: DevelopPreset_Deserialize[],
 };
 
 export type Settings_Serialize = {
@@ -2175,6 +2228,11 @@ export type Settings_Serialize = {
 	export_presets: ExportPreset_Serialize[],
 	/**  What the export dialog starts from: the options of the last export and their preset. */
 	last_export: LastExport_Serialize | null,
+	/**
+	 *  The Develop presets (U-28). A file without this key has none; a preset that cannot be read
+	 *  (a part name from a newer version, say) is dropped on load and the rest are kept.
+	 */
+	develop_presets: DevelopPreset_Serialize[],
 };
 
 /**

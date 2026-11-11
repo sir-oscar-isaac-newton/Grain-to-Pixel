@@ -11,6 +11,7 @@ import type {
   CaptureStep,
   Counters,
   DeviceInfo,
+  DevelopPreset,
   ExportOptions,
   ExportPreset,
   FolderCheck,
@@ -26,6 +27,7 @@ import type {
   Preview,
   Recipe,
   Roll,
+  RecipeField,
   RollPreviewImage,
   ScanRequest,
   SearchQuery,
@@ -165,6 +167,7 @@ interface SettingsPatchShape {
   clear_focus_reference?: boolean;
   export_presets?: ExportPreset[];
   last_export?: LastExport;
+  develop_presets?: DevelopPreset[];
 }
 
 /** The answer of the focus check before a test changes it. */
@@ -296,6 +299,10 @@ export const state = {
   /** The export presets, and the options the last export started with. */
   exportPresets: DEFAULT_EXPORT_PRESETS.map((p) => ({ ...p, options: { ...p.options } })),
   lastExport: null as LastExport | null,
+  /** The Develop presets. */
+  developPresets: [] as DevelopPreset[],
+  /** The preset values applied to frames, in order (Apply preset in the Library). */
+  valueApplies: [] as Array<{ frameIds: string[]; recipe: Recipe; fields: string[] }>,
   /** Reading the settings fails with this message when set. */
   settingsUnreadable: null as string | null,
   /** Saving settings is refused with this message when set. */
@@ -497,6 +504,60 @@ function pageOf(
   };
 }
 
+type Blocks = Record<string, unknown>;
+
+/**
+ * The target with the chosen parts copied from the source, as `Recipe::copy_fields_from` does: a
+ * whole top-level block per part. Colour is `color` without `split_tone`, plus `mono`; split
+ * toning is `color.split_tone`. (The real command also clamps; the fake does not.)
+ */
+export function mergeFields(target: Recipe, source: Recipe, fields: RecipeField[]): Recipe {
+  const to = structuredClone(target) as unknown as Blocks;
+  const from = source as unknown as Blocks;
+  const copy = (key: string) => {
+    if (key in from) to[key] = structuredClone(from[key]);
+  };
+  for (const field of fields) {
+    switch (field) {
+      case 'Geometry':
+        copy('geometry');
+        break;
+      case 'Base':
+        copy('base');
+        break;
+      case 'Invert':
+        copy('invert');
+        break;
+      case 'Tone':
+        copy('tone');
+        break;
+      case 'Dust':
+        copy('dust');
+        break;
+      case 'Output':
+        copy('output');
+        break;
+      case 'Color': {
+        const keep = (to.color as Blocks | undefined)?.split_tone;
+        const color = { ...(structuredClone(from.color) as Blocks | undefined) };
+        delete color.split_tone;
+        if (keep !== undefined) color.split_tone = keep;
+        if ('color' in from) to.color = color;
+        copy('mono');
+        break;
+      }
+      case 'SplitTone': {
+        const tint = (from.color as Blocks | undefined)?.split_tone;
+        if (tint !== undefined) {
+          to.color = { ...(to.color as Blocks | undefined), split_tone: structuredClone(tint) };
+        }
+        break;
+      }
+    }
+  }
+  return to as unknown as Recipe;
+}
+
 export const ipc = {
   IpcError,
   libraryInfo: vi.fn(async () => ({ app_version: '1.0.0', library: state.details })),
@@ -522,6 +583,7 @@ export const ipc = {
       focus_reference: state.focusReference,
       export_presets: state.exportPresets.map((p) => ({ ...p, options: { ...p.options } })),
       last_export: state.lastExport,
+      develop_presets: state.developPresets.map((p) => ({ ...p, fields: [...p.fields] })),
     };
   }),
   settingsDefaults: vi.fn(async () => ({ last_library: null, flags: { ...DEFAULT_FLAGS } })),
@@ -537,6 +599,7 @@ export const ipc = {
     if (patch.clear_focus_reference) state.focusReference = null;
     if (patch.export_presets) state.exportPresets = patch.export_presets;
     if (patch.last_export) state.lastExport = patch.last_export;
+    if (patch.develop_presets) state.developPresets = patch.develop_presets;
     return {
       last_library: state.lastLibrary,
       starting_look: state.startingLook,
@@ -545,6 +608,7 @@ export const ipc = {
       focus_reference: state.focusReference,
       export_presets: state.exportPresets.map((p) => ({ ...p, options: { ...p.options } })),
       last_export: state.lastExport,
+      develop_presets: state.developPresets.map((p) => ({ ...p, fields: [...p.fields] })),
     };
   }),
   updateCheck: vi.fn<(manual: boolean) => Promise<UpdateOutcome>>(async () => {
@@ -789,6 +853,15 @@ export const ipc = {
       throw new IpcError({ code: 'InvalidInput', message: state.applyRefused });
     }
   }),
+  recipeApplyValuesTo: vi.fn(async (frameIds: string[], recipe: Recipe, fields: string[]) => {
+    state.valueApplies.push({ frameIds, recipe, fields });
+    if (state.applyRefused) {
+      throw new IpcError({ code: 'InvalidInput', message: state.applyRefused });
+    }
+  }),
+  recipeMergeFields: vi.fn(async (target: Recipe, source: Recipe, fields: RecipeField[]) => {
+    return mergeFields(target, source, fields);
+  }),
   exportStart: vi.fn(async (frameIds: string[], options: ExportOptions) => {
     state.exports.push({ frameIds, options });
     if (state.exportRefused) {
@@ -990,6 +1063,8 @@ export function resetFake() {
   state.keys = {};
   state.exportPresets = DEFAULT_EXPORT_PRESETS.map((p) => ({ ...p, options: { ...p.options } }));
   state.lastExport = null;
+  state.developPresets = [];
+  state.valueApplies = [];
   state.settingsPatches = [];
   state.startingLook = 'neutral';
   state.settingsUnreadable = null;

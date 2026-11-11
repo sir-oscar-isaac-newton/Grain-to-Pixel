@@ -10,7 +10,7 @@ use std::sync::{Mutex, PoisonError};
 
 use gtp_capture::{CaptureProfile, CaptureProfilePatch};
 use gtp_core::recipe::OutputSpace;
-use gtp_core::{AppError, ErrorCode, ExposureInfo, Look};
+use gtp_core::{AppError, ErrorCode, ExposureInfo, Look, Recipe, RecipeField};
 use serde::{Deserialize, Serialize};
 
 use super::capture_levels::{LevelsScope, SavedLevels};
@@ -76,6 +76,19 @@ impl Default for Flags {
 pub struct ExportPreset {
     pub name: String,
     pub options: ExportOptions,
+}
+
+/// The most Develop presets the settings keep.
+pub const MAX_DEVELOP_PRESETS: usize = 200;
+
+/// A named group of Develop settings (U-28): the recipe of the edit it was saved from, and the
+/// parts of it that applying the preset copies. The name is plain text the user typed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct DevelopPreset {
+    pub name: String,
+    pub fields: Vec<RecipeField>,
+    pub recipe: Recipe,
 }
 
 /// The options of the last export started, and the preset they were chosen from, if any.
@@ -159,6 +172,28 @@ pub struct Settings {
     pub export_presets: Vec<ExportPreset>,
     /// What the export dialog starts from: the options of the last export and their preset.
     pub last_export: Option<LastExport>,
+    /// The Develop presets (U-28). A file without this key has none; a preset that cannot be read
+    /// (a part name from a newer version, say) is dropped on load and the rest are kept.
+    #[serde(deserialize_with = "tolerant_develop_presets")]
+    #[cfg_attr(feature = "specta", specta(type = Vec<DevelopPreset>))]
+    pub develop_presets: Vec<DevelopPreset>,
+}
+
+/// Reads the list of presets entry by entry, so one that cannot be read does not make the whole
+/// settings file unreadable. Used for this field only.
+fn tolerant_develop_presets<'de, D>(deserializer: D) -> Result<Vec<DevelopPreset>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let entries = Vec::<serde_json::Value>::deserialize(deserializer)?;
+    let mut presets = Vec::with_capacity(entries.len());
+    for entry in entries {
+        match serde_json::from_value::<DevelopPreset>(entry) {
+            Ok(preset) => presets.push(preset),
+            Err(err) => tracing::warn!("a Develop preset in the settings was dropped: {err}"),
+        }
+    }
+    Ok(presets)
 }
 
 impl Default for Settings {
@@ -176,6 +211,7 @@ impl Default for Settings {
             focus_reference: None,
             export_presets: default_export_presets(),
             last_export: None,
+            develop_presets: Vec::new(),
         }
     }
 }
@@ -223,6 +259,10 @@ pub struct SettingsPatch {
     pub export_presets: Option<Vec<ExportPreset>>,
     /// Records the options of the export just started and the preset they came from.
     pub last_export: Option<LastExport>,
+    /// Replaces the whole list of Develop presets (names are trimmed, and must be unique without
+    /// regard to case; each needs at least one part, none twice; at most
+    /// [`MAX_DEVELOP_PRESETS`]). The stored recipes are clamped.
+    pub develop_presets: Option<Vec<DevelopPreset>>,
 }
 
 /// Refuses a JPEG quality outside 1 to 100 and a long edge outside [`LONG_EDGE`].
@@ -276,6 +316,71 @@ fn checked_presets(presets: &[ExportPreset]) -> Result<Vec<ExportPreset>, AppErr
         checked.push(ExportPreset {
             name: name.to_owned(),
             options: preset.options.clone(),
+        });
+    }
+    Ok(checked)
+}
+
+/// The parts of a recipe in the order the Develop view lists them.
+const FIELD_ORDER: [RecipeField; 8] = [
+    RecipeField::Geometry,
+    RecipeField::Base,
+    RecipeField::Invert,
+    RecipeField::Color,
+    RecipeField::SplitTone,
+    RecipeField::Tone,
+    RecipeField::Dust,
+    RecipeField::Output,
+];
+
+/// The Develop presets with trimmed names, their parts in order and their recipes clamped, or why
+/// they are refused: too many, an empty or repeated name (compared without case), no part, or a
+/// part listed twice.
+fn checked_develop_presets(presets: &[DevelopPreset]) -> Result<Vec<DevelopPreset>, AppError> {
+    let invalid = |message: &str, details: String| {
+        AppError::new(ErrorCode::InvalidInput, message).with_details(details)
+    };
+    if presets.len() > MAX_DEVELOP_PRESETS {
+        return Err(invalid(
+            "There are too many presets.",
+            format!("{} of at most {MAX_DEVELOP_PRESETS}", presets.len()),
+        ));
+    }
+    let mut seen: Vec<String> = Vec::new();
+    let mut checked = Vec::with_capacity(presets.len());
+    for preset in presets {
+        let name = preset.name.trim();
+        if name.is_empty() {
+            return Err(invalid("A preset needs a name.", String::new()));
+        }
+        let key = name.to_lowercase();
+        if seen.contains(&key) {
+            return Err(invalid(
+                "Two presets cannot have the same name.",
+                name.to_owned(),
+            ));
+        }
+        seen.push(key);
+        if preset.fields.is_empty() {
+            return Err(invalid(
+                "A preset needs at least one part.",
+                name.to_owned(),
+            ));
+        }
+        let fields: Vec<RecipeField> = FIELD_ORDER
+            .into_iter()
+            .filter(|field| preset.fields.contains(field))
+            .collect();
+        if fields.len() != preset.fields.len() {
+            return Err(invalid(
+                "A preset cannot list a part twice.",
+                name.to_owned(),
+            ));
+        }
+        checked.push(DevelopPreset {
+            name: name.to_owned(),
+            fields,
+            recipe: preset.recipe.clone().clamped(),
         });
     }
     Ok(checked)
@@ -360,6 +465,9 @@ impl Settings {
         }
         if let Some(presets) = &patch.export_presets {
             self.export_presets = checked_presets(presets)?;
+        }
+        if let Some(presets) = &patch.develop_presets {
+            self.develop_presets = checked_develop_presets(presets)?;
         }
         if let Some(last) = &patch.last_export {
             check_quality(&last.options)?;
@@ -1352,6 +1460,149 @@ mod tests {
         );
         assert_eq!(store.get(), before);
         assert!(!path.exists());
+    }
+
+    fn develop_preset(name: &str, fields: &[RecipeField]) -> DevelopPreset {
+        let mut recipe = Recipe::default();
+        recipe.tone.exposure_ev = 0.5;
+        DevelopPreset {
+            name: name.into(),
+            fields: fields.to_vec(),
+            recipe,
+        }
+    }
+
+    fn with_develop_presets(presets: Vec<DevelopPreset>) -> SettingsPatch {
+        SettingsPatch {
+            develop_presets: Some(presets),
+            ..SettingsPatch::default()
+        }
+    }
+
+    #[test]
+    fn there_are_no_develop_presets_by_default_or_in_an_old_file() {
+        assert!(Settings::default().develop_presets.is_empty());
+        let path = temp_file("develop-presets-old");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none(), "{note:?}");
+        assert!(store.get().develop_presets.is_empty());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn develop_presets_are_saved_trimmed_ordered_and_kept_across_a_reload() {
+        let path = temp_file("develop-presets");
+        let (store, _) = SettingsStore::load(&path);
+        let saved = store
+            .update(&with_develop_presets(vec![
+                develop_preset(" Warm ", &[RecipeField::Tone, RecipeField::Color]),
+                develop_preset("Cool", &[RecipeField::SplitTone]),
+            ]))
+            .unwrap();
+        assert_eq!(saved.develop_presets.len(), 2);
+        assert_eq!(saved.develop_presets[0].name, "Warm");
+        assert_eq!(
+            saved.develop_presets[0].fields,
+            vec![RecipeField::Color, RecipeField::Tone],
+            "parts are stored in the enum's order"
+        );
+        assert_eq!(saved.develop_presets[0].recipe.tone.exposure_ev, 0.5);
+        // A patch without the field leaves them alone; an empty list clears them.
+        store
+            .update(&SettingsPatch {
+                theme: Some(Theme::Dark),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        let (reloaded, _) = SettingsStore::load(&path);
+        assert_eq!(reloaded.get().develop_presets, saved.develop_presets);
+        reloaded.update(&with_develop_presets(Vec::new())).unwrap();
+        assert!(reloaded.get().develop_presets.is_empty());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn refused_develop_presets_change_and_save_nothing() {
+        let path = temp_file("develop-presets-refused");
+        let (store, _) = SettingsStore::load(&path);
+        let before = store.get();
+        let tone = [RecipeField::Tone];
+        let bad: Vec<Vec<DevelopPreset>> = vec![
+            vec![develop_preset("   ", &tone)],
+            vec![
+                develop_preset("Warm", &tone),
+                develop_preset(" WARM ", &tone),
+            ],
+            vec![develop_preset("Warm", &[])],
+            vec![develop_preset(
+                "Warm",
+                &[RecipeField::Tone, RecipeField::Color, RecipeField::Tone],
+            )],
+            (0..=MAX_DEVELOP_PRESETS)
+                .map(|i| develop_preset(&format!("P{i}"), &tone))
+                .collect(),
+        ];
+        for list in bad {
+            let err = store
+                .update(&with_develop_presets(list.clone()))
+                .unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{list:?}");
+        }
+        assert_eq!(store.get(), before);
+        assert!(!path.exists());
+
+        let full: Vec<DevelopPreset> = (0..MAX_DEVELOP_PRESETS)
+            .map(|i| develop_preset(&format!("P{i}"), &tone))
+            .collect();
+        assert_eq!(
+            store
+                .update(&with_develop_presets(full))
+                .unwrap()
+                .develop_presets
+                .len(),
+            MAX_DEVELOP_PRESETS
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_develop_presets_recipe_is_clamped_on_save() {
+        let path = temp_file("develop-presets-clamp");
+        let (store, _) = SettingsStore::load(&path);
+        let mut wild = develop_preset("Wild", &[RecipeField::Tone]);
+        wild.recipe.tone.exposure_ev = 5000.0;
+        let saved = store
+            .update(&with_develop_presets(vec![wild.clone()]))
+            .unwrap();
+        assert_eq!(saved.develop_presets[0].recipe, wild.recipe.clamped());
+        assert_ne!(saved.develop_presets[0].recipe.tone.exposure_ev, 5000.0);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn an_unreadable_develop_preset_is_dropped_and_the_rest_of_the_file_loads() {
+        let path = temp_file("develop-presets-tolerant");
+        let good = develop_preset("Good", &[RecipeField::Tone]);
+        let other = develop_preset("Other", &[RecipeField::Color, RecipeField::Dust]);
+        let mut file = serde_json::to_value(Settings::default()).unwrap();
+        let entry = |p: &DevelopPreset| serde_json::to_value(p).unwrap();
+        let mut newer = entry(&good);
+        newer["name"] = "Newer".into();
+        newer["fields"] = serde_json::json!(["Tone", "FromTheFuture"]);
+        file["develop_presets"] = serde_json::json!([entry(&good), newer, "junk", entry(&other)]);
+        file["theme"] = "dark".into();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, file.to_string()).unwrap();
+
+        let (loaded, note) = SettingsStore::load(&path);
+        assert!(note.is_none(), "the file is read, not set aside: {note:?}");
+        let settings = loaded.get();
+        assert_eq!(settings.theme, Theme::Dark);
+        assert_eq!(settings.develop_presets, vec![good, other]);
+        assert!(!path.with_extension("json.bad").exists());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]

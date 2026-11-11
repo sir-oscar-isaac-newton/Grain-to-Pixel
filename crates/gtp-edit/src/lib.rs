@@ -1,4 +1,4 @@
-//! Edit stages over linear `ImageF32` buffers: colour balance, tone, split toning and vignette (in place) and geometry
+//! Edit stages over linear `ImageF32` buffers: colour balance, the colour mixer, tone, split toning and vignette (in place) and geometry
 //! (a new buffer), IR dust removal and output sharpening. Per-pixel loops run in parallel with `rayon`; each
 //! pixel or output row is independent, so the result is the same as on one thread. Every tuning constant is a named, documented `pub const`
 //! so it can be calibrated against reference renders (issue Q-03).
@@ -10,6 +10,8 @@ mod dust;
 mod frontier;
 mod geometry;
 mod look;
+mod mixer;
+mod oklab;
 mod sharpen;
 mod split_tone;
 mod tone;
@@ -44,6 +46,13 @@ pub use tone::{
     HIGHLIGHT_RANGE_STOPS, MID_GREY, REGION_STOPS, SHADOW_RANGE_STOPS, WHITES_RANGE,
 };
 
+pub use mixer::{
+    apply_mixer, MIXER_BAND_HUES, MIXER_CHROMA_KNEE, MIXER_HUE_MAX_DEG, MIXER_LIGHTNESS_MAX_EV,
+};
+pub use oklab::{
+    hue_deg, oklab_to_rgb, oklch_to_rgb, rgb_to_oklab, rgb_to_oklch, FULL_TURN_DEG, LAB_TO_LMS,
+    LMS_TO_LAB, LMS_TO_REC2020, REC2020_TO_LMS, REC2020_TO_XYZ, XYZ_TO_LMS,
+};
 pub use split_tone::{apply_split_tone, SPLIT_TONE_GAMMA, SPLIT_TONE_MAX_BLEND};
 pub use vignette::{apply_vignette, VIGNETTE_MAX_EV};
 

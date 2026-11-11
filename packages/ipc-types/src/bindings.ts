@@ -604,6 +604,8 @@ export type Color_Deserialize = {
 	vibrance?: number | null,
 	/**  Tints the highlights and the shadows (a stage of its own after the tone). */
 	split_tone?: SplitTone_Deserialize,
+	/**  Per-hue changes of hue, saturation and lightness (a stage of its own after the colour). */
+	mixer?: Mixer_Deserialize,
 };
 
 /**
@@ -622,6 +624,8 @@ export type Color_Serialize = {
 	vibrance: number | null,
 	/**  Tints the highlights and the shadows (a stage of its own after the tone). */
 	split_tone: SplitTone_Serialize,
+	/**  Per-hue changes of hue, saturation and lightness (a stage of its own after the colour). */
+	mixer: Mixer_Serialize,
 };
 
 /**  The counters of one library. The `first_*` values are RFC 3339 times, set once. */
@@ -1767,6 +1771,47 @@ export type Look =
 "frontier";
 
 /**
+ *  The colour mixer: per hue band, a shift of hue, a change of saturation and a change of
+ *  lightness (docs/specification.md section 4.2). Every value runs from -100 to 100 and 0 changes
+ *  nothing. The bands, in index order 0 to 7, are fixed: red, orange, yellow, green, aqua, blue,
+ *  purple, magenta. A recipe saved before the mixer existed loads with zeros; a list of another
+ *  length than 8 is a malformed recipe.
+ */
+export type Mixer = Mixer_Serialize | Mixer_Deserialize;
+
+/**
+ *  The colour mixer: per hue band, a shift of hue, a change of saturation and a change of
+ *  lightness (docs/specification.md section 4.2). Every value runs from -100 to 100 and 0 changes
+ *  nothing. The bands, in index order 0 to 7, are fixed: red, orange, yellow, green, aqua, blue,
+ *  purple, magenta. A recipe saved before the mixer existed loads with zeros; a list of another
+ *  length than 8 is a malformed recipe.
+ */
+export type Mixer_Deserialize = {
+	/**  -100 to 100 per band: shifts the hue, +100 by 30 degrees towards the next band. */
+	hue?: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)],
+	/**  -100 to 100 per band: -100 removes the colour, +100 doubles it. */
+	saturation?: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)],
+	/**  -100 to 100 per band: -100 darkens by one stop, +100 lightens by one stop. */
+	lightness?: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)],
+};
+
+/**
+ *  The colour mixer: per hue band, a shift of hue, a change of saturation and a change of
+ *  lightness (docs/specification.md section 4.2). Every value runs from -100 to 100 and 0 changes
+ *  nothing. The bands, in index order 0 to 7, are fixed: red, orange, yellow, green, aqua, blue,
+ *  purple, magenta. A recipe saved before the mixer existed loads with zeros; a list of another
+ *  length than 8 is a malformed recipe.
+ */
+export type Mixer_Serialize = {
+	/**  -100 to 100 per band: shifts the hue, +100 by 30 degrees towards the next band. */
+	hue: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)],
+	/**  -100 to 100 per band: -100 removes the colour, +100 doubles it. */
+	saturation: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)],
+	/**  -100 to 100 per band: -100 darkens by one stop, +100 lightens by one stop. */
+	lightness: [(number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null), (number | null)],
+};
+
+/**
  *  Black-and-white conversion. When enabled, every pixel becomes `mix[0]*R + mix[1]*G + mix[2]*B`
  *  in all three channels, which acts like a coloured filter on black-and-white film. Weights run
  *  from -2 to 2; weights that sum to 1 keep the brightness.
@@ -1822,10 +1867,11 @@ export type Recipe = Recipe_Serialize | Recipe_Deserialize;
  *  A group of settings that can be copied between frames: one panel of the Develop view.
  * 
  *  `Color` carries the colour balance and the black-and-white conversion (`mono`), which live in
- *  the same panel, but not the split toning, which is its own part (`SplitTone`); `Base` carries
- *  the base source together with its value.
+ *  the same panel, but not the split toning or the colour mixer, which are parts of their own
+ *  (`SplitTone`, `Mixer`); `Base` carries the base
+ *  source together with its value.
  */
-export type RecipeField = "Geometry" | "Base" | "Invert" | "Color" | "SplitTone" | "Tone" | "Dust" | "Output";
+export type RecipeField = "Geometry" | "Base" | "Invert" | "Color" | "Mixer" | "SplitTone" | "Tone" | "Dust" | "Output";
 
 export type Recipe_Deserialize = {
 	v?: number,

@@ -983,6 +983,15 @@
       "number": 306,
       "title": "Develop presets",
       "branch": "feat/issue-306-develop-presets",
+      "status": "completed",
+      "pr": 313,
+      "commit": "fb799b9"
+    },
+    {
+      "id": "P-25",
+      "number": 302,
+      "title": "Colour mixer",
+      "branch": "feat/issue-302-colour-mixer",
       "status": "in_progress",
       "pr": null,
       "commit": null

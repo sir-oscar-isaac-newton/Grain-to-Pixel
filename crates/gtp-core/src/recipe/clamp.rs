@@ -8,7 +8,7 @@ use super::v1::{
 };
 
 #[cfg(test)]
-use super::v1::Sharpen;
+use super::v1::{Mixer, Sharpen};
 
 /// Smallest crop width or height, as a fraction of the frame.
 pub const MIN_CROP_SIZE: f32 = 0.01;
@@ -105,6 +105,15 @@ fn clamp_color(color: &mut Color) {
         d.shadow_strength,
     );
     st.balance = slider(st.balance);
+    for value in color
+        .mixer
+        .hue
+        .iter_mut()
+        .chain(color.mixer.saturation.iter_mut())
+        .chain(color.mixer.lightness.iter_mut())
+    {
+        *value = slider(*value);
+    }
 }
 
 /// Points are limited to the unit square, sorted by input, made unique by input and capped.
@@ -230,6 +239,11 @@ mod tests {
                             shadow_strength: n(),
                             balance: n(),
                         },
+                        mixer: Mixer {
+                            hue: [(); 8].map(|_| n()),
+                            saturation: [(); 8].map(|_| n()),
+                            lightness: [(); 8].map(|_| n()),
+                        },
                     };
                     r.tone.exposure_ev = n();
                     r.tone.contrast = n();
@@ -315,6 +329,15 @@ mod tests {
             k.split_tone.shadow_strength,
         ] {
             assert!(in_range(v, 0.0, SPLIT_TONE_STRENGTH_MAX));
+        }
+        for v in k
+            .mixer
+            .hue
+            .iter()
+            .chain(&k.mixer.saturation)
+            .chain(&k.mixer.lightness)
+        {
+            assert!(in_range(*v, -SLIDER_MAX, SLIDER_MAX));
         }
         assert!(in_range(k.saturation, 0.0, SATURATION_MAX));
         let t = &r.tone;
@@ -431,6 +454,40 @@ mod tests {
             balance: f32::NAN,
         };
         assert_eq!(r.clamped().color.split_tone, SplitTone::default());
+    }
+
+    #[test]
+    fn the_mixer_is_off_by_default_and_its_values_are_clamped() {
+        let d = Recipe::default().color.mixer;
+        assert_eq!(d, Mixer::default());
+        assert!(d
+            .hue
+            .iter()
+            .chain(&d.saturation)
+            .chain(&d.lightness)
+            .all(|v| *v == 0.0));
+
+        let mut r = Recipe::default();
+        r.color.mixer.hue = [500.0, -500.0, 100.0, -100.0, 3.5, 0.0, 101.0, -101.0];
+        r.color.mixer.saturation = [f32::NAN; 8];
+        r.color.mixer.lightness = [
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            1.0,
+            2.0,
+            3.0,
+            4.0,
+            5.0,
+            6.0,
+        ];
+        let m = r.clamped().color.mixer;
+        assert_eq!(
+            m.hue,
+            [100.0, -100.0, 100.0, -100.0, 3.5, 0.0, 100.0, -100.0]
+        );
+        assert_eq!(m.saturation, [0.0; 8]);
+        assert_eq!(m.lightness[2..], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        assert!(m.lightness[..2].iter().all(|v| v.abs() <= 100.0));
     }
 
     #[test]

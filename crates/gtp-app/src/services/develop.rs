@@ -1530,6 +1530,36 @@ mod tests {
     }
 
     #[test]
+    fn colour_and_the_colour_mixer_are_applied_independently() {
+        let t = Fixture::new("apply-mixer");
+        let (source, target) = (t.bare(1), t.bare(2));
+        let mut src = Recipe::default();
+        src.color.temperature = 20.0;
+        src.color.mixer.hue[3] = 40.0;
+        src.color.mixer.saturation[0] = -25.0;
+        save_recipe(&t.library, source, src.clone()).unwrap();
+        let mut own = Recipe::default();
+        own.color.tint = -7.0;
+        own.color.mixer.lightness[6] = 12.0;
+        save_recipe(&t.library, target, own.clone()).unwrap();
+
+        // The mixer alone leaves the colour as it was.
+        apply_recipe_to(&t.library, &[target], source, &[RecipeField::Mixer]).unwrap();
+        let after = t.stored(target).unwrap();
+        assert_eq!(after.color.mixer, src.color.mixer);
+        assert_eq!(after.color.tint, -7.0);
+        assert_eq!(after.color.temperature, 0.0);
+
+        // Colour alone leaves the mixer as it was.
+        save_recipe(&t.library, target, own.clone()).unwrap();
+        apply_recipe_to(&t.library, &[target], source, &[RecipeField::Color]).unwrap();
+        let after = t.stored(target).unwrap();
+        assert_eq!(after.color.temperature, 20.0);
+        assert_eq!(after.color.tint, 0.0);
+        assert_eq!(after.color.mixer, own.color.mixer);
+    }
+
+    #[test]
     fn a_never_edited_source_counts_as_the_default_recipe() {
         let t = Fixture::new("apply-default");
         let (source, target) = (t.bare(1), t.bare(2));

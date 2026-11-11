@@ -112,6 +112,59 @@ export function withSplitTone(recipe: Recipe, values: Partial<SplitToneSetting>)
   } as Recipe;
 }
 
+export type MixerMode = 'hue' | 'saturation' | 'lightness';
+
+/** The three lists of the colour mixer, eight values each, in the order of {@link MIXER_BANDS}. */
+export type MixerSetting = Record<MixerMode, number[]>;
+
+/** The modes of the colour mixer, in the order they are offered. */
+export const MIXER_MODES: readonly MixerMode[] = ['hue', 'saturation', 'lightness'];
+
+/** The hue bands of the colour mixer, in the order of the recipe's lists (index 0 to 7). */
+export const MIXER_BANDS = [
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'aqua',
+  'blue',
+  'purple',
+  'magenta',
+] as const;
+
+const mixerList = (values: ReadonlyArray<number | null> | null | undefined): number[] =>
+  MIXER_BANDS.map((_, index) => plain(values?.[index], 0));
+
+/** The colour mixer of a recipe (`color.mixer`), as plain numbers (zeros when missing). */
+export function mixerOf(recipe: Recipe): MixerSetting {
+  const m = recipe.color?.mixer;
+  return {
+    hue: mixerList(m?.hue),
+    saturation: mixerList(m?.saturation),
+    lightness: mixerList(m?.lightness),
+  };
+}
+
+/** The recipe with some of its mixer lists replaced, the rest of the colour block kept. */
+export function withMixer(recipe: Recipe, values: Partial<MixerSetting>): Recipe {
+  return {
+    ...recipe,
+    color: { ...recipe.color, mixer: { ...mixerOf(recipe), ...values } },
+  } as Recipe;
+}
+
+/** The recipe with one value of the colour mixer set: the band at `index` of the list `mode`. */
+export function withMixerValue(
+  recipe: Recipe,
+  mode: MixerMode,
+  index: number,
+  value: number,
+): Recipe {
+  const list = [...mixerOf(recipe)[mode]];
+  list[index] = value;
+  return withMixer(recipe, { [mode]: list });
+}
+
 /** The black-and-white setting of a recipe. */
 export function monoOf(recipe: Recipe): MonoSetting {
   const mono = recipe.mono;

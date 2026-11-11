@@ -19,6 +19,8 @@ pub enum Stage {
     Invert,
     /// Colour axes, temperature, tint, black and white, saturation, vibrance.
     Color,
+    /// Per-hue changes of hue, saturation and lightness (`color.mixer`); skipped in black and white.
+    Mixer,
     /// Exposure, contrast, highlights, shadows, whites, blacks, dehaze, curves.
     Tone,
     /// Blend the highlights and the shadows towards two tints of the same luma (`color.split_tone`).
@@ -30,12 +32,13 @@ pub enum Stage {
 }
 
 /// The order every render runs the stages in.
-pub const STAGE_ORDER: [Stage; 9] = [
+pub const STAGE_ORDER: [Stage; 10] = [
     Stage::Dust,
     Stage::Crop,
     Stage::Normalize,
     Stage::Invert,
     Stage::Color,
+    Stage::Mixer,
     Stage::Tone,
     Stage::SplitTone,
     Stage::Geometry,
@@ -89,6 +92,11 @@ pub(crate) fn run_stage(
         Stage::Normalize => gtp_negative::normalize(&mut image, resolve_base(input, recipe))?,
         Stage::Invert => gtp_negative::invert(&mut image, &recipe.invert)?,
         Stage::Color => gtp_edit::apply_color(&mut image, &recipe.color, &recipe.mono)?,
+        Stage::Mixer => {
+            if !recipe.mono.enabled {
+                gtp_edit::apply_mixer(&mut image, &recipe.color.mixer)?;
+            }
+        }
         Stage::Tone => gtp_edit::apply_tone(&mut image, &recipe.tone)?,
         Stage::SplitTone => gtp_edit::apply_split_tone(&mut image, &recipe.color.split_tone)?,
         Stage::Geometry => {

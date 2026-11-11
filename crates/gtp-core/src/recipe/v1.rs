@@ -151,6 +151,9 @@ pub struct Color {
     pub vibrance: f32,
     /// Tints the highlights and the shadows (a stage of its own after the tone).
     pub split_tone: SplitTone,
+    /// Per-hue changes of hue, saturation and lightness (a stage of its own after the colour).
+    #[serde(default)]
+    pub mixer: Mixer,
 }
 
 impl Default for Color {
@@ -164,8 +167,29 @@ impl Default for Color {
             saturation: 1.0,
             vibrance: 0.0,
             split_tone: SplitTone::default(),
+            mixer: Mixer::default(),
         }
     }
+}
+
+/// Number of hue bands of the colour mixer.
+pub const MIXER_BANDS: usize = 8;
+
+/// The colour mixer: per hue band, a shift of hue, a change of saturation and a change of
+/// lightness (docs/specification.md section 4.2). Every value runs from -100 to 100 and 0 changes
+/// nothing. The bands, in index order 0 to 7, are fixed: red, orange, yellow, green, aqua, blue,
+/// purple, magenta. A recipe saved before the mixer existed loads with zeros; a list of another
+/// length than 8 is a malformed recipe.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct Mixer {
+    /// -100 to 100 per band: shifts the hue, +100 by 30 degrees towards the next band.
+    pub hue: [f32; MIXER_BANDS],
+    /// -100 to 100 per band: -100 removes the colour, +100 doubles it.
+    pub saturation: [f32; MIXER_BANDS],
+    /// -100 to 100 per band: -100 darkens by one stop, +100 lightens by one stop.
+    pub lightness: [f32; MIXER_BANDS],
 }
 
 /// Split toning: one tint for the highlights and one for the shadows, blended in at the same

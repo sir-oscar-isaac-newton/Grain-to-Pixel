@@ -442,6 +442,7 @@
     "groups": "Settings to copy",
     "group": {
       "Color": "Colour",
+      "Mixer": "Colour mixer",
       "SplitTone": "Split toning",
       "Tone": "Tone and curves",
       "Geometry": "Crop and geometry",
@@ -452,6 +453,7 @@
     },
     "hint": {
       "Color": "Balance, temperature, tint, saturation, vibrance and black and white.",
+      "Mixer": "The hue, saturation and lightness of each band of colours.",
       "SplitTone": "The tints of the highlights and the shadows, and the balance between them.",
       "Tone": "Exposure, contrast, highlights, shadows, whites, blacks, dehaze, vignette and the curves.",
       "Geometry": "The crop, turns, flips and straightening. Frames are not always cropped the same.",
@@ -462,6 +464,7 @@
     },
     "short": {
       "Color": "colour",
+      "Mixer": "colour mixer",
       "SplitTone": "split toning",
       "Tone": "tone",
       "Geometry": "geometry",
@@ -659,6 +662,23 @@
       "tint": "Tint",
       "saturation": "Saturation",
       "vibrance": "Vibrance"
+    },
+    "mixer": {
+      "heading": "Colour mixer",
+      "mode": "Change",
+      "hue": "Hue",
+      "saturation": "Saturation",
+      "lightness": "Lightness",
+      "band": {
+        "red": "Red",
+        "orange": "Orange",
+        "yellow": "Yellow",
+        "green": "Green",
+        "aqua": "Aqua",
+        "blue": "Blue",
+        "purple": "Purple",
+        "magenta": "Magenta"
+      }
     },
     "splitTone": {
       "heading": "Split toning",

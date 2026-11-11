@@ -96,7 +96,7 @@ describe('Develop presets', () => {
   }
 
   describe('saving the current edit', () => {
-    it('ticks colour, split toning and tone and leaves the rest, and saves the edit', async () => {
+    it('ticks colour, the colour mixer, split toning and tone and leaves the rest, and saves the edit', async () => {
       const user = await openPresets();
       const d = inDialog();
       expect(
@@ -108,6 +108,7 @@ describe('Develop presets', () => {
 
       for (const [part, ticked] of [
         ['Colour', true],
+        ['Colour mixer', true],
         ['Split toning', true],
         ['Tone and curves', true],
         ['Crop and geometry', false],
@@ -127,11 +128,11 @@ describe('Develop presets', () => {
       await waitFor(() => expect(lastPresets()).toHaveLength(1));
       expect(lastPresets()[0]).toMatchObject({
         name: 'Warm',
-        fields: ['Color', 'SplitTone', 'Tone'],
+        fields: ['Color', 'Mixer', 'SplitTone', 'Tone'],
         recipe: { tag: 'saved' },
       });
       expect(await d.findByText('Warm')).toBeInTheDocument();
-      expect(d.getByText('colour, split toning, and tone')).toBeInTheDocument();
+      expect(d.getByText('colour, colour mixer, split toning, and tone')).toBeInTheDocument();
       expect(
         d.queryByRole('textbox', { name: 'Preset name' }),
         'the form is closed once saved',
@@ -143,7 +144,7 @@ describe('Develop presets', () => {
       const d = inDialog();
       await user.click(d.getByRole('button', { name: 'Save current edit as preset…' }));
       await user.type(d.getByRole('textbox', { name: 'Preset name' }), 'Crop only');
-      for (const part of ['Colour', 'Split toning', 'Tone and curves']) {
+      for (const part of ['Colour', 'Colour mixer', 'Split toning', 'Tone and curves']) {
         await user.click(d.getByRole('checkbox', { name: part }));
       }
       await user.click(d.getByRole('checkbox', { name: 'Output sharpening' }));
@@ -177,7 +178,7 @@ describe('Develop presets', () => {
       expect(save).toBeEnabled();
       expect(d.queryByRole('alert')).not.toBeInTheDocument();
 
-      for (const part of ['Colour', 'Split toning', 'Tone and curves']) {
+      for (const part of ['Colour', 'Colour mixer', 'Split toning', 'Tone and curves']) {
         await user.click(d.getByRole('checkbox', { name: part }));
       }
       expect(save).toBeDisabled();

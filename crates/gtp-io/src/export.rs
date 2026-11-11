@@ -404,6 +404,73 @@ mod tests {
         &bytes[i..]
     }
 
+    /// The JPEG without its ICC profile segments (APP2 `ICC_PROFILE\0`).
+    ///
+    /// The profile header carries its creation time to the second, so two
+    /// exports made at different moments differ there and nowhere else.
+    /// Segments are walked up to the start of the scan; the rest of the file
+    /// (the compressed picture and the end marker) is kept as one block.
+    fn jpeg_without_icc(bytes: &[u8]) -> Vec<u8> {
+        let mut out = bytes[..2].to_vec();
+        let mut i = 2;
+        while bytes[i + 1] != 0xDA {
+            let len = 2 + usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+            let segment = &bytes[i..i + len];
+            let is_icc = segment[1] == 0xE2 && segment[4..].starts_with(b"ICC_PROFILE\0");
+            if !is_icc {
+                out.extend_from_slice(segment);
+            }
+            i += len;
+        }
+        out.extend_from_slice(&bytes[i..]);
+        out
+    }
+
+    /// The position of the low seconds byte in the creation time of the first
+    /// ICC profile segment (profile header offset 35, after the 4-byte
+    /// marker and length, the 12-byte tag and the 2-byte chunk numbers).
+    fn icc_seconds_offset(bytes: &[u8]) -> usize {
+        let mut i = 2;
+        while bytes[i + 1] != 0xDA {
+            let len = 2 + usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+            if bytes[i + 1] == 0xE2 && bytes[i + 4..].starts_with(b"ICC_PROFILE\0") {
+                return i + 4 + 14 + 35;
+            }
+            i += len;
+        }
+        panic!("no ICC profile segment");
+    }
+
+    #[test]
+    fn the_icc_creation_time_does_not_count_in_a_jpeg_comparison() {
+        let dir = TempDir::new("icc-time");
+        let jpg = dir.0.join("t.jpg");
+        encode_jpeg(&picture(32, 20), OutputSpace::Srgb, 90, &jpg, None).unwrap();
+        let bytes = std::fs::read(&jpg).unwrap();
+        let seconds = icc_seconds_offset(&bytes);
+
+        // Only the profile's creation time differs: counted as equal.
+        let mut later = bytes.clone();
+        later[seconds] = later[seconds].wrapping_add(1);
+        assert_ne!(later, bytes);
+        assert_eq!(jpeg_without_icc(&later), jpeg_without_icc(&bytes));
+
+        // A byte of the picture data differs: counted as different.
+        let mut other_picture = bytes.clone();
+        let last_scan_byte = other_picture.len() - 3;
+        other_picture[last_scan_byte] ^= 0x01;
+        assert_ne!(jpeg_without_icc(&other_picture), jpeg_without_icc(&bytes));
+
+        // A byte of another segment (the quantisation table) differs too.
+        let mut other_segment = bytes.clone();
+        let dqt = other_segment
+            .windows(2)
+            .position(|w| w == [0xFF, 0xDB])
+            .unwrap();
+        other_segment[dqt + 5] ^= 0x01;
+        assert_ne!(jpeg_without_icc(&other_segment), jpeg_without_icc(&bytes));
+    }
+
     #[test]
     fn a_jpeg_export_carries_its_metadata() {
         let dir = TempDir::new("jpeg-meta");
@@ -446,7 +513,14 @@ mod tests {
         let empty = ExportMetadata::default();
         let jpg2 = dir.0.join("e.jpg");
         encode_jpeg(&img, OutputSpace::Srgb, 90, &jpg2, Some(&empty)).unwrap();
-        assert_eq!(std::fs::read(&jpg2).unwrap(), bytes);
+        let bytes2 = std::fs::read(&jpg2).unwrap();
+        assert!(
+            !bytes2.windows(6).any(|w| w == b"Exif\0\0"),
+            "no Exif block at all"
+        );
+        // The profile's creation time (to the second) may differ between two
+        // writes; everything else must be the same.
+        assert_eq!(jpeg_without_icc(&bytes2), jpeg_without_icc(&bytes));
         let tif2 = dir.0.join("e.tif");
         encode_tiff16(&img, OutputSpace::Srgb, &tif2, Some(&empty)).unwrap();
         let exif = read_exif(&tif2);

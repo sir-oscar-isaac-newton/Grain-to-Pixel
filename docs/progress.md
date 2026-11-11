@@ -1019,6 +1019,15 @@
       "number": 320,
       "title": "Clipping overlay in Develop",
       "branch": "feat/issue-320-clipping-overlay",
+      "status": "completed",
+      "pr": 325,
+      "commit": "b21a298"
+    },
+    {
+      "id": "U-31",
+      "number": 322,
+      "title": "Colour swatches on hue and band sliders",
+      "branch": "feat/issue-322-slider-swatches",
       "status": "in_progress",
       "pr": null,
       "commit": null

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Slider } from '@gtp/ui';
 import type { Recipe } from '../../../shared/ipc';
 import styles from '../develop.module.css';
+import { bandCss, hueGradientCss, tintCss } from '../hue-colour';
 import {
   colourOf,
   mixerOf,
@@ -104,6 +105,7 @@ export function ColourPanel({
   const resetSlider = (next: Recipe) => onChange(next, { dragging: false, merge: true });
   const whole = (value: number) =>
     new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 0 }).format(value);
+  const gradient = hueGradientCss();
   const degrees = (value: number) => `${whole(value)}°`;
   const hundredths = (value: number) =>
     new Intl.NumberFormat(i18n.language, {
@@ -267,6 +269,7 @@ export function ColourPanel({
               <Slider
                 key={`${mixerMode}-${band}`}
                 label={t(`develop.mixer.band.${band}`)}
+                swatch={bandCss(index)}
                 value={mixer[mixerMode][index] ?? 0}
                 min={-100}
                 max={100}
@@ -303,6 +306,8 @@ export function ColourPanel({
               max={max}
               step={1}
               format={hue ? degrees : whole}
+              swatch={hue ? tintCss(split[key]) : undefined}
+              trackGradient={hue ? gradient : undefined}
               disabled={locked}
               onReset={
                 autoSplit && (() => resetSlider(withSplitTone(recipe, { [key]: autoSplit[key] })))

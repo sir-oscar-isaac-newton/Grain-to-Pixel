@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support';
 import { makeRecipe } from '../../library/fake-ipc';
+import { bandCss, hueGradientCss, tintCss } from '../hue-colour';
 import { colourOf, mixerOf, monoOf, splitToneOf } from '../recipe-parts';
 import { ColourPanel } from './ColourPanel';
 
@@ -335,6 +336,63 @@ describe('ColourPanel', () => {
       for (const button of screen.getAllByRole('button')) expect(button).toBeDisabled();
       for (const box of screen.getAllByRole('checkbox')) expect(box).toBeDisabled();
       for (const s of screen.getAllByRole('slider')) expect(s).toHaveAttribute('data-disabled');
+    });
+  });
+
+  describe('swatches', () => {
+    const hueSliders = ['Highlights hue', 'Shadows hue'];
+    const BANDS = ['Red', 'Orange', 'Yellow', 'Green', 'Aqua', 'Blue', 'Purple', 'Magenta'];
+    /** The nearest element around the slider that holds one marked with `selector`. */
+    const decorationOf = (name: string, selector: string) => {
+      let node: HTMLElement | null = slider(name);
+      while (node && !node.querySelector(selector)) node = node.parentElement;
+      return node?.querySelector(selector) ?? null;
+    };
+    const withHue = (hue: number) =>
+      makeRecipe('x', { color: { split_tone: { highlight_hue: hue, shadow_hue: hue + 100 } } });
+
+    it('gives the two hue sliders a hue gradient and a swatch that follows the hue', () => {
+      const { props, rerender } = setup({ recipe: withHue(0) });
+      for (const name of hueSliders) {
+        expect(slider(name)).toHaveAttribute('data-gradient');
+        expect(
+          decorationOf(name, '[data-gradient]:not([role="slider"])')?.getAttribute('style'),
+        ).toContain(hueGradientCss());
+        expect(decorationOf(name, '[data-swatch]')).not.toBeNull();
+      }
+      const swatch = (name: string) => decorationOf(name, '[data-swatch]')?.getAttribute('style');
+      expect(swatch('Highlights hue')).toContain(tintCss(0));
+      expect(swatch('Shadows hue')).toContain(tintCss(100));
+      rerender(<ColourPanel {...props} recipe={withHue(240)} />);
+      expect(swatch('Highlights hue')).toContain(tintCss(240));
+      expect(swatch('Highlights hue')).not.toContain(tintCss(0));
+    });
+
+    it.each(['Hue', 'Saturation', 'Lightness'])(
+      'gives each mixer slider its band swatch, with no gradient, in %s mode',
+      async (modeName) => {
+        const user = userEvent.setup();
+        setup();
+        await user.click(screen.getByRole('button', { name: modeName }));
+        BANDS.forEach((band, index) => {
+          expect(decorationOf(band, '[data-swatch]')?.getAttribute('style')).toContain(
+            bandCss(index),
+          );
+          expect(slider(band)).not.toHaveAttribute('data-gradient');
+        });
+      },
+    );
+
+    it('leaves the other sliders without a swatch or a gradient', () => {
+      const { container } = setup();
+      expect(container.querySelectorAll('[data-swatch]')).toHaveLength(
+        hueSliders.length + BANDS.length,
+      );
+      // The track, the range and the thumb of each hue slider.
+      expect(container.querySelectorAll('[data-gradient]')).toHaveLength(hueSliders.length * 3);
+      for (const name of ['Temperature', 'Saturation', 'Highlights strength', 'Balance']) {
+        expect(slider(name)).not.toHaveAttribute('data-gradient');
+      }
     });
   });
 

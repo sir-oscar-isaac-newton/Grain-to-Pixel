@@ -1,5 +1,5 @@
 import * as RadixSlider from '@radix-ui/react-slider';
-import { useId, useRef, type ReactNode } from 'react';
+import { useId, useRef, type CSSProperties, type ReactNode } from 'react';
 import styles from './Slider.module.css';
 
 interface SliderProps {
@@ -32,7 +32,21 @@ interface SliderProps {
    * it is not a live region. Nothing is rendered for undefined, null, false or an empty string.
    */
   description?: ReactNode;
+  /**
+   * A CSS colour shown as a small square beside the label. Decoration only: it is hidden from
+   * assistive technology and is not part of the slider's name.
+   */
+  swatch?: string;
+  /**
+   * A CSS background value (for example a `linear-gradient(...)`) for the track. The filled range
+   * is then transparent so the gradient stays visible, and the thumb gets a light fill with a dark
+   * outline that stands out on any colour. Decoration only: nothing is announced for it.
+   */
+  trackGradient?: string;
 }
+
+/** A custom property set at runtime (the colour comes from the owner; the look is in the CSS). */
+type CustomStyle = CSSProperties & Record<`--${string}`, string>;
 
 /** A labelled slider with its value beside it (Radix: keyboard, pointer and touch). */
 export function Slider({
@@ -46,6 +60,8 @@ export function Slider({
   disabled = false,
   onReset,
   description,
+  swatch,
+  trackGradient,
 }: SliderProps) {
   const id = useId();
   const descriptionId = useId();
@@ -54,7 +70,14 @@ export function Slider({
     description !== null &&
     description !== false &&
     description !== '';
+  const gradient = trackGradient !== undefined;
+  const gradientAttribute = gradient ? { 'data-gradient': '' } : {};
   const text = format(value);
+  const labelElement = (
+    <label id={id} className={styles.label}>
+      {label}
+    </label>
+  );
   // For a key press Radix reports the release before the move, with the same value. Taking the
   // move after it as "still dragging" would leave a rough result on screen, so it is ignored.
   const released = useRef<number | null>(null);
@@ -69,9 +92,19 @@ export function Slider({
           : undefined
       }
     >
-      <label id={id} className={styles.label}>
-        {label}
-      </label>
+      {swatch === undefined ? (
+        labelElement
+      ) : (
+        <span className={styles.labelGroup}>
+          <span
+            className={styles.swatch}
+            aria-hidden="true"
+            data-swatch=""
+            style={{ '--swatch': swatch } as CustomStyle}
+          />
+          {labelElement}
+        </span>
+      )}
       <span className={styles.value} aria-hidden="true">
         {text}
       </span>
@@ -97,11 +130,16 @@ export function Slider({
           onChange(next, false);
         }}
       >
-        <RadixSlider.Track className={styles.track}>
-          <RadixSlider.Range className={styles.range} />
+        <RadixSlider.Track
+          className={styles.track}
+          style={gradient ? ({ '--track-gradient': trackGradient } as CustomStyle) : undefined}
+          {...gradientAttribute}
+        >
+          <RadixSlider.Range className={styles.range} {...gradientAttribute} />
         </RadixSlider.Track>
         <RadixSlider.Thumb
           className={styles.thumb}
+          {...gradientAttribute}
           aria-labelledby={id}
           aria-describedby={hasDescription ? descriptionId : undefined}
           aria-valuetext={text}

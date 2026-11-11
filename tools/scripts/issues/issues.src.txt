@@ -2733,3 +2733,104 @@ ROUTES: none new; the Recipe gains a field only if the plan asks for one and the
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: the method named in the ADR of P-27 as possible later. A usual form is the undecimated (a trous) transform with a B3 spline kernel and a soft threshold per scale, in the same working space as P-27. Written in Rust in gtp-edit; a new dependency needs the approval of the owner. No learned or AI model: that is a non-goal. Out of scope: grain synthesis, reduction by mask, removing dust or scratches.
+
+## U-29
+title: Full-size detail view in Develop
+milestone: M6
+type: feature
+size: M
+estimate: 2d
+deps: P-11, P-15, P-27
+adr: yes
+spec: specification sections 6, 7 and 11
+desc: The Develop view shows a preview of at most 2048 pixels on the long edge, enlarged up to 400 percent. Fine grain is averaged away in it and output sharpening is not shown at all, so noise reduction, sharpening and focus cannot be judged in the app, only in an exported file. Render the visible part of the picture from the full scan when the view is at 100 percent or above, with output sharpening applied.
+ac:
+- At a zoom where one pixel of the full scan covers one screen pixel or more, the visible part of the picture is rendered from the full scan with the current recipe and drawn over the enlarged preview; below that zoom the view works as today
+- The zoom has a step that shows one pixel of the full scan on one screen pixel, named so in the interface, and the zoom readout says which picture is on screen
+- The region includes output sharpening as the export applies it at full size, and a notice says so; noise reduction and every other stage give the same pixels as an export at full size, checked by a test against the export render
+- While a slider is dragged the enlarged preview is shown at once and the region follows when the drag ends; panning and zooming ask for a new region only when the visible part leaves the one already rendered
+- A region render is cancelled when a newer one is asked for, and the time for a region of a 24 megapixel scan is measured and stated in the pull request against a budget the ADR sets
+- The pickers, the crop tool, the histogram and compare mode keep working; the ADR says what each of them shows while the region is on screen
+- Memory: the full scan is held only while the detail view is in use and is released when the frame is closed or after a time without use; the ADR sets the rule
+- Tests: region pixels against the export render, the zoom steps, drag then release, cancellation, the notice; component tests; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-app/src/pipeline and services/develop.rs (the region render and the cache of the full scan), apps/desktop/src-tauri/src/commands/develop.rs, apps/desktop/src/features/develop (use-develop.ts, use-viewport.ts, viewport.ts, Canvas.tsx, DevelopView.tsx), en.json, packages/ipc-types.
+ROUTES: one new command that renders a region of a frame at full size. To be approved by the owner with the plan.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the ADR decides how a region is rendered when stages need pixels outside it (the guided filter of P-27, dust removal, the straighten angle, the vignette), how much margin is rendered, how the full scan is cached, and the budget. The owner asked for this on 2026-11-11 after five editing tools were merged that cannot be judged at pixel level in the app. Out of scope: a full-size view in the Library, tiling of the whole picture, a loupe that follows the pointer.
+
+## U-30
+title: Clipping overlay in Develop
+milestone: M6
+type: feature
+size: S
+estimate: 1d
+deps: U-02
+adr: no
+spec: specification section 7
+desc: The Develop view says in a line of text how much of the picture is clipped to black and to white, but not where. Add a switch that paints the clipped highlights and shadows on the canvas.
+ac:
+- A switch in the Develop toolbar, with a key that can be changed in the shortcuts settings, turns the overlay on and off; it is off when a frame is opened and its state is not saved in the recipe
+- With it on, pixels of the picture on screen that are clipped to white in any channel are painted in one colour and pixels clipped to black in every channel in another; both colours are named in a legend with the switch
+- The overlay uses the same rule and the same picture as the existing clipping line, so the two always agree; the specification states the rule
+- It follows the preview while a slider is dragged, and it is drawn over the before picture as well when before and after is on
+- It is not part of the export, the thumbnails or the histogram
+- The overlay does not rely on colour alone: the legend and the existing clipping line give the same information in text
+- Tests: the mask for a known picture, agreement with the clipping counts, the switch and its key, before and after; axe clean
+tech:
+FILES: apps/desktop/src/features/develop (Canvas.tsx, DevelopView.tsx, the histogram code that counts clipping), the shortcuts list, en.json.
+ROUTES: none; the overlay is computed from the preview already in the view.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: clipping is judged on the preview in the output space the view shows, as the clipping line does today; an export in a larger space can clip less. Out of scope: a gamut warning for the chosen export space, soft proofing, an overlay in the Library.
+
+## Q-11
+title: Tuning pass for the editing tools of M6
+milestone: M6
+type: test
+size: M
+estimate: 2d
+deps: P-25, P-26, P-27, P-28, U-29
+needs: data, human
+adr: no
+spec: specification section 4
+desc: The vignette, split toning, colour mixer and noise reduction were merged with first values for their constants, chosen from the maths and never looked at on a real scan. Set them by eye on real scans, and record what was chosen and why.
+ac:
+- The owner supplies scans of at least three film stocks (fine grain, coarse grain, pushed or thin), a few frames each; they are used locally and are not added to the repository
+- For each tool the constants are reviewed on those scans in the full-size detail view and in exports: VIGNETTE_MAX_EV and the midpoint default; SPLIT_TONE_MAX_BLEND, SPLIT_TONE_GAMMA and the default hues; the eight MIXER_BAND_HUES, MIXER_CHROMA_KNEE, MIXER_HUE_MAX_DEG and MIXER_LIGHTNESS_MAX_EV; NR_LUMA_RADIUS_PX, NR_CHROMA_RADIUS_PX, NR_LUMA_MAX_SIGMA and NR_CHROMA_MAX_SIGMA
+- Each constant is either kept or changed; the pull request has a table of old value, new value and the reason, and before and after crops for every change
+- A change that alters how a saved recipe renders is called out, and the owner approves it before it is merged
+- The slider ranges feel even: half a slider gives about half the effect to the eye; where that needs a curve on the slider, the pull request proposes it and does not add it without approval
+- Tests that state a constant or a tolerance are updated to the new values, and the benchmark and golden tests pass or are updated with the owner's approval
+- The specification and the two ADRs (0012, 0013) state the final values
+tech:
+FILES: crates/gtp-edit/src (vignette.rs, split_tone.rs, mixer.rs, noise.rs), crates/gtp-core/src/recipe (defaults), docs/specification.md, decisions/0012-colour-mixer.md, decisions/0013-noise-reduction.md.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the human judges the pictures; the agent prepares the comparisons and makes the changes. Start only after U-29 has merged, so the effect can be seen at pixel level in the app. The same scans serve the comparison of P-29. Out of scope: new controls, a change of method.
+
+## U-31
+title: Colour swatches on hue and band sliders
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: P-25, P-26, U-27
+adr: no
+spec: specification section 7
+desc: The two hue sliders of split toning show a number of degrees, and the eight band sliders of the colour mixer show a colour name, so the user has to know which hue 220 degrees is. Let the shared Slider show a colour, and use it for these sliders.
+ac:
+- The shared Slider takes an optional swatch: a colour shown as a small mark beside the label, and an optional track gradient shown behind the track; a Slider without them renders as before
+- The split toning hue sliders show the hue range as their track gradient and the chosen hue as their swatch, computed by the same rule the pipeline uses for the tint
+- The colour mixer band sliders show the colour of their band as their swatch
+- The swatch and the gradient are decoration: the label and the value still say everything in text, they are hidden from assistive technology, and the thumb and the focus ring keep a contrast of at least 3 to 1 against the gradient
+- The colours are for the screen only (sRGB); the specification says they are a guide, not a proof of the result
+- Tests: the Slider with and without a swatch and a gradient, the hue of the swatch for a few known angles, the eight band colours; axe clean
+tech:
+FILES: packages/ui/src/Slider.tsx and its styles and test, apps/desktop/src/features/develop/panels/ColourPanel.tsx, a small hue helper in apps/desktop/src/features/develop, en.json if a string is needed.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the change to packages/ui was approved by the owner on 2026-11-11. The band centres are the MIXER_BAND_HUES of ADR 0012, in Oklch; the helper converts them to sRGB for display. Out of scope: a colour wheel, a picker that takes a hue from the picture, swatches on other sliders.

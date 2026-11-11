@@ -2562,3 +2562,127 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: the change to packages/ui was approved by the owner on 2026-11-10. Start only after H-21 (PR 291) has merged. Out of scope: descriptions for the Develop panels' sliders, other shared components.
+
+## P-25
+title: Colour mixer
+milestone: M6
+type: feature
+size: M
+estimate: 2d
+deps: P-08, U-04
+adr: yes
+spec: specification sections 5 and 7
+desc: Colour can be changed only for the whole picture: balance, temperature, tint, saturation and vibrance. A film stock often needs one colour moved, such as a green that is too yellow or a sky that is too light. Add a colour mixer: hue, saturation and lightness for each of eight colour bands, applied to the whole picture.
+ac:
+- The recipe gains a colour mixer: a hue shift, a saturation change and a lightness change for each of eight bands (red, orange, yellow, green, aqua, blue, purple, magenta), all 0 by default; a recipe saved before loads with all at 0 and renders as before
+- With all values at 0 the stage does nothing and the render is bit for bit the same as without it
+- The bands overlap smoothly: a gradient through all hues shows no step or band edge at any setting
+- Neutral greys do not change at any setting, and the stage does nothing in mono mode
+- The Colour panel gets a mixer section with the three sliders per band; each slider resets to 0 by double click as one undo step, and the reset of the panel covers the mixer
+- Apply settings offers the mixer as a part of its own
+- Tests: identity at 0, each band moving its own hue and leaving the opposite hue alone, the smooth gradient, greys unchanged, old recipes loading; component tests for the section; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-core/src/recipe (the fields), crates/gtp-edit (the stage), crates/gtp-app/src/pipeline (its place in the order), apps/desktop/src/features/develop/panels/ColourPanel.tsx, recipe-reset.ts, the Apply settings parts, en.json, packages/ipc-types, rules/colour-pipeline.md.
+ROUTES: none new; the Recipe gains fields. To be approved by the owner with the plan.
+MIGRATIONS: none; the recipe is stored as JSON and new fields have defaults.
+TESTS: as in ac.
+NOTES: the ADR records the colour model the bands are defined in, the band centres and widths, and the place of the stage in the order (after the colour balance, before the tone curve, unless the ADR finds a better place). Whole picture only. Out of scope: masks, a picker that chooses the band from the picture, more than eight bands.
+
+## P-26
+title: Split toning
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: P-08, U-04
+adr: no
+spec: specification sections 5 and 7
+desc: A print often carries one tint in its highlights and another in its shadows, and a black and white frame can only be neutral today. Add split toning: a hue and a strength for the highlights, a hue and a strength for the shadows, and a balance between them.
+ac:
+- The recipe gains split toning: highlight hue and strength, shadow hue and strength, and a balance; both strengths 0 by default; a recipe saved before loads with them at 0 and renders as before
+- With both strengths at 0 the stage does nothing and the render is bit for bit the same as without it
+- The tint changes the colour and keeps the luminance of each pixel within a small tolerance
+- It works on colour frames and in mono mode, where it runs after the mono mix
+- The balance moves the crossover between the two tints; at either end one tint covers the whole range
+- The Colour panel gets a split toning section; its sliders reset by double click as one undo step, the reset of the panel covers it, and Apply settings offers it as a part of its own
+- Tests: identity at 0, luminance kept, the balance at its ends and middle, mono mode, old recipes loading; component tests for the section; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-core/src/recipe, crates/gtp-edit, crates/gtp-app/src/pipeline, apps/desktop/src/features/develop/panels/ColourPanel.tsx, recipe-reset.ts, the Apply settings parts, en.json, packages/ipc-types, rules/colour-pipeline.md.
+ROUTES: none new; the Recipe gains fields. To be approved by the owner with the plan.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: runs late, after the tone curve, so the tints follow the final tones. Out of scope: a third tint for the midtones, toning by mask.
+
+## P-27
+title: Noise reduction
+milestone: M6
+type: feature
+size: M
+estimate: 2d
+deps: P-08, P-15, U-04
+adr: yes
+spec: specification sections 5, 6 and 7
+desc: A thin negative or pushed film gives a scan with strong grain and colour speckle, and the app can only sharpen. Add noise reduction for the whole picture: one slider for luminance noise and one for colour noise.
+ac:
+- The recipe gains noise reduction: a luminance amount and a colour amount, both 0 by default; a recipe saved before loads with them at 0 and renders as before
+- With both at 0 the stage does nothing and the render is bit for bit the same as without it
+- Colour noise reduction removes colour speckle from a flat grey patch and keeps a sharp colour edge in place; luminance noise reduction lowers the variation of a flat patch and keeps a step edge within a stated tolerance
+- The result does not depend on the preview size in a way the user sees: the strength is defined at the size of the full scan, and the preview scales it
+- It runs before output sharpening, and the export of a 24 megapixel frame stays within the export budget of the specification
+- The Develop view gets the two sliders (in the sharpening panel, renamed for both, or a panel of their own; decided in the plan); they reset by double click as one undo step and Apply settings offers them as a part of their own
+- Tests: identity at 0, the flat patch and the edge for both sliders, preview against full size, old recipes loading, a timing test marked ignored that prints the measured time; component tests; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-core/src/recipe, crates/gtp-edit (the stage), crates/gtp-app/src/pipeline and services/export.rs, apps/desktop/src/features/develop/panels, recipe-reset.ts, the Apply settings parts, en.json, packages/ipc-types, rules/colour-pipeline.md.
+ROUTES: none new; the Recipe gains fields. To be approved by the owner with the plan.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: the ADR chooses the method (for example an edge-keeping filter on luminance and a stronger one on the colour channels), its place in the order and its cost, written in Rust in gtp-edit. A new dependency needs the approval of the owner. No learned or AI model: that is a non-goal. Out of scope: removing dust or scratches (P-13 does that with the infrared plane), reduction by mask, grain synthesis.
+
+## P-28
+title: Vignette
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: P-08, P-09, U-04
+adr: no
+spec: specification sections 5 and 7
+desc: Darkening or lightening the corners is a common last step for a print, and there is no tool for it. Add a vignette for the whole picture, drawn inside the crop.
+ac:
+- The recipe gains a vignette: an amount from darker to lighter and a midpoint that sets how far in from the corners it reaches; amount 0 by default; a recipe saved before loads with 0 and renders as before
+- With the amount at 0 the stage does nothing and the render is bit for bit the same as without it
+- The vignette follows the cropped picture: it is centred on the crop and keeps its shape through turns, flips and straightening, and at any preview size
+- Darkening keeps the colour of a pixel (hue and saturation within a small tolerance); the centre of the picture does not change
+- The Tone panel gets the two sliders; they reset by double click as one undo step, the reset of the panel covers them, and Apply settings offers the vignette with the tone
+- Tests: identity at 0, the centre unchanged, the corners darker and lighter, the crop and the turns, preview against full size, old recipes loading; component tests; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-core/src/recipe, crates/gtp-edit, crates/gtp-app/src/pipeline, apps/desktop/src/features/develop/panels/TonePanel.tsx, recipe-reset.ts, en.json, packages/ipc-types, rules/colour-pipeline.md.
+ROUTES: none new; the Recipe gains fields. To be approved by the owner with the plan.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: this is a creative vignette after the crop; the light falloff of the scanning set-up is already corrected by the flat field (P-16). Out of scope: roundness and feather controls, a vignette centre the user can move, any other local adjustment.
+
+## U-28
+title: Develop presets
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: U-06, U-21
+adr: no
+spec: specification sections 6 and 7
+desc: Apply settings copies an edit from one frame to others, but an edit cannot be kept for another roll or another day. Add Develop presets: the current edit saved under a name, with a choice of its parts, and applied to the open frame or to the selected frames.
+ac:
+- A Develop preset is a name, the parts it holds (the same parts as Apply settings: colour, tone, and so on) and the recipe values of those parts; presets are kept in the app settings, like export presets
+- The Develop view can save the current edit as a preset, choosing its parts and a name (not empty, unique without regard to case), and can update, rename and delete a preset; delete asks first
+- Applying a preset to the open frame changes only the parts it holds, as one undo step
+- The Library can apply a preset to the selected frames, through the same path as Apply settings, and is refused in a read-only library
+- A preset never holds the crop, the film base or the black and white points unless the user ticks them; they are off by default
+- A settings file without presets loads with none; a preset holding a part or a value this version does not know is refused with a clear message and saves nothing
+- Tests: save, update, rename, delete, apply to the open frame as one undo step, apply to a selection, the default parts, settings loading and refusal; component tests; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-app/src/services/settings.rs (the presets), apps/desktop/src/features/develop (a presets control), apps/desktop/src/features/library (applying to a selection), the Apply settings parts, fake-ipc.ts, en.json, packages/ipc-types.
+ROUTES: none new if recipe_apply_to can take the values of a preset; otherwise one command, to be approved by the owner with the plan. Settings gains develop_presets. To be approved by the owner with the plan.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: named Develop presets, not looks, so they are not confused with the film looks of P-19 and P-20, which are starting points of the conversion. Out of scope: built-in presets, import and export of preset files, presets per film stock applied on import.

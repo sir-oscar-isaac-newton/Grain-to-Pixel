@@ -570,6 +570,7 @@
     "compare": {
       "toggle": "Compare with",
       "swap": "Swap frames",
+      "link": "Link zoom",
       "leave": "Leave compare",
       "hint": "Choose the frame to compare with: click it in the filmstrip. The current frame stays open.",
       "current": "Current: {{frame}}",
@@ -753,7 +754,8 @@
       "clipping": "Black clipped: {{black}}. White clipped: {{white}}."
     },
     "filmstrip": {
-      "label": "Frames of the current Library view"
+      "label": "Frames of the current Library view",
+      "referenceLabel": "Frame {{n}}, reference"
     }
   },
   "import": {

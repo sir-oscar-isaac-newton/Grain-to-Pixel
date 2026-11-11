@@ -22,6 +22,9 @@ import {
 export interface Viewport {
   /** Attach to the stage element: its size is the room the image has. */
   stageRef: RefObject<HTMLDivElement>;
+  /** The size of the stage, and of the image on it (0 until measured). */
+  stage: Size;
+  image: Size;
   /** The view as drawn (a fitting view follows the stage). */
   view: View;
   /** True when the image is at the fit zoom (nothing to pan). */
@@ -123,6 +126,8 @@ export function useViewport(image: Size | null, panEnabled = true): Viewport {
 
   return {
     stageRef,
+    stage,
+    image: size,
     view: resolved,
     fitting: resolved.fit,
     fit,

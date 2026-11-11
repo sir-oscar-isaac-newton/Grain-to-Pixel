@@ -16,7 +16,7 @@ interface ItemProps {
   frame: FrameSummary;
   index: number;
   current: boolean;
-  /** The frame compared with (marked, nothing else changes). */
+  /** The frame compared with (marked by its border and its name). */
   reference: boolean;
   onOpen: (frame: FrameSummary, index: number) => void;
 }
@@ -29,7 +29,11 @@ const Item = memo(function Item({ frame, index, current, reference, onOpen }: It
       id={optionId(frame.id)}
       role="option"
       aria-selected={current}
-      aria-label={t('library.frameLabel', { n: frame.index_in_roll })}
+      aria-label={
+        reference
+          ? t('develop.filmstrip.referenceLabel', { n: frame.index_in_roll })
+          : t('library.frameLabel', { n: frame.index_in_roll })
+      }
       tabIndex={-1}
       className={`${styles.item} ${reference ? styles.itemReference : ''}`}
       onClick={() => onOpen(frame, index)}

@@ -2,8 +2,16 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Canvas } from './Canvas';
 import styles from './develop.module.css';
-import { edgeFor, useReferenceRender } from './use-compare';
-import { fitZoom, type Size, type View } from './viewport';
+import { edgeFor, useReferenceRender, zoomedEdge } from './use-compare';
+import { fitZoom, linkedView, type Size, type View } from './viewport';
+
+/** The current frame's view and picture, which the reference follows while the zoom is linked. */
+export interface LinkedTo {
+  /** The current frame's view as drawn. */
+  view: View;
+  /** The size of the picture the view is of. */
+  image: Size;
+}
 
 interface ComparePaneProps {
   /** The reference frame. */
@@ -12,14 +20,20 @@ interface ComparePaneProps {
   frameLabel: string;
   /** The Develop view's counter for render sequence numbers. */
   nextSeq: () => number;
+  /** Follow this view (zoom and pan linked), or null to show the reference fitted. */
+  link: LinkedTo | null;
+  /** Changes when the reference's saved recipe may have changed: it is read again. */
+  revision: number;
 }
 
 /**
  * The reference frame next to the one being edited: read-only, drawn with its own saved recipe,
- * and always fitted to the pane (no zoom, no pan). It is drawn again only when the reference or
- * the size of the pane changes.
+ * and taking no pointer input. It is fitted to the pane, or, with the zoom linked, shown at the
+ * current frame's zoom and relative place. It is drawn again only when the reference, its recipe,
+ * the long edge it needs (from the pane size, or from the zoom while linked) changes; a pan never
+ * draws it again.
  */
-export function ComparePane({ id, frameLabel, nextSeq }: ComparePaneProps) {
+export function ComparePane({ id, frameLabel, nextSeq, link, revision }: ComparePaneProps) {
   const { t } = useTranslation();
   const stageRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<Size>({ width: 0, height: 0 });
@@ -35,14 +49,17 @@ export function ComparePane({ id, frameLabel, nextSeq }: ComparePaneProps) {
     return () => observer.disconnect();
   }, []);
 
-  const edge = edgeFor(stage.width, stage.height);
-  const shown = useReferenceRender(id, edge, nextSeq);
+  const following = link !== null && !link.view.fit;
+  const fitEdge = edgeFor(stage.width, stage.height);
+  const edge = fitEdge !== null && following ? zoomedEdge(link.view.zoom) : fitEdge;
+  const shown = useReferenceRender(id, edge, nextSeq, revision);
   const picture = shown.id === id ? shown.preview : null;
   const status = shown.id === id ? shown.status : 'loading';
-  const view = useMemo<View | null>(
-    () => (picture ? { fit: true, zoom: fitZoom(stage, picture), offset: { x: 0, y: 0 } } : null),
-    [picture, stage],
-  );
+  const view = useMemo<View | null>(() => {
+    if (!picture) return null;
+    if (link) return linkedView(link.view, link.image, stage, picture);
+    return { fit: true, zoom: fitZoom(stage, picture), offset: { x: 0, y: 0 } };
+  }, [picture, stage, link]);
 
   return (
     <div className={styles.pane}>

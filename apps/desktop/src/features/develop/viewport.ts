@@ -109,3 +109,37 @@ export function panBy(view: View, delta: Point, stage: Size, image: Size): View 
 export function actualSize(view: View, stage: Size, image: Size): View {
   return zoomTo(view, 1, { x: 0, y: 0 }, stage, image);
 }
+
+/**
+ * The view of the reference frame while its zoom and pan follow the current frame's (compare
+ * mode with the link on). `view` is the current frame's view as drawn. A fitting view gives a
+ * fitting reference. Otherwise the reference has the same zoom, and the same relative place: the
+ * offset is taken as a fraction of the current picture's drawn size on each axis, applied to the
+ * reference picture's drawn size at that zoom, and clamped to the reference's own stage and
+ * picture (the two frames, and the two stages, can differ in shape).
+ */
+export function linkedView(
+  view: View,
+  currentImage: Size,
+  referenceStage: Size,
+  referenceImage: Size,
+): View {
+  const fitting = (): View => ({
+    fit: true,
+    zoom: fitZoom(referenceStage, referenceImage),
+    offset: { x: 0, y: 0 },
+  });
+  const current = referenceSize(currentImage);
+  const drawn = referenceSize(referenceImage);
+  if (view.fit || current.width <= 0 || drawn.width <= 0) return fitting();
+  const fraction = (offset: number, shown: number) => (shown > 0 ? offset / shown : 0);
+  const offset = {
+    x: fraction(view.offset.x, current.width * view.zoom) * drawn.width * view.zoom,
+    y: fraction(view.offset.y, current.height * view.zoom) * drawn.height * view.zoom,
+  };
+  return {
+    fit: false,
+    zoom: view.zoom,
+    offset: clampOffset(offset, view.zoom, referenceStage, referenceImage),
+  };
+}

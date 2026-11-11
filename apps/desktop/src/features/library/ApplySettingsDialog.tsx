@@ -28,6 +28,8 @@ type Target = 'selection' | 'roll';
 interface ApplySettingsDialogProps {
   open: boolean;
   onClose: () => void;
+  /** Called once the settings have been applied (the Develop view redraws its reference). */
+  onApplied?: () => void;
   /** The frames the settings can come from: the open frame, or the selected frames. */
   sources: readonly string[];
   /** The frames selected in the Library, which can receive the settings. */
@@ -42,6 +44,7 @@ interface ApplySettingsDialogProps {
 export function ApplySettingsDialog({
   open,
   onClose,
+  onApplied,
   sources,
   selected,
 }: ApplySettingsDialogProps) {
@@ -160,6 +163,7 @@ export function ApplySettingsDialog({
         GROUPS.filter((g) => groups.includes(g)),
       );
       setApplied(targets.length);
+      onApplied?.();
     } catch (e) {
       setError(t('apply.failed', { message: messageOf(e) }));
     } finally {

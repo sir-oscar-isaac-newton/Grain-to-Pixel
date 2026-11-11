@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { IpcError, developOpen, developRender, type Preview, type Recipe } from '../../shared/ipc';
 import { RELEASE_EDGE } from './use-develop';
+import { PROXY_EDGE } from './viewport';
 
 /** The frame compared with: its id, and its place in the filmstrip (for opening it on a swap). */
 export interface Reference {
@@ -67,6 +68,17 @@ export function edgeFor(width: number, height: number): number | null {
   return Math.min(RELEASE_EDGE, Math.max(MIN_EDGE, wanted));
 }
 
+/**
+ * The long edge to ask for while the reference follows the current frame's zoom: the reference
+ * picture's long edge on screen at that zoom (the zoom's unit is the picture at `PROXY_EDGE`),
+ * in the same steps and limits as `edgeFor`.
+ */
+export function zoomedEdge(zoom: number): number {
+  // The small allowance keeps a product like 1024.0000000001 from asking for the next step.
+  const wanted = Math.ceil((zoom * PROXY_EDGE) / EDGE_STEP - 1e-6) * EDGE_STEP;
+  return Math.min(RELEASE_EDGE, Math.max(MIN_EDGE, wanted));
+}
+
 export type ReferenceState =
   | { id: string; status: 'loading'; preview: null; error: null }
   | { id: string; status: 'ready'; preview: Preview; error: null }
@@ -77,7 +89,8 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 /**
  * Renders the reference frame with its own saved recipe (the one `developOpen` gives, which is
  * Develop's own starting point for a frame that has none saved). Nothing is ever saved for it.
- * It is rendered again only when the reference or the `edge` changes; a picture older than the
+ * It is rendered again only when the reference, the `edge` or the `revision` changes (the
+ * revision is bumped when the reference's saved recipe may have changed, which reads it again); a picture older than the
  * newest one taken, or one that arrives after the reference changed or the pane closed, is dropped.
  * `nextSeq` is the Develop view's counter, so the backend sees one increasing series per frame even
  * when two frames swap places.
@@ -86,6 +99,7 @@ export function useReferenceRender(
   id: string,
   edge: number | null,
   nextSeq: () => number,
+  revision = 0,
 ): ReferenceState {
   const [state, setState] = useState<ReferenceState>({
     id,
@@ -93,7 +107,7 @@ export function useReferenceRender(
     preview: null,
     error: null,
   });
-  const recipe = useRef<{ id: string; recipe: Recipe } | null>(null);
+  const recipe = useRef<{ id: string; revision: number; recipe: Recipe } | null>(null);
   const accepted = useRef({ id, seq: -1 });
 
   useEffect(() => {
@@ -103,10 +117,10 @@ export function useReferenceRender(
     setState((s) => (s.id === id ? s : { id, status: 'loading', preview: null, error: null }));
     void (async () => {
       try {
-        if (recipe.current?.id !== id) {
+        if (recipe.current?.id !== id || recipe.current.revision !== revision) {
           const info = await developOpen(id);
           if (!alive) return;
-          recipe.current = { id, recipe: info.recipe };
+          recipe.current = { id, revision, recipe: info.recipe };
         }
         const source = recipe.current;
         if (!source) return;
@@ -128,7 +142,7 @@ export function useReferenceRender(
     return () => {
       alive = false;
     };
-  }, [id, edge, nextSeq]);
+  }, [id, edge, nextSeq, revision]);
 
   return state;
 }

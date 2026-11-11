@@ -29,7 +29,7 @@ import { ExportDialog } from '../library/ExportDialog';
 import { useLibraryEvents } from '../library/use-library-events';
 import { useLibraryQuery } from '../library/use-library-query';
 import { Canvas, pictureStyle } from './Canvas';
-import { ComparePane } from './ComparePane';
+import { ComparePane, type LinkedTo } from './ComparePane';
 import { CropOverlay } from './CropOverlay';
 import {
   FREE_RATIO,
@@ -156,6 +156,16 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   );
   const { toggleBefore, setPickView, setRecipe, rerender, undo, redo, auto } = develop;
   const { fit, actual, zoomIn, zoomOut } = viewport;
+  // Compare mode: the reference follows the zoom and pan of this frame (kept across frames and
+  // references), and its saved recipe is read again when `referenceRevision` changes.
+  const [linkZoom, setLinkZoom] = useState(true);
+  const [referenceRevision, setReferenceRevision] = useState(0);
+  const refreshReference = useCallback(() => setReferenceRevision((n) => n + 1), []);
+  const { view: currentView, image: currentImage } = viewport;
+  const link = useMemo<LinkedTo | null>(
+    () => (linkZoom ? { view: currentView, image: currentImage } : null),
+    [linkZoom, currentView, currentImage],
+  );
 
   // A new frame starts fitted to the stage, with nothing being picked.
   useEffect(() => {
@@ -385,6 +395,8 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
       setNotice({ tone: 'error', text: t('develop.compare.swapSaveFailed') });
       return;
     }
+    // The old frame, saved just now, is read again as the reference.
+    refreshReference();
     choose({ id: frame.id, index: frame.index });
     openInDevelop(reference.id, reference.index);
   };
@@ -557,6 +569,9 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
             <button type="button" disabled={!reference} onClick={() => void swap()}>
               {t('develop.compare.swap')}
             </button>
+            <button type="button" aria-pressed={linkZoom} onClick={() => setLinkZoom((on) => !on)}>
+              {t('develop.compare.link')}
+            </button>
             <button type="button" onClick={leaveCompare}>
               {t('develop.compare.leave')}
             </button>
@@ -676,6 +691,8 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
               id={reference.id}
               frameLabel={referenceLabel}
               nextSeq={develop.nextSeq}
+              link={link}
+              revision={referenceRevision}
             />
           )}
         </div>
@@ -805,6 +822,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         <ApplySettingsDialog
           open
           onClose={() => setApplying(false)}
+          onApplied={refreshReference}
           sources={[frame.id]}
           selected={[...selection]}
         />

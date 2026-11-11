@@ -138,6 +138,7 @@ describe('ApplySettingsDialog', () => {
         ['Film base', false],
         ['Levels', false],
         ['Dust removal', false],
+        ['Noise reduction', false],
       ] as const) {
         const box = d.getByRole('checkbox', { name: new RegExp(`^${name}(?! mixer)`) });
         if (checked) expect(box).toBeChecked();
@@ -148,7 +149,7 @@ describe('ApplySettingsDialog', () => {
     it('offers the output sharpening too, unticked, and copies it in the order of the groups', async () => {
       const user = await openDialog();
       const d = within(dialog());
-      expect(d.getAllByRole('checkbox')).toHaveLength(9);
+      expect(d.getAllByRole('checkbox')).toHaveLength(10);
       const output = d.getByRole('checkbox', { name: /^Output sharpening/ });
       expect(output).not.toBeChecked();
       expect(
@@ -163,6 +164,25 @@ describe('ApplySettingsDialog', () => {
       );
       await waitFor(() => expect(state.applies).toHaveLength(1));
       expect(state.applies[0]?.fields).toEqual(['Color', 'Tone', 'Output']);
+    });
+
+    it('offers noise reduction as a part of its own, unticked, right after dust removal', async () => {
+      const user = await openDialog();
+      const d = within(dialog());
+      const boxes = d.getAllByRole('checkbox');
+      const noise = d.getByRole('checkbox', { name: /^Noise reduction/ });
+      expect(noise).not.toBeChecked();
+      expect(boxes[boxes.indexOf(noise) - 1]).toBe(
+        d.getByRole('checkbox', { name: /^Dust removal/ }),
+      );
+      expect(d.getByText('The luminance and colour noise reduction amounts.')).toBeInTheDocument();
+
+      await user.click(noise);
+      await user.click(
+        d.getByRole('button', { name: 'Apply colour, tone, and noise reduction to 1 frame' }),
+      );
+      await waitFor(() => expect(state.applies).toHaveLength(1));
+      expect(state.applies[0]?.fields).toEqual(['Color', 'Tone', 'Noise']);
     });
 
     it('offers the colour mixer as a part of its own, unticked, right after colour', async () => {

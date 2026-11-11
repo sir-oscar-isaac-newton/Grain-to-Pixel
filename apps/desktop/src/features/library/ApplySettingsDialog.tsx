@@ -15,6 +15,7 @@ const GROUPS: readonly RecipeField[] = [
   'Base',
   'Invert',
   'Dust',
+  'Noise',
   'Output',
 ];
 /** Ticked when the dialog opens: crop, base and levels usually differ from frame to frame. */

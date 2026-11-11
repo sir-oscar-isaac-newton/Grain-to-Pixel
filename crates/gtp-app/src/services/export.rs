@@ -324,6 +324,7 @@ fn export_one(
                 rgb: Arc::new(build_proxy(&full, PROXY_EDGE)?),
                 ir: None,
                 film_base: roll.film_base_rgb,
+                full_long_edge: None,
             };
             let auto = analyze_with(&proxy, crate::pipeline::frame_hint(&roll))?.auto_recipe;
             with_frame_balance(library, frame_id, auto)?
@@ -333,6 +334,7 @@ fn export_one(
         rgb: Arc::new(full),
         ir,
         film_base: roll.film_base_rgb,
+        full_long_edge: None,
     };
     let mut image = render(&input, &recipe, RenderTarget::Full)?;
     drop(input);

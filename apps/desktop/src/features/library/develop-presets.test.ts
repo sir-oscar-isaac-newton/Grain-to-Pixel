@@ -37,7 +37,9 @@ describe('develop presets helpers', () => {
   it('lists the parts in the shown order, and ticks colour, the colour mixer, split toning and tone by default', () => {
     expect(orderedParts(['Output', 'Tone', 'Color'])).toEqual(['Color', 'Tone', 'Output']);
     expect(DEFAULT_PRESET_PARTS).toEqual(['Color', 'Mixer', 'SplitTone', 'Tone']);
-    expect(PRESET_PARTS).toHaveLength(9);
+    expect(PRESET_PARTS).toHaveLength(10);
+    expect(PRESET_PARTS.indexOf('Noise')).toBe(PRESET_PARTS.indexOf('Dust') + 1);
+    expect(DEFAULT_PRESET_PARTS).not.toContain('Noise');
     expect(PRESET_PARTS.indexOf('Mixer')).toBe(PRESET_PARTS.indexOf('Color') + 1);
   });
 });

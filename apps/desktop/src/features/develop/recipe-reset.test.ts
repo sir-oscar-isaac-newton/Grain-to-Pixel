@@ -3,9 +3,9 @@ import { makeRecipe } from '../library/fake-ipc';
 import {
   resetBaseInvert,
   resetColour,
+  resetDetail,
   resetDust,
   resetGeometry,
-  resetSharpen,
   resetTone,
 } from './recipe-reset';
 
@@ -43,6 +43,7 @@ const auto = makeRecipe('auto', {
       ],
     },
   },
+  noise: { luminance: 8, color: 15 },
   output: { srgb: true, sharpen: { amount: 20, radius_px: 0.5 } },
   dust: { enabled: false, threshold: 0.3, grow_px: 1 },
 });
@@ -75,6 +76,7 @@ const edited = makeRecipe('saved', {
       ],
     },
   },
+  noise: { luminance: 60, color: 90 },
   output: { space: 'adobe', sharpen: { amount: 100, radius_px: 2 } },
 });
 
@@ -129,8 +131,19 @@ describe('what a panel reset puts back', () => {
     expect(next.dust).toEqual({ enabled: false, threshold: 0.3, grow_px: 1 });
   });
 
-  it('Sharpen: the amount and radius, and the output space stays', () => {
-    const next = resetSharpen(edited, auto) as never as Record<string, Record<string, unknown>>;
+  it('Detail: the noise reduction, the amount and radius of the sharpening, and the output space stays', () => {
+    const next = resetDetail(edited, auto) as never as Record<string, Record<string, unknown>>;
+    expect(next.noise).toEqual({ luminance: 8, color: 15 });
     expect(next.output).toMatchObject({ space: 'adobe', sharpen: { amount: 20, radius_px: 0.5 } });
+    expect(next.tone).toEqual(edited.tone);
+    expect(next.color).toEqual(edited.color);
+  });
+
+  it('Detail: an automatic recipe without a noise block gives zeros', () => {
+    const next = resetDetail(edited, makeRecipe('bare')) as never as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(next.noise).toEqual({ luminance: 0, color: 0 });
   });
 });

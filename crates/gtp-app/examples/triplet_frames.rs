@@ -72,6 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             rgb: Arc::new(merged.image),
             ir: None,
             film_base: base,
+            full_long_edge: None,
         };
         let plain = analyze(&input)?;
         let hinted = analyze_with_look(&input, Some(hint), look)?;

@@ -393,6 +393,7 @@ pub fn run(
                 rgb: Arc::new(image),
                 ir: None,
                 film_base,
+                full_long_edge: None,
             },
             hint,
         )
@@ -437,6 +438,7 @@ pub fn run(
                         rgb: Arc::new(load_frame(pair, flat.as_ref())?),
                         ir: None,
                         film_base: Some(bases[index]),
+                        full_long_edge: None,
                     },
                     hint,
                     look,
@@ -475,6 +477,7 @@ pub fn run(
                 rgb: Arc::new(image.clone()),
                 ir: None,
                 film_base: Some(film_base),
+                full_long_edge: None,
             },
             hint,
             look,
@@ -496,6 +499,7 @@ pub fn run(
             rgb: Arc::new(image),
             ir: None,
             film_base: Some(film_base),
+            full_long_edge: None,
         };
         let full = srgb_floats(&render(
             &input,
@@ -728,6 +732,7 @@ mod tests {
             rgb: Arc::new(s.image.clone()),
             ir: None,
             film_base: Some(s.truth.base),
+            full_long_edge: None,
         };
         let analysis = analyze_with(&input, None).unwrap();
         let mut recipe = analysis.auto_recipe;

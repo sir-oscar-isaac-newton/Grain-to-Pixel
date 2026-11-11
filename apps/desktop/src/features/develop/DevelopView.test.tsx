@@ -949,9 +949,11 @@ describe('DevelopView', () => {
       });
     });
 
-    describe('the Sharpen panel', () => {
+    describe('the Detail panel', () => {
       const sharpenOf = (recipe: unknown) =>
         (recipe as { output: { sharpen: { amount: number; radius_px: number } } }).output.sharpen;
+      const noiseOf = (recipe: unknown) =>
+        (recipe as { noise: { luminance: number; color: number } }).noise;
 
       async function openFrame() {
         const user = userEvent.setup();
@@ -961,6 +963,48 @@ describe('DevelopView', () => {
         await canvas();
         return user;
       }
+
+      it('saves the noise reduction with the recipe and asks for a new picture', async () => {
+        const user = await openFrame();
+        ipc.developRender.mockClear();
+        screen.getByRole('slider', { name: 'Luminance' }).focus();
+        await user.keyboard('{PageUp}');
+        screen.getByRole('slider', { name: 'Colour' }).focus();
+        await user.keyboard('{ArrowRight}');
+        await waitFor(() => expect(ipc.recipeSave).toHaveBeenCalled(), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(noiseOf(savedRecipe())).toEqual({ luminance: 10, color: 1 });
+        // The picture on screen shows the noise reduction (as far as the preview can).
+        await waitFor(() => expect(ipc.developRender).toHaveBeenCalled());
+        expect(screen.getByRole('slider', { name: 'Luminance' })).toHaveAttribute(
+          'aria-valuenow',
+          '10',
+        );
+      });
+
+      it('puts the noise reduction and the sharpening back together', async () => {
+        const user = await openFrame();
+        screen.getByRole('slider', { name: 'Luminance' }).focus();
+        await user.keyboard('{End}');
+        screen.getByRole('slider', { name: 'Amount' }).focus();
+        await user.keyboard('{End}');
+        const reset = screen.getByRole('button', { name: 'Reset Detail to automatic' });
+        await waitFor(() => expect(reset).toBeEnabled());
+        await user.click(reset);
+        await waitFor(() => expect(noiseOf(savedRecipe())).toEqual({ luminance: 0, color: 0 }), {
+          timeout: SAVE_DELAY_MS * 4,
+        });
+        expect(sharpenOf(savedRecipe())).toEqual({ amount: 0, radius_px: 1 });
+        expect(screen.getByRole('slider', { name: 'Luminance' })).toHaveAttribute(
+          'aria-valuenow',
+          '0',
+        );
+        expect(screen.getByRole('slider', { name: 'Amount' })).toHaveAttribute(
+          'aria-valuenow',
+          '0',
+        );
+      });
 
       it('saves the amount and the radius with the recipe, and draws nothing new', async () => {
         const user = await openFrame();
@@ -985,7 +1029,7 @@ describe('DevelopView', () => {
         const user = await openFrame();
         screen.getByRole('slider', { name: 'Amount' }).focus();
         await user.keyboard('{End}');
-        const reset = screen.getByRole('button', { name: 'Reset Output sharpening to automatic' });
+        const reset = screen.getByRole('button', { name: 'Reset Detail to automatic' });
         await waitFor(() => expect(reset).toBeEnabled());
         await user.click(reset);
         await waitFor(() => expect(sharpenOf(savedRecipe())).toEqual({ amount: 0, radius_px: 1 }), {
@@ -1003,9 +1047,7 @@ describe('DevelopView', () => {
         render(<DevelopView />);
         await canvas();
         expect(screen.getByRole('slider', { name: 'Amount' })).toHaveAttribute('data-disabled');
-        expect(
-          screen.getByRole('button', { name: 'Reset Output sharpening to automatic' }),
-        ).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Reset Detail to automatic' })).toBeDisabled();
       });
 
       it('has no accessibility violations', async () => {

@@ -449,6 +449,7 @@
       "Base": "Film base",
       "Invert": "Levels",
       "Dust": "Dust removal",
+      "Noise": "Noise reduction",
       "Output": "Output sharpening"
     },
     "hint": {
@@ -460,6 +461,7 @@
       "Base": "Where the film base comes from, and its values.",
       "Invert": "The black and white points of the inversion.",
       "Dust": "The infrared dust removal settings.",
+      "Noise": "The luminance and colour noise reduction amounts.",
       "Output": "The amount and radius of the sharpening applied when exporting."
     },
     "short": {
@@ -471,6 +473,7 @@
       "Base": "film base",
       "Invert": "levels",
       "Dust": "dust removal",
+      "Noise": "noise reduction",
       "Output": "output sharpening"
     },
     "to": "Apply to",
@@ -738,6 +741,17 @@
       "grow": "Widen spots by",
       "percent": "{{value}} %",
       "pixels": "{{value}} px"
+    },
+    "detail": {
+      "heading": "Detail",
+      "resetName": "Detail"
+    },
+    "noise": {
+      "heading": "Noise reduction",
+      "note": "Fine grain only shows in the exported file, because the preview is smaller; the preview approximates the result.",
+      "luminance": "Luminance",
+      "color": "Colour",
+      "percent": "{{value}}"
     },
     "sharpen": {
       "heading": "Output sharpening",

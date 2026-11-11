@@ -206,6 +206,7 @@ pub(crate) fn analyse_for_import(
         rgb: Arc::new(rgb),
         ir: None,
         film_base: current.film_base_rgb.filter(|_| !measure),
+        full_long_edge: None,
     };
     let method = match (kind, current.color_balance) {
         (FrameKind::ScanRgbIr, None) => BalanceMethod::GreyWorld,

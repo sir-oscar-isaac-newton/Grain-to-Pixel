@@ -509,7 +509,7 @@ type Blocks = Record<string, unknown>;
 /**
  * The target with the chosen parts copied from the source, as `Recipe::copy_fields_from` does: a
  * whole top-level block per part. Colour is `color` without `split_tone` and `mixer`, plus
- * `mono`; split toning is `color.split_tone`, the colour mixer `color.mixer`. (The real command also clamps; the fake does not.)
+ * `mono`; split toning is `color.split_tone`, the colour mixer `color.mixer`, noise reduction `noise`. (The real command also clamps; the fake does not.)
  */
 export function mergeFields(target: Recipe, source: Recipe, fields: RecipeField[]): Recipe {
   const to = structuredClone(target) as unknown as Blocks;
@@ -533,6 +533,9 @@ export function mergeFields(target: Recipe, source: Recipe, fields: RecipeField[
         break;
       case 'Dust':
         copy('dust');
+        break;
+      case 'Noise':
+        copy('noise');
         break;
       case 'Output':
         copy('output');

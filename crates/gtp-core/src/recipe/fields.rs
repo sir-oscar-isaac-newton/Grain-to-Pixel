@@ -8,7 +8,7 @@ use super::{Color, Recipe};
 ///
 /// `Color` carries the colour balance and the black-and-white conversion (`mono`), which live in
 /// the same panel, but not the split toning or the colour mixer, which are parts of their own
-/// (`SplitTone`, `Mixer`); `Base` carries the base
+/// (`SplitTone`, `Mixer`); `Noise` is the noise reduction block; `Base` carries the base
 /// source together with its value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -21,6 +21,7 @@ pub enum RecipeField {
     SplitTone,
     Tone,
     Dust,
+    Noise,
     Output,
 }
 
@@ -46,6 +47,7 @@ impl Recipe {
                 RecipeField::SplitTone => self.color.split_tone = source.color.split_tone,
                 RecipeField::Tone => self.tone = source.tone.clone(),
                 RecipeField::Dust => self.dust = source.dust,
+                RecipeField::Noise => self.noise = source.noise,
                 RecipeField::Output => self.output = source.output,
             }
         }
@@ -77,6 +79,8 @@ mod tests {
         // Dust removal is on by default, so turn it off to make a difference.
         r.dust.enabled = false;
         r.dust.threshold = 0.3;
+        r.noise.luminance = 35.0;
+        r.noise.color = 60.0;
         r.output.space = super::super::OutputSpace::Prophoto;
         r
     }
@@ -93,6 +97,7 @@ mod tests {
             RecipeField::SplitTone,
             RecipeField::Tone,
             RecipeField::Dust,
+            RecipeField::Noise,
             RecipeField::Output,
         ];
         for field in all {
@@ -115,6 +120,7 @@ mod tests {
                 RecipeField::SplitTone => want.color.split_tone = source.color.split_tone,
                 RecipeField::Tone => want.tone = source.tone.clone(),
                 RecipeField::Dust => want.dust = source.dust,
+                RecipeField::Noise => want.noise = source.noise,
                 RecipeField::Output => want.output = source.output,
             }
             assert_eq!(target, want, "{field:?}");
@@ -138,6 +144,7 @@ mod tests {
                 RecipeField::SplitTone,
                 RecipeField::Tone,
                 RecipeField::Dust,
+                RecipeField::Noise,
                 RecipeField::Output,
             ],
         );
@@ -203,5 +210,25 @@ mod tests {
         assert_eq!(target.color.mixer, source.color.mixer);
         assert_eq!(target.color.temperature, -5.0, "the mixer is not colour");
         assert_eq!(target.color.split_tone, Default::default());
+    }
+
+    #[test]
+    fn the_noise_part_copies_the_noise_block_and_nothing_else() {
+        let source = edited();
+        let mut own = Recipe::default();
+        own.tone.exposure_ev = 0.3;
+        own.output.sharpen.amount = 50.0;
+        let mut target = own.clone();
+        target.copy_fields_from(&source, &[RecipeField::Noise]);
+        assert_eq!(target.noise, source.noise);
+        assert_eq!(target.tone, own.tone);
+        assert_eq!(target.output, own.output);
+
+        // Other parts leave the target's own noise reduction alone, in both directions.
+        let mut own = Recipe::default();
+        own.noise.color = 20.0;
+        let mut target = own.clone();
+        target.copy_fields_from(&source, &[RecipeField::Output, RecipeField::Color]);
+        assert_eq!(target.noise, own.noise);
     }
 }

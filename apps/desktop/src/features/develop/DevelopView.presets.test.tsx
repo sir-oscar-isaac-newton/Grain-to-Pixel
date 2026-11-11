@@ -115,6 +115,7 @@ describe('Develop presets', () => {
         ['Film base', false],
         ['Levels', false],
         ['Dust removal', false],
+        ['Noise reduction', false],
         ['Output sharpening', false],
       ] as const) {
         const box = d.getByRole('checkbox', { name: part });

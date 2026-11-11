@@ -3,7 +3,7 @@
 //! Clamping is idempotent: clamping an already clamped recipe changes nothing.
 
 use super::v1::{
-    Color, Crop, CurvePoint, Dust, Geometry, Invert, Mono, Output, Recipe, SplitTone, Tone,
+    Color, Crop, CurvePoint, Dust, Geometry, Invert, Mono, Noise, Output, Recipe, SplitTone, Tone,
     Vignette, DEFAULT_SHARPEN_RADIUS_PX, REC2020_LUMA,
 };
 
@@ -40,6 +40,8 @@ pub const MONO_WEIGHT_MAX: f32 = 2.0;
 pub const SHARPEN_AMOUNT_MAX: f32 = 150.0;
 pub const SHARPEN_RADIUS_MIN_PX: f32 = 0.3;
 pub const SHARPEN_RADIUS_MAX_PX: f32 = 3.0;
+/// Noise reduction: both amounts run from 0 to this.
+pub const NOISE_AMOUNT_MAX: f32 = 100.0;
 
 fn fin(value: f32, lo: f32, hi: f32, default: f32) -> f32 {
     if value.is_finite() {
@@ -154,6 +156,11 @@ fn clamp_dust(dust: &mut Dust) {
     dust.grow_px = dust.grow_px.min(DUST_GROW_PX_MAX);
 }
 
+fn clamp_noise(noise: &mut Noise) {
+    noise.luminance = fin(noise.luminance, 0.0, NOISE_AMOUNT_MAX, 0.0);
+    noise.color = fin(noise.color, 0.0, NOISE_AMOUNT_MAX, 0.0);
+}
+
 fn clamp_output(output: &mut Output) {
     output.sharpen.amount = fin(output.sharpen.amount, 0.0, SHARPEN_AMOUNT_MAX, 0.0);
     output.sharpen.radius_px = fin(
@@ -177,6 +184,7 @@ impl Recipe {
         clamp_mono(&mut self.mono);
         clamp_tone(&mut self.tone);
         clamp_dust(&mut self.dust);
+        clamp_noise(&mut self.noise);
         clamp_output(&mut self.output);
     }
 
@@ -268,6 +276,10 @@ mod tests {
                         enabled: flag,
                         threshold: n(),
                         grow_px,
+                    };
+                    r.noise = Noise {
+                        luminance: n(),
+                        color: n(),
                     };
                     r.output.sharpen = Sharpen {
                         amount: n(),
@@ -362,12 +374,44 @@ mod tests {
         }
         assert!(in_range(r.dust.threshold, 0.0, 1.0));
         assert!(r.dust.grow_px <= DUST_GROW_PX_MAX);
+        assert!(in_range(r.noise.luminance, 0.0, NOISE_AMOUNT_MAX));
+        assert!(in_range(r.noise.color, 0.0, NOISE_AMOUNT_MAX));
         assert!(in_range(r.output.sharpen.amount, 0.0, SHARPEN_AMOUNT_MAX));
         assert!(in_range(
             r.output.sharpen.radius_px,
             SHARPEN_RADIUS_MIN_PX,
             SHARPEN_RADIUS_MAX_PX,
         ));
+    }
+
+    #[test]
+    fn noise_reduction_is_off_by_default_and_its_values_are_clamped() {
+        assert_eq!(Recipe::default().noise, Noise::default());
+        assert_eq!(Noise::default().luminance, 0.0);
+        assert_eq!(Noise::default().color, 0.0);
+
+        let mut r = Recipe::default();
+        r.noise = Noise {
+            luminance: 500.0,
+            color: -20.0,
+        };
+        let r = r.clamped();
+        assert_eq!(r.noise.luminance, NOISE_AMOUNT_MAX);
+        assert_eq!(r.noise.color, 0.0);
+
+        let mut r = Recipe::default();
+        r.noise = Noise {
+            luminance: f32::NAN,
+            color: f32::INFINITY,
+        };
+        assert_eq!(r.clamped().noise, Noise::default());
+
+        let mut r = Recipe::default();
+        r.noise = Noise {
+            luminance: 35.5,
+            color: 100.0,
+        };
+        assert_eq!(r.clone().clamped(), r);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! Edit stages over linear `ImageF32` buffers: colour balance, the colour mixer, tone, split toning and vignette (in place) and geometry
+//! Edit stages over linear `ImageF32` buffers: noise reduction, colour balance, the colour mixer, tone, split toning and vignette (in place) and geometry
 //! (a new buffer), IR dust removal and output sharpening. Per-pixel loops run in parallel with `rayon`; each
 //! pixel or output row is independent, so the result is the same as on one thread. Every tuning constant is a named, documented `pub const`
 //! so it can be calibrated against reference renders (issue Q-03).
@@ -11,6 +11,7 @@ mod frontier;
 mod geometry;
 mod look;
 mod mixer;
+mod noise;
 mod oklab;
 mod sharpen;
 mod split_tone;
@@ -48,6 +49,10 @@ pub use tone::{
 
 pub use mixer::{
     apply_mixer, MIXER_BAND_HUES, MIXER_CHROMA_KNEE, MIXER_HUE_MAX_DEG, MIXER_LIGHTNESS_MAX_EV,
+};
+pub use noise::{
+    apply_noise_reduction, NR_CHROMA_MAX_SIGMA, NR_CHROMA_RADIUS_PX, NR_LUMA_MAX_SIGMA,
+    NR_LUMA_RADIUS_PX,
 };
 pub use oklab::{
     hue_deg, oklab_to_rgb, oklch_to_rgb, rgb_to_oklab, rgb_to_oklch, FULL_TURN_DEG, LAB_TO_LMS,

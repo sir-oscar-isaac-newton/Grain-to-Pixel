@@ -265,6 +265,8 @@ struct Entry {
     /// The infrared plane at the size of `rgb`, when the frame has one that could be read.
     ir: Option<Arc<ImageF32>>,
     has_ir: bool,
+    /// The long edge of the full scan the proxy was made from, so a render knows its scale.
+    full_long_edge: u32,
     /// The roll's base as of the last open (the roll can get one after the proxy was built).
     film_base: Mutex<Option<[f32; 3]>>,
     /// The highest sequence number seen for this frame.
@@ -283,6 +285,7 @@ impl Entry {
                 .film_base
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner),
+            full_long_edge: Some(self.full_long_edge),
         }
     }
 
@@ -435,6 +438,7 @@ fn load(library: &Library, sources: &[SourceFile], frame: &Frame) -> Result<Entr
         rgb: Arc::new(proxy),
         ir,
         has_ir: frame.has_ir,
+        full_long_edge: full.width.max(full.height),
         film_base: Mutex::new(None),
         latest: AtomicU64::new(0),
         render_lock: Mutex::new(()),
@@ -884,6 +888,21 @@ mod tests {
             .unwrap();
         let (_, w, h) = header(&bytes);
         assert!(w.max(h) <= PROXY_EDGE, "{w}x{h}");
+    }
+
+    #[test]
+    fn the_cached_proxy_knows_the_long_edge_of_the_scan_it_came_from() {
+        let t = Fixture::new("scale");
+        let id = t.frame(1, 2400, 1600);
+        let entry = t.service.ensure(&t.library, id).unwrap();
+        let input = entry.input(false);
+        assert_eq!(input.rgb.width.max(input.rgb.height), PROXY_EDGE);
+        assert_eq!(input.full_long_edge, Some(2400));
+        // So a preview of that proxy is rendered at a scale below 1, and thumbnails likewise.
+        let scale = crate::pipeline::render_scale(PROXY_EDGE, &input);
+        assert!((scale - PROXY_EDGE as f32 / 2400.0).abs() < 1e-6, "{scale}");
+        let thumb = t.service.thumbnail_input(&t.library, id).unwrap();
+        assert_eq!(thumb.full_long_edge, Some(2400));
     }
 
     #[test]
@@ -1557,6 +1576,40 @@ mod tests {
         assert_eq!(after.color.temperature, 20.0);
         assert_eq!(after.color.tint, 0.0);
         assert_eq!(after.color.mixer, own.color.mixer);
+    }
+
+    #[test]
+    fn noise_reduction_is_applied_on_its_own() {
+        let t = Fixture::new("apply-noise");
+        let (source, target) = (t.bare(1), t.bare(2));
+        let mut src = Recipe::default();
+        src.noise.luminance = 40.0;
+        src.noise.color = 70.0;
+        src.tone.exposure_ev = 0.5;
+        save_recipe(&t.library, source, src.clone()).unwrap();
+        let mut own = Recipe::default();
+        own.output.sharpen.amount = 30.0;
+        save_recipe(&t.library, target, own.clone()).unwrap();
+
+        // The noise part alone leaves the rest as it was.
+        apply_recipe_to(&t.library, &[target], source, &[RecipeField::Noise]).unwrap();
+        let after = t.stored(target).unwrap();
+        assert_eq!(after.noise, src.noise);
+        assert_eq!(after.tone, own.tone);
+        assert_eq!(after.output, own.output);
+
+        // Other parts alone leave the target's noise reduction as it was.
+        save_recipe(&t.library, target, own.clone()).unwrap();
+        apply_recipe_to(
+            &t.library,
+            &[target],
+            source,
+            &[RecipeField::Tone, RecipeField::Output],
+        )
+        .unwrap();
+        let after = t.stored(target).unwrap();
+        assert_eq!(after.tone, src.tone);
+        assert_eq!(after.noise, own.noise);
     }
 
     #[test]

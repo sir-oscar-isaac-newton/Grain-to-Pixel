@@ -322,7 +322,7 @@ fn checked_presets(presets: &[ExportPreset]) -> Result<Vec<ExportPreset>, AppErr
 }
 
 /// The parts of a recipe in the order the Develop view lists them.
-const FIELD_ORDER: [RecipeField; 9] = [
+const FIELD_ORDER: [RecipeField; 10] = [
     RecipeField::Geometry,
     RecipeField::Base,
     RecipeField::Invert,
@@ -331,6 +331,7 @@ const FIELD_ORDER: [RecipeField; 9] = [
     RecipeField::SplitTone,
     RecipeField::Tone,
     RecipeField::Dust,
+    RecipeField::Noise,
     RecipeField::Output,
 ];
 

@@ -136,6 +136,32 @@
   pointer-events: none;
 }
 
+/* The clipping overlay is always nearest-neighbour, so its mask is never smeared. */
+.clipLayer {
+  image-rendering: pixelated;
+}
+
+/* The legend of the clipping overlay: a colour mark and the words, which carry the meaning. */
+.clipLegend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+}
+
+.clipLegend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.clipMark {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--text);
+  border-radius: 2px;
+}
+
 /* Past 100% the pixels are enlarged as they are, not smoothed. */
 .enlarged {
   image-rendering: pixelated;

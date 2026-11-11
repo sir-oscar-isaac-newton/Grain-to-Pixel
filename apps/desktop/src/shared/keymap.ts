@@ -5,6 +5,7 @@
 /** The actions that have a key, in the order they are listed. */
 export const ACTION_IDS = [
   'develop.toggleBefore',
+  'develop.toggleClipping',
   'develop.previousFrame',
   'develop.nextFrame',
   'develop.backToLibrary',
@@ -26,6 +27,7 @@ export type KeyMap = Record<ActionId, string>;
 /** `\`, `[` and `]` are the keys the spec names for the Develop view. */
 export const DEFAULT_KEYS: KeyMap = {
   'develop.toggleBefore': '\\',
+  'develop.toggleClipping': 'j',
   'develop.previousFrame': '[',
   'develop.nextFrame': ']',
   'develop.backToLibrary': 'Escape',

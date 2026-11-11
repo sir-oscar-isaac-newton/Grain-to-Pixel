@@ -31,7 +31,7 @@ describe('the Keyboard section of Settings', () => {
 
   it('lists every shortcut with its key, the colour keys apart from the rest', async () => {
     const { section } = await openSettings();
-    expect(section.getAllByRole('listitem')).toHaveLength(14);
+    expect(section.getAllByRole('listitem')).toHaveLength(15);
     expect(section.getByRole('heading', { name: 'Develop view' })).toBeInTheDocument();
     expect(section.getByRole('heading', { name: 'Colour' })).toBeInTheDocument();
     expect(keyOf('Add red')).toBe('Q');
@@ -39,6 +39,7 @@ describe('the Keyboard section of Settings', () => {
     expect(keyOf('Add yellow')).toBe('D');
     expect(keyOf('Back to the Library (first stops picking)')).toBe('Esc');
     expect(keyOf('Next frame')).toBe(']');
+    expect(keyOf('Show clipped highlights and shadows')).toBe('J');
     expect(
       section.getByText(/A press moves a colour slider by 10 steps, Shift and the key by 1/),
     ).toBeInTheDocument();

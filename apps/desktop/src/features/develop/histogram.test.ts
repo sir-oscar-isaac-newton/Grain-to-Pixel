@@ -23,11 +23,18 @@ describe('histogram', () => {
     }
   });
 
-  it('reports the share of pixels lost to pure black and pure white', () => {
+  it('reports the share of pixels clipped: white when any channel is 255, black when all are 0', () => {
     const bins = computeHistogram(pixels([0, 0, 0], [0, 0, 0], [255, 255, 255], [90, 90, 90]));
     expect(clipping(bins)).toEqual({ black: 0.5, white: 0.25 });
     // A pixel that is black in one channel only is not lost.
     expect(clipping(computeHistogram(pixels([0, 120, 120])))).toEqual({ black: 0, white: 0 });
+    // One channel at 255 is a clipped highlight, though the luma is far from white.
+    expect(clipping(computeHistogram(pixels([255, 0, 0], [0, 0, 255], [254, 254, 254])))).toEqual({
+      black: 0,
+      white: 2 / 3,
+    });
+    // One channel above 0 keeps a dark pixel out of the black.
+    expect(clipping(computeHistogram(pixels([0, 0, 1])))).toEqual({ black: 0, white: 0 });
   });
 
   it('copes with an empty picture', () => {

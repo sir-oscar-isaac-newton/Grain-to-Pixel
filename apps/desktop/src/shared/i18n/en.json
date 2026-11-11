@@ -328,6 +328,7 @@
       "action": {
         "develop": {
           "toggleBefore": "Show before and after",
+          "toggleClipping": "Show clipped highlights and shadows",
           "previousFrame": "Previous frame",
           "nextFrame": "Next frame",
           "backToLibrary": "Back to the Library (first stops picking)",
@@ -584,6 +585,11 @@
     },
     "side": "Histogram and settings",
     "before": "Before",
+    "clipping": {
+      "toggle": "Clipping",
+      "highlights": "Red: highlights clipped.",
+      "shadows": "Blue: shadows clipped."
+    },
     "compare": {
       "toggle": "Compare with",
       "swap": "Swap frames",

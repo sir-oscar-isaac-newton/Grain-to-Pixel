@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-10",
+  "updated": "2026-11-11",
   "rules": "status is in_progress while the issue's branch exists or its PR is open; completed only after the PR is merged and closed (see docs/workflow.md section 10)",
   "issues": [
     {
@@ -956,6 +956,15 @@
       "number": 305,
       "title": "Vignette",
       "branch": "feat/issue-305-vignette",
+      "status": "completed",
+      "pr": 308,
+      "commit": "26c6480"
+    },
+    {
+      "id": "T-11",
+      "number": 309,
+      "title": "Export metadata test that depends on the clock",
+      "branch": "test/issue-309-export-test-clock",
       "status": "in_progress",
       "pr": null,
       "commit": null

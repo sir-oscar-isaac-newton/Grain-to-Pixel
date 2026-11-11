@@ -938,6 +938,15 @@
       "number": 295,
       "title": "Described sliders in the shared UI package",
       "branch": "feat/issue-295-slider-description",
+      "status": "completed",
+      "pr": 299,
+      "commit": "7372a86"
+    },
+    {
+      "id": "U-26",
+      "number": 294,
+      "title": "Compare mode polish",
+      "branch": "feat/issue-294-compare-polish",
       "status": "in_progress",
       "pr": null,
       "commit": null

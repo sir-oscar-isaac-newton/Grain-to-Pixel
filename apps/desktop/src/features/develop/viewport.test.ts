@@ -7,6 +7,7 @@ import {
   actualSize,
   clampOffset,
   fitZoom,
+  linkedView,
   panBy,
   referenceSize,
   resolveView,
@@ -119,5 +120,54 @@ describe('viewport', () => {
     expect(view.zoom).toBe(1);
     // When the stage is big enough that the fit zoom is above 100%, 100% is the fit view.
     expect(actualSize(FIT_VIEW, { width: 12000, height: 9000 }, big)).toEqual(FIT_VIEW);
+  });
+
+  describe('linkedView', () => {
+    const landscape = { width: 2048, height: 1365 };
+    const portrait = { width: 1365, height: 2048 };
+
+    it('stays fitting while the current view fits', () => {
+      const view = linkedView(FIT_VIEW, landscape, stage, portrait);
+      expect(view.fit).toBe(true);
+      expect(view.zoom).toBeCloseTo(fitZoom(stage, portrait), 9);
+      expect(view.offset).toEqual({ x: 0, y: 0 });
+    });
+
+    it('has the same zoom and the same relative place', () => {
+      // 2 x the proxy: 4096 x 2730 drawn; the offset is a quarter and a tenth of that.
+      const current = { fit: false, zoom: 2, offset: { x: 1024, y: 273 } };
+      const view = linkedView(current, landscape, stage, landscape);
+      expect(view.fit).toBe(false);
+      expect(view.zoom).toBe(2);
+      expect(view.offset.x).toBeCloseTo(1024, 6);
+      expect(view.offset.y).toBeCloseTo(273, 6);
+    });
+
+    it('scales the place by the reference picture when the frames differ in shape', () => {
+      // Current landscape: 4096 wide, offset 400 (about 9.8%); the portrait picture is 2730 wide.
+      const current = { fit: false, zoom: 2, offset: { x: 400, y: 0 } };
+      const view = linkedView(current, landscape, stage, portrait);
+      expect(view.zoom).toBe(2);
+      expect(view.offset.x).toBeCloseTo((400 / 4096) * 2730, 6);
+      expect(view.offset.y).toBe(0);
+    });
+
+    it('clamps to the reference own stage and picture', () => {
+      const current = { fit: false, zoom: 2, offset: { x: 2000, y: 1300 } };
+      const view = linkedView(current, landscape, stage, portrait);
+      // Portrait at 2: 2730 x 4096 on a 1000 x 600 stage.
+      expect(view.offset).toEqual(
+        clampOffset({ x: (2000 / 4096) * 2730, y: (1300 / 2730) * 4096 }, 2, stage, portrait),
+      );
+      const smaller = linkedView(current, landscape, { width: 5000, height: 4000 }, landscape);
+      // The picture does not fill that stage on the first axis: centred there.
+      expect(smaller.offset.x).toBe(0);
+    });
+
+    it('fits when the current picture or the reference is not known yet', () => {
+      const current = { fit: false, zoom: 2, offset: { x: 10, y: 10 } };
+      expect(linkedView(current, { width: 0, height: 0 }, stage, landscape).fit).toBe(true);
+      expect(linkedView(current, landscape, stage, { width: 0, height: 0 }).fit).toBe(true);
+    });
   });
 });

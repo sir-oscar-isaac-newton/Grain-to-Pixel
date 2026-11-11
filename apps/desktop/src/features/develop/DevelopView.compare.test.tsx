@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useUiStore } from '../../app/store';
@@ -40,8 +40,8 @@ const frameNow = () => useUiStore.getState().developFrame;
 const button = (name: string) => screen.getByRole('button', { name });
 const strip = () => screen.getByRole('listbox', { name: 'Frames of the current Library view' });
 const stripFrame = async (n: number) =>
-  (await within(strip()).findAllByRole('option')).find(
-    (o) => o.getAttribute('aria-label') === `Frame ${n}`,
+  (await within(strip()).findAllByRole('option')).find((o) =>
+    new RegExp(`^Frame ${n}(,|$)`).test(o.getAttribute('aria-label') ?? ''),
   ) as HTMLElement;
 const picture = (name: string) =>
   waitFor(() => {
@@ -52,6 +52,16 @@ const picture = (name: string) =>
     return found;
   });
 const rendersOf = (id: string) => ipc.developRender.mock.calls.filter((c) => c[0] === id);
+/** The two stages: the current frame's first, the reference's second. */
+const stages = (container: HTMLElement) =>
+  [...container.querySelectorAll('[aria-busy]')] as HTMLElement[];
+const widthOf = (picture: Element) => Number.parseFloat((picture as HTMLElement).style.width);
+const shiftOf = (picture: Element) => {
+  const match = /translate\(([-\d.e]+)px, ([-\d.e]+)px\)$/.exec(
+    (picture as HTMLElement).style.transform,
+  );
+  return { x: Number(match?.[1]), y: Number(match?.[2]) };
+};
 const savedFor = (id: string) => state.saved.filter((s) => s.id === id);
 
 describe('Develop: compare', () => {
@@ -260,6 +270,189 @@ describe('Develop: compare', () => {
       expect(screen.queryByRole('button', { name: 'Swap frames' })).not.toBeInTheDocument();
       await user.click(button('Compare with'));
       expect(button('Swap frames')).toBeDisabled();
+    });
+  });
+
+  describe('linked zoom and pan', () => {
+    const zoomIn = async (user: ReturnType<typeof userEvent.setup>, times: number) => {
+      for (let i = 0; i < times; i += 1) await user.click(button('Zoom in'));
+    };
+
+    it('has a switch that is on by default and is kept when the reference or the frame changes', async () => {
+      const { user } = await compareWithThree();
+      const link = button('Link zoom');
+      expect(link).toHaveAttribute('aria-pressed', 'true');
+      await user.click(link);
+      expect(link).toHaveAttribute('aria-pressed', 'false');
+      await user.click(await stripFrame(4));
+      await waitFor(() => expect(frameNow()).toEqual({ id: F4, index: 3 }));
+      await picture('Frame 4');
+      expect(button('Link zoom')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('is shown while compare mode is on, and not outside it', async () => {
+      const user = userEvent.setup();
+      render(<DevelopView />);
+      await picture('Frame 1');
+      expect(screen.queryByRole('button', { name: 'Link zoom' })).not.toBeInTheDocument();
+      await user.click(button('Compare with'));
+      expect(button('Link zoom')).toBeInTheDocument();
+      await user.click(button('Leave compare'));
+      expect(screen.queryByRole('button', { name: 'Link zoom' })).not.toBeInTheDocument();
+    });
+
+    it('zooms the reference with the current frame, and fits it again with Fit', async () => {
+      const { user, container } = await compareWithThree();
+      const reference = await picture('Reference, Frame 3');
+      const fitted = widthOf(reference);
+      await zoomIn(user, 3);
+      const current = await picture('Frame 1');
+      await waitFor(() => expect(widthOf(reference)).toBeGreaterThan(fitted * 1.9));
+      expect(widthOf(reference)).toBeCloseTo(widthOf(current), 6);
+      expect(stages(container)).toHaveLength(2);
+      await user.click(button('Fit'));
+      await waitFor(() => expect(widthOf(reference)).toBeCloseTo(fitted, 6));
+    });
+
+    it('moves the reference with the current frame when it is panned, without drawing it again', async () => {
+      const { user, container } = await compareWithThree();
+      await zoomIn(user, 3);
+      // 0.4395 x 1.25^3 of 2048 px is 1758 px.
+      await waitFor(() => expect(rendersOf(F3).at(-1)?.[2]).toBe(1792));
+      const reference = await picture('Reference, Frame 3');
+      const renders = rendersOf(F3).length;
+      const opens = ipc.developOpen.mock.calls.length;
+      const [stage] = stages(container);
+      fireEvent.mouseDown(stage as HTMLElement, { button: 0, clientX: 300, clientY: 300 });
+      fireEvent.mouseMove(window, { clientX: 200, clientY: 250 });
+      fireEvent.mouseUp(window);
+      await waitFor(() => expect(shiftOf(reference).x).toBeCloseTo(-100, 4));
+      // The fake's two preview sizes round to slightly different heights.
+      expect(shiftOf(reference).y).toBeCloseTo(-50, 0);
+      expect(shiftOf(await picture('Frame 1'))).toEqual({ x: -100, y: -50 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(rendersOf(F3)).toHaveLength(renders);
+      expect(ipc.developOpen.mock.calls).toHaveLength(opens);
+    });
+
+    it('takes no pointer or wheel input of its own', async () => {
+      const { user, container } = await compareWithThree();
+      await zoomIn(user, 4);
+      const reference = await picture('Reference, Frame 3');
+      const before = { width: widthOf(reference), shift: shiftOf(reference) };
+      const [, stage] = stages(container);
+      fireEvent.wheel(stage as HTMLElement, { deltaY: -100, clientX: 450, clientY: 300 });
+      fireEvent.mouseDown(stage as HTMLElement, { button: 0, clientX: 300, clientY: 300 });
+      fireEvent.mouseMove(window, { clientX: 200, clientY: 250 });
+      fireEvent.mouseUp(window);
+      expect(widthOf(reference)).toBe(before.width);
+      expect(shiftOf(reference)).toEqual(before.shift);
+    });
+
+    it('keeps the reference fitted while the switch is off', async () => {
+      const { user } = await compareWithThree();
+      await user.click(button('Link zoom'));
+      const reference = await picture('Reference, Frame 3');
+      const fitted = widthOf(reference);
+      const renders = rendersOf(F3).length;
+      await zoomIn(user, 4);
+      expect(widthOf(await picture('Frame 1'))).toBeGreaterThan(fitted * 2);
+      expect(widthOf(reference)).toBe(fitted);
+      expect(shiftOf(reference)).toEqual({ x: 0, y: 0 });
+      expect(rendersOf(F3)).toHaveLength(renders);
+      // Switched on again: the reference follows at once.
+      await user.click(button('Link zoom'));
+      await waitFor(() => expect(widthOf(reference)).toBeGreaterThan(fitted * 2));
+    });
+
+    it('asks for the long edge the zoom needs, in steps, and only when the step changes', async () => {
+      const { user } = await compareWithThree();
+      expect(rendersOf(F3).at(-1)?.[2]).toBe(1024);
+      // One step in: 0.4395 x 1.25 of 2048 px is 1125 px, so 1152.
+      await user.click(button('Zoom in'));
+      await waitFor(() => expect(rendersOf(F3).at(-1)?.[2]).toBe(1152));
+      const renders = rendersOf(F3).length;
+      // Back to Fit (the pane's own edge, 1024).
+      await user.click(button('Fit'));
+      await waitFor(() => expect(rendersOf(F3).at(-1)?.[2]).toBe(1024));
+      expect(rendersOf(F3).length).toBe(renders + 1);
+      // The most zoomed: capped at the release edge.
+      for (let i = 0; i < 12; i += 1) await user.click(button('Zoom in'));
+      await waitFor(() => expect(rendersOf(F3).at(-1)?.[2]).toBe(2048));
+    });
+
+    it('asks for the pane size, as before, while the switch is off', async () => {
+      const { user } = await compareWithThree();
+      await user.click(button('Link zoom'));
+      await zoomIn(user, 4);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(new Set(rendersOf(F3).map((c) => c[2]))).toEqual(new Set([1024]));
+    });
+  });
+
+  describe('keeping the reference current', () => {
+    /** The fake saves nothing to read back; this one does, as the backend does. */
+    function saveToRecipes() {
+      ipc.recipeSave.mockImplementation(async (id, recipe) => {
+        state.saved.push({ id, recipe });
+        state.recipes[id] = recipe;
+        return recipe;
+      });
+    }
+
+    it('reads the saved recipe again after each swap', async () => {
+      saveToRecipes();
+      const { user } = await compareWithThree();
+      await editCurrent(user);
+      await user.click(button('Swap frames'));
+      await waitFor(() => expect(frameNow()).toEqual({ id: F3, index: 2 }));
+      await picture('Reference, Frame 1');
+      await waitFor(() =>
+        expect(rendersOf(F1).at(-1)?.[1]).toMatchObject({ tone: { contrast: 10 } }),
+      );
+
+      // Swapped back: frame 3 is read again too, and still has its own recipe.
+      await user.click(button('Swap frames'));
+      await waitFor(() => expect(frameNow()).toEqual({ id: F1, index: 0 }));
+      await picture('Reference, Frame 3');
+      await waitFor(() =>
+        expect(ipc.developOpen.mock.calls.filter((c) => c[0] === F3).length).toBeGreaterThan(1),
+      );
+      expect(rendersOf(F3).at(-1)?.[1]).toMatchObject({ tag: 'ref' });
+    });
+
+    it('draws the reference again, with the new recipe, after Apply settings changed it', async () => {
+      const { user } = await compareWithThree();
+      useLibraryStore.getState().setSelected([F1, F3]);
+      const renders = rendersOf(F3).length;
+      await user.click(button('Apply settings…'));
+      const dialog = within(await screen.findByRole('dialog', { name: 'Apply settings' }));
+      await dialog.findByRole('radio', { name: 'The other selected frame (1)' });
+      // What the backend now has saved for the reference.
+      state.recipes[F3] = makeRecipe('applied');
+      await user.click(dialog.getByRole('button', { name: 'Apply colour and tone to 1 frame' }));
+      await dialog.findByText('Applied to 1 frame.');
+      await waitFor(() => expect(rendersOf(F3)).toHaveLength(renders + 1));
+      expect(rendersOf(F3).at(-1)?.[1]).toMatchObject({ tag: 'applied' });
+      expect(savedFor(F3)).toEqual([]);
+    });
+  });
+
+  describe('the filmstrip', () => {
+    it('names the reference frame, besides marking it', async () => {
+      await compareWithThree();
+      const options = await within(strip()).findAllByRole('option');
+      const names = options.map((o) => o.getAttribute('aria-label'));
+      expect(names).toContain('Frame 3, reference');
+      expect(names).toContain('Frame 1');
+      expect(names.filter((n) => n?.includes('reference'))).toHaveLength(1);
+    });
+
+    it('names no reference once compare mode is left', async () => {
+      const { user } = await compareWithThree();
+      await user.click(button('Leave compare'));
+      const options = await within(strip()).findAllByRole('option');
+      expect(options.map((o) => o.getAttribute('aria-label'))).toContain('Frame 3');
     });
   });
 

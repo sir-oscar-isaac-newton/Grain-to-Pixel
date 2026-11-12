@@ -3011,3 +3011,27 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: the changed tests, the repeated run and the count of folders left, as in ac.
 NOTES: asked for by the owner on 2026-11-11 after T-12 (PR 336). The TempDir of T-12 is in the test code of gtp-app and cannot be used from other crates as it is. The fixed names in crates/gtp-capture/tests/gphoto_hardware.rs (gtp-gphoto-hardware) and tools/spikes/nef-probe are looked at and listed. Capture and tether tests must not touch the real camera: guards on tests are not changed. Out of scope: deleting the folders earlier runs left in a developer's temp folder, other kinds of flaky test.
+
+## U-33
+title: Colour direction on the colour balance sliders
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: U-31
+adr: no
+spec: specification section 7
+desc: The three colour balance sliders of the Colour panel (Cyan / red, Magenta / green, Yellow / blue) name the two colours of each axis in their label, but the track does not show which end adds which colour, nor how strong the cast becomes. Show on each of the three sliders, as U-32 does for the colour mixer's hue sliders, the colour it adds towards each end.
+ac:
+- Each of the three colour balance sliders shows a gradient along its track: the cast of the full amount at -100 on the left (cyan, magenta or yellow), a neutral grey in the middle, and the cast of the full amount at +100 on the right (red, green or blue)
+- The colours of the ends follow the pipeline's own rule: the channel gains of AXIS_STOPS at -100 and +100 applied to a mid grey, read as linear Rec.2020 and shown in sRGB as the split toning swatches of U-31 are; the constant is checked by a test against the Rust source, as U-31 does for the band centres
+- The gradient keeps the meaning of the label: the left end is the colour named first (cyan, magenta, yellow), as the slider's negative values add it
+- The gradient is decoration, hidden from assistive technology; the slider's name, value text and keys are unchanged; the thumb keeps a contrast of at least 3 to 1 on it, as on the hue sliders
+- The temperature, tint, saturation and vibrance sliders are unchanged
+- Tests: the two end colours and the middle of each axis, the constant against the Rust source, the other sliders of the panel unchanged; component tests; axe clean
+tech:
+FILES: apps/desktop/src/features/develop (hue-colour.ts or a small module beside it, panels/ColourPanel.tsx), docs/specification.md, en.json only if a string is needed.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-11 with U-32. Uses the trackGradient of the shared Slider added by U-31; no change to packages/ui is expected, and one would need the owner's approval. The colours are a guide for the screen in sRGB, not a proof of the result. Out of scope: gradients for the temperature and tint sliders (they could follow the same rule in a later issue), a colour wheel, changing what the sliders do.

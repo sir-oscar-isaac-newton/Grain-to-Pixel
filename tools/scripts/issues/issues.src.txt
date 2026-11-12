@@ -2985,3 +2985,29 @@ ROUTES: one command that starts the sweep job and its result type, and one that 
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-11, to build and test later; it comes after H-22. The camera drives focus only with a lens that has a focus motor and in live view; a manual lens or bellows cannot be swept, and the feature is then hidden with a line saying why. Capture and tether tests must not touch the real camera: tests that need no camera are guarded as the existing ones are. Out of scope: focus stacking of the scans themselves, moving the camera or the film holder by a motor, a finer grid than 3 by 3.
+
+## T-13
+title: Unique self-removing test folders in the other crates
+milestone: M6
+type: test
+size: M
+estimate: 1d
+deps: T-12
+adr: no
+spec: none
+desc: T-12 found that tests in gtp-app named their folder in the temp folder by the process id alone, or removed it while a library was still open, so a folder could stay behind and a later run with the same process id could meet it. T-12 fixed gtp-app with a test-only TempDir. Its search found the same fault in the tests of the other crates, which can fail at random in the same way and which leave folders behind on every run. Fix them in the same way.
+ac:
+- Every test in gtp-ingest (merge.rs, channel.rs, fixture.rs, capture.rs, tests/nkscan_fake.rs), gtp-io (raw/nef.rs, hash.rs, export.rs), tools/benchmark (report.rs, manifest.rs, golden.rs, fit.rs), the desktop crate (logging.rs, crash.rs, ipc.rs, lib.rs, commands/ingest.rs) and gtp-app (tests/calibration_hardware.rs, benches/pipeline.rs) that names a folder or file in the temp folder by the process id alone gets a name no other test or run can share
+- The folders that the desktop commands tests and the gtp-catalog test leave behind (25 per run of the workspace suite, among them gtp-capture-commands, gtp-cmd, gtp-ipc-raw and gtp-catalog-unclean) are removed when the test ends, also when it fails; a database inside a folder is closed before the folder is removed
+- A search of the whole workspace for folders and files made in the temp folder by tests is in the pull request, with each place listed as fixed, already sound, or left and why
+- After two runs of the workspace suite no new gtp folder is left in the temp folder, or the pull request names each one that is and says why it is kept
+- The workspace suite passes when run ten times in a row with the tests in parallel; the pull request states the number of runs
+- How the helper is shared is decided with the plan and approved by the owner: a small copy per crate, or one helper the crates share; no new dependency without the owner's approval
+- No change to production code; a fixed name in production code (the grain-to-pixel folder in the desktop lib.rs) and files a test writes on purpose for a person to open are left and listed
+- Hardware tests are changed only in how they name and remove their folder, and nothing touches the real camera or scanner
+tech:
+FILES: the test modules named in ac, crates/gtp-catalog (its tests), apps/desktop/src-tauri/src/commands (their tests), and wherever the shared helper goes.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: the changed tests, the repeated run and the count of folders left, as in ac.
+NOTES: asked for by the owner on 2026-11-11 after T-12 (PR 336). The TempDir of T-12 is in the test code of gtp-app and cannot be used from other crates as it is. The fixed names in crates/gtp-capture/tests/gphoto_hardware.rs (gtp-gphoto-hardware) and tools/spikes/nef-probe are looked at and listed. Capture and tether tests must not touch the real camera: guards on tests are not changed. Out of scope: deleting the folders earlier runs left in a developer's temp folder, other kinds of flaky test.

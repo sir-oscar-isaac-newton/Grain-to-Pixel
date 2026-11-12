@@ -223,6 +223,10 @@
                  "number":  204,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/204"
              },
+    "T-13":  {
+                 "number":  337,
+                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/337"
+             },
     "P-10":  {
                  "number":  22,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/22"
@@ -230,10 +234,6 @@
     "H-11":  {
                  "number":  167,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/167"
-             },
-    "H-23":  {
-                 "number":  334,
-                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/334"
              },
     "H-09":  {
                  "number":  58,
@@ -383,9 +383,9 @@
                  "number":  304,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/304"
              },
-    "D-01":  {
-                 "number":  3,
-                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/3"
+    "H-23":  {
+                 "number":  334,
+                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/334"
              },
     "R-06":  {
                  "number":  199,
@@ -430,6 +430,10 @@
     "U-13":  {
                  "number":  90,
                  "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/90"
+             },
+    "D-01":  {
+                 "number":  3,
+                 "url":  "https://github.com/sir-oscar-isaac-newton/Grain-to-Pixel/issues/3"
              },
     "H-10":  {
                  "number":  59,

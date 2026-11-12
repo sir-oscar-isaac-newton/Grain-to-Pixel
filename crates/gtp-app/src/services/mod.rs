@@ -24,4 +24,4 @@ pub mod triplets;
 pub mod verify;
 
 #[cfg(test)]
-mod testkit;
+pub(crate) mod testkit;

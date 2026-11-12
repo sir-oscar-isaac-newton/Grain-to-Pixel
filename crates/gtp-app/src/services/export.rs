@@ -617,14 +617,13 @@ mod tests {
 
     #[test]
     fn an_existing_name_gets_a_number_and_nothing_is_overwritten() {
-        let dir = std::env::temp_dir().join(format!("gtp-export-free-{}", FrameId::new()));
-        std::fs::create_dir_all(&dir).unwrap();
-        assert_eq!(free_path(&dir, "a.tif").unwrap(), dir.join("a.tif"));
+        let temp = crate::services::testkit::TempDir::new("export-free");
+        let dir = temp.path();
+        assert_eq!(free_path(dir, "a.tif").unwrap(), dir.join("a.tif"));
         std::fs::write(dir.join("a.tif"), b"x").unwrap();
-        assert_eq!(free_path(&dir, "a.tif").unwrap(), dir.join("a (2).tif"));
+        assert_eq!(free_path(dir, "a.tif").unwrap(), dir.join("a (2).tif"));
         std::fs::write(dir.join("a (2).tif"), b"x").unwrap();
-        assert_eq!(free_path(&dir, "a.tif").unwrap(), dir.join("a (3).tif"));
-        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(free_path(dir, "a.tif").unwrap(), dir.join("a (3).tif"));
     }
 
     #[test]

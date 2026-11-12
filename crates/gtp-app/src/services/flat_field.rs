@@ -306,6 +306,7 @@ pub fn remeasure_roll_base(library: &Library, roll: RollId) -> Result<bool, AppE
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::testkit::TempDir;
 
     /// A picture whose light falls off towards the left and right edges, more for red than for
     /// green, and not at all for blue.
@@ -422,8 +423,8 @@ mod tests {
 
     #[test]
     fn files_that_are_not_one_bare_light_triplet_are_refused() {
-        let dir = std::env::temp_dir().join(format!("gtp-flat-import-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp = TempDir::new("flat-import");
+        let dir = temp.path();
         let lib = Library::create(&dir.join("lib"), "Flat").unwrap();
         let roll = crate::services::roll_frame::roll_create(
             &lib,
@@ -463,6 +464,5 @@ mod tests {
         );
         assert!(!lib.read(|c| c.get_roll(roll)).unwrap().has_flat_field);
         assert!(!flat_field_clear(&lib, roll).unwrap());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

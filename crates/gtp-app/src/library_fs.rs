@@ -44,21 +44,19 @@ pub fn free_space(path: &Path) -> Result<u64, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::testkit::TempDir;
 
     #[test]
     fn the_layout_is_created_and_relative_paths_follow_it() {
-        let root = std::env::temp_dir().join(format!(
-            "gtp-layout-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
-        ensure_layout(&root).unwrap();
-        ensure_layout(&root).unwrap();
+        let temp = TempDir::new("layout");
+        let root = temp.path();
+        ensure_layout(root).unwrap();
+        ensure_layout(root).unwrap();
         for dir in DIRS {
             assert!(root.join(dir).is_dir());
         }
-        assert!(!is_library(&root));
-        assert!(free_space(&root).unwrap() > 0);
+        assert!(!is_library(root));
+        assert!(free_space(root).unwrap() > 0);
 
         let (roll, frame) = (RollId::new(), FrameId::new());
         assert_eq!(
@@ -71,6 +69,5 @@ mod tests {
             thumb_rel(frame),
             Path::new("thumbs").join(format!("{frame}.jpg"))
         );
-        std::fs::remove_dir_all(&root).unwrap();
     }
 }

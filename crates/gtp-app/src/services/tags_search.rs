@@ -99,28 +99,24 @@ pub fn search(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use gtp_core::{Frame, FrameKind};
 
     use super::*;
     use crate::library_fs::thumb_rel;
     use crate::services::roll_frame::{roll_create, RollInput, MAX_PAGE_SIZE};
+    use crate::services::testkit::TempDir;
 
     struct TempLib {
-        dir: PathBuf,
         lib: Library,
+        /// Last, so the folder goes after the library has closed its database.
+        _temp: TempDir,
     }
 
     impl TempLib {
         fn new(label: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!(
-                "gtp-tagssearch-{label}-{}-{}",
-                std::process::id(),
-                FrameId::new()
-            ));
-            let lib = Library::create(&dir, "Test").unwrap();
-            Self { dir, lib }
+            let temp = TempDir::new(&format!("tagssearch-{label}"));
+            let lib = Library::create(temp.path(), "Test").unwrap();
+            Self { lib, _temp: temp }
         }
 
         fn roll(&self, name: &str, camera: &str) -> RollId {
@@ -153,12 +149,6 @@ mod tests {
                 edited_at: None,
             };
             self.lib.write(|c| c.insert_frame(&frame)).unwrap().id
-        }
-    }
-
-    impl Drop for TempLib {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.dir);
         }
     }
 
@@ -364,12 +354,9 @@ mod tests {
     #[test]
     fn a_read_only_library_can_be_searched_but_not_tagged() {
         use std::io::{Seek, SeekFrom, Write};
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-tagssearch-readonly-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
-        let library = Library::create(&dir, "Test").unwrap();
+        let temp = TempDir::new("tagssearch-readonly");
+        let dir = temp.path();
+        let library = Library::create(dir, "Test").unwrap();
         let roll = roll_create(
             &library,
             RollInput {
@@ -402,7 +389,7 @@ mod tests {
             file.write_all(&(gtp_catalog::SCHEMA_VERSION + 1).to_be_bytes())
                 .unwrap();
         }
-        let readonly = Library::open(&dir).unwrap();
+        let readonly = Library::open(dir).unwrap();
         assert!(readonly.is_read_only());
         assert_eq!(
             search(&readonly, &SearchQuery::default(), 0, 10)
@@ -412,7 +399,5 @@ mod tests {
         );
         let err = tag_apply(&readonly, &[f], &names(&["x"]), &[]).unwrap_err();
         assert_eq!(err.code, ErrorCode::LibraryTooNew);
-        drop(readonly);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

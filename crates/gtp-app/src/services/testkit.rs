@@ -1,6 +1,7 @@
 //! A small library with synthetic frames, shared by the tests of the services that render.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use gtp_core::testing::synthetic::{self, Params, Pattern};
@@ -12,11 +13,62 @@ use crate::services::develop::DevelopService;
 use crate::services::library::Library;
 use crate::services::roll_frame::{roll_create, RollInput};
 
+/// A folder in the system temporary folder that no other test or run can share and that is
+/// removed when the guard is dropped, also when the test fails by panic.
+///
+/// The name is the label, the process id, a counter of this process and a random id: process ids
+/// are reused (Windows does it quickly), so a name made of the process id alone can meet a folder
+/// an earlier run left behind. Removal errors are ignored. Close a database inside the folder
+/// first, since Windows will not delete an open file.
+pub(crate) struct TempDir(PathBuf);
+
+static TEMP_DIRS: AtomicU64 = AtomicU64::new(0);
+
+impl TempDir {
+    /// Creates the folder, named `gtp-<label>-<process id>-<count>-<random>`.
+    pub(crate) fn new(label: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!(
+            "gtp-{label}-{}-{}-{}",
+            std::process::id(),
+            TEMP_DIRS.fetch_add(1, Ordering::Relaxed),
+            FrameId::new()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        Self(dir)
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for TempDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for TempDir {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 pub(crate) struct Fixture {
     pub(crate) dir: PathBuf,
     pub(crate) library: Arc<Library>,
     pub(crate) roll: RollId,
     pub(crate) service: Arc<DevelopService>,
+    /// Last, so the folder goes after the library has closed its database.
+    _temp: TempDir,
 }
 
 /// Adds a frame to a roll whose original is a synthetic negative of the given size.
@@ -108,11 +160,8 @@ pub(crate) fn add_frame_params(
 
 impl Fixture {
     pub(crate) fn new(label: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-develop-{label}-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let temp = TempDir::new(&format!("develop-{label}"));
+        let dir = temp.path().to_owned();
         let library = Arc::new(Library::create(&dir, "Develop").unwrap());
         let roll = roll_create(
             &library,
@@ -128,6 +177,7 @@ impl Fixture {
             library,
             roll,
             service: Arc::new(DevelopService::default()),
+            _temp: temp,
         }
     }
 
@@ -185,11 +235,5 @@ impl Fixture {
             .unwrap()
             .edited_at
             .is_some()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }

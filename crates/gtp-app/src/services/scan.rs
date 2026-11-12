@@ -226,7 +226,6 @@ fn skip_text(reason: SkipReason) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use std::sync::Mutex;
 
     use gtp_core::testing::synthetic::{self, Params, Pattern};
@@ -235,6 +234,7 @@ mod tests {
 
     use super::*;
     use crate::services::roll_frame::{roll_create, RollInput};
+    use crate::services::testkit::TempDir;
 
     #[derive(Default)]
     struct Events {
@@ -248,21 +248,19 @@ mod tests {
     }
 
     struct Setup {
-        dir: PathBuf,
         library: Library,
         roll: RollId,
         source: FixtureSource,
+        /// Last, so the folder goes after the library has closed its database.
+        _temp: TempDir,
     }
 
     impl Setup {
         /// A library with one roll, and a fixture folder of `frames` synthetic negatives with
         /// infrared (as 4-channel files).
         fn new(label: &str, frames: u32) -> Self {
-            let dir = std::env::temp_dir().join(format!(
-                "gtp-scan-{label}-{}-{}",
-                std::process::id(),
-                FrameId::new()
-            ));
+            let temp = TempDir::new(&format!("scan-{label}"));
+            let dir = temp.path().to_owned();
             let library = Library::create(&dir.join("lib"), "Scans").unwrap();
             let roll = roll_create(
                 &library,
@@ -303,9 +301,9 @@ mod tests {
             }
             Self {
                 source: FixtureSource::new(&fixtures),
-                dir,
                 library,
                 roll,
+                _temp: temp,
             }
         }
 
@@ -327,12 +325,6 @@ mod tests {
 
         fn frames(&self) -> Vec<gtp_core::Frame> {
             self.library.read(|c| c.list_frames(self.roll)).unwrap()
-        }
-    }
-
-    impl Drop for Setup {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.dir);
         }
     }
 

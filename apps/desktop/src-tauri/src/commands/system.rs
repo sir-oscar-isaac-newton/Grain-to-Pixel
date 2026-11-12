@@ -240,12 +240,8 @@ mod tests {
         fn error(&self, _: JobId, _: AppError) {}
     }
 
-    fn temp_dir(label: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "gtp-system-{label}-{}-{}",
-            std::process::id(),
-            gtp_core::FrameId::new()
-        ))
+    fn temp_dir(label: &str) -> gtp_core::testing::TempDir {
+        gtp_core::testing::TempDir::new(&format!("system-{label}"))
     }
 
     #[test]
@@ -283,13 +279,11 @@ mod tests {
             );
         }
         drop(ctx);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn without_a_library_there_are_no_counters_but_the_export_still_works() {
         let dir = temp_dir("nolib");
-        std::fs::create_dir_all(&dir).unwrap();
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         assert_eq!(counters_of(&ctx).unwrap(), None);
         let jobs = JobManager::new(std::sync::Arc::new(Quiet));
@@ -302,7 +296,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(&std::fs::read(&dest).unwrap()[..2], b"PK");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[derive(Clone, Default)]

@@ -98,11 +98,8 @@ fn spawn_pruner(dir: std::path::PathBuf) {
 mod tests {
     use super::*;
 
-    fn temp_dir(label: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("gtp-log-{label}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(label: &str) -> gtp_core::testing::TempDir {
+        gtp_core::testing::TempDir::new(&format!("log-{label}"))
     }
 
     fn write(dir: &Path, name: &str, len: usize) {
@@ -121,7 +118,6 @@ mod tests {
         assert!(!dir.join("gtp.2026-10-28.log").exists());
         assert!(dir.join("gtp.2026-10-29.log").exists());
         assert!(dir.join("other.txt").exists(), "unrelated files are kept");
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -133,7 +129,6 @@ mod tests {
         assert_eq!(prune_to_cap(&dir, 10).unwrap(), 1);
         assert!(dir.join("gtp.2026-10-30.log").exists());
         assert_eq!(prune_to_cap(&dir, 10).unwrap(), 0);
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -141,7 +136,6 @@ mod tests {
         let dir = temp_dir("under");
         write(&dir, "gtp.2026-10-30.log", 100);
         assert_eq!(prune_to_cap(&dir, 1000).unwrap(), 0);
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -170,6 +164,5 @@ mod tests {
         assert_eq!(value["level"], "INFO");
         assert_eq!(value["fields"]["message"], "library opened");
         assert_eq!(value["fields"]["frame_id"], 7);
-        fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -7,6 +7,8 @@ mod icc;
 mod limits;
 mod metadata;
 mod raw;
+#[cfg(test)]
+mod testkit;
 mod tiff;
 
 pub use export::{

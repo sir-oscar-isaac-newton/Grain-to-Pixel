@@ -553,16 +553,14 @@ mod tests {
                 .code,
             ErrorCode::Cancelled
         );
-        let empty = std::env::temp_dir().join(format!("gtp-fixture-empty-{}", std::process::id()));
-        fs::create_dir_all(&empty).unwrap();
+        let empty = gtp_core::testing::TempDir::new("fixture-empty");
         assert_eq!(
-            FixtureSource::new(&empty)
+            FixtureSource::new(empty.path())
                 .preview(FIXTURE_DEVICE_ID, &go)
                 .unwrap_err()
                 .code,
             ErrorCode::ScannerUnavailable
         );
-        let _ = fs::remove_dir_all(&empty);
     }
 
     /// Replays the first scans of the private samples folder. Run by hand with

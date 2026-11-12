@@ -247,12 +247,8 @@ mod tests {
         app.updater().unwrap()
     }
 
-    fn store(label: &str) -> (SettingsStore, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-update-{label}-{}-{}",
-            std::process::id(),
-            gtp_core::FrameId::new()
-        ));
+    fn store(label: &str) -> (SettingsStore, gtp_core::testing::TempDir) {
+        let dir = gtp_core::testing::TempDir::new(&format!("update-{label}"));
         (SettingsStore::load(&dir.join("settings.json")).0, dir)
     }
 
@@ -270,7 +266,7 @@ mod tests {
     fn a_newer_version_is_offered_and_its_package_verifies() {
         let server = serve("9.9.9", SIGNATURE, PAYLOAD);
         let app = app_for(&server);
-        let (settings, dir) = store("newer");
+        let (settings, _dir) = store("newer");
         let (outcome, update) = check(&app, &settings, false, 1_000);
         let UpdateOutcome::Available { version, notes, .. } = outcome else {
             unreachable!("expected an update, got {outcome:?}");
@@ -281,7 +277,6 @@ mod tests {
         let bytes = tauri::async_runtime::block_on(update.download(|_, _| {}, || {})).unwrap();
         assert_eq!(bytes, PAYLOAD);
         assert_eq!(settings.get().last_update_check, Some(1_000));
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -289,11 +284,10 @@ mod tests {
         for version in ["0.0.0", "0.0.1"] {
             let server = serve(version, SIGNATURE, PAYLOAD);
             let app = app_for(&server);
-            let (settings, dir) = store("older");
+            let (settings, _dir) = store("older");
             let (outcome, update) = check(&app, &settings, false, 1_000);
             assert_eq!(outcome, UpdateOutcome::UpToDate);
             assert!(update.is_none());
-            let _ = std::fs::remove_dir_all(dir);
         }
     }
 
@@ -302,12 +296,11 @@ mod tests {
         static TAMPERED: [u8; 8] = *b"tampered";
         let server = serve("9.9.9", SIGNATURE, &TAMPERED);
         let app = app_for(&server);
-        let (settings, dir) = store("tampered");
+        let (settings, _dir) = store("tampered");
         let (_, update) = check(&app, &settings, false, 1_000);
         let err =
             tauri::async_runtime::block_on(update.unwrap().download(|_, _| {}, || {})).unwrap_err();
         assert_eq!(update_error(err).code, ErrorCode::InvalidInput);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -316,12 +309,11 @@ mod tests {
         // different (say, newer) version number is a downgrade attempt.
         let server = serve("9.9.10", SIGNATURE, PAYLOAD);
         let app = app_for(&server);
-        let (settings, dir) = store("version-mismatch");
+        let (settings, _dir) = store("version-mismatch");
         let (_, update) = check(&app, &settings, false, 1_000);
         let err =
             tauri::async_runtime::block_on(update.unwrap().download(|_, _| {}, || {})).unwrap_err();
         assert_eq!(update_error(err).code, ErrorCode::InvalidInput);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -329,19 +321,18 @@ mod tests {
         // A signature of another file: well formed, but not made for this package.
         let server = serve("9.9.9", "dW50cnVzdGVkIGNvbW1lbnQ6IG5vdA==", PAYLOAD);
         let app = app_for(&server);
-        let (settings, dir) = store("wrong-signature");
+        let (settings, _dir) = store("wrong-signature");
         let (_, update) = check(&app, &settings, false, 1_000);
         let err =
             tauri::async_runtime::block_on(update.unwrap().download(|_, _| {}, || {})).unwrap_err();
         assert_eq!(update_error(err).code, ErrorCode::InvalidInput);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn nothing_is_asked_when_the_flag_is_off_even_for_a_manual_check() {
         let server = serve("9.9.9", SIGNATURE, PAYLOAD);
         let app = app_for(&server);
-        let (settings, dir) = store("off");
+        let (settings, _dir) = store("off");
         settings
             .update(&SettingsPatch {
                 flags: Some(FlagsPatch {
@@ -358,14 +349,13 @@ mod tests {
         }
         assert_eq!(server.requests.load(Ordering::SeqCst), 0);
         assert_eq!(settings.get().last_update_check, None);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn the_launch_check_waits_a_day_but_a_manual_check_does_not() {
         let server = serve("9.9.9", SIGNATURE, PAYLOAD);
         let app = app_for(&server);
-        let (settings, dir) = store("daily");
+        let (settings, _dir) = store("daily");
         assert!(matches!(
             check(&app, &settings, false, 1_000).0,
             UpdateOutcome::Available { .. }
@@ -390,7 +380,6 @@ mod tests {
             check(&app, &settings, false, next_day).0,
             UpdateOutcome::Available { .. }
         ));
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -400,7 +389,7 @@ mod tests {
             url: "http://127.0.0.1:9/latest.json".into(),
             requests: server.requests.clone(),
         });
-        let (settings, dir) = store("offline");
+        let (settings, _dir) = store("offline");
         let err = tauri::async_runtime::block_on(check_update(
             &updater_of_app(&app),
             &settings,
@@ -411,6 +400,5 @@ mod tests {
         .unwrap();
         assert_eq!(err.code, ErrorCode::Io);
         assert_eq!(settings.get().last_update_check, None);
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

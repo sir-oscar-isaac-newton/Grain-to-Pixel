@@ -703,12 +703,11 @@ mod tests {
 
     /// A folder with a synthetic LS-50 scan and the reference made of our own render of it, turned a
     /// quarter turn clockwise as Nikon Scan's positives lie against the scans.
-    fn scan_pair(label: &str) -> (std::path::PathBuf, Manifest, [f32; 3]) {
+    fn scan_pair(label: &str) -> (gtp_core::testing::TempDir, Manifest, [f32; 3]) {
         use gtp_core::testing::synthetic::{self, Params, Pattern};
         use gtp_io::{from_f32_linear, write_tiff16, Compression};
 
-        let dir = std::env::temp_dir().join(format!("gtp-report-{label}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = gtp_core::testing::TempDir::new(&format!("report-{label}"));
         let s = synthetic::negative(
             3,
             &Params {
@@ -777,7 +776,7 @@ mod tests {
 
     #[test]
     fn a_scan_pair_is_converted_turned_back_registered_and_compared() {
-        let (dir, mut manifest, base) = scan_pair("scan");
+        let (_dir, mut manifest, base) = scan_pair("scan");
         manifest.film_base = Some(base);
         let report = run(
             &manifest,
@@ -805,12 +804,11 @@ mod tests {
         assert_eq!((report.rolls[0].compared, report.rolls[0].frames), (1, 1));
         assert_eq!(report.rolls[0].film_base, base);
         assert!(report.pooled_median < 1.0);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn the_film_base_is_measured_per_roll_when_it_is_not_given() {
-        let (dir, manifest, _) = scan_pair("rolls");
+        let (_dir, manifest, _) = scan_pair("rolls");
         // The same scan and reference under two rolls: each roll measures its own base.
         let mut two = manifest.clone();
         let mut second = manifest.pairs[0].clone();
@@ -830,7 +828,6 @@ mod tests {
         assert_eq!(report.rolls[0].film_base, report.rolls[1].film_base);
         assert_eq!(report.frames.len(), 2);
         assert!(report.frames.iter().all(|f| f.median.is_some()));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -861,7 +858,6 @@ mod tests {
             details.contains("positive.tif"),
             "the file is named: {details}"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
     #[test]
     fn the_crop_gap_is_the_largest_edge_difference() {

@@ -37,6 +37,8 @@ tauri-plugin-updater = "2"
 [dev-dependencies]
 # Mock runtime, to check that job events reach the webview layer (src/sink.rs tests).
 tauri = { version = "2", features = ["test"] }
+# Unique self-removing test folders (gtp_core::testing::TempDir). Dev only, so the release build does not get the feature.
+gtp-core = { path = "../../../crates/gtp-core", version = "0.0.0", features = ["testing"] }
 
 [lints]
 workspace = true

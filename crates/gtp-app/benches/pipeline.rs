@@ -12,6 +12,7 @@ use gtp_app::{
     analyze, build_proxy, render, PipelineInput, RenderTarget, PREVIEW_EDGE, PROXY_EDGE,
 };
 use gtp_core::testing::synthetic::{self, Params, Synthetic};
+use gtp_core::testing::TempDir;
 use gtp_core::{ImageF32, Recipe};
 use gtp_io::{from_f32_linear, read_tiff16, to_f32_linear, write_tiff16, Compression, Limits};
 
@@ -105,7 +106,8 @@ fn full_resolution(c: &mut Criterion) {
     scan.image = image;
     let recipe = recipe_for(&scan);
 
-    let path = std::env::temp_dir().join(format!("gtp-bench-{}.tif", std::process::id()));
+    let dir = TempDir::new("bench");
+    let path = dir.join("full.tif");
     let written = from_f32_linear(&scan.image);
     if write_tiff16(&path, &written, Compression::None).is_ok() {
         let mut group = c.benchmark_group("open a 21 MP frame");

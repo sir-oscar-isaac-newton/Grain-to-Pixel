@@ -74,14 +74,11 @@ mod tests {
 
     #[test]
     fn flagging_runs_against_the_open_library_and_filters_the_list() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-cmd-flag-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("cmd-flag");
         let app = tauri::test::mock_app();
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
 
         // No library open: a typed NotFound.
         let err = frame_set_flag(app.state(), vec![], FrameFlag::Pick).unwrap_err();
@@ -148,7 +145,5 @@ mod tests {
         assert_eq!(page.items[0].id, frames[1]);
 
         drop(library);
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

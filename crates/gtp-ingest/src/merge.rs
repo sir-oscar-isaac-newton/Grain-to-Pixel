@@ -362,8 +362,7 @@ mod tests {
 
     #[test]
     fn the_exposure_of_the_real_files_is_compared_when_they_say_it() {
-        let dir = std::env::temp_dir().join(format!("gtp-merge-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = gtp_core::testing::TempDir::new("merge");
         let write = |name: &str, exposure: (u32, u32)| {
             let path = dir.join(name);
             std::fs::write(&path, tiff_with_exposure(exposure, 200, (56, 10))).unwrap();
@@ -386,7 +385,6 @@ mod tests {
             .collect();
         let merged = merge(&Fake(map), &paths).unwrap();
         assert_eq!(merged.warnings, [TripletWarning::ExposureTimeMismatch]);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Merges the first real triplet of the private D600 session (red-, green- and blue-lit) and

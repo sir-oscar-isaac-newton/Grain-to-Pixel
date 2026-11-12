@@ -353,9 +353,8 @@ pub fn build_scans(
 mod tests {
     use super::*;
 
-    fn folder(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("gtp-manifest-{label}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+    fn folder(label: &str) -> gtp_core::testing::TempDir {
+        let dir = gtp_core::testing::TempDir::new(&format!("manifest-{label}"));
         for name in ["r.nef", "g.nef", "b.nef", "ref.tif"] {
             std::fs::write(dir.join(name), b"x").unwrap();
         }
@@ -392,7 +391,6 @@ mod tests {
         // Without a format the roll is 645, and without a base it is measured.
         let plain = parse(&format!(r#"{{"pairs":[{}]}}"#, pair("01")), &dir).unwrap();
         assert_eq!((plain.format, plain.film_base), (FilmFormat::Mf645, None));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -411,7 +409,6 @@ mod tests {
         assert!(parse(&with(r#"["r.nef","g.nef"]"#), &dir).is_err());
         let err = parse(&with(r#"["r.nef","g.nef","gone.nef"]"#), &dir).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -429,7 +426,6 @@ mod tests {
         assert!(text.contains(r#""format": "645""#), "{text}");
         let missing = build(&dir.join("nope"), &dir, "645").unwrap_err();
         assert_eq!(missing.code, ErrorCode::NotFound);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -472,7 +468,6 @@ mod tests {
         assert_eq!(parse(half, &dir).unwrap_err().code, ErrorCode::InvalidInput);
         let none = r#"{"pairs":[{"name":"x","reference":"ref.tif"}]}"#;
         assert_eq!(parse(none, &dir).unwrap_err().code, ErrorCode::InvalidInput);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -489,7 +484,7 @@ mod tests {
         assert_eq!(positive_of("0001"), None);
         assert_eq!(positive_of(""), None);
 
-        let dir = std::env::temp_dir().join(format!("gtp-manifest-match-{}", std::process::id()));
+        let dir = gtp_core::testing::TempDir::new("manifest-match");
         let scans = dir.join("scans");
         let refs = dir.join("refs");
         std::fs::create_dir_all(&scans).unwrap();
@@ -531,7 +526,6 @@ mod tests {
                 .code,
             ErrorCode::NotFound
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -562,6 +556,5 @@ mod tests {
             read(&dir.join("no-such.json")).unwrap_err().code,
             ErrorCode::NotFound
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

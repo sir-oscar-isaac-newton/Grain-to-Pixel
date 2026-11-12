@@ -269,17 +269,21 @@ mod tests {
     struct Fixture {
         app: App<MockRuntime>,
         roll: RollId,
-        dir: std::path::PathBuf,
+        /// Last, so the folder goes after the app has closed the library database.
+        dir: gtp_core::testing::TempDir,
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            // The mock app keeps its state for ever: release the library before the folder goes.
+            crate::testkit::release_context(&self.app);
+        }
     }
 
     fn fixture(label: &str) -> Fixture {
         let app = mock_app();
         crate::ipc::builder::<MockRuntime>().mount_events(&app);
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-capture-commands-{label}-{}-{}",
-            std::process::id(),
-            gtp_core::FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new(&format!("capture-commands-{label}"));
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         ctx.create_library(&dir.join("lib"), "Capture").unwrap();
         let roll = gtp_app::services::roll_frame::roll_create(
@@ -304,12 +308,6 @@ mod tests {
         app.manage(ctx);
         app.manage(Hardware::from_vars(Some("1"), Some(OsString::from("none"))));
         Fixture { app, roll, dir }
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.dir);
-        }
     }
 
     fn listen(

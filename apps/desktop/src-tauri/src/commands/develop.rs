@@ -203,14 +203,11 @@ mod tests {
 
     #[test]
     fn analysing_and_sampling_need_an_open_library_and_a_known_frame() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-cmd-sample-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("cmd-sample");
         let app = tauri::test::mock_app();
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
         let region = Crop {
             x: 0.1,
             y: 0.1,
@@ -245,16 +242,10 @@ mod tests {
         let err = develop_sample_neutral(app.state(), FrameId::new(), Recipe::default(), region)
             .unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
     #[test]
     fn recipe_commands_map_errors_and_run_against_the_open_library() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-cmd-recipe-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("cmd-recipe");
         let app = tauri::test::mock_app();
         crate::ipc::builder::<tauri::test::MockRuntime>().mount_events(&app);
         app.manage(EventsState(std::sync::Arc::new(TauriJobSink::new(
@@ -262,6 +253,7 @@ mod tests {
         ))));
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
 
         // No library open: a typed NotFound.
         let err =
@@ -357,7 +349,5 @@ mod tests {
         assert_eq!(merged.color, Recipe::default().color);
 
         drop(library);
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

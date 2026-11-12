@@ -471,13 +471,15 @@ mod tests {
 
     /// Three synthetic scans, and references made of our own render of each with a known Frontier
     /// look, so the fit has an answer to find.
-    fn known_look_manifest(label: &str, known: &FrontierParams) -> (std::path::PathBuf, Manifest) {
+    fn known_look_manifest(
+        label: &str,
+        known: &FrontierParams,
+    ) -> (gtp_core::testing::TempDir, Manifest) {
         use gtp_app::analyze_with_levels;
         use gtp_core::testing::synthetic::{self, Params, Pattern};
         use gtp_io::{from_f32_linear, to_output, write_tiff16, Compression, Tiff16};
 
-        let dir = std::env::temp_dir().join(format!("gtp-fit-{label}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = gtp_core::testing::TempDir::new(&format!("fit-{label}"));
         let mut pairs = Vec::new();
         for (i, pattern) in [Pattern::Blobs, Pattern::Gradient, Pattern::Blobs]
             .into_iter()
@@ -555,7 +557,7 @@ mod tests {
             gamma: 1.3,
             saturation: 1.25,
         };
-        let (dir, mut manifest) = known_look_manifest("known", &known);
+        let (_dir, mut manifest) = known_look_manifest("known", &known);
         // The rolls' base is measured on the frames, as the report does.
         manifest.film_base = None;
         let report =
@@ -579,7 +581,6 @@ mod tests {
             "{:?}",
             r.params
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

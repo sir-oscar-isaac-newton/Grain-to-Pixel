@@ -121,17 +121,16 @@ mod tests {
 
     use super::*;
 
-    fn temp(label: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "gtp-fixture-{label}-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ))
+    /// A folder that goes with the first value, and a library path inside it that does not exist yet.
+    fn temp(label: &str) -> (gtp_core::testing::TempDir, std::path::PathBuf) {
+        let folder = gtp_core::testing::TempDir::new(&format!("fixture-{label}"));
+        let library = folder.join("library");
+        (folder, library)
     }
 
     #[test]
     fn builds_a_library_whose_frames_all_have_a_thumbnail() {
-        let dir = temp("ok");
+        let (_folder, dir) = temp("ok");
         let built = build(&dir, 31, 4).unwrap();
         assert_eq!(
             built,
@@ -163,12 +162,11 @@ mod tests {
         );
 
         drop(library);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn shares_frames_over_rolls_as_evenly_as_they_divide() {
-        let dir = temp("share");
+        let (_folder, dir) = temp("share");
         build(&dir, 10, 3).unwrap();
         let library = Library::open(&dir).unwrap();
         let mut sizes: Vec<u32> = gtp_app::services::roll_frame::roll_list(&library)
@@ -192,12 +190,11 @@ mod tests {
         sizes.sort_unstable();
         assert_eq!(sizes, [3, 3, 4]);
         drop(library);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn refuses_nonsense_sizes_and_an_existing_library() {
-        let dir = temp("bad");
+        let (_folder, dir) = temp("bad");
         for (frames, rolls) in [(0, 1), (5, 0), (2, 3)] {
             assert_eq!(
                 build(&dir, frames, rolls).unwrap_err().code,
@@ -211,6 +208,5 @@ mod tests {
             ErrorCode::InvalidInput,
             "a library already there is not overwritten"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

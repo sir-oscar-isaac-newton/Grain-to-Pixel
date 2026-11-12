@@ -146,10 +146,10 @@ mod tests {
 
     #[test]
     fn bindings_describe_commands_and_the_error_type() {
-        let path = std::env::temp_dir().join(format!("gtp-bindings-{}.ts", std::process::id()));
+        let dir = gtp_core::testing::TempDir::new("bindings");
+        let path = dir.join("bindings.ts");
         export_bindings(&path).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        std::fs::remove_file(&path).unwrap();
 
         assert!(
             text.contains("libraryInfo"),
@@ -285,14 +285,12 @@ mod tests {
 
     #[test]
     fn export_is_deterministic() {
-        let dir = std::env::temp_dir();
-        let a = dir.join(format!("gtp-bindings-a-{}.ts", std::process::id()));
-        let b = dir.join(format!("gtp-bindings-b-{}.ts", std::process::id()));
+        let dir = gtp_core::testing::TempDir::new("bindings-twice");
+        let a = dir.join("a.ts");
+        let b = dir.join("b.ts");
         export_bindings(&a).unwrap();
         export_bindings(&b).unwrap();
         assert_eq!(std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
-        std::fs::remove_file(&a).unwrap();
-        std::fs::remove_file(&b).unwrap();
     }
 
     /// Sends one command through the app's real handler on the mock runtime.
@@ -363,11 +361,7 @@ mod tests {
         use gtp_core::{Frame, FrameId, FrameKind};
         use tauri::ipc::InvokeResponseBody;
 
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-ipc-raw-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("ipc-raw");
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         let details = ctx.create_library(&dir.join("lib"), "Raw").unwrap();
         let library = ctx.library().unwrap();
@@ -409,6 +403,7 @@ mod tests {
             .manage(ctx)
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
+        let _release = crate::testkit::ReleaseContext(&app);
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
@@ -488,7 +483,5 @@ mod tests {
             InvokeResponseBody::Json(json) => assert_eq!(json, "null"),
             other => unreachable!("expected JSON, got {other:?}"),
         }
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

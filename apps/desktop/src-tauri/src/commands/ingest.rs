@@ -248,7 +248,6 @@ mod tests {
     use std::time::Duration;
 
     use gtp_app::services::roll_frame::{roll_create, RollInput};
-    use gtp_core::FrameId;
     use tauri::{Listener, Manager};
 
     use super::*;
@@ -257,7 +256,8 @@ mod tests {
     #[test]
     fn a_preview_needs_a_scanner_and_cancel_with_none_running_says_so() {
         let app = tauri::test::mock_app();
-        let missing = std::env::temp_dir().join(format!("gtp-cmd-no-roll-{}", std::process::id()));
+        let temp = gtp_core::testing::TempDir::new("cmd-no-roll");
+        let missing = temp.join("none");
         app.manage(Hardware::from_vars(Some("1"), Some(missing.into())));
         app.manage(ScanPreviewService::default());
         app.manage(JobManager::new(Arc::new(TauriJobSink::new(
@@ -271,11 +271,7 @@ mod tests {
 
     #[test]
     fn a_scan_is_refused_without_a_roll_or_valid_parameters_and_a_failing_scan_reports_an_error() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-cmd-scan-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("cmd-scan");
         let empty = dir.join("no-scans");
         std::fs::create_dir_all(&empty).unwrap();
         let app = tauri::test::mock_app();
@@ -287,6 +283,7 @@ mod tests {
         app.manage(ScanPreviewService::default());
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
         let request = |first: u32, last: u32| ScanRequest {
             device_id: "fixture".into(),
             first_frame: first,
@@ -343,18 +340,11 @@ mod tests {
         assert_eq!(error["id"], id.to_string());
         assert_eq!(error["error"]["code"], "ScanFailed");
         assert_eq!(scan_resume_point(app.state(), roll.id).unwrap(), 1);
-
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn an_import_job_runs_and_reports_through_job_done() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-cmd-import-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("cmd-import");
         let app = tauri::test::mock_app();
         crate::ipc::builder::<tauri::test::MockRuntime>().mount_events(&app);
         let sink = Arc::new(TauriJobSink::new(app.handle().clone()));
@@ -362,6 +352,7 @@ mod tests {
         app.manage(EventsState(sink));
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
         let start = |paths: Vec<String>, roll: RollId, kind: ImportKind| {
             import_files(app.state(), app.state(), app.state(), paths, roll, kind)
         };
@@ -433,9 +424,6 @@ mod tests {
         let err = start(nefs, roll.id, ImportKind::RgbTriplet).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
         assert!(err.message.contains("switched off"), "{}", err.message);
-
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -446,8 +434,7 @@ mod tests {
         assert_eq!(missing.code, ErrorCode::NotFound);
 
         // Files without EXIF cannot be grouped: one flagged candidate, files by name.
-        let dir = std::env::temp_dir().join(format!("gtp-triplet-cmd-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = gtp_core::testing::TempDir::new("triplet-cmd");
         let paths: Vec<String> = ["b.NEF", "a.NEF", "c.NEF"]
             .iter()
             .map(|name| {
@@ -469,6 +456,5 @@ mod tests {
             json[0]["files"][0]["channel"].is_null(),
             "no preview, so no colour"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

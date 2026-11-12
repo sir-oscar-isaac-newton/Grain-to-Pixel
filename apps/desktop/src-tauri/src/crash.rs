@@ -110,10 +110,8 @@ mod tests {
     const CHILD_DIR_ENV: &str = "GTP_CRASH_CHILD_DIR";
     const TEST_NAME: &str = "crash::tests::a_panic_leaves_a_note_that_the_next_start_reports_once";
 
-    fn temp_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("gtp-crash-{label}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        dir
+    fn temp_dir(label: &str) -> gtp_core::testing::TempDir {
+        gtp_core::testing::TempDir::new(&format!("crash-{label}"))
     }
 
     #[test]
@@ -127,7 +125,7 @@ mod tests {
         let dir = temp_dir("subprocess");
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", TEST_NAME, "--test-threads=1"])
-            .env(CHILD_DIR_ENV, &dir)
+            .env(CHILD_DIR_ENV, dir.path())
             .status()
             .unwrap();
         assert!(!status.success(), "the child must have panicked");
@@ -148,7 +146,6 @@ mod tests {
             take_unreported(&dir).unwrap().is_empty(),
             "reported once only"
         );
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     /// A light whose `set_levels` waits for a release, to hold its lock from another thread.
@@ -213,14 +210,14 @@ mod tests {
 
     #[test]
     fn a_missing_directory_means_no_notes() {
-        let dir = temp_dir("missing");
+        let temp = temp_dir("missing");
+        let dir = temp.join("none");
         assert!(take_unreported(&dir).unwrap().is_empty());
     }
 
     #[test]
     fn notes_are_returned_oldest_first_and_other_files_are_ignored() {
         let dir = temp_dir("order");
-        fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("crash-200-1.txt"), "b").unwrap();
         fs::write(dir.join("crash-100-1.txt"), "a").unwrap();
         fs::write(dir.join("gtp.2026-10-30.log"), "log").unwrap();
@@ -232,6 +229,5 @@ mod tests {
             .collect();
         assert_eq!(files, ["crash-100-1.txt", "crash-200-1.txt"]);
         assert!(dir.join("gtp.2026-10-30.log").exists());
-        fs::remove_dir_all(&dir).unwrap();
     }
 }

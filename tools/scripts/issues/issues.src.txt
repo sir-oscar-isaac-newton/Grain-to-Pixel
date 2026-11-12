@@ -2929,3 +2929,59 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: uses the trackGradient of the shared Slider added by U-31; no change to packages/ui is expected, and one would need the owner's approval. The colours are CSS oklch() values, a guide for the screen. Out of scope: gradients for the saturation and lightness sliders, a colour wheel.
+
+## H-22
+title: Aperture-aware film flatness check
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: H-19, H-16
+needs: hw, mac
+adr: no
+spec: specification section 7
+desc: The film flatness map of H-19 measures sharpness in a 3 by 3 grid of one shot and calls the film flat, bowed or tilted by fixed thresholds. The softness it measures already includes the depth of field of the aperture the shot was taken at, so the result holds only for that aperture: a check made wide open calls film bowed that is fine stopped down, and the reverse. The check does not record the aperture, does not say when it differs from the aperture of the capture, and cannot say whether stopping down would help. Make it aware of the aperture, by measurement and not by a depth of field model.
+ac:
+- The check reads the aperture from the camera when the shot is taken and shows it with the result (for example "measured at f/8"); a lens without electronic contacts has no aperture to read, and the user can then type it or leave it empty
+- When the aperture of the check is known and differs from the aperture the camera is set to for the capture at the time the result is shown, a notice says that the result holds for the aperture it was measured at
+- A second shot can be taken one full stop further closed, by a button offered when the pattern is bowed or tilted and the camera allows the change; the camera's aperture is put back afterwards, also when the shot fails
+- With both shots the result says one of three things in words: the film is within depth of field at the smaller aperture (the pattern became flat and the best region is not clearly softer), stopping down costs more sharpness than it gains (the best region dropped by more than a stated share), or stopping down does not help (the pattern stayed)
+- The thresholds of H-19 are not loosened and no depth of field is computed from a model; the specification says why (the measurement already includes it, and at 1:1 diffraction limits how far stopping down helps)
+- A saved flat reference is used only with a check at the aperture it was saved at, or the notice says the two differ; the reference stores its aperture from now on, and one saved before has none and is treated as unknown
+- Nothing is saved to the library by the check, as today; the working levels and the light behave as in H-19
+- Tests: the three outcomes from two maps, the notice for a differing and for an unknown aperture, the aperture put back after success and after failure, a reference with and without an aperture; component tests; fake camera only, nothing touches the real camera; axe clean
+- A checklist for the human on the Mac with the D600: the aperture shown is the lens's, the notice appears after changing the aperture, the second shot is taken one stop down and the aperture is back afterwards, and the three outcomes read sensibly on a flat target, on curled film and at the smallest aperture
+tech:
+FILES: crates/gtp-app/src/services/focus.rs (the comparison of two maps), crates/gtp-app/src/services/capture_control.rs (reading and setting the aperture around the shot), apps/desktop/src-tauri/src/commands, apps/desktop/src/features/import (the focus check in CaptureSection.tsx), the saved reference in the settings, en.json, packages/ipc-types.
+ROUTES: the focus check result gains the aperture, the reference gains an aperture, and one command or option takes the second shot. To be approved by the owner with the plan.
+MIGRATIONS: none; the reference is in the app settings and its new field has a default.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-11, to build and test later. The marked aperture is used throughout; at 1:1 the effective aperture is about two stops smaller, which the specification mentions and the app does not compute. Out of scope: a depth of field figure in millimetres, the focus sweep of H-23, changing the capture aperture of a roll automatically.
+
+## H-23
+title: Focus sweep that maps the height of the film
+milestone: M6
+type: feature
+size: M
+estimate: 2d
+deps: H-19, H-16, H-22
+needs: hw, mac
+adr: yes
+spec: specification section 7
+desc: The flatness map of H-19 compares sharpness between regions of one shot, which depends on the content of each region and says only softer or sharper, not by how much the film is out of plane. A focus sweep takes a series of shots while the lens focus moves in small equal steps, and finds for each region the step at which it is sharpest. The differences between those steps are a map of the film's height that does not depend on the content, and they show a bow or a tilt directly.
+ac:
+- An ADR records, from measurements on the Mac with the D600, whether the lens focus can be driven in steps that repeat: the same number of steps out and back returns to the same sharpness, and equal step counts give equal shifts; it names the lens used, the step size chosen and how backlash is handled (always approaching from one side). If the steps do not repeat well enough, the work stops there and the pull request reports it
+- The sweep takes a stated number of shots around the current focus in one colour of the light, puts the focus back where it was, and turns the light off at the end, also when a shot fails or the user cancels; it runs as one job with progress and a cancel
+- For each of the 3 by 3 regions the best focus step is found from the sharpness over the steps by a fit around the peak, not just the sharpest shot, and a region whose curve has no clear peak (no texture, or the peak at the end of the range) is marked as unknown and left out
+- The result shows the height of each region in steps relative to the centre, the pattern (flat, bowed, tilted, unclear) decided from the heights, and the step at which the most regions are sharp, with an offer to move the focus there
+- If the ADR can tie a step to a distance for the lens and magnification in use, the heights are also shown in millimetres and marked as approximate; otherwise only steps are shown and the specification says why
+- With the aperture of the capture known (H-22), the result says whether the spread of heights fits within the range of steps over which sharpness stayed above a stated share of its peak at that aperture, measured in the same sweep
+- Nothing is saved to the library; the shots are not kept unless the user asks for them for a report
+- Tests: the peak fit on known curves (a clear peak, a flat curve, a peak at the edge, noise), the pattern from heights, the focus put back and the light off after success, failure and cancel; fake camera and fake light only, nothing touches the real camera; component tests; axe clean
+- A checklist for the human on the Mac with the D600 and the Scanlight: the sweep runs and ends with the focus where it started, a deliberately tilted piece of film reads as tilted towards the right side, a flat target reads as flat within one step, and a second sweep gives the same heights within one step
+tech:
+FILES: crates/gtp-capture/src (driving the focus through gphoto2, and a fake for tests), crates/gtp-app/src/services (focus.rs for the fit and the pattern, a sweep job, capture_control.rs), apps/desktop/src-tauri/src/commands, apps/desktop/src/features/import (the focus check), en.json, packages/ipc-types, decisions.
+ROUTES: one command that starts the sweep job and its result type, and one that moves the focus by a number of steps. To be approved by the owner with the plan.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-11, to build and test later; it comes after H-22. The camera drives focus only with a lens that has a focus motor and in live view; a manual lens or bellows cannot be swept, and the feature is then hidden with a line saying why. Capture and tether tests must not touch the real camera: tests that need no camera are guarded as the existing ones are. Out of scope: focus stacking of the scans themselves, moving the camera or the film holder by a motor, a finer grid than 3 by 3.

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import mixerSource from '../../../../../crates/gtp-edit/src/mixer.rs?raw';
-import { MIXER_BAND_HUES, bandCss, hueGradientCss, tintCss } from './hue-colour';
+import {
+  MIXER_BAND_HUES,
+  MIXER_HUE_MAX_DEG,
+  bandCss,
+  bandHueGradientCss,
+  hueGradientCss,
+  tintCss,
+} from './hue-colour';
 
 const channels = (css: string): [number, number, number] => {
   const match = /^rgb\((\d+) (\d+) (\d+)\)$/.exec(css);
@@ -73,5 +80,35 @@ describe('bandCss', () => {
     expect(match).not.toBeNull();
     const rust = (match?.[1] ?? '').split(',').map((n) => Number(n.trim()));
     expect(rust).toEqual([...MIXER_BAND_HUES]);
+  });
+});
+
+describe('bandHueGradientCss', () => {
+  const stop = (hue: number) => `oklch(0.72 0.15 ${hue}deg)`;
+
+  it.each(MIXER_BAND_HUES.map((hue, index) => [index, hue] as const))(
+    'has the three stops of band %i: 30 degrees down, the band, 30 degrees up',
+    (index, hue) => {
+      const low = (hue - 30 + 360) % 360;
+      const high = (hue + 30) % 360;
+      expect(bandHueGradientCss(index)).toBe(
+        `linear-gradient(to right, ${stop(low)}, ${stop(hue)}, ${stop(high)})`,
+      );
+    },
+  );
+
+  it('wraps below 0 and from 360 on', () => {
+    expect(bandHueGradientCss(0)).toBe(
+      `linear-gradient(to right, ${stop(359)}, ${stop(29)}, ${stop(59)})`,
+    );
+    expect(bandHueGradientCss(7)).toBe(
+      `linear-gradient(to right, ${stop(298)}, ${stop(328)}, ${stop(358)})`,
+    );
+  });
+
+  it('has the largest hue turn of the Rust mixer', () => {
+    const match = /pub const MIXER_HUE_MAX_DEG: f32 = ([\d.]+);/.exec(mixerSource);
+    expect(match).not.toBeNull();
+    expect(Number(match?.[1])).toBe(MIXER_HUE_MAX_DEG);
   });
 });

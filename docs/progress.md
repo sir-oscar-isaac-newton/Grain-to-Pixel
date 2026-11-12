@@ -1046,6 +1046,15 @@
       "number": 337,
       "title": "Unique self-removing test folders in the other crates",
       "branch": "test/issue-337-test-folders-other-crates",
+      "status": "completed",
+      "pr": 339,
+      "commit": "ea8da24"
+    },
+    {
+      "id": "U-32",
+      "number": 331,
+      "title": "Hue direction on the colour mixer's hue sliders",
+      "branch": "feat/issue-331-hue-direction",
       "status": "in_progress",
       "pr": null,
       "commit": null

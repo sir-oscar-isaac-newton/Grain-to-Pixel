@@ -2,6 +2,7 @@
  * Screen colours for the hue and band sliders of the Colour panel. They are decoration and a guide
  * for the screen in sRGB, not a proof of what the pipeline makes of an image.
  */
+import type { ColourKey } from './recipe-parts';
 
 /** Degrees in a full turn of the hue. */
 const FULL_TURN_DEG = 360;
@@ -49,16 +50,20 @@ function hueRgb(hueDeg: number): [number, number, number] {
 const encode = (linear: number) =>
   linear <= 0.0031308 ? 12.92 * linear : 1.055 * linear ** (1 / 2.4) - 0.055;
 
+/** A linear Rec.2020 triple as linear sRGB, each channel clipped to [0, 1]. */
+function clippedSrgb(rgb2020: readonly [number, number, number]): number[] {
+  return REC2020_TO_SRGB.map((row) =>
+    Math.min(1, Math.max(0, row[0] * rgb2020[0] + row[1] * rgb2020[1] + row[2] * rgb2020[2])),
+  );
+}
+
 /**
  * The screen colour of a split toning hue: the hue's fully saturated colour (read as linear
  * Rec.2020, as the pipeline does) in sRGB, clipped to the gamut and shown at full brightness.
  * The hue wraps at 360 degrees.
  */
 export function tintCss(hueDeg: number): string {
-  const rgb2020 = hueRgb(hueDeg);
-  const linear = REC2020_TO_SRGB.map((row) =>
-    Math.min(1, Math.max(0, row[0] * rgb2020[0] + row[1] * rgb2020[1] + row[2] * rgb2020[2])),
-  );
+  const linear = clippedSrgb(hueRgb(hueDeg));
   const peak = Math.max(...linear, Number.EPSILON);
   const [r, g, b] = linear.map((c) => Math.round(encode(c / peak) * CHANNEL_MAX));
   return `rgb(${r} ${g} ${b})`;
@@ -96,5 +101,42 @@ export function bandCss(index: number): string {
 export function bandHueGradientCss(index: number): string {
   const hue = MIXER_BAND_HUES[index] ?? 0;
   const stops = [hue - MIXER_HUE_MAX_DEG, hue, hue + MIXER_HUE_MAX_DEG].map(bandColourCss);
+  return `linear-gradient(to right, ${stops.join(', ')})`;
+}
+
+/**
+ * The gain in stops of a colour balance slider's own channel at +-100. It must match `AXIS_STOPS`
+ * in `crates/gtp-edit/src/color.rs`; a test compares the two.
+ */
+export const AXIS_STOPS = 1;
+
+/** Mid grey, as a linear value (the usual 18 percent card): what the colour balance stops tint. */
+export const MID_GREY = 0.18;
+
+/** The recipe's colour balance axes. */
+export type BalanceAxis = Extract<ColourKey, 'red_cyan' | 'green_magenta' | 'blue_yellow'>;
+const BALANCE_AXES: readonly BalanceAxis[] = ['red_cyan', 'green_magenta', 'blue_yellow'];
+
+/** A linear Rec.2020 triple as CSS `rgb()` in sRGB, clipped to the gamut, brightness kept. */
+function linearRec2020Css(rgb2020: readonly [number, number, number]): string {
+  const [r, g, b] = clippedSrgb(rgb2020).map((c) => Math.round(encode(c) * CHANNEL_MAX));
+  return `rgb(${r} ${g} ${b})`;
+}
+
+/** Mid grey with the pipeline's gains of a colour balance axis at `a` (-1 to 1) applied. */
+function balanceStopCss(axisIndex: number, a: number): string {
+  const rgb = [0, 1, 2].map(
+    (c) => MID_GREY * 2 ** (c === axisIndex ? a * AXIS_STOPS : (-a * AXIS_STOPS) / 2),
+  );
+  return linearRec2020Css([rgb[0] ?? 0, rgb[1] ?? 0, rgb[2] ?? 0]);
+}
+
+/**
+ * A left to right gradient for a colour balance slider: the cast of -100, of 0 (the plain mid grey)
+ * and of +100 on a mid grey, by the gains of the pipeline.
+ */
+export function axisGradientCss(axis: BalanceAxis): string {
+  const index = BALANCE_AXES.indexOf(axis);
+  const stops = [-1, 0, 1].map((a) => balanceStopCss(index, a));
   return `linear-gradient(to right, ${stops.join(', ')})`;
 }

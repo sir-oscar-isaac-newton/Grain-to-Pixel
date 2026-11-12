@@ -3,7 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { Slider } from '@gtp/ui';
 import type { Recipe } from '../../../shared/ipc';
 import styles from '../develop.module.css';
-import { bandCss, bandHueGradientCss, hueGradientCss, tintCss } from '../hue-colour';
+import {
+  type BalanceAxis,
+  axisGradientCss,
+  bandCss,
+  bandHueGradientCss,
+  hueGradientCss,
+  tintCss,
+} from '../hue-colour';
 import {
   colourOf,
   mixerOf,
@@ -31,6 +38,8 @@ const BALANCE: readonly ColourKey[] = [
   'temperature',
   'tint',
 ];
+const isBalanceAxis = (key: ColourKey): key is BalanceAxis =>
+  key === 'red_cyan' || key === 'green_magenta' || key === 'blue_yellow';
 const SATURATION_MAX = 2;
 const MIX_MAX = 2;
 const MIX_STEP = 0.01;
@@ -152,6 +161,7 @@ export function ColourPanel({
               step={1}
               format={whole}
               disabled={locked}
+              trackGradient={isBalanceAxis(key) ? axisGradientCss(key) : undefined}
               onReset={
                 autoColour && (() => resetSlider(withColour(recipe, { [key]: autoColour[key] })))
               }

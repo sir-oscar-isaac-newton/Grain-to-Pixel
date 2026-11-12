@@ -1055,6 +1055,15 @@
       "number": 331,
       "title": "Hue direction on the colour mixer's hue sliders",
       "branch": "feat/issue-331-hue-direction",
+      "status": "completed",
+      "pr": 342,
+      "commit": "dbed1fd"
+    },
+    {
+      "id": "U-33",
+      "number": 340,
+      "title": "Colour direction on the colour balance sliders",
+      "branch": "feat/issue-340-balance-direction",
       "status": "in_progress",
       "pr": null,
       "commit": null

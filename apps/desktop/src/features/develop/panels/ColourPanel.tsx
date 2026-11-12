@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Slider } from '@gtp/ui';
 import type { Recipe } from '../../../shared/ipc';
 import styles from '../develop.module.css';
-import { bandCss, hueGradientCss, tintCss } from '../hue-colour';
+import { bandCss, bandHueGradientCss, hueGradientCss, tintCss } from '../hue-colour';
 import {
   colourOf,
   mixerOf,
@@ -270,6 +270,7 @@ export function ColourPanel({
                 key={`${mixerMode}-${band}`}
                 label={t(`develop.mixer.band.${band}`)}
                 swatch={bandCss(index)}
+                trackGradient={mixerMode === 'hue' ? bandHueGradientCss(index) : undefined}
                 value={mixer[mixerMode][index] ?? 0}
                 min={-100}
                 max={100}

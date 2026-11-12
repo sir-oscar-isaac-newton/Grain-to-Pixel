@@ -72,7 +72,29 @@ export function hueGradientCss(): string {
   return `linear-gradient(to right, ${stops.join(', ')})`;
 }
 
+/**
+ * The largest turn of the hue by a band's Hue slider, in degrees (at -100 or +100). It must match
+ * `MIXER_HUE_MAX_DEG` in `crates/gtp-edit/src/mixer.rs`; a test compares the two.
+ */
+export const MIXER_HUE_MAX_DEG = 30;
+
+/** A colour of the band swatches and gradients, as CSS `oklch()`; the hue wraps into [0, 360). */
+function bandColourCss(hueDeg: number): string {
+  const hue = ((hueDeg % FULL_TURN_DEG) + FULL_TURN_DEG) % FULL_TURN_DEG;
+  return `oklch(${BAND_LIGHTNESS} ${BAND_CHROMA} ${hue}deg)`;
+}
+
 /** The colour of a mixer band (its index in the recipe), as CSS `oklch()`. */
 export function bandCss(index: number): string {
-  return `oklch(${BAND_LIGHTNESS} ${BAND_CHROMA} ${MIXER_BAND_HUES[index] ?? 0}deg)`;
+  return bandColourCss(MIXER_BAND_HUES[index] ?? 0);
+}
+
+/**
+ * A left to right gradient for the Hue slider of a band: the colour it turns towards at -100, the
+ * band's own at 0 and the colour at +100, by the largest turn of the pipeline.
+ */
+export function bandHueGradientCss(index: number): string {
+  const hue = MIXER_BAND_HUES[index] ?? 0;
+  const stops = [hue - MIXER_HUE_MAX_DEG, hue, hue + MIXER_HUE_MAX_DEG].map(bandColourCss);
+  return `linear-gradient(to right, ${stops.join(', ')})`;
 }

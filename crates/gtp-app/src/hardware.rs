@@ -215,7 +215,8 @@ mod tests {
 
     #[test]
     fn the_chosen_scanner_replays_the_folder_through_the_port() {
-        let missing = std::env::temp_dir().join(format!("gtp-no-fixtures-{}", std::process::id()));
+        let temp = crate::services::testkit::TempDir::new("no-fixtures");
+        let missing = temp.path().join("missing");
         let hw = Hardware::from_vars(Some("1"), Some(missing.into()));
         let scanner = hw.scanner.as_ref().unwrap();
         assert_eq!(

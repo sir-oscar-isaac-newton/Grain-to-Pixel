@@ -284,9 +284,8 @@ mod tests {
 
     #[test]
     fn a_fixture_roll_previews_through_the_service() {
-        let dir = std::env::temp_dir().join(format!("gtp-preview-fixture-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp = crate::services::testkit::TempDir::new("preview-fixture");
+        let dir = temp.path();
         for n in 1..=3u32 {
             let tiff = Tiff16 {
                 width: 60,
@@ -303,14 +302,13 @@ mod tests {
             )
             .unwrap();
         }
-        let source = gtp_ingest::FixtureSource::new(&dir);
+        let source = gtp_ingest::FixtureSource::new(dir);
         let made = ScanPreviewService::default()
             .run(&source, gtp_ingest::FIXTURE_DEVICE_ID)
             .unwrap();
         assert_eq!(made.frame_count, 3);
         assert_eq!(made.strip_height, FIXTURE_STRIP_HEIGHT);
         assert_eq!(made.pitch, 144.0);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Previews a real thumbnail: `GTP_PREVIEW_STRIP=<tiff> GTP_PREVIEW_FRAMES=36`; writes the

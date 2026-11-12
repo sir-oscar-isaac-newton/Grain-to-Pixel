@@ -492,14 +492,11 @@ mod tests {
         use std::io::{Seek, SeekFrom, Write};
 
         use crate::services::roll_frame::{roll_create, RollInput};
-        use crate::services::testkit::add_frame;
+        use crate::services::testkit::{add_frame, TempDir};
 
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-thumb-readonly-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
-        let library = Library::create(&dir, "Test").unwrap();
+        let temp = TempDir::new("thumb-readonly");
+        let dir = temp.path();
+        let library = Library::create(dir, "Test").unwrap();
         let roll = roll_create(
             &library,
             RollInput {
@@ -520,7 +517,7 @@ mod tests {
                 .unwrap();
         }
 
-        let readonly = Library::open(&dir).unwrap();
+        let readonly = Library::open(dir).unwrap();
         assert!(readonly.is_read_only());
         let svc = ThumbnailService::default();
         let err = svc
@@ -529,8 +526,6 @@ mod tests {
         assert_eq!(err.code, ErrorCode::NotFound, "nothing rebuilt");
         assert!(!readonly.resolve(&thumb_rel(id)).unwrap().exists());
         assert_eq!(svc.renders(), 0);
-        drop(readonly);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

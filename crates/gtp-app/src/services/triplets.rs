@@ -48,20 +48,14 @@ pub fn triplet_group(paths: &[PathBuf]) -> Result<Vec<TripletCandidate>, AppErro
 
 #[cfg(test)]
 mod tests {
-    use gtp_core::FrameId;
     use gtp_ingest::testing::{nef_with_preview, tiff_with_capture_time};
     use gtp_ingest::{TripletChannel, TripletProblem};
 
     use super::*;
+    use crate::services::testkit::TempDir;
 
-    fn folder(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-triplets-{label}-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn folder(label: &str) -> TempDir {
+        TempDir::new(&format!("triplets-{label}"))
     }
 
     /// A camera file shot at `12:00:{seconds}`.
@@ -74,14 +68,15 @@ mod tests {
 
     #[test]
     fn camera_files_are_grouped_by_their_exif_time_whatever_their_names() {
-        let dir = folder("group");
+        let temp = folder("group");
+        let dir = temp.path();
         let paths = vec![
             // Named in the wrong order on purpose: only the capture time counts.
-            nef(&dir, "DSC_0003.NEF", 4),
-            nef(&dir, "DSC_0001.NEF", 0),
-            nef(&dir, "DSC_0002.NEF", 2),
-            nef(&dir, "DSC_0004.NEF", 20),
-            nef(&dir, "DSC_0005.NEF", 22),
+            nef(dir, "DSC_0003.NEF", 4),
+            nef(dir, "DSC_0001.NEF", 0),
+            nef(dir, "DSC_0002.NEF", 2),
+            nef(dir, "DSC_0004.NEF", 20),
+            nef(dir, "DSC_0005.NEF", 22),
         ];
         let candidates = triplet_group(&paths).unwrap();
         assert_eq!(candidates.len(), 2);
@@ -104,7 +99,6 @@ mod tests {
             candidates[1].problem,
             Some(TripletProblem::MissingShots { missing: 1 })
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// A camera file shot at `12:00:{seconds}` whose preview is lit in `rgb`.
@@ -117,13 +111,14 @@ mod tests {
 
     #[test]
     fn the_colour_of_each_preview_decides_which_file_is_red_green_and_blue() {
-        let dir = folder("colour");
+        let temp = folder("colour");
+        let dir = temp.path();
         let (red, green, blue) = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
         // Shot blue, red, green, but the colours say which is which.
         let paths = [
-            lit(&dir, "a.NEF", 0, blue),
-            lit(&dir, "b.NEF", 2, red),
-            lit(&dir, "c.NEF", 4, green),
+            lit(dir, "a.NEF", 0, blue),
+            lit(dir, "b.NEF", 2, red),
+            lit(dir, "c.NEF", 4, green),
         ];
         let candidate = triplet_group(&paths).unwrap().remove(0);
         assert_eq!(candidate.problem, None);
@@ -148,30 +143,29 @@ mod tests {
 
         // Two reds: not a triplet.
         let twice = [
-            lit(&dir, "d.NEF", 20, red),
-            lit(&dir, "e.NEF", 22, red),
-            lit(&dir, "f.NEF", 24, blue),
+            lit(dir, "d.NEF", 20, red),
+            lit(dir, "e.NEF", 22, red),
+            lit(dir, "f.NEF", 24, blue),
         ];
         assert_eq!(
             triplet_group(&twice).unwrap()[0].problem,
             Some(TripletProblem::ChannelMismatch)
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn a_file_listed_twice_counts_once_and_one_without_exif_is_flagged() {
-        let dir = folder("dupes");
-        let a = nef(&dir, "a.NEF", 0);
-        let b = nef(&dir, "b.NEF", 2);
-        let c = nef(&dir, "c.NEF", 4);
+        let temp = folder("dupes");
+        let dir = temp.path();
+        let a = nef(dir, "a.NEF", 0);
+        let b = nef(dir, "b.NEF", 2);
+        let c = nef(dir, "c.NEF", 4);
         let plain = dir.join("plain.NEF");
         std::fs::write(&plain, b"not a camera file").unwrap();
         let candidates = triplet_group(&[a.clone(), b, a, c, plain]).unwrap();
         assert_eq!(candidates.len(), 2);
         assert_eq!(candidates[0].files.len(), 3);
         assert_eq!(candidates[1].problem, Some(TripletProblem::NoCaptureTime));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -185,16 +179,18 @@ mod tests {
             triplet_group(&many).unwrap_err().code,
             ErrorCode::InvalidInput
         );
-        let dir = folder("missing");
+        let temp = folder("missing");
+        let dir = temp.path();
         let missing = dir.join("nothing.NEF");
         let err = triplet_group(std::slice::from_ref(&missing)).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
         assert_eq!(err.details, Some(missing.display().to_string()));
         // A folder is not a file.
         assert_eq!(
-            triplet_group(std::slice::from_ref(&dir)).unwrap_err().code,
+            triplet_group(std::slice::from_ref(&dir.to_path_buf()))
+                .unwrap_err()
+                .code,
             ErrorCode::NotFound
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -111,31 +111,27 @@ pub fn count_scan_failed(library: &Library) {
 
 #[cfg(test)]
 mod tests {
-    use gtp_core::FrameId;
+    use crate::services::testkit::TempDir;
 
     use super::*;
 
-    fn library(label: &str) -> (std::path::PathBuf, Library) {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-counters-{label}-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
-        let library = Library::create(&dir.join("lib"), "Counted").unwrap();
-        (dir, library)
+    /// The folder guard first: a test binds it before the library, so the library closes its
+    /// database before the folder is removed.
+    fn library(label: &str) -> (TempDir, Library) {
+        let temp = TempDir::new(&format!("counters-{label}"));
+        let library = Library::create(&temp.path().join("lib"), "Counted").unwrap();
+        (temp, library)
     }
 
     #[test]
     fn a_new_library_has_nothing_counted() {
-        let (dir, library) = library("new");
+        let (_temp, library) = library("new");
         assert_eq!(read(&library).unwrap(), Counters::default());
-        drop(library);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn imports_and_exports_count_frames_and_stamp_the_first_time_once() {
-        let (dir, library) = library("frames");
+        let (_temp, library) = library("frames");
         count_import(&library);
         count_export(&library);
         // A marker no clock produces, so a second stamp would show.
@@ -161,13 +157,11 @@ mod tests {
             Some("2020-01-02T00:00:00Z")
         );
         assert_eq!(counters.first_convert_at, None);
-        drop(library);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn the_first_convert_is_stamped_once_and_failed_scans_add_up() {
-        let (dir, library) = library("convert");
+        let (_temp, library) = library("convert");
         count_convert(&library);
         let first = read(&library).unwrap().first_convert_at;
         assert!(first.is_some());
@@ -183,19 +177,15 @@ mod tests {
         count_scan_failed(&library);
         count_scan_failed(&library);
         assert_eq!(read(&library).unwrap().scans_failed, 2);
-        drop(library);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn a_value_that_is_not_a_number_counts_as_zero() {
-        let (dir, library) = library("junk");
+        let (_temp, library) = library("junk");
         library
             .write(|c| c.meta_set(FRAMES_IMPORTED, "many"))
             .unwrap();
         count_import(&library);
         assert_eq!(read(&library).unwrap().frames_imported, 1);
-        drop(library);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }

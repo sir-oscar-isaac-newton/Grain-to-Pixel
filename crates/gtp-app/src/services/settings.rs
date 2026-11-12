@@ -676,15 +676,34 @@ impl SettingsStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::testkit::TempDir;
 
-    fn temp_file(label: &str) -> PathBuf {
-        std::env::temp_dir()
-            .join(format!(
-                "gtp-settings-{label}-{}-{}",
-                std::process::id(),
-                gtp_core::FrameId::new()
-            ))
-            .join("settings.json")
+    /// A settings file path in a folder of its own, removed when the guard is dropped.
+    struct TempFile {
+        path: PathBuf,
+        _temp: TempDir,
+    }
+
+    impl std::ops::Deref for TempFile {
+        type Target = Path;
+
+        fn deref(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl AsRef<Path> for TempFile {
+        fn as_ref(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    fn temp_file(label: &str) -> TempFile {
+        let temp = TempDir::new(&format!("settings-{label}"));
+        TempFile {
+            path: temp.path().join("settings.json"),
+            _temp: temp,
+        }
     }
 
     #[test]
@@ -716,7 +735,6 @@ mod tests {
             "flags left out keep their default"
         );
         assert!(!path.with_extension("json.bad").exists());
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -748,7 +766,6 @@ mod tests {
         let (reloaded, note) = SettingsStore::load(&path);
         assert!(note.is_none());
         assert_eq!(reloaded.get().last_update_check, Some(1_700_000_000));
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -774,7 +791,6 @@ mod tests {
         let (reloaded, note) = SettingsStore::load(&path);
         assert!(note.is_none());
         assert_eq!(reloaded.get(), updated);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -802,7 +818,6 @@ mod tests {
         std::fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
         let (older, _) = SettingsStore::load(&path);
         assert_eq!(older.get().starting_look, Look::Neutral);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -839,7 +854,6 @@ mod tests {
             std::fs::read_to_string(PathBuf::from(bad)).unwrap(),
             "{ not json"
         );
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -856,7 +870,6 @@ mod tests {
         let s = store.get();
         assert_eq!(s.theme, Theme::Light);
         assert!(s.flags.dev_overlay && s.flags.dust_removal);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     fn keys(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -997,7 +1010,6 @@ mod tests {
         assert!(note.is_none());
         assert_eq!(reloaded.capture_profile(), updated);
         assert!(std::fs::read_to_string(&path).unwrap().contains("capture"));
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1030,7 +1042,6 @@ mod tests {
         assert_eq!(store.capture_profile(), good);
         let (again, _) = SettingsStore::load(&path);
         assert_eq!(again.capture_profile(), good);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1060,7 +1071,6 @@ mod tests {
         assert!(note.is_none());
         assert_eq!(store.capture_profile().settle_ms, 900);
         assert_eq!(store.capture_profile().levels, [44, 22, 2]);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1072,7 +1082,6 @@ mod tests {
         assert!(note.is_none());
         assert_eq!(store.saved_levels(), SavedLevels::default());
         assert_eq!(store.capture_profile().levels, [50, 25, 3]);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1100,7 +1109,6 @@ mod tests {
         assert_eq!(saved.default_exposure, Some(exposure));
         assert_eq!(saved.stocks["portra 400"].levels, [90, 40, 6]);
         assert_eq!(saved.stocks["portra 400"].name, "Portra 400");
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1171,7 +1179,6 @@ mod tests {
             })
             .unwrap();
         assert_eq!(SettingsStore::load(&path).0.focus_reference(), None);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1191,7 +1198,6 @@ mod tests {
         assert!(note.is_some_and(|n| n.contains("focus reference invalid")));
         assert_eq!(store.focus_reference(), None);
         assert_eq!(store.get().theme, Theme::Dark);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1207,7 +1213,6 @@ mod tests {
         assert!(note.is_some_and(|n| n.contains("saved levels invalid")));
         assert_eq!(store.saved_levels(), SavedLevels::default());
         assert_eq!(store.get().theme, Theme::Dark);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     /// Removes every `write_metadata` key, as in a settings file written before the option.
@@ -1256,7 +1261,6 @@ mod tests {
             .export_presets
             .iter()
             .all(|p| p.options.write_metadata));
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     fn preset(name: &str, format: ExportFormat) -> ExportPreset {
@@ -1298,7 +1302,6 @@ mod tests {
         assert_eq!(loaded.export_presets.len(), 1);
         assert_eq!(loaded.export_presets[0].options.long_edge, None);
         assert_eq!(loaded.last_export.unwrap().options.long_edge, None);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1337,7 +1340,6 @@ mod tests {
             };
             store.update(&with_presets(vec![named])).unwrap();
         }
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     fn with_presets(presets: Vec<ExportPreset>) -> SettingsPatch {
@@ -1375,7 +1377,6 @@ mod tests {
         std::fs::write(&path, r#"{"export_presets":[]}"#).unwrap();
         let (empty, _) = SettingsStore::load(&path);
         assert!(empty.get().export_presets.is_empty());
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1417,7 +1418,6 @@ mod tests {
         let (reloaded, _) = SettingsStore::load(&path);
         assert!(reloaded.get().export_presets.is_empty());
         assert!(reloaded.get().last_export.is_some());
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1490,7 +1490,6 @@ mod tests {
         let (store, note) = SettingsStore::load(&path);
         assert!(note.is_none(), "{note:?}");
         assert!(store.get().develop_presets.is_empty());
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -1522,7 +1521,6 @@ mod tests {
         assert_eq!(reloaded.get().develop_presets, saved.develop_presets);
         reloaded.update(&with_develop_presets(Vec::new())).unwrap();
         assert!(reloaded.get().develop_presets.is_empty());
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
@@ -1566,7 +1564,6 @@ mod tests {
                 .len(),
             MAX_DEVELOP_PRESETS
         );
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
@@ -1580,7 +1577,6 @@ mod tests {
             .unwrap();
         assert_eq!(saved.develop_presets[0].recipe, wild.recipe.clamped());
         assert_ne!(saved.develop_presets[0].recipe.tone.exposure_ev, 5000.0);
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
@@ -1604,7 +1600,6 @@ mod tests {
         assert_eq!(settings.theme, Theme::Dark);
         assert_eq!(settings.develop_presets, vec![good, other]);
         assert!(!path.with_extension("json.bad").exists());
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
@@ -1626,6 +1621,5 @@ mod tests {
             })
             .unwrap();
         assert_eq!(saved.last_export, Some(last));
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

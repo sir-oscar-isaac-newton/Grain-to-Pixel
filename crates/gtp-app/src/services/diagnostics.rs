@@ -247,7 +247,7 @@ pub fn export(source: &Source<'_>, dest: &Path) -> Result<(), AppError> {
 mod tests {
     use std::path::PathBuf;
 
-    use gtp_core::FrameId;
+    use crate::services::testkit::TempDir;
     use zip::ZipArchive;
 
     use super::*;
@@ -256,26 +256,29 @@ mod tests {
         dir: PathBuf,
         logs: PathBuf,
         library: Library,
+        /// Last, so the folder goes after the library has closed its database.
+        _temp: TempDir,
     }
 
     impl Setup {
         fn new(label: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!(
-                "gtp-diag-{label}-{}-{}",
-                std::process::id(),
-                FrameId::new()
-            ));
+            let temp = TempDir::new(&format!("diag-{label}"));
+            let dir = temp.path().to_owned();
             let logs = dir.join("logs");
             fs::create_dir_all(&logs).unwrap();
             let library = Library::create(&dir.join("lib"), "Diag").unwrap();
-            Self { dir, logs, library }
+            Self {
+                dir,
+                logs,
+                library,
+                _temp: temp,
+            }
         }
 
         /// Closes the library first: Windows will not delete a database file that is open.
         fn finish(self) {
-            let Self { dir, library, .. } = self;
+            let Self { library, .. } = self;
             drop(library);
-            fs::remove_dir_all(dir).unwrap();
         }
 
         fn export(&self, library: bool, errors: &[JobErrorEntry]) -> ZipArchive<File> {

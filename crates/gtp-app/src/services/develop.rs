@@ -2560,12 +2560,9 @@ mod tests {
 
     #[test]
     fn applying_values_is_refused_in_a_read_only_library() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-develop-values-read-only-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
-        let library = Library::create(&dir, "Develop").unwrap();
+        let temp = crate::services::testkit::TempDir::new("develop-values-read-only");
+        let dir = temp.path();
+        let library = Library::create(dir, "Develop").unwrap();
         let roll = crate::services::roll_frame::roll_create(
             &library,
             crate::services::roll_frame::RollInput {
@@ -2587,14 +2584,12 @@ mod tests {
             file.write_all(&(gtp_catalog::SCHEMA_VERSION + 1).to_be_bytes())
                 .unwrap();
         }
-        let library = Library::open(&dir).unwrap();
+        let library = Library::open(dir).unwrap();
         assert!(library.is_read_only());
         let err =
             apply_recipe_values_to(&library, &[frame], &source_recipe(), &[RecipeField::Tone])
                 .unwrap_err();
         assert_eq!(err.code, ErrorCode::LibraryTooNew);
-        drop(library);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

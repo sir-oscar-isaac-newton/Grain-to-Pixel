@@ -132,17 +132,12 @@ impl AppContext {
 
 #[cfg(test)]
 mod tests {
-    use gtp_core::FrameId;
-
     use super::*;
+    use crate::services::testkit::TempDir;
 
     #[test]
     fn opening_a_library_makes_it_current_and_remembers_it() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-context-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = TempDir::new("context");
         let (ctx, _) = AppContext::new(&dir.join("config").join("settings.json"));
         assert_eq!(ctx.library().err().unwrap().code, ErrorCode::NotFound);
         assert_eq!(ctx.library_details().unwrap(), None);
@@ -168,7 +163,5 @@ mod tests {
             Some((reopened.path, reopened.name)),
             "a failed open keeps the old one"
         );
-        drop(ctx);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

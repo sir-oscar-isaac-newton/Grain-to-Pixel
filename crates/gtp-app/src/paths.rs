@@ -81,13 +81,10 @@ pub fn display_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::testkit::TempDir;
 
-    fn temp_root(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-paths-{label}-{}-{}",
-            std::process::id(),
-            gtp_core::FrameId::new()
-        ));
+    fn temp_root(label: &str) -> TempDir {
+        let dir = TempDir::new(&format!("paths-{label}"));
         std::fs::create_dir_all(dir.join("originals")).unwrap();
         dir
     }
@@ -98,7 +95,6 @@ mod tests {
         let p = resolve_inside(&root, Path::new("originals/roll/frame/scan.tif")).unwrap();
         assert!(p.starts_with(root.canonicalize().unwrap()));
         assert!(p.ends_with("originals/roll/frame/scan.tif"));
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -112,7 +108,6 @@ mod tests {
         for bad in [r"C:\Windows\x", r"\\server\share\x", r"C:x"] {
             assert!(resolve_inside(&root, Path::new(bad)).is_err(), "{bad:?}");
         }
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -130,8 +125,6 @@ mod tests {
             let err = resolve_inside(&root, Path::new("originals/sneaky/x.tif")).unwrap_err();
             assert_eq!(err.code, ErrorCode::InvalidInput);
         }
-        std::fs::remove_dir_all(&root).unwrap();
-        std::fs::remove_dir_all(&outside).unwrap();
     }
 
     #[test]
@@ -139,15 +132,12 @@ mod tests {
         let library = temp_root("lib");
         let picked = temp_root("picked");
         let elsewhere = temp_root("elsewhere");
-        let roots = [library.as_path(), picked.as_path()];
+        let roots = [library.path(), picked.path()];
         assert!(check_inside_any(&picked.join("new/a.jpg"), &roots).is_ok());
         assert!(check_inside_any(&library.join("exports/a.jpg"), &roots).is_ok());
         assert!(check_inside_any(&elsewhere.join("a.jpg"), &roots).is_err());
         assert!(check_inside_any(&picked.join("../x.jpg"), &roots).is_err());
         assert!(check_inside_any(Path::new("relative.jpg"), &roots).is_err());
-        for dir in [library, picked, elsewhere] {
-            std::fs::remove_dir_all(dir).unwrap();
-        }
     }
 
     #[test]

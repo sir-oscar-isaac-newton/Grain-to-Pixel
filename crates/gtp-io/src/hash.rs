@@ -59,10 +59,11 @@ pub fn mark_read_only(path: &Path) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testkit::TempFile;
     use gtp_core::ErrorCode;
 
-    fn temp_file(label: &str, bytes: &[u8]) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("gtp-io-hash-{label}-{}", std::process::id()));
+    fn temp_file(label: &str, bytes: &[u8]) -> TempFile {
+        let path = TempFile::new(&format!("io-hash-{label}"), "file");
         fs::write(&path, bytes).unwrap();
         path
     }

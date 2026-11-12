@@ -404,22 +404,18 @@ pub fn inspect_tiff(path: &Path) -> Result<TiffLayout, AppError> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
     use gtp_core::testing::synthetic::{self, Params};
     use proptest::prelude::*;
     use tiff::encoder::colortype::{Gray8, CMYK16, RGB8, RGBA8};
     use tiff::tags::ExtraSamples;
 
     use super::*;
+    use crate::testkit::TempFile;
 
     type EncodeFn<'a> = dyn Fn(&mut TiffEncoder<BufWriter<File>>) -> Result<(), TiffError> + 'a;
 
-    static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-    fn temp_path(label: &str) -> PathBuf {
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("gtp-io-{label}-{}-{n}.tif", std::process::id()))
+    fn temp_path(label: &str) -> TempFile {
+        TempFile::new(&format!("io-{label}"), "a.tif")
     }
 
     fn synthetic_rgb() -> Tiff16 {

@@ -26,6 +26,7 @@ use gtp_app::services::capture_control::{
 use gtp_app::services::roll_frame::{roll_create, RollInput};
 use gtp_app::shared_light::LightReading;
 use gtp_app::{AppContext, Hardware, JobManager, JobSink};
+use gtp_core::testing::TempDir;
 use gtp_core::{AppError, JobId, JobResult, TripletChannel};
 
 /// How long the whole calibration may take: 18 shots at most, each with a settle and a download.
@@ -85,7 +86,7 @@ fn a_real_calibration_finds_levels_and_leaves_the_light_off() {
     // From a cargo test run no bundle exists, so this changes nothing: Homebrew's paths are used.
     gtp_app::prepare_camera_libraries();
 
-    let dir = std::env::temp_dir().join(format!("gtp-calibration-hw-{}", std::process::id()));
+    let dir = TempDir::new("calibration-hw");
     let (ctx, _) = AppContext::new(&dir.join("settings.json"));
     ctx.create_library(&dir.join("lib"), "Calibration").unwrap();
     let roll = roll_create(

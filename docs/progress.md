@@ -1037,6 +1037,15 @@
       "number": 329,
       "title": "Flat-field test that fails when tests share a folder",
       "branch": "test/issue-329-flat-field-test-folder",
+      "status": "completed",
+      "pr": 336,
+      "commit": "87fb2e4"
+    },
+    {
+      "id": "T-13",
+      "number": 337,
+      "title": "Unique self-removing test folders in the other crates",
+      "branch": "test/issue-337-test-folders-other-crates",
       "status": "in_progress",
       "pr": null,
       "commit": null

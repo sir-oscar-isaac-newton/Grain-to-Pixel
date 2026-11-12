@@ -203,8 +203,7 @@ mod tests {
 
     #[test]
     fn a_file_is_read_by_path_and_a_missing_one_is_unknown() {
-        let dir = std::env::temp_dir().join(format!("gtp-channel-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = gtp_core::testing::TempDir::new("channel");
         let path = dir.join("a.NEF");
         std::fs::write(
             &path,
@@ -213,6 +212,5 @@ mod tests {
         .unwrap();
         assert_eq!(dominant_channel(&path).channel, Some(TripletChannel::Green));
         assert_eq!(dominant_channel(&dir.join("missing.NEF")).channel, None);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -24,7 +24,7 @@ pub fn search(
 #[cfg(test)]
 mod tests {
     use gtp_app::services::roll_frame::{roll_create, RollInput};
-    use gtp_core::{ErrorCode, FrameId};
+    use gtp_core::ErrorCode;
     use tauri::Manager;
 
     use super::*;
@@ -33,11 +33,7 @@ mod tests {
 
     #[test]
     fn search_and_tag_commands_map_errors_and_run_against_the_open_library() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-cmd-search-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("cmd-search");
         let app = tauri::test::mock_app();
         crate::ipc::builder::<tauri::test::MockRuntime>().mount_events(&app);
         app.manage(EventsState(std::sync::Arc::new(TauriJobSink::new(
@@ -45,6 +41,7 @@ mod tests {
         ))));
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
 
         // No library open: a typed NotFound.
         let err = search(app.state(), SearchQuery::default(), 0, 10).unwrap_err();
@@ -82,8 +79,5 @@ mod tests {
         assert_eq!(err.code, ErrorCode::InvalidInput);
         let json = serde_json::to_value(&err).unwrap();
         assert_eq!(json["code"], "InvalidInput");
-
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

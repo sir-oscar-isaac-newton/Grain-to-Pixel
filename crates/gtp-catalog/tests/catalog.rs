@@ -7,33 +7,20 @@
 use std::path::{Path, PathBuf};
 
 use gtp_catalog::{backup_path, Catalog, SCHEMA_VERSION};
+use gtp_core::testing::TempDir;
 use gtp_core::{
     BaseChange, ErrorCode, FilmFormat, Frame, FrameFlag, FrameId, FrameKind, FrameSize, Recipe,
     Roll, RollId, SearchQuery, SourceFile, SourceRole,
 };
 use rusqlite::Connection;
 
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(label: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-catalog-{label}-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        Self(dir)
-    }
-
-    fn db(&self) -> PathBuf {
-        self.0.join("library.db")
-    }
+trait DbPath {
+    fn db(&self) -> PathBuf;
 }
 
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+impl DbPath for TempDir {
+    fn db(&self) -> PathBuf {
+        self.path().join("library.db")
     }
 }
 
@@ -581,16 +568,20 @@ fn a_newer_library_can_still_be_read() {
     let reader = Catalog::open_reader(&dir.db()).unwrap();
     assert_eq!(reader.schema_version().unwrap(), SCHEMA_VERSION + 1);
     assert_eq!(reader.list_rolls().unwrap(), vec![r]);
-    let missing = Catalog::open_reader(&dir.0.join("nope.db")).err().unwrap();
+    let missing = Catalog::open_reader(&dir.join("nope.db")).err().unwrap();
     assert_eq!(missing.code, ErrorCode::NotFound);
 }
 
 #[test]
 fn an_unclean_exit_is_noticed_and_checked_on_the_next_open() {
     let dir = TempDir::new("unclean");
-    let cat = Catalog::open(&dir.db()).unwrap();
-    // A crash: the catalog is never closed or dropped.
-    std::mem::forget(cat);
+    Catalog::open(&dir.db()).unwrap();
+    // A crash: the session flag stays set. (The catalog is dropped, not leaked, so that the
+    // database file is closed and the folder can go.)
+    Connection::open(dir.db())
+        .unwrap()
+        .execute("UPDATE meta SET value = '1' WHERE key = 'session_open'", [])
+        .unwrap();
     let cat = Catalog::open(&dir.db()).unwrap();
     assert!(cat.recovered_from_unclean_exit());
     cat.close().unwrap();

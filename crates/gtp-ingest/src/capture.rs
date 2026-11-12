@@ -330,8 +330,7 @@ mod tests {
     fn the_exposure_iso_and_aperture_are_read_and_fractions_compare_by_value() {
         use super::testing::tiff_with_exposure;
 
-        let dir = std::env::temp_dir().join(format!("gtp-exposure-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = gtp_core::testing::TempDir::new("exposure");
         let path = dir.join("a.NEF");
         std::fs::write(&path, tiff_with_exposure((1, 60), 200, (56, 10))).unwrap();
         let info = read_exposure_info(&path);
@@ -354,7 +353,6 @@ mod tests {
         let dated = dir.join("c.NEF");
         std::fs::write(&dated, tiff(Some("2026:10:06 12:00:00"), None, 0)).unwrap();
         assert_eq!(read_exposure_info(&dated), ExifInfo::default());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -381,8 +379,7 @@ mod tests {
 
     #[test]
     fn a_file_is_read_by_path_and_an_unreadable_one_has_no_time() {
-        let dir = std::env::temp_dir().join(format!("gtp-exif-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = gtp_core::testing::TempDir::new("exif");
         let good = dir.join("a.NEF");
         std::fs::write(&good, tiff(Some("2026:10:06 12:00:00"), Some("20"), 0)).unwrap();
         let junk = dir.join("b.NEF");
@@ -392,15 +389,13 @@ mod tests {
         assert_eq!(read_exif_file(&good).path, good);
         assert_eq!(read_capture_time(&junk), None);
         assert_eq!(read_capture_time(&dir.join("missing.NEF")), None);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn a_time_beyond_the_first_megabyte_is_still_found() {
         // A real NEF has its EXIF up front; this file keeps the date string past the first
         // megabyte, so the prefix read cannot find it and the whole file is read.
-        let dir = std::env::temp_dir().join(format!("gtp-exif-late-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = gtp_core::testing::TempDir::new("exif-late");
         let bytes = tiff(
             Some("2026:10:06 12:00:00"),
             None,
@@ -413,7 +408,6 @@ mod tests {
         );
         std::fs::write(&path, &bytes).unwrap();
         assert_eq!(read_capture_time(&path), Some(CaptureTime(NOON)));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// The private D600 session: 45 files in 15 triplets and one more triplet in a subfolder. Every

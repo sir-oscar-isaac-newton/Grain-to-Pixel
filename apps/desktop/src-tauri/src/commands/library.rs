@@ -96,14 +96,10 @@ mod tests {
         use std::sync::{mpsc, Arc};
         use std::time::Duration;
 
-        use gtp_core::{ErrorCode, FrameId};
+        use gtp_core::ErrorCode;
         use tauri::{Listener, Manager};
 
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-cmd-verify-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("cmd-verify");
         let app = tauri::test::mock_app();
         crate::ipc::builder::<tauri::test::MockRuntime>().mount_events(&app);
         app.manage(JobManager::new(Arc::new(crate::sink::TauriJobSink::new(
@@ -111,6 +107,7 @@ mod tests {
         ))));
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
 
         let err = library_verify(app.state(), app.state()).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound, "no library is open");
@@ -128,9 +125,6 @@ mod tests {
         assert_eq!(done["result"]["kind"], "Verified");
         assert_eq!(done["result"]["files_checked"], 0);
         assert_eq!(done["result"]["problems"], serde_json::json!([]));
-
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

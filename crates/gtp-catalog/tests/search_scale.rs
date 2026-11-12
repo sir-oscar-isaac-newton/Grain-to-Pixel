@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gtp_catalog::Catalog;
+use gtp_core::testing::TempDir;
 use gtp_core::{FilmFormat, Frame, FrameId, FrameKind, Roll, RollId, SearchQuery, TagId};
 use rusqlite::{params, Connection};
 
@@ -40,27 +41,13 @@ const CAMERAS: [&str; 8] = [
     "Contax T2",
 ];
 
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(label: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-scale-{label}-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        Self(dir)
-    }
-
-    fn db(&self) -> PathBuf {
-        self.0.join("library.db")
-    }
+trait DbPath {
+    fn db(&self) -> PathBuf;
 }
 
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+impl DbPath for TempDir {
+    fn db(&self) -> PathBuf {
+        self.path().join("library.db")
     }
 }
 

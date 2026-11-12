@@ -300,10 +300,8 @@ fn auto() -> Result<ImageF32, AppError> {
 mod tests {
     use super::*;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("gtp-golden-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
+    fn temp_dir(name: &str) -> gtp_core::testing::TempDir {
+        gtp_core::testing::TempDir::new(&format!("golden-{name}"))
     }
 
     /// The committed goldens match the current pipeline. When a change is intended, run
@@ -362,7 +360,6 @@ mod tests {
         let again = bless(&dir).unwrap();
         assert!(again[1].diff.unwrap().max > MAX_DELTA_E);
         assert!(check(&dir, None).unwrap().iter().all(Outcome::passed));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

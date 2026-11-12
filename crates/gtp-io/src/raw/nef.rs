@@ -148,8 +148,7 @@ mod tests {
 
     #[test]
     fn a_missing_file_a_folder_and_a_file_that_is_not_a_camera_file_are_refused() {
-        let dir = std::env::temp_dir().join(format!("gtp-nef-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = gtp_core::testing::TempDir::new("nef");
         let limits = Limits::default();
         assert_eq!(
             decode_nef(&dir.join("nothing.NEF"), &limits)
@@ -158,7 +157,7 @@ mod tests {
             ErrorCode::NotFound
         );
         assert_eq!(
-            decode_nef(&dir, &limits).unwrap_err().code,
+            decode_nef(dir.path(), &limits).unwrap_err().code,
             ErrorCode::NotFound
         );
         let text = dir.join("not-a-photo.NEF");
@@ -167,7 +166,6 @@ mod tests {
             decode_nef(&text, &limits).unwrap_err().code,
             ErrorCode::UnsupportedFormat
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// A real D600 NEF from the private samples: 6016 x 4016 after the crop, RGGB, white 15520,

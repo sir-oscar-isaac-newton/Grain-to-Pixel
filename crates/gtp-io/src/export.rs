@@ -196,31 +196,13 @@ pub fn encode_jpeg_bytes(
 #[cfg(test)]
 mod tests {
     use std::fs::File;
-    use std::path::PathBuf;
 
+    use gtp_core::testing::TempDir;
     use lcms2::{ColorSpaceSignature, Profile};
     use tiff::decoder::Decoder;
 
     use super::*;
     use crate::{read_tiff16, ExifDate, Limits};
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(label: &str) -> Self {
-            let dir =
-                std::env::temp_dir().join(format!("gtp-export-{label}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir).unwrap();
-            Self(dir)
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
 
     /// A smooth colourful test picture with some fine detail, in linear Rec.2020.
     fn picture(width: u32, height: u32) -> ImageF32 {
@@ -272,7 +254,7 @@ mod tests {
             OutputSpace::AdobeRgb,
             OutputSpace::Prophoto,
         ] {
-            let path = dir.0.join(format!("{space:?}.tif"));
+            let path = dir.join(format!("{space:?}.tif"));
             encode_tiff16(&img, space, &path, None).unwrap();
 
             let back = read_tiff16(&path, &Limits::default()).unwrap();
@@ -291,7 +273,7 @@ mod tests {
     #[test]
     fn a_jpeg_export_carries_its_profile() {
         let dir = TempDir::new("jpeg");
-        let path = dir.0.join("frame.jpg");
+        let path = dir.join("frame.jpg");
         encode_jpeg(&picture(64, 40), OutputSpace::AdobeRgb, 90, &path, None).unwrap();
         let bytes = std::fs::read(&path).unwrap();
         assert_eq!(&bytes[..2], &[0xFF, 0xD8], "a JPEG file");
@@ -444,7 +426,7 @@ mod tests {
     #[test]
     fn the_icc_creation_time_does_not_count_in_a_jpeg_comparison() {
         let dir = TempDir::new("icc-time");
-        let jpg = dir.0.join("t.jpg");
+        let jpg = dir.join("t.jpg");
         encode_jpeg(&picture(32, 20), OutputSpace::Srgb, 90, &jpg, None).unwrap();
         let bytes = std::fs::read(&jpg).unwrap();
         let seconds = icc_seconds_offset(&bytes);
@@ -474,7 +456,7 @@ mod tests {
     #[test]
     fn a_jpeg_export_carries_its_metadata() {
         let dir = TempDir::new("jpeg-meta");
-        let path = dir.0.join("m.jpg");
+        let path = dir.join("m.jpg");
         let meta = sample_metadata();
         encode_jpeg(&picture(64, 40), OutputSpace::Srgb, 90, &path, Some(&meta)).unwrap();
         assert_sample_tags(&read_exif(&path));
@@ -483,7 +465,7 @@ mod tests {
     #[test]
     fn a_tiff_export_carries_its_metadata() {
         let dir = TempDir::new("tiff-meta");
-        let path = dir.0.join("m.tif");
+        let path = dir.join("m.tif");
         let meta = sample_metadata();
         encode_tiff16(&picture(64, 40), OutputSpace::Srgb, &path, Some(&meta)).unwrap();
         assert_sample_tags(&read_exif(&path));
@@ -496,14 +478,14 @@ mod tests {
     fn without_metadata_there_are_no_tags() {
         let dir = TempDir::new("no-meta");
         let img = picture(32, 20);
-        let jpg = dir.0.join("n.jpg");
+        let jpg = dir.join("n.jpg");
         encode_jpeg(&img, OutputSpace::Srgb, 90, &jpg, None).unwrap();
         let bytes = std::fs::read(&jpg).unwrap();
         assert!(
             !bytes.windows(6).any(|w| w == b"Exif\0\0"),
             "no Exif block at all"
         );
-        let tif = dir.0.join("n.tif");
+        let tif = dir.join("n.tif");
         encode_tiff16(&img, OutputSpace::Srgb, &tif, None).unwrap();
         let exif = read_exif(&tif);
         for tag in ALL_TAGS {
@@ -511,7 +493,7 @@ mod tests {
         }
         // Metadata with nothing in it writes nothing either.
         let empty = ExportMetadata::default();
-        let jpg2 = dir.0.join("e.jpg");
+        let jpg2 = dir.join("e.jpg");
         encode_jpeg(&img, OutputSpace::Srgb, 90, &jpg2, Some(&empty)).unwrap();
         let bytes2 = std::fs::read(&jpg2).unwrap();
         assert!(
@@ -521,7 +503,7 @@ mod tests {
         // The profile's creation time (to the second) may differ between two
         // writes; everything else must be the same.
         assert_eq!(jpeg_without_icc(&bytes2), jpeg_without_icc(&bytes));
-        let tif2 = dir.0.join("e.tif");
+        let tif2 = dir.join("e.tif");
         encode_tiff16(&img, OutputSpace::Srgb, &tif2, Some(&empty)).unwrap();
         let exif = read_exif(&tif2);
         for tag in ALL_TAGS {
@@ -542,8 +524,8 @@ mod tests {
             ..ExportMetadata::default()
         };
         let img = picture(16, 16);
-        let jpg = dir.0.join("u.jpg");
-        let tif = dir.0.join("u.tif");
+        let jpg = dir.join("u.jpg");
+        let tif = dir.join("u.tif");
         encode_jpeg(&img, OutputSpace::Srgb, 90, &jpg, Some(&meta)).unwrap();
         encode_tiff16(&img, OutputSpace::Srgb, &tif, Some(&meta)).unwrap();
         for (path, big_endian) in [(&jpg, true), (&tif, false)] {
@@ -573,7 +555,7 @@ mod tests {
             software: Some("x".into()),
             ..ExportMetadata::default()
         };
-        let tif = dir.0.join("i.tif");
+        let tif = dir.join("i.tif");
         encode_tiff16(&picture(8, 8), OutputSpace::Srgb, &tif, Some(&meta)).unwrap();
         let exif = read_exif(&tif);
         assert!(iso(&exif).is_none());
@@ -586,7 +568,7 @@ mod tests {
         let img = picture(64, 40);
         let meta = sample_metadata();
 
-        let (plain, tagged) = (dir.0.join("p.tif"), dir.0.join("t.tif"));
+        let (plain, tagged) = (dir.join("p.tif"), dir.join("t.tif"));
         encode_tiff16(&img, OutputSpace::AdobeRgb, &plain, None).unwrap();
         encode_tiff16(&img, OutputSpace::AdobeRgb, &tagged, Some(&meta)).unwrap();
         let (a, b) = (
@@ -618,7 +600,7 @@ mod tests {
         let sizes: Vec<u64> = [10, 40, 70, 90, 100]
             .iter()
             .map(|&q| {
-                let path = dir.0.join(format!("q{q}.jpg"));
+                let path = dir.join(format!("q{q}.jpg"));
                 encode_jpeg(&img, OutputSpace::Srgb, q, &path, None).unwrap();
                 std::fs::metadata(&path).unwrap().len()
             })
@@ -629,7 +611,7 @@ mod tests {
     #[test]
     fn bad_quality_size_and_channels_are_rejected() {
         let dir = TempDir::new("errors");
-        let path = dir.0.join("x.jpg");
+        let path = dir.join("x.jpg");
         let img = picture(8, 8);
         for q in [0, 101] {
             let err = encode_jpeg(&img, OutputSpace::Srgb, q, &path, None).unwrap_err();
@@ -639,7 +621,7 @@ mod tests {
         let err = encode_jpeg(&wide, OutputSpace::Srgb, 90, &path, None).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
         let gray = ImageF32::zeros(4, 4, 1).unwrap();
-        let err = encode_tiff16(&gray, OutputSpace::Srgb, &dir.0.join("g.tif"), None).unwrap_err();
+        let err = encode_tiff16(&gray, OutputSpace::Srgb, &dir.join("g.tif"), None).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
         assert!(!path.exists(), "nothing is left behind");
     }
@@ -664,10 +646,10 @@ mod tests {
         let out = to_output(&img, OutputSpace::AdobeRgb).unwrap();
         eprintln!("transform: {:?}", start.elapsed());
         let start = std::time::Instant::now();
-        write_output_tiff16(&dir.0.join("big.tif"), &out, None).unwrap();
+        write_output_tiff16(&dir.join("big.tif"), &out, None).unwrap();
         eprintln!("TIFF write: {:?}", start.elapsed());
         let start = std::time::Instant::now();
-        encode_jpeg(&img, OutputSpace::Srgb, 90, &dir.0.join("big.jpg"), None).unwrap();
+        encode_jpeg(&img, OutputSpace::Srgb, 90, &dir.join("big.jpg"), None).unwrap();
         eprintln!("JPEG (transform + encode): {:?}", start.elapsed());
     }
 }

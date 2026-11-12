@@ -140,7 +140,7 @@ pub fn roll_delete(ctx: State<'_, AppContext>, id: RollId) -> CmdResult<DeleteRe
 #[cfg(test)]
 mod tests {
     use gtp_app::services::roll_frame::FrameQuery;
-    use gtp_core::{ErrorCode, FrameId};
+    use gtp_core::ErrorCode;
     use tauri::Manager;
 
     use super::*;
@@ -148,14 +148,11 @@ mod tests {
 
     #[test]
     fn commands_map_errors_and_run_against_the_open_library() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-cmd-roll-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("cmd-roll");
         let app = tauri::test::mock_app();
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
 
         // No library open: a typed NotFound that reaches the UI as { code, message }.
         let err = roll_list(app.state()).unwrap_err();
@@ -197,18 +194,11 @@ mod tests {
         assert_eq!(page.total, 0);
         assert_eq!(frame_delete(app.state(), vec![]).unwrap().frames_deleted, 0);
         assert_eq!(roll_delete(app.state(), roll.id).unwrap().frames_deleted, 0);
-
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_rolls_base_is_set_checked_and_cleared() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-cmd-rollbase-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("cmd-rollbase");
         let app = tauri::test::mock_app();
         crate::ipc::builder::<tauri::test::MockRuntime>().mount_events(&app);
         app.manage(EventsState(Arc::new(crate::sink::TauriJobSink::new(
@@ -216,6 +206,7 @@ mod tests {
         ))));
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
 
         let err = roll_set_film_base(app.state(), app.state(), RollId::new(), None).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound, "no library is open");
@@ -262,8 +253,5 @@ mod tests {
         assert!(!flat_field_clear(app.state(), app.state(), roll.id).unwrap());
         let err = flat_field_clear(app.state(), app.state(), RollId::new()).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
-
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

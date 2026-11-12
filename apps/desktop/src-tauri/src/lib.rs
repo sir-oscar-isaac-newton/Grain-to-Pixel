@@ -9,6 +9,8 @@ mod ipc;
 mod logging;
 mod sink;
 mod state;
+#[cfg(test)]
+mod testkit;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -292,13 +294,10 @@ mod tests {
 
     #[test]
     fn a_watchdog_tick_with_the_apps_own_state_trips_a_hot_light() {
+        let dir = gtp_core::testing::TempDir::new("watch");
         let (app, handle) = app_with_light();
         ipc::builder::<tauri::test::MockRuntime>().mount_events(&app);
-        let (ctx, _) = AppContext::new(
-            &std::env::temp_dir()
-                .join(format!("gtp-watch-{}", std::process::id()))
-                .join("settings.json"),
-        );
+        let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
         let sink = Arc::new(sink::TauriJobSink::new(app.handle().clone()));
         app.manage(sink::CaptureEventsState(sink));
@@ -315,13 +314,13 @@ mod tests {
 
     #[test]
     fn signal_ready_writes_the_app_version() {
-        let path = std::env::temp_dir().join(format!("gtp-ready-{}.txt", std::process::id()));
+        let dir = gtp_core::testing::TempDir::new("ready");
+        let path = dir.join("ready.txt");
         signal_ready(&path).unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             env!("CARGO_PKG_VERSION")
         );
-        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

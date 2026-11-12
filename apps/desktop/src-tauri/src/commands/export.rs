@@ -60,17 +60,14 @@ mod tests {
 
     #[test]
     fn an_export_job_checks_its_input_runs_and_reports_through_job_done() {
-        let dir = std::env::temp_dir().join(format!(
-            "gtp-cmd-export-{}-{}",
-            std::process::id(),
-            FrameId::new()
-        ));
+        let dir = gtp_core::testing::TempDir::new("cmd-export");
         let app = tauri::test::mock_app();
         crate::ipc::builder::<tauri::test::MockRuntime>().mount_events(&app);
         let sink = Arc::new(TauriJobSink::new(app.handle().clone()));
         app.manage(JobManager::new(sink.clone()));
         let (ctx, _) = AppContext::new(&dir.join("settings.json"));
         app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
         let options = ExportOptions {
             format: ExportFormat::Jpeg,
             space: OutputSpace::Srgb,
@@ -128,8 +125,5 @@ mod tests {
         assert_eq!(done["result"]["kind"], "Exported");
         assert_eq!(done["result"]["failed"][0]["frame_id"], missing.to_string());
         assert_eq!(done["result"]["files"].as_array().unwrap().len(), 0);
-
-        drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

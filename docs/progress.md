@@ -1064,6 +1064,15 @@
       "number": 340,
       "title": "Colour direction on the colour balance sliders",
       "branch": "feat/issue-340-balance-direction",
+      "status": "completed",
+      "pr": 343,
+      "commit": "5afba9c"
+    },
+    {
+      "id": "P-30",
+      "number": 328,
+      "title": "One colour conversion for screen and file",
+      "branch": "feat/issue-328-one-colour-conversion",
       "status": "in_progress",
       "pr": null,
       "commit": null

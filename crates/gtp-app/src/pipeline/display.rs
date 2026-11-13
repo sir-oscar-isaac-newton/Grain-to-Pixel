@@ -1,9 +1,11 @@
 //! Display conversion for previews and the histogram.
 //!
 //! The working space is linear Rec.2020 primaries (docs/specification.md section 4.2); previews
-//! assume an sRGB display. [`to_rgba8_srgb`] converts the primaries with a fixed 3x3 matrix, clips
-//! to `[0, 1]` and applies the sRGB transfer curve. Colour-managed export with ICC profiles is a
-//! separate step (P-04).
+//! assume an sRGB display. [`to_rgba8_srgb`] clips each Rec.2020 channel to `[0, 1]` first, as the
+//! sRGB export does, then converts the primaries with a fixed 3x3 matrix, clips to `[0, 1]` and
+//! applies the sRGB transfer curve. The result is within 1 level of the 8-bit values an sRGB export
+//! writes (ADR 0015), so the preview, the detail view, the histogram and the clipping overlay judge
+//! what the file holds. Colour-managed export with ICC profiles is a separate step (P-04).
 
 use std::sync::OnceLock;
 
@@ -62,11 +64,27 @@ fn byte_of(linear: f32, thresholds: &[f32; 255]) -> u8 {
     thresholds.partition_point(|level| *level <= linear) as u8
 }
 
+/// A Rec.2020 channel exactly as the export clips it: NaN to 0, everything else to `[0, 1]`, so
+/// positive infinity becomes 1 and negative infinity 0.
+fn clip_input(v: f32) -> f32 {
+    if v.is_nan() {
+        0.0
+    } else {
+        v.clamp(0.0, 1.0)
+    }
+}
+
 /// Pixels converted by one task: enough work to be worth handing to another thread.
 const PIXELS_PER_TASK: usize = 4096;
 
-/// Converts a linear Rec.2020 image to 8-bit sRGB RGBA (alpha 255), row-major. Values outside the
-/// sRGB gamut or above 1.0 are clipped; values that are not finite become black.
+/// Converts a linear Rec.2020 image to 8-bit sRGB RGBA (alpha 255), row-major, the way the sRGB
+/// export does, to within 1 level per channel (ADR 0015).
+///
+/// Each Rec.2020 channel is clipped to `[0, 1]` before the matrix (NaN becomes 0, and the
+/// infinities go to the ends, 1 and 0), exactly as `gtp_io::to_output` does. The order matters:
+/// clipping after the matrix lets a value above 1 pull the other channels through the matrix's
+/// negative terms and gives other colours than the file has. The matrix output is clipped again,
+/// since a colour inside the Rec.2020 cube can still land slightly outside sRGB.
 pub fn to_rgba8_srgb(image: &ImageF32) -> Result<Vec<u8>, AppError> {
     if image.channels != 3 {
         return Err(AppError::new(
@@ -83,14 +101,10 @@ pub fn to_rgba8_srgb(image: &ImageF32) -> Result<Vec<u8>, AppError> {
         .for_each(|(rgba_run, rgb_run)| {
             let (rgba_run, _) = rgba_run.as_chunks_mut::<4>();
             for (rgba, rgb) in rgba_run.iter_mut().zip(rgb_run) {
+                let rgb = rgb.map(clip_input);
                 for (slot, row) in rgba.iter_mut().zip(REC2020_TO_SRGB) {
                     let linear = row[0] * rgb[0] + row[1] * rgb[1] + row[2] * rgb[2];
-                    let clipped = if linear.is_finite() {
-                        linear.clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    };
-                    *slot = byte_of(clipped, thresholds);
+                    *slot = byte_of(linear.clamp(0.0, 1.0), thresholds);
                 }
                 rgba[3] = 255;
             }
@@ -158,7 +172,11 @@ mod tests {
     #[test]
     fn out_of_range_and_non_finite_values_are_clipped() {
         assert_eq!(rgba_of([4.0; 3]), [255, 255, 255, 255]);
-        assert_eq!(rgba_of([-1.0, f32::NAN, f32::INFINITY]), [0, 0, 0, 255]);
+        // As the export clips: negative and NaN to 0, infinity to 1, before the matrix. A lone
+        // Rec.2020 blue is outside sRGB, so only blue is left.
+        assert_eq!(rgba_of([-1.0, f32::NAN, f32::INFINITY]), [0, 0, 255, 255]);
+        assert_eq!(rgba_of([f32::NAN; 3]), [0, 0, 0, 255]);
+        assert_eq!(rgba_of([f32::NEG_INFINITY; 3]), [0, 0, 0, 255]);
         // Saturated Rec.2020 red is outside sRGB: red clips high, green and blue clip at 0.
         assert_eq!(rgba_of([1.0, 0.0, 0.0]), [255, 0, 0, 255]);
     }
@@ -244,20 +262,16 @@ mod tests {
         assert_eq!(wrong, 0);
     }
 
-    /// `to_rgba8_srgb` as it was before the lookup: one formula per channel.
+    /// `to_rgba8_srgb` as it was before the lookup: one formula per channel (after the Rec.2020 clip).
     fn reference_rgba(image: &ImageF32) -> Vec<u8> {
         let (pixels, _) = image.data.as_chunks::<3>();
         let mut out = vec![0u8; pixels.len() * 4];
         let (out_pixels, _) = out.as_chunks_mut::<4>();
         for (rgba, rgb) in out_pixels.iter_mut().zip(pixels) {
+            let rgb = rgb.map(clip_input);
             for (slot, row) in rgba.iter_mut().zip(REC2020_TO_SRGB) {
                 let linear = row[0] * rgb[0] + row[1] * rgb[1] + row[2] * rgb[2];
-                let clipped = if linear.is_finite() {
-                    linear.clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                *slot = encode_byte(clipped);
+                *slot = encode_byte(linear.clamp(0.0, 1.0));
             }
             rgba[3] = 255;
         }
@@ -300,3 +314,8 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod against_export;
+#[cfg(test)]
+mod measure;

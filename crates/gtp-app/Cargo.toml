@@ -43,7 +43,7 @@ criterion = "0.8.2"
 # Decodes the JPEG of a roll preview to check its pixels (already in the tree through gtp-ingest).
 jpeg-decoder = { version = "0.3", default-features = false }
 # Reads the Exif tags an export wrote back (already in the tree through gtp-ingest and gtp-io).
-kamadak-exif = "=0.6.1"
+kamadak-exif = "=0.6.2"
 
 [[bench]]
 name = "pipeline"

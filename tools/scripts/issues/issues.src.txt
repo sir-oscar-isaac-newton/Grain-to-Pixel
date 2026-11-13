@@ -3035,3 +3035,30 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-11 with U-32. Uses the trackGradient of the shared Slider added by U-31; no change to packages/ui is expected, and one would need the owner's approval. The colours are a guide for the screen in sRGB, not a proof of the result. Out of scope: gradients for the temperature and tint sliders (they could follow the same rule in a later issue), a colour wheel, changing what the sliders do.
+
+## P-32
+title: Bright saturated colours in the conversion to the output space
+milestone: M6
+type: feature
+size: M
+estimate: 2d
+deps: P-30, P-12
+adr: yes
+spec: specification sections 4 and 6
+desc: The conversion to the output colour space (to_output, and since P-30 the screen conversion that matches it) clips each Rec.2020 channel to 1 before converting. A colour brighter than 1 in one or two channels loses the ratio between its channels: it turns paler and shifts towards the neighbouring hue. ADR 0015 measured it: a bright green that should stay green becomes a pale cyan-white, an orange turns yellower. This happens in exported files and, since P-30, on screen. Decide how colours above 1 should be brought into range, and do it the same way for the file and the screen.
+ac:
+- An ADR shows the effect on test colours and on real renders (Q-11 scans when they exist, synthetic renders otherwise), and compares at least: clipping per channel as today, scaling the colour down to keep its hue (the largest channel to 1), and a soft roll-off of the highlights that keeps hue and lets saturation fall towards white; for each it states the hue shift, how highlights look, the cost in time, and what happens to values already in range
+- Values in which no channel is above 1 give the same pixels as today, bit for bit, in every output space, shown by a test; only colours above 1 change
+- The screen conversion and the export stay within 1 level of each other on the test sets of P-30 (ADR 0015), with the new rule in both
+- The rule is applied once, in one place both paths use, or the pull request shows by test that the two implementations agree
+- Exports to Adobe RGB and ProPhoto RGB get the same rule, and the ADR says what it means for a space wider than sRGB
+- The change of existing results is stated: which golden and benchmark tests change and why, with before and after figures; no other test changes
+- The cost is measured for a 2048 pixel preview and a 24 megapixel export and stays within the budgets of the specification
+- The specification says how colours above 1 are handled and that the histogram and the clipping overlay judge the result of that rule
+- Tests: hue kept within a stated tolerance for bright saturated colours, in-range values unchanged, neutral highlights still reach white, values that are not finite, the screen against the export
+tech:
+FILES: crates/gtp-io/src/icc.rs (to_output), crates/gtp-app/src/pipeline/display.rs (to_rgba8_srgb), possibly a shared function in gtp-core or gtp-edit, tools/benchmark and the golden tests, docs/specification.md, decisions.
+ROUTES: none.
+MIGRATIONS: none; thumbnails made before the change keep their pixels until they are regenerated, and the ADR says whether a regeneration is needed.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-13 after P-30. The tone stage already has highlight controls; this issue is about what is left above 1 when the image reaches the output conversion, not about a new tone control. Real scans from Q-11 show how often it occurs in practice, so this may be ordered after Q-11. Out of scope: gamut mapping of colours that are in range but outside the output space, soft proofing, a gamut warning, a new slider.

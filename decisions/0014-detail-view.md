@@ -61,7 +61,7 @@ tied to the export so the two cannot drift apart, and when the memory is given b
 
 - After each change at 1:1 the layer waits for a full render: the budget is 3 s for a 24 megapixel
   scan with every tool on, on 6 cores (measured 2.8 s without the decode, see the specification's
-  section 11). A region from the cached picture takes a few milliseconds. The enlarged preview shows
+  section 11; after P-31 phase 2, decode included, 2.98 s on 6 threads, 2.36 s on 12). A region from the cached picture takes a few milliseconds. The enlarged preview shows
   in the meantime, with a status line.
 - The service holds up to 96 MB more (24 megapixels) while the Develop view is open, and during a render
   the float working images are alive as well (a peak like an export's). The old picture is dropped

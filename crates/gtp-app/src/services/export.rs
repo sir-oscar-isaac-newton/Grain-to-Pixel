@@ -29,7 +29,7 @@ use crate::pipeline::{
     analyze_with, build_proxy, render, resize_to_long_edge, PipelineInput, RenderTarget, PROXY_EDGE,
 };
 use crate::services::counters;
-use crate::services::develop::{read_ir_or_skip, read_scan};
+use crate::services::develop::{check_ir, read_ir_plane, read_scan, skip_unusable_ir};
 use crate::services::export_metadata;
 use crate::services::library::Library;
 use crate::services::roll_balance::with_frame_balance;
@@ -287,13 +287,20 @@ pub(crate) fn read_full(
     dust_removal: bool,
 ) -> Result<(ImageF32, Option<ImageF32>), AppError> {
     let flat = library.read(|c| c.get_flat_field(frame.roll_id))?;
-    let full = read_scan(library, sources, flat.as_ref())?;
+    // The scan and the infrared file are decoded at the same time (the infrared plane is checked
+    // against the scan afterwards). If the scan fails, its error is the one returned.
+    let (full, ir) = rayon::join(
+        || read_scan(library, sources, flat.as_ref()),
+        || (dust_removal && frame.has_ir).then(|| read_ir_plane(library, sources)),
+    );
+    let full = full?;
     // The infrared plane, at full size like the scan; a plane that cannot be used is skipped.
-    let ir = if dust_removal {
-        read_ir_or_skip(library, sources, frame, (full.width, full.height))
-    } else {
-        None
-    };
+    let ir = ir.and_then(|plane| {
+        skip_unusable_ir(
+            frame,
+            plane.and_then(|p| check_ir(p, (full.width, full.height))),
+        )
+    });
     Ok((full, ir))
 }
 
@@ -473,7 +480,7 @@ mod tests {
 
     use gtp_core::testing::synthetic::{Params, Pattern};
     use gtp_core::{JobId, JobResult, SourceRole};
-    use gtp_io::{icc_profile, read_tiff16, Limits};
+    use gtp_io::{icc_profile, read_tiff16, Limits, Tiff16};
 
     use super::*;
     use crate::jobs::{CancelFlag, JobSink};
@@ -1184,6 +1191,143 @@ mod tests {
         // converts with the colour profiles (`gtp_io::to_output`) and the previews with a matrix and
         // a clip, which is how the previews have always differed from a file.
         assert_eq!(tiff.channels, 3);
+    }
+
+    /// `read_full` before P-31 phase 2: the scan, then the infrared plane, one after the other.
+    fn read_full_before_p31(
+        library: &Library,
+        frame: &Frame,
+        sources: &[SourceFile],
+        dust_removal: bool,
+    ) -> Result<(ImageF32, Option<ImageF32>), AppError> {
+        use crate::services::develop::read_ir_or_skip;
+        let flat = library.read(|c| c.get_flat_field(frame.roll_id))?;
+        let full = read_scan(library, sources, flat.as_ref())?;
+        let ir = if dust_removal {
+            read_ir_or_skip(library, sources, frame, (full.width, full.height))
+        } else {
+            None
+        };
+        Ok((full, ir))
+    }
+
+    fn assert_same_image(new: &ImageF32, old: &ImageF32, label: &str) {
+        assert_eq!(
+            (new.width, new.height, new.channels),
+            (old.width, old.height, old.channels),
+            "{label}"
+        );
+        assert_eq!(new.data.len(), old.data.len(), "{label}");
+        for (i, (n, o)) in new.data.iter().zip(&old.data).enumerate() {
+            assert_eq!(n.to_bits(), o.to_bits(), "{label}: sample {i}");
+        }
+    }
+
+    /// The old and the new `read_full` agree, on the pictures (bit for bit) and on the errors.
+    fn assert_same_read_full(t: &Fixture, id: FrameId, dust_removal: bool, label: &str) {
+        let (frame, sources) = t
+            .library
+            .read(|c| Ok((c.get_frame(id)?, c.sources_of(id)?)))
+            .unwrap();
+        let old = read_full_before_p31(&t.library, &frame, &sources, dust_removal);
+        let new = read_full(&t.library, &frame, &sources, dust_removal);
+        match (new, old) {
+            (Ok((new_rgb, new_ir)), Ok((old_rgb, old_ir))) => {
+                assert_same_image(&new_rgb, &old_rgb, label);
+                assert_eq!(
+                    new_ir.is_some(),
+                    old_ir.is_some(),
+                    "{label}: infrared plane"
+                );
+                if let (Some(new_ir), Some(old_ir)) = (new_ir, old_ir) {
+                    assert_same_image(&new_ir, &old_ir, &format!("{label}: infrared"));
+                }
+            }
+            (Err(new), Err(old)) => assert_eq!(new, old, "{label}"),
+            (new, old) => panic!(
+                "{label}: {:?} against {:?}",
+                new.map(|_| ()),
+                old.map(|_| ())
+            ),
+        }
+    }
+
+    #[test]
+    fn read_full_gives_what_the_sequential_read_gave() {
+        use gtp_io::{write_tiff16, Compression};
+
+        let t = Fixture::new("read-full-p31");
+        let with_ir = Params {
+            width: 140,
+            height: 96,
+            rebate: [10; 4],
+            dust_specks: 5,
+            with_ir: true,
+            ..Params::default()
+        };
+        let id = t.frame_params(1, &with_ir);
+        let without_ir = t.frame(2, 120, 80);
+        let path_of = |id: FrameId, role: SourceRole| {
+            let sources = t.library.read(|c| c.sources_of(id)).unwrap();
+            let source = sources.iter().find(|s| s.role == role).unwrap();
+            t.library.resolve(Path::new(&source.rel_path)).unwrap()
+        };
+        let (scan, ir) = (path_of(id, SourceRole::Rgb), path_of(id, SourceRole::Ir));
+        let originals: Vec<_> = [&scan, &ir]
+            .iter()
+            .map(|p| read_tiff16(p, &Limits::default()).unwrap())
+            .collect();
+
+        // An uncompressed file, then deflate-compressed ones (several strips).
+        for compression in [Compression::None, Compression::DeflatePredictor] {
+            write_tiff16(&scan, &originals[0], compression).unwrap();
+            write_tiff16(&ir, &originals[1], compression).unwrap();
+            for dust in [true, false] {
+                assert_same_read_full(&t, id, dust, &format!("{compression:?}, dust {dust}"));
+            }
+            assert_same_read_full(&t, without_ir, true, "a frame without an infrared plane");
+        }
+        let (old, new) = {
+            let (frame, sources) = t
+                .library
+                .read(|c| Ok((c.get_frame(id)?, c.sources_of(id)?)))
+                .unwrap();
+            (
+                read_full_before_p31(&t.library, &frame, &sources, true).unwrap(),
+                read_full(&t.library, &frame, &sources, true).unwrap(),
+            )
+        };
+        assert!(
+            old.1.is_some() && new.1.is_some(),
+            "the fixture has a usable plane"
+        );
+
+        // An infrared file of another size, or damaged: the plane is skipped, the scan is read.
+        let small = Tiff16 {
+            width: 4,
+            height: 4,
+            channels: 1,
+            data: vec![7; 16],
+        };
+        write_tiff16(&ir, &small, Compression::None).unwrap();
+        assert_same_read_full(&t, id, true, "an infrared plane of another size");
+        std::fs::write(&ir, b"not a tiff").unwrap();
+        assert_same_read_full(&t, id, true, "a damaged infrared file");
+        std::fs::remove_file(&ir).unwrap();
+        assert_same_read_full(&t, id, true, "a missing infrared file");
+
+        // A damaged or missing scan is the error, whether or not the infrared file is fine.
+        write_tiff16(&ir, &originals[1], Compression::None).unwrap();
+        std::fs::write(&scan, b"not a tiff").unwrap();
+        assert_same_read_full(&t, id, true, "a damaged scan, a good infrared file");
+        std::fs::remove_file(&scan).unwrap();
+        assert_same_read_full(&t, id, true, "a missing scan, a good infrared file");
+        assert_same_read_full(&t, id, false, "a missing scan, no dust removal");
+        std::fs::remove_file(&ir).unwrap();
+        assert_same_read_full(&t, id, true, "a missing scan and a missing infrared file");
+        std::fs::write(&ir, b"also not a tiff").unwrap();
+        std::fs::write(&scan, b"not a tiff").unwrap();
+        assert_same_read_full(&t, id, true, "both files damaged");
     }
 
     #[test]

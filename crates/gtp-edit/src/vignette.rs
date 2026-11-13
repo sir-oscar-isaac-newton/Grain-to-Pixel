@@ -8,6 +8,10 @@
 //! `t = smoothstep((d - r0) / (1 - r0))`; at `r0 >= 1` there is no effect. The gain is
 //! `2^(amount / 100 * VIGNETTE_MAX_EV * t)` on all three channels in linear light, so hue and
 //! saturation do not change. The result is not clamped. An amount of 0 returns the image untouched.
+//!
+//! The gain depends on the pixel position only, and the offsets of pixel `i` and pixel `len - 1 - i`
+//! along an axis are exactly opposite, so the gains of one quarter of the picture serve all four
+//! (checked on the bits of the offsets before it is used; see `is_mirror_symmetric`).
 
 use gtp_core::recipe::Vignette;
 use gtp_core::{AppError, ImageF32};
@@ -27,9 +31,66 @@ fn falloff(d: f32, r0: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
+/// The squared normalised coordinate of every pixel centre along an axis of `len` pixels:
+/// `((i + 0.5 - len/2) / (len/2))^2`.
+fn squared_offsets(len: usize) -> Vec<f32> {
+    let half = len as f32 / 2.0;
+    (0..len)
+        .map(|i| {
+            let n = (i as f32 + 0.5 - half) / half;
+            n * n
+        })
+        .collect()
+}
+
+/// True when pixel `i` and pixel `len - 1 - i` have the same bits in `offsets`, for every `i`. They
+/// do whenever `i + 0.5 - len/2` is exact in `f32` (every size below 2^23): the two numerators are
+/// then exactly opposite, and division and squaring are symmetric in the sign. The check is made
+/// anyway, so that a size where it does not hold simply takes the direct path.
+fn is_mirror_symmetric(offsets: &[f32]) -> bool {
+    offsets
+        .iter()
+        .zip(offsets.iter().rev())
+        .all(|(a, b)| a.to_bits() == b.to_bits())
+}
+
+/// The gain at squared offsets `nx2` and `ny2` (0.0 where there is no effect; a real gain is never
+/// 0, it is at least 2^-2).
+fn gain_at(nx2: f32, ny2: f32, r0: f32, stops: f32) -> f32 {
+    let d = ((nx2 + ny2) / 2.0).sqrt();
+    let t = falloff(d, r0);
+    if t > 0.0 {
+        (stops * t).exp2()
+    } else {
+        0.0
+    }
+}
+
+/// Multiplies the pixels of `row` by their gains (a gain of 0.0 leaves a pixel alone).
+fn scale_row(row: &mut [f32], gains: &[f32]) {
+    let (pixels, _) = row.as_chunks_mut::<3>();
+    for (pixel, gain) in pixels.iter_mut().zip(gains) {
+        if *gain != 0.0 {
+            for c in pixel {
+                *c *= *gain;
+            }
+        }
+    }
+}
+
 /// Applies the vignette in place. The recipe is expected to be clamped; the values are limited here
 /// as well, so no input can produce NaN.
 pub fn apply_vignette(image: &mut ImageF32, vignette: &Vignette) -> Result<(), AppError> {
+    apply_vignette_with(image, vignette, true)
+}
+
+/// [`apply_vignette`]; `mirror` allows computing the gains of one quarter of the picture and
+/// copying them to the other three (when their bits are the same, see [`is_mirror_symmetric`]).
+fn apply_vignette_with(
+    image: &mut ImageF32,
+    vignette: &Vignette,
+    mirror: bool,
+) -> Result<(), AppError> {
     require_rgb(image, "vignette")?;
     let amount = if vignette.amount.is_finite() {
         vignette.amount.clamp(-100.0, 100.0)
@@ -46,27 +107,52 @@ pub fn apply_vignette(image: &mut ImageF32, vignette: &Vignette) -> Result<(), A
     };
     let r0 = midpoint / 100.0;
     let stops = amount / 100.0 * VIGNETTE_MAX_EV;
-    let (half_w, half_h) = (image.width as f32 / 2.0, image.height as f32 / 2.0);
-    let row_len = image.width as usize * 3;
-    image
-        .data
-        .par_chunks_mut(row_len)
-        .enumerate()
-        .for_each(|(y, row)| {
-            let ny = (y as f32 + 0.5 - half_h) / half_h;
-            let (pixels, _) = row.as_chunks_mut::<3>();
-            for (x, pixel) in pixels.iter_mut().enumerate() {
-                let nx = (x as f32 + 0.5 - half_w) / half_w;
-                let d = ((nx * nx + ny * ny) / 2.0).sqrt();
-                let t = falloff(d, r0);
-                if t > 0.0 {
-                    let gain = (stops * t).exp2();
-                    for c in pixel {
-                        *c *= gain;
-                    }
-                }
-            }
-        });
+    let (width, height) = (image.width as usize, image.height as usize);
+    let (across, down) = (squared_offsets(width), squared_offsets(height));
+    let mirror_x = mirror && is_mirror_symmetric(&across);
+    let mirror_y = mirror && is_mirror_symmetric(&down);
+    // Columns whose gain is computed; the others are copies of their mirror image.
+    let computed = if mirror_x { width.div_ceil(2) } else { width };
+    let row_len = width * 3;
+    let gains_of_row = |gains: &mut Vec<f32>, y: usize| {
+        gains.resize(width, 0.0);
+        for x in 0..computed {
+            gains[x] = gain_at(across[x], down[y], r0, stops);
+        }
+        for x in computed..width {
+            gains[x] = gains[width - 1 - x];
+        }
+    };
+
+    if mirror_y {
+        // Row `y` of the top half and row `height - 1 - y` have the same gains: one set of gains
+        // serves both. With an odd height the middle row is its own mirror image.
+        let half = height / 2;
+        let (top, rest) = image.data.split_at_mut(half * row_len);
+        let (middle, bottom) = rest.split_at_mut((height - 2 * half) * row_len);
+        top.par_chunks_mut(row_len)
+            .zip(bottom.par_chunks_mut(row_len).rev())
+            .enumerate()
+            .for_each_init(Vec::new, |gains, (y, (upper, lower))| {
+                gains_of_row(gains, y);
+                scale_row(upper, gains);
+                scale_row(lower, gains);
+            });
+        if !middle.is_empty() {
+            let mut gains = Vec::new();
+            gains_of_row(&mut gains, half);
+            scale_row(middle, &gains);
+        }
+    } else {
+        image
+            .data
+            .par_chunks_mut(row_len)
+            .enumerate()
+            .for_each_init(Vec::new, |gains, (y, row)| {
+                gains_of_row(gains, y);
+                scale_row(row, gains);
+            });
+    }
     Ok(())
 }
 
@@ -236,5 +322,128 @@ mod tests {
             .unwrap()
             .install(make);
         assert_eq!(one, make());
+    }
+
+    /// `apply_vignette` before P-31: the gain computed directly for every pixel.
+    fn apply_vignette_before_p31(
+        image: &mut ImageF32,
+        vignette: &Vignette,
+    ) -> Result<(), AppError> {
+        require_rgb(image, "vignette")?;
+        let amount = if vignette.amount.is_finite() {
+            vignette.amount.clamp(-100.0, 100.0)
+        } else {
+            0.0
+        };
+        if amount == 0.0 || image.width == 0 || image.height == 0 {
+            return Ok(());
+        }
+        let midpoint = if vignette.midpoint.is_finite() {
+            vignette.midpoint.clamp(0.0, 100.0)
+        } else {
+            Vignette::default().midpoint
+        };
+        let r0 = midpoint / 100.0;
+        let stops = amount / 100.0 * VIGNETTE_MAX_EV;
+        let (half_w, half_h) = (image.width as f32 / 2.0, image.height as f32 / 2.0);
+        let row_len = image.width as usize * 3;
+        image
+            .data
+            .par_chunks_mut(row_len)
+            .enumerate()
+            .for_each(|(y, row)| {
+                let ny = (y as f32 + 0.5 - half_h) / half_h;
+                let (pixels, _) = row.as_chunks_mut::<3>();
+                for (x, pixel) in pixels.iter_mut().enumerate() {
+                    let nx = (x as f32 + 0.5 - half_w) / half_w;
+                    let d = ((nx * nx + ny * ny) / 2.0).sqrt();
+                    let t = falloff(d, r0);
+                    if t > 0.0 {
+                        let gain = (stops * t).exp2();
+                        for c in pixel {
+                            *c *= gain;
+                        }
+                    }
+                }
+            });
+        Ok(())
+    }
+
+    /// Values that are not all alike, with the odd negative, huge, zero and non-finite sample.
+    fn varied(width: u32, height: u32, seed: u32) -> ImageF32 {
+        let mut state = seed;
+        let data = (0..width * height * 3)
+            .map(|i| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let v = (state >> 8) as f32 / (1u32 << 24) as f32;
+                match i % 29 {
+                    3 => 0.0,
+                    8 => -v,
+                    13 => v * 1.0e7,
+                    20 => f32::NAN,
+                    24 => f32::INFINITY,
+                    _ => v * 2.0,
+                }
+            })
+            .collect();
+        ImageF32::new(width, height, 3, data).unwrap()
+    }
+
+    #[test]
+    fn the_vignette_has_the_same_bits_as_before_p31() {
+        // Odd and even sizes, the smallest ones, wide and tall pictures.
+        let sizes = [
+            (1, 1),
+            (1, 2),
+            (2, 1),
+            (2, 2),
+            (3, 3),
+            (7, 5),
+            (8, 6),
+            (5, 200),
+            (200, 5),
+            (64, 64),
+            (101, 53),
+            (100, 50),
+            (257, 31),
+            (130, 129),
+        ];
+        let settings = [
+            (-100.0, 0.0),
+            (-100.0, 50.0),
+            (-33.3, 25.0),
+            (0.7, 99.5),
+            (50.0, 10.0),
+            (100.0, 0.0),
+            (100.0, 100.0),
+            (80.0, f32::NAN),
+        ];
+        for (n, &(width, height)) in sizes.iter().enumerate() {
+            let image = varied(width, height, 11 + n as u32);
+            for (amount, midpoint) in settings {
+                let mut old = image.clone();
+                apply_vignette_before_p31(&mut old, &vig(amount, midpoint)).unwrap();
+                for mirror in [true, false] {
+                    let mut new = image.clone();
+                    apply_vignette_with(&mut new, &vig(amount, midpoint), mirror).unwrap();
+                    for (i, (n, o)) in new.data.iter().zip(&old.data).enumerate() {
+                        assert_eq!(
+                            n.to_bits(),
+                            o.to_bits(),
+                            "{width}x{height}, amount {amount}, midpoint {midpoint}, \
+                             mirror {mirror}: sample {i}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_offsets_of_mirror_pixels_have_the_same_bits_up_to_the_size_limit() {
+        // Every size of a small range, then the sizes around the largest the app accepts.
+        for len in (1..300).chain([1000, 4999, 5000, 6000, 6001, 19_999, 20_000]) {
+            assert!(is_mirror_symmetric(&squared_offsets(len)), "length {len}");
+        }
     }
 }

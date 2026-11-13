@@ -1073,6 +1073,15 @@
       "number": 328,
       "title": "One colour conversion for screen and file",
       "branch": "feat/issue-328-one-colour-conversion",
+      "status": "completed",
+      "pr": 351,
+      "commit": "12d3f5f"
+    },
+    {
+      "id": "P-31",
+      "number": 330,
+      "title": "Faster full-size render for the detail view",
+      "branch": "feat/issue-330-faster-detail-render",
       "status": "in_progress",
       "pr": null,
       "commit": null

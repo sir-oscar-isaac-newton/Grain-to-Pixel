@@ -21,10 +21,12 @@
 //! `e = (amount / 100 * MAX_SIGMA * scale)^2`. A preview can only approximate the full-size
 //! result: fine grain is averaged away by the downscaling, and the smaller radii are whole pixels.
 //!
-//! Box averages cost a constant per pixel whatever the radius: a sliding window sum along the rows
-//! (rows in parallel), then along the columns in bands of rows. Each output sample
-//! depends only on its own row or column band, summed in a fixed order in `f64`, so the result is the
-//! same on any number of threads.
+//! Box averages cost a constant per pixel whatever the radius: a sliding window sum along the rows,
+//! then along the columns, per band of rows (bands in parallel, with a scratch of their own, so no
+//! full-size buffer holds the row sums). Each output sample depends only on its own band, summed in
+//! a fixed order in `f64`, so the result is the same on any number of threads. The shifted planes,
+//! products, slope and offset of the guided filter are computed row by row inside the box averages,
+//! and the full-size planes are reused between the steps of a reduction (`Workspace`).
 //!
 //! The result is converted back to linear Rec.2020 and not clamped. Both amounts at 0 return the
 //! image untouched, bit for bit. A pixel with a non-finite value is left as it is and enters the
@@ -73,74 +75,20 @@ fn regulariser(amount: f32, max_sigma: f32, scale: f32) -> f32 {
     sigma * sigma
 }
 
-/// Window sums along the rows: for each sample, the sum of the samples within `r` of it in its row,
-/// clipped at the row ends. Sliding sum in `f64`, rows in parallel.
-fn sum_rows(src: &[f32], width: usize, height: usize, r: usize) -> Vec<f32> {
-    let mut out = vec![0.0_f32; width * height];
-    if width == 0 || height == 0 {
-        return out;
+/// One row of window sums along a row: for each sample, the sum of the samples within `r` of it,
+/// clipped at the row ends. Sliding sum in `f64`; each sum is rounded to `f32` when stored.
+fn sum_row(row: &[f32], dst: &mut [f32], r: usize) {
+    let width = row.len();
+    let mut acc: f64 = row[..=r.min(width - 1)].iter().map(|v| *v as f64).sum();
+    for x in 0..width {
+        dst[x] = acc as f32;
+        if x + 1 + r < width {
+            acc += row[x + 1 + r] as f64;
+        }
+        if x >= r {
+            acc -= row[x - r] as f64;
+        }
     }
-    out.par_chunks_mut(width)
-        .zip(src.par_chunks(width))
-        .for_each(|(dst, row)| {
-            let mut acc: f64 = row[..=r.min(width - 1)].iter().map(|v| *v as f64).sum();
-            for x in 0..width {
-                dst[x] = acc as f32;
-                if x + 1 + r < width {
-                    acc += row[x + 1 + r] as f64;
-                }
-                if x >= r {
-                    acc -= row[x - r] as f64;
-                }
-            }
-        });
-    out
-}
-
-/// The sum over the `(2r+1)` rows around each row, for every column, divided by the number of
-/// samples in the whole window (`across` per row sum, `down` the rows in the window). The rows are
-/// cut into bands of [`COLUMN_BAND`] that run in parallel, each with its own sliding sums in
-/// `f64` (started from the rows of its first window), so the result does not depend on the number
-/// of threads.
-fn mean_of_row_sums(
-    sums: &[f32],
-    width: usize,
-    height: usize,
-    r: usize,
-    across: &[f32],
-) -> Vec<f32> {
-    let mut out = vec![0.0_f32; sums.len()];
-    let down = window_counts(height, r);
-    out.par_chunks_mut(COLUMN_BAND * width)
-        .enumerate()
-        .for_each(|(band, dst)| {
-            let first = band * COLUMN_BAND;
-            let mut acc = vec![0.0_f64; width];
-            for row in first.saturating_sub(r)..=(first + r).min(height - 1) {
-                for (a, v) in acc.iter_mut().zip(&sums[row * width..(row + 1) * width]) {
-                    *a += *v as f64;
-                }
-            }
-            for (i, line) in dst.chunks_mut(width).enumerate() {
-                let y = first + i;
-                for ((o, a), n) in line.iter_mut().zip(&acc).zip(across) {
-                    *o = (*a as f32) / (n * down[y]);
-                }
-                if y + 1 + r < height {
-                    let add = &sums[(y + 1 + r) * width..(y + 2 + r) * width];
-                    for (a, v) in acc.iter_mut().zip(add) {
-                        *a += *v as f64;
-                    }
-                }
-                if y >= r {
-                    let sub = &sums[(y - r) * width..(y - r + 1) * width];
-                    for (a, v) in acc.iter_mut().zip(sub) {
-                        *a -= *v as f64;
-                    }
-                }
-            }
-        });
-    out
 }
 
 /// Number of samples of a window of radius `r` around each index of a line of `len` samples.
@@ -150,14 +98,109 @@ fn window_counts(len: usize, r: usize) -> Vec<f32> {
         .collect()
 }
 
+/// Scratch of one band task of [`box_mean_into`]: one source row, the row sums of the rows the
+/// band needs and the sliding column sums.
+#[derive(Default)]
+struct BandScratch {
+    line: Vec<f32>,
+    sums: Vec<f32>,
+    acc: Vec<f64>,
+}
+
+/// Full-size `f32` planes kept between the box averages and the passes of one noise reduction, so
+/// none is allocated and freed again for each step. A buffer comes back with arbitrary contents;
+/// every user overwrites all of it.
+#[derive(Default)]
+struct Workspace {
+    free: Vec<Vec<f32>>,
+}
+
+impl Workspace {
+    fn take(&mut self, len: usize) -> Vec<f32> {
+        let mut plane = self.free.pop().unwrap_or_default();
+        plane.resize(len, 0.0);
+        plane
+    }
+
+    fn give(&mut self, plane: Vec<f32>) {
+        self.free.push(plane);
+    }
+}
+
 /// The average over the `(2r+1)^2` window around each sample, clipped at the border and divided by
-/// the real number of samples in the window.
+/// the real number of samples in the window, of the plane whose row `y` `fill(y, line)` writes into
+/// `line` (`width` samples). `out` has `width * height` samples and is overwritten.
+///
+/// The rows are cut into bands of [`COLUMN_BAND`] that run in parallel. A band slides a window sum
+/// along each row it needs (rows `first - r` to `last + 1 + r`, clipped), stored as `f32`, then
+/// slides sums in `f64` down the columns, started from the rows of its first window, so the result
+/// does not depend on the number of threads. The row sums of the rows two bands share are
+/// computed in both; they come out the same.
+fn box_mean_into(
+    out: &mut [f32],
+    width: usize,
+    height: usize,
+    r: usize,
+    fill: impl Fn(usize, &mut [f32]) + Sync,
+) {
+    if width == 0 || height == 0 {
+        return;
+    }
+    let across = window_counts(width, r);
+    let down = window_counts(height, r);
+    out.par_chunks_mut(COLUMN_BAND * width)
+        .enumerate()
+        .for_each_init(BandScratch::default, |scratch, (band, dst)| {
+            let BandScratch { line, sums, acc } = scratch;
+            let first = band * COLUMN_BAND;
+            let last = first + dst.len() / width - 1;
+            let low = first.saturating_sub(r);
+            let high = (last + 1 + r).min(height - 1);
+            line.resize(width, 0.0);
+            sums.resize((high - low + 1) * width, 0.0);
+            for y in low..=high {
+                fill(y, line);
+                sum_row(line, &mut sums[(y - low) * width..(y - low + 1) * width], r);
+            }
+            let sums_of = |row: usize| &sums[(row - low) * width..(row - low + 1) * width];
+            acc.clear();
+            acc.resize(width, 0.0);
+            for row in first.saturating_sub(r)..=(first + r).min(height - 1) {
+                for (a, v) in acc.iter_mut().zip(sums_of(row)) {
+                    *a += *v as f64;
+                }
+            }
+            for (i, out_line) in dst.chunks_mut(width).enumerate() {
+                let y = first + i;
+                for ((o, a), n) in out_line.iter_mut().zip(acc.iter()).zip(&across) {
+                    *o = (*a as f32) / (n * down[y]);
+                }
+                if y + 1 + r < height {
+                    for (a, v) in acc.iter_mut().zip(sums_of(y + 1 + r)) {
+                        *a += *v as f64;
+                    }
+                }
+                if y >= r {
+                    for (a, v) in acc.iter_mut().zip(sums_of(y - r)) {
+                        *a -= *v as f64;
+                    }
+                }
+            }
+        });
+}
+
+/// The average over the `(2r+1)^2` window around each sample of `src`, clipped at the border and
+/// divided by the real number of samples in the window.
+#[cfg(test)]
 pub(crate) fn box_mean(src: &[f32], width: usize, height: usize, r: usize) -> Vec<f32> {
     if width == 0 || height == 0 {
         return Vec::new();
     }
-    let rows = sum_rows(src, width, height, r);
-    mean_of_row_sums(&rows, width, height, r, &window_counts(width, r))
+    let mut out = vec![0.0_f32; width * height];
+    box_mean_into(&mut out, width, height, r, |y, line| {
+        line.copy_from_slice(&src[y * width..(y + 1) * width]);
+    });
+    out
 }
 
 /// The mean of a plane, summed in `f64` over fixed chunks in a fixed order.
@@ -172,19 +215,137 @@ fn plane_mean(plane: &[f32]) -> f32 {
     (partial.iter().sum::<f64>() / plane.len() as f64) as f32
 }
 
-/// `f(x, y)` on equally long planes, in parallel.
-fn zip_map(a: &[f32], b: &[f32], f: impl Fn(f32, f32) -> f32 + Sync) -> Vec<f32> {
-    a.par_iter()
-        .zip(b.par_iter())
-        .map(|(x, y)| f(*x, *y))
-        .collect()
+/// Row `y` of a plane `width` samples wide.
+fn row_of(plane: &[f32], width: usize, y: usize) -> &[f32] {
+    &plane[y * width..(y + 1) * width]
+}
+
+/// The slope `a_k` of one row from the row's box means: `products` of guide and plane, `guide`,
+/// `plane` and `squares` of the guide (the variance is `squares - guide^2`, not below 0).
+fn slope_row(
+    out: &mut [f32],
+    products: &[f32],
+    guide: &[f32],
+    plane: &[f32],
+    squares: &[f32],
+    eps: f32,
+) {
+    for i in 0..out.len() {
+        let variance = (squares[i] - guide[i] * guide[i]).max(0.0);
+        let covariance = products[i] - guide[i] * plane[i];
+        let denominator = variance + eps;
+        out[i] = if denominator > 0.0 {
+            covariance / denominator
+        } else {
+            0.0
+        };
+    }
 }
 
 /// The guided filter of each of `planes` with the same `guide`, radius and regulariser. A plane
 /// that is the guide itself (the same slice) is filtered with the cheaper self-guided form.
 ///
 /// Guide and planes are shifted by their means before the sums, which the filter does not mind
-/// (it is shift invariant) and which keeps the variance free of rounding.
+/// (it is shift invariant) and which keeps the variance free of rounding. The shifted planes, the
+/// products, the slope and the offset are never stored: each box average computes the rows it
+/// needs from the inputs, with the same expression, so the values are the same as if stored.
+fn guided_filter_in(
+    ws: &mut Workspace,
+    guide: &[f32],
+    planes: &[&[f32]],
+    width: usize,
+    height: usize,
+    r: usize,
+    eps: f32,
+) -> Vec<Vec<f32>> {
+    let count = width * height;
+    let shift_guide = plane_mean(guide);
+    let mut mean_guide = ws.take(count);
+    box_mean_into(&mut mean_guide, width, height, r, |y, line| {
+        for (o, g) in line.iter_mut().zip(row_of(guide, width, y)) {
+            *o = *g - shift_guide;
+        }
+    });
+    let mut mean_squares = ws.take(count);
+    box_mean_into(&mut mean_squares, width, height, r, |y, line| {
+        for (o, g) in line.iter_mut().zip(row_of(guide, width, y)) {
+            let centred = *g - shift_guide;
+            *o = centred * centred;
+        }
+    });
+
+    let result = planes
+        .iter()
+        .map(|plane| {
+            let own = std::ptr::eq(plane.as_ptr(), guide.as_ptr());
+            let shift = if own { shift_guide } else { plane_mean(plane) };
+            let mut computed_p = None;
+            let mut computed_products = None;
+            if !own {
+                let mut mean_p = ws.take(count);
+                box_mean_into(&mut mean_p, width, height, r, |y, line| {
+                    for (o, v) in line.iter_mut().zip(row_of(plane, width, y)) {
+                        *o = *v - shift;
+                    }
+                });
+                let mut products = ws.take(count);
+                box_mean_into(&mut products, width, height, r, |y, line| {
+                    let pairs = row_of(guide, width, y).iter().zip(row_of(plane, width, y));
+                    for (o, (g, v)) in line.iter_mut().zip(pairs) {
+                        *o = (*g - shift_guide) * (*v - shift);
+                    }
+                });
+                computed_p = Some(mean_p);
+                computed_products = Some(products);
+            }
+            let mean_p: &[f32] = computed_p.as_deref().unwrap_or(&mean_guide);
+            let mean_products: &[f32] = computed_products.as_deref().unwrap_or(&mean_squares);
+            let slope_of = |y: usize, line: &mut [f32]| {
+                slope_row(
+                    line,
+                    row_of(mean_products, width, y),
+                    row_of(&mean_guide, width, y),
+                    row_of(mean_p, width, y),
+                    row_of(&mean_squares, width, y),
+                    eps,
+                );
+            };
+
+            let mut mean_slope = ws.take(count);
+            box_mean_into(&mut mean_slope, width, height, r, slope_of);
+            let mut mean_offset = ws.take(count);
+            box_mean_into(&mut mean_offset, width, height, r, |y, line| {
+                slope_of(y, line);
+                let guide_row = row_of(&mean_guide, width, y);
+                for ((o, p), g) in line.iter_mut().zip(row_of(mean_p, width, y)).zip(guide_row) {
+                    *o = *p - *o * *g;
+                }
+            });
+            mean_slope
+                .par_iter_mut()
+                .zip(mean_offset.par_iter())
+                .zip(guide.par_iter())
+                .for_each(|((q, offset), g)| {
+                    let centred = *g - shift_guide;
+                    *q = *q * centred + *offset + shift;
+                });
+            ws.give(mean_offset);
+            if let Some(buffer) = computed_p {
+                ws.give(buffer);
+            }
+            if let Some(buffer) = computed_products {
+                ws.give(buffer);
+            }
+            mean_slope
+        })
+        .collect();
+    ws.give(mean_guide);
+    ws.give(mean_squares);
+    result
+}
+
+/// [`guided_filter_in`] with a workspace of its own.
+#[cfg(test)]
 pub(crate) fn guided_filter(
     guide: &[f32],
     planes: &[&[f32]],
@@ -193,66 +354,15 @@ pub(crate) fn guided_filter(
     r: usize,
     eps: f32,
 ) -> Vec<Vec<f32>> {
-    let shift_guide = plane_mean(guide);
-    let centred_guide: Vec<f32> = guide.par_iter().map(|v| v - shift_guide).collect();
-    let mean_guide = box_mean(&centred_guide, width, height, r);
-    let squares = zip_map(&centred_guide, &centred_guide, |x, y| x * y);
-    let mean_squares = box_mean(&squares, width, height, r);
-    drop(squares);
-    let variance = zip_map(&mean_squares, &mean_guide, |ii, i| (ii - i * i).max(0.0));
-
-    planes
-        .iter()
-        .map(|plane| {
-            let own = std::ptr::eq(plane.as_ptr(), guide.as_ptr());
-            let shift = if own { shift_guide } else { plane_mean(plane) };
-            let centred: Vec<f32>;
-            let p: &[f32] = if own {
-                &centred_guide
-            } else {
-                centred = plane.par_iter().map(|v| v - shift).collect();
-                &centred
-            };
-            let mean_p = if own {
-                mean_guide.clone()
-            } else {
-                box_mean(p, width, height, r)
-            };
-            let computed;
-            let mean_products: &[f32] = if own {
-                &mean_squares
-            } else {
-                let products = zip_map(&centred_guide, p, |x, y| x * y);
-                computed = box_mean(&products, width, height, r);
-                &computed
-            };
-            let slope: Vec<f32> = (0..mean_p.len())
-                .into_par_iter()
-                .map(|i| {
-                    let covariance = mean_products[i] - mean_guide[i] * mean_p[i];
-                    let denominator = variance[i] + eps;
-                    if denominator > 0.0 {
-                        covariance / denominator
-                    } else {
-                        0.0
-                    }
-                })
-                .collect();
-            let offset = (0..mean_p.len())
-                .into_par_iter()
-                .map(|i| mean_p[i] - slope[i] * mean_guide[i])
-                .collect::<Vec<f32>>();
-            drop(mean_p);
-            let mean_slope = box_mean(&slope, width, height, r);
-            drop(slope);
-            let mean_offset = box_mean(&offset, width, height, r);
-            drop(offset);
-            (0..mean_slope.len())
-                .into_par_iter()
-                .map(|i| mean_slope[i] * centred_guide[i] + mean_offset[i] + shift)
-                .collect()
-        })
-        .collect()
+    guided_filter_in(
+        &mut Workspace::default(),
+        guide,
+        planes,
+        width,
+        height,
+        r,
+        eps,
+    )
 }
 
 /// Reduces the noise of `image` (linear Rec.2020, 3 channels) in place; see the module docs.
@@ -292,18 +402,19 @@ pub fn apply_noise_reduction(
             }
         });
 
+    let mut workspace = Workspace::default();
     if luminance > 0.0 {
         let r = scaled_radius(NR_LUMA_RADIUS_PX, scale);
         let eps = regulariser(luminance, NR_LUMA_MAX_SIGMA, scale);
-        let mut out = guided_filter(&l, &[&l], width, height, r, eps);
-        l = out.swap_remove(0);
+        let mut out = guided_filter_in(&mut workspace, &l, &[&l], width, height, r, eps);
+        workspace.give(std::mem::replace(&mut l, out.swap_remove(0)));
     }
     if color > 0.0 {
         let r = scaled_radius(NR_CHROMA_RADIUS_PX, scale);
         let eps = regulariser(color, NR_CHROMA_MAX_SIGMA, scale);
-        let mut out = guided_filter(&l, &[&a, &b], width, height, r, eps);
-        b = out.swap_remove(1);
-        a = out.swap_remove(0);
+        let mut out = guided_filter_in(&mut workspace, &l, &[&a, &b], width, height, r, eps);
+        workspace.give(std::mem::replace(&mut b, out.swap_remove(1)));
+        workspace.give(std::mem::replace(&mut a, out.swap_remove(0)));
     }
 
     image
@@ -833,5 +944,404 @@ mod tests {
             start.elapsed(),
             rayon::current_num_threads()
         );
+    }
+
+    // ---- Frozen copies of the code before P-31 phase 2 (a full-size buffer per step). The new code
+    // ---- must give the same bits as these.
+
+    /// `sum_rows` before P-31.
+    fn sum_rows_before_p31(src: &[f32], width: usize, height: usize, r: usize) -> Vec<f32> {
+        let mut out = vec![0.0_f32; width * height];
+        if width == 0 || height == 0 {
+            return out;
+        }
+        out.par_chunks_mut(width)
+            .zip(src.par_chunks(width))
+            .for_each(|(dst, row)| {
+                let mut acc: f64 = row[..=r.min(width - 1)].iter().map(|v| *v as f64).sum();
+                for x in 0..width {
+                    dst[x] = acc as f32;
+                    if x + 1 + r < width {
+                        acc += row[x + 1 + r] as f64;
+                    }
+                    if x >= r {
+                        acc -= row[x - r] as f64;
+                    }
+                }
+            });
+        out
+    }
+
+    /// `mean_of_row_sums` before P-31.
+    fn mean_of_row_sums_before_p31(
+        sums: &[f32],
+        width: usize,
+        height: usize,
+        r: usize,
+        across: &[f32],
+    ) -> Vec<f32> {
+        let mut out = vec![0.0_f32; sums.len()];
+        let down = window_counts(height, r);
+        out.par_chunks_mut(COLUMN_BAND * width)
+            .enumerate()
+            .for_each(|(band, dst)| {
+                let first = band * COLUMN_BAND;
+                let mut acc = vec![0.0_f64; width];
+                for row in first.saturating_sub(r)..=(first + r).min(height - 1) {
+                    for (a, v) in acc.iter_mut().zip(&sums[row * width..(row + 1) * width]) {
+                        *a += *v as f64;
+                    }
+                }
+                for (i, line) in dst.chunks_mut(width).enumerate() {
+                    let y = first + i;
+                    for ((o, a), n) in line.iter_mut().zip(&acc).zip(across) {
+                        *o = (*a as f32) / (n * down[y]);
+                    }
+                    if y + 1 + r < height {
+                        let add = &sums[(y + 1 + r) * width..(y + 2 + r) * width];
+                        for (a, v) in acc.iter_mut().zip(add) {
+                            *a += *v as f64;
+                        }
+                    }
+                    if y >= r {
+                        let sub = &sums[(y - r) * width..(y - r + 1) * width];
+                        for (a, v) in acc.iter_mut().zip(sub) {
+                            *a -= *v as f64;
+                        }
+                    }
+                }
+            });
+        out
+    }
+
+    /// `box_mean` before P-31.
+    fn box_mean_before_p31(src: &[f32], width: usize, height: usize, r: usize) -> Vec<f32> {
+        if width == 0 || height == 0 {
+            return Vec::new();
+        }
+        let rows = sum_rows_before_p31(src, width, height, r);
+        mean_of_row_sums_before_p31(&rows, width, height, r, &window_counts(width, r))
+    }
+
+    /// `zip_map` before P-31.
+    fn zip_map_before_p31(a: &[f32], b: &[f32], f: impl Fn(f32, f32) -> f32 + Sync) -> Vec<f32> {
+        a.par_iter()
+            .zip(b.par_iter())
+            .map(|(x, y)| f(*x, *y))
+            .collect()
+    }
+
+    /// `guided_filter` before P-31.
+    fn guided_filter_before_p31(
+        guide: &[f32],
+        planes: &[&[f32]],
+        width: usize,
+        height: usize,
+        r: usize,
+        eps: f32,
+    ) -> Vec<Vec<f32>> {
+        let shift_guide = plane_mean(guide);
+        let centred_guide: Vec<f32> = guide.par_iter().map(|v| v - shift_guide).collect();
+        let mean_guide = box_mean_before_p31(&centred_guide, width, height, r);
+        let squares = zip_map_before_p31(&centred_guide, &centred_guide, |x, y| x * y);
+        let mean_squares = box_mean_before_p31(&squares, width, height, r);
+        drop(squares);
+        let variance =
+            zip_map_before_p31(&mean_squares, &mean_guide, |ii, i| (ii - i * i).max(0.0));
+
+        planes
+            .iter()
+            .map(|plane| {
+                let own = std::ptr::eq(plane.as_ptr(), guide.as_ptr());
+                let shift = if own { shift_guide } else { plane_mean(plane) };
+                let centred: Vec<f32>;
+                let p: &[f32] = if own {
+                    &centred_guide
+                } else {
+                    centred = plane.par_iter().map(|v| v - shift).collect();
+                    &centred
+                };
+                let mean_p = if own {
+                    mean_guide.clone()
+                } else {
+                    box_mean_before_p31(p, width, height, r)
+                };
+                let computed;
+                let mean_products: &[f32] = if own {
+                    &mean_squares
+                } else {
+                    let products = zip_map_before_p31(&centred_guide, p, |x, y| x * y);
+                    computed = box_mean_before_p31(&products, width, height, r);
+                    &computed
+                };
+                let slope: Vec<f32> = (0..mean_p.len())
+                    .into_par_iter()
+                    .map(|i| {
+                        let covariance = mean_products[i] - mean_guide[i] * mean_p[i];
+                        let denominator = variance[i] + eps;
+                        if denominator > 0.0 {
+                            covariance / denominator
+                        } else {
+                            0.0
+                        }
+                    })
+                    .collect();
+                let offset = (0..mean_p.len())
+                    .into_par_iter()
+                    .map(|i| mean_p[i] - slope[i] * mean_guide[i])
+                    .collect::<Vec<f32>>();
+                drop(mean_p);
+                let mean_slope = box_mean_before_p31(&slope, width, height, r);
+                drop(slope);
+                let mean_offset = box_mean_before_p31(&offset, width, height, r);
+                drop(offset);
+                (0..mean_slope.len())
+                    .into_par_iter()
+                    .map(|i| mean_slope[i] * centred_guide[i] + mean_offset[i] + shift)
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// `apply_noise_reduction` before P-31.
+    fn apply_noise_reduction_before_p31(
+        image: &mut ImageF32,
+        noise: &Noise,
+        scale: f32,
+    ) -> Result<(), AppError> {
+        require_rgb(image, "noise reduction")?;
+        if !scale.is_finite() || scale <= 0.0 {
+            return Err(AppError::new(
+                ErrorCode::InvalidInput,
+                "The noise reduction stage needs a positive scale.",
+            )
+            .with_details(scale.to_string()));
+        }
+        let (luminance, color) = (limited(noise.luminance), limited(noise.color));
+        if (luminance == 0.0 && color == 0.0) || image.data.is_empty() {
+            return Ok(());
+        }
+        let (width, height) = (image.width as usize, image.height as usize);
+        let count = width * height;
+        let (mut l, mut a, mut b) = (vec![0.0; count], vec![0.0; count], vec![0.0; count]);
+        l.par_chunks_mut(width)
+            .zip(a.par_chunks_mut(width))
+            .zip(b.par_chunks_mut(width))
+            .zip(image.data.par_chunks(width * 3))
+            .for_each(|(((l, a), b), row)| {
+                for (i, pixel) in row.as_chunks::<3>().0.iter().enumerate() {
+                    if pixel.iter().all(|c| c.is_finite()) {
+                        [l[i], a[i], b[i]] = rgb_to_oklab(*pixel);
+                    }
+                }
+            });
+        if luminance > 0.0 {
+            let r = scaled_radius(NR_LUMA_RADIUS_PX, scale);
+            let eps = regulariser(luminance, NR_LUMA_MAX_SIGMA, scale);
+            let mut out = guided_filter_before_p31(&l, &[&l], width, height, r, eps);
+            l = out.swap_remove(0);
+        }
+        if color > 0.0 {
+            let r = scaled_radius(NR_CHROMA_RADIUS_PX, scale);
+            let eps = regulariser(color, NR_CHROMA_MAX_SIGMA, scale);
+            let mut out = guided_filter_before_p31(&l, &[&a, &b], width, height, r, eps);
+            b = out.swap_remove(1);
+            a = out.swap_remove(0);
+        }
+        image
+            .data
+            .par_chunks_mut(width * 3)
+            .zip(l.par_chunks(width))
+            .zip(a.par_chunks(width))
+            .zip(b.par_chunks(width))
+            .for_each(|(((row, l), a), b)| {
+                for (i, pixel) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+                    if !pixel.iter().all(|c| c.is_finite()) {
+                        continue;
+                    }
+                    let out = oklab_to_rgb([l[i], a[i], b[i]]);
+                    if out.iter().all(|c| c.is_finite()) {
+                        *pixel = out;
+                    }
+                }
+            });
+        Ok(())
+    }
+
+    // ---- Bit-for-bit comparison of the new code with the frozen copies.
+
+    /// A plane with negative values, zeros and large values mixed in.
+    fn wild_plane(width: usize, height: usize, seed: u32) -> Vec<f32> {
+        let mut next = stream(seed);
+        (0..width * height)
+            .map(|i| {
+                let v = next() - 0.5;
+                match i % 11 {
+                    3 => 0.0,
+                    7 => v * 40_000.0,
+                    _ => v * 3.0,
+                }
+            })
+            .collect()
+    }
+
+    fn assert_same_bits(new: &[f32], old: &[f32], what: &str) {
+        assert_eq!(new.len(), old.len(), "{what}: length");
+        for (i, (n, o)) in new.iter().zip(old).enumerate() {
+            assert_eq!(
+                n.to_bits(),
+                o.to_bits(),
+                "{what}: sample {i}: {n} against {o}"
+            );
+        }
+    }
+
+    /// Sizes that cover heights below, at and above the band of 64 rows, widths below `2r + 1`,
+    /// and single rows and columns.
+    const BIT_SIZES: [(usize, usize); 11] = [
+        (1, 1),
+        (1, 9),
+        (9, 1),
+        (5, 3),
+        (13, 70),
+        (70, 13),
+        (37, 129),
+        (100, 64),
+        (64, 100),
+        (21, 65),
+        (130, 200),
+    ];
+
+    fn pool(threads: usize) -> rayon::ThreadPool {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn the_box_average_has_the_same_bits_as_before_p31() {
+        for threads in [1, 6] {
+            pool(threads).install(|| {
+                for (n, &(width, height)) in BIT_SIZES.iter().enumerate() {
+                    let plane = wild_plane(width, height, 500 + n as u32);
+                    for r in [1, 3, 8, 60] {
+                        assert_same_bits(
+                            &box_mean(&plane, width, height, r),
+                            &box_mean_before_p31(&plane, width, height, r),
+                            &format!("{width}x{height}, r {r}, {threads} threads"),
+                        );
+                    }
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn the_guided_filter_has_the_same_bits_as_before_p31() {
+        for threads in [1, 6] {
+            pool(threads).install(|| {
+                for (n, &(width, height)) in BIT_SIZES.iter().enumerate() {
+                    let guide = wild_plane(width, height, 600 + n as u32);
+                    let a = wild_plane(width, height, 700 + n as u32);
+                    let constant = vec![0.25_f32; width * height];
+                    for (r, eps) in [(1, 0.01), (3, 0.0), (8, 1e-4), (60, 5.0)] {
+                        let planes: [&[f32]; 4] = [&guide, &a, &constant, &guide];
+                        let new = guided_filter(&guide, &planes, width, height, r, eps);
+                        let old = guided_filter_before_p31(&guide, &planes, width, height, r, eps);
+                        assert_eq!(new.len(), old.len());
+                        for (k, (n, o)) in new.iter().zip(&old).enumerate() {
+                            assert_same_bits(
+                                n,
+                                o,
+                                &format!("{width}x{height}, r {r}, plane {k}, {threads} threads"),
+                            );
+                        }
+                    }
+                    // A constant guide leaves nothing but the regulariser in the denominator.
+                    let new = guided_filter(&constant, &[&a], width, height, 3, 0.0);
+                    let old = guided_filter_before_p31(&constant, &[&a], width, height, 3, 0.0);
+                    assert_same_bits(&new[0], &old[0], &format!("{width}x{height}, flat guide"));
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn a_reused_workspace_gives_the_same_bits_as_a_fresh_one() {
+        let (width, height) = (70, 90);
+        let guide = wild_plane(width, height, 31);
+        let a = wild_plane(width, height, 32);
+        let b = wild_plane(width, height, 33);
+        let mut ws = Workspace::default();
+        for (r, eps) in [(3, 0.01), (8, 0.5), (3, 0.01)] {
+            let reused = guided_filter_in(&mut ws, &guide, &[&a, &b], width, height, r, eps);
+            let old = guided_filter_before_p31(&guide, &[&a, &b], width, height, r, eps);
+            for (n, o) in reused.iter().zip(&old) {
+                assert_same_bits(n, o, "reused workspace");
+            }
+            for plane in reused {
+                ws.give(plane);
+            }
+        }
+    }
+
+    fn wild_image(width: usize, height: usize, seed: u32, non_finite: bool) -> ImageF32 {
+        let mut image = flat(width as u32, height as u32, [0.0; 3]);
+        image.data = wild_plane(width * 3, height, seed)
+            .iter()
+            .map(|v| v / 20_000.0 + 0.4)
+            .collect();
+        if non_finite {
+            let len = image.data.len();
+            for (k, bad) in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY]
+                .iter()
+                .enumerate()
+            {
+                if len > 0 {
+                    image.data[(k * 37 + 1) % len] = *bad;
+                }
+            }
+        }
+        image
+    }
+
+    #[test]
+    fn noise_reduction_has_the_same_bits_as_before_p31() {
+        let amounts = [
+            (50.0, 0.0),
+            (0.0, 50.0),
+            (70.0, 40.0),
+            (100.0, 100.0),
+            (0.0, 0.0),
+        ];
+        for threads in [1, 6] {
+            pool(threads).install(|| {
+                for (n, &(width, height)) in [(1, 1), (7, 5), (40, 70), (97, 67)].iter().enumerate()
+                {
+                    for non_finite in [false, true] {
+                        let image = wild_image(width, height, 800 + n as u32, non_finite);
+                        for &(luminance, color) in &amounts {
+                            for scale in [1.0, 0.5, 2.5] {
+                                let settings = noise(luminance, color);
+                                let mut new = image.clone();
+                                let mut old = image.clone();
+                                apply_noise_reduction(&mut new, &settings, scale).unwrap();
+                                apply_noise_reduction_before_p31(&mut old, &settings, scale)
+                                    .unwrap();
+                                assert_same_bits(
+                                    &new.data,
+                                    &old.data,
+                                    &format!(
+                                        "{width}x{height}, amounts {luminance}/{color}, scale \
+                                         {scale}, non-finite {non_finite}, {threads} threads"
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+            });
+        }
     }
 }

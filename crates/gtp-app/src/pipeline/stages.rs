@@ -1,7 +1,7 @@
 //! The fixed stage order (docs/specification.md section 4.2, rules/colour-pipeline.md).
 
 use gtp_core::recipe::{BaseSource, Crop, Geometry};
-use gtp_core::{AppError, ImageF32, Recipe};
+use gtp_core::{AppError, ErrorCode, ImageF32, Recipe};
 
 use super::proxy::resize_plane;
 use super::PipelineInput;
@@ -47,6 +47,15 @@ pub const STAGE_ORDER: [Stage; 11] = [
     Stage::Geometry,
     Stage::Vignette,
 ];
+
+/// How many stages of [`STAGE_ORDER`] run up to and including noise reduction: Dust, Crop,
+/// Normalize, Invert, Noise. They are the only ones that read the scan, its infrared plane, the
+/// roll's film base or the render's scale; the stages after them work on the image and the recipe
+/// alone (see [`run_late_stage`]), so a picture kept after noise reduction can be finished with
+/// nothing else.
+pub(crate) const STAGES_UP_TO_NOISE: usize = 5;
+
+const _: () = assert!(matches!(STAGE_ORDER[STAGES_UP_TO_NOISE - 1], Stage::Noise));
 
 /// The film base to normalize with: the recipe's own value when it was sampled for this frame
 /// (`Manual`), otherwise the roll's measured base, or the recipe's value if the roll has none.
@@ -98,6 +107,26 @@ pub(crate) fn run_stage(
         Stage::Normalize => gtp_negative::normalize(&mut image, resolve_base(input, recipe))?,
         Stage::Invert => gtp_negative::invert(&mut image, &recipe.invert)?,
         Stage::Noise => gtp_edit::apply_noise_reduction(&mut image, &recipe.noise, scale)?,
+        Stage::Color
+        | Stage::Mixer
+        | Stage::Tone
+        | Stage::SplitTone
+        | Stage::Geometry
+        | Stage::Vignette => return run_late_stage(stage, image, recipe),
+    }
+    Ok(image)
+}
+
+/// Runs one of the stages after noise reduction (Color to Vignette). They take the image and the
+/// recipe and nothing else: not the scan, the infrared plane, the film base or the scale. That is
+/// what lets a render be finished from a picture kept after noise reduction. A stage before
+/// noise reduction is refused (it needs the input that this function does not have).
+pub(crate) fn run_late_stage(
+    stage: Stage,
+    mut image: ImageF32,
+    recipe: &Recipe,
+) -> Result<ImageF32, AppError> {
+    match stage {
         Stage::Color => gtp_edit::apply_color(&mut image, &recipe.color, &recipe.mono)?,
         Stage::Mixer => {
             if !recipe.mono.enabled {
@@ -116,6 +145,13 @@ pub(crate) fn run_stage(
             }
         }
         Stage::Vignette => gtp_edit::apply_vignette(&mut image, &recipe.tone.vignette)?,
+        Stage::Dust | Stage::Crop | Stage::Normalize | Stage::Invert | Stage::Noise => {
+            return Err(AppError::new(
+                ErrorCode::Internal,
+                "A stage before noise reduction needs the scan.",
+            )
+            .with_details(format!("{stage:?}")));
+        }
     }
     Ok(image)
 }

@@ -18,5 +18,7 @@ Architecture Decision Records (ADRs), numbered, immutable once accepted (superse
 | [0012](0012-colour-mixer.md) | The colour mixer works in Oklch, with eight smoothly weighted hue bands | Accepted |
 | [0013](0013-noise-reduction.md) | Noise reduction is a guided filter in Oklab, between the inversion and the colour stage | Accepted |
 | [0014](0014-detail-view.md) | The detail view renders the whole picture at full size and cuts regions from one cached copy | Accepted |
+| [0015](0015-one-colour-conversion.md) | The screen converts as the sRGB export does: each Rec.2020 channel is clipped before the matrix | Accepted |
+| [0016](0016-kept-noise-picture.md) | The detail view keeps the picture after noise reduction, so an edit to a later stage skips the decode and the first five stages | Accepted |
 
 New ADR: copy [0000-template.md](0000-template.md), take the next number, add a row above.

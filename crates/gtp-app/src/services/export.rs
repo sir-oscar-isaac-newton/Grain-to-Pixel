@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use gtp_core::recipe::OutputSpace;
 use gtp_core::{
-    AppError, ErrorCode, ExportResult, ExportedFile, FailedExport, Frame, FrameId, ImageF32,
-    Recipe, SourceFile,
+    AppError, ErrorCode, ExportResult, ExportedFile, FailedExport, FlatField, Frame, FrameId,
+    ImageF32, Recipe, SourceFile,
 };
 use gtp_edit::apply_sharpen;
 use gtp_io::{encode_jpeg, encode_tiff16, JPEG_QUALITY};
@@ -26,7 +26,8 @@ use gtp_io::{encode_jpeg, encode_tiff16, JPEG_QUALITY};
 use crate::jobs::JobCtx;
 use crate::paths::{canonical_dir, display_path};
 use crate::pipeline::{
-    analyze_with, build_proxy, render, resize_to_long_edge, PipelineInput, RenderTarget, PROXY_EDGE,
+    analyze_with, build_proxy, render, render_from_color, resize_to_long_edge, PipelineInput,
+    RenderTarget, PROXY_EDGE,
 };
 use crate::services::counters;
 use crate::services::develop::{check_ir, read_ir_plane, read_scan, skip_unusable_ir};
@@ -287,10 +288,22 @@ pub(crate) fn read_full(
     dust_removal: bool,
 ) -> Result<(ImageF32, Option<ImageF32>), AppError> {
     let flat = library.read(|c| c.get_flat_field(frame.roll_id))?;
+    read_full_with(library, frame, sources, dust_removal, flat.as_ref())
+}
+
+/// [`read_full`] with the roll's flat field given, for a caller that has already read it (the
+/// detail view keys its kept picture on the very flat field it decodes with).
+pub(crate) fn read_full_with(
+    library: &Library,
+    frame: &Frame,
+    sources: &[SourceFile],
+    dust_removal: bool,
+    flat: Option<&FlatField>,
+) -> Result<(ImageF32, Option<ImageF32>), AppError> {
     // The scan and the infrared file are decoded at the same time (the infrared plane is checked
     // against the scan afterwards). If the scan fails, its error is the one returned.
     let (full, ir) = rayon::join(
-        || read_scan(library, sources, flat.as_ref()),
+        || read_scan(library, sources, flat),
         || (dust_removal && frame.has_ir).then(|| read_ir_plane(library, sources)),
     );
     let full = full?;
@@ -313,8 +326,29 @@ pub(crate) fn render_full(
     recipe: &Recipe,
     long_edge: Option<u32>,
 ) -> Result<ImageF32, AppError> {
-    let mut image = render(&input, recipe, RenderTarget::Full)?;
+    let image = render(&input, recipe, RenderTarget::Full)?;
     drop(input);
+    finish_full(image, recipe, long_edge)
+}
+
+/// [`render_full`] from a picture that [`crate::pipeline::render_up_to_noise`] made at full size
+/// with the same `recipe` from the same scan: the stages after noise reduction, then what
+/// `render_full` does after its render. The result is the one `render_full` gives for that scan.
+pub(crate) fn render_full_from_noise(
+    after_noise: ImageF32,
+    recipe: &Recipe,
+    long_edge: Option<u32>,
+) -> Result<ImageF32, AppError> {
+    let image = render_from_color(after_noise, recipe, &mut |_| {})?;
+    finish_full(image, recipe, long_edge)
+}
+
+/// What follows the render in [`render_full`]: the optional resize, then output sharpening.
+fn finish_full(
+    mut image: ImageF32,
+    recipe: &Recipe,
+    long_edge: Option<u32>,
+) -> Result<ImageF32, AppError> {
     // The size option: scaled down (never up) before sharpening, so the sharpening is judged on the
     // pixels that are written.
     if let Some(long_edge) = long_edge {
@@ -1191,6 +1225,84 @@ mod tests {
         // converts with the colour profiles (`gtp_io::to_output`) and the previews with a matrix and
         // a clip, which is how the previews have always differed from a file.
         assert_eq!(tiff.channels, 3);
+    }
+
+    #[test]
+    fn the_export_never_uses_the_picture_the_detail_view_keeps() {
+        use gtp_core::recipe::Crop;
+
+        use crate::pipeline::render_up_to_noise;
+        use crate::services::develop::save_recipe;
+
+        let t = Fixture::new("export-kept");
+        let id = t.frame_with(1, 400, 300, Pattern::Blobs);
+        let mut recipe = Recipe::default();
+        recipe.tone.exposure_ev = 0.4;
+        recipe.noise.luminance = 50.0;
+        recipe.noise.color = 50.0;
+        recipe.output.sharpen.amount = 80.0;
+        recipe.geometry.angle_deg = 1.5;
+        save_recipe(&t.library, id, recipe.clone()).unwrap();
+        let before = pixels(&export_to(&t, id, "before-detail"));
+
+        // The detail view renders the frame and keeps its picture after noise reduction; an edit
+        // to a later stage then renders from it. The saved recipe is not that edit.
+        let whole = Crop {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        };
+        let mut later = recipe.clone();
+        later.tone.exposure_ev = 0.9;
+        later.color.vibrance = 40.0;
+        for (seq, edit) in [(1, &recipe), (2, &later)] {
+            t.service
+                .render_detail(&t.library, id, edit, whole, seq)
+                .unwrap();
+        }
+        assert!(t.service.kept_bytes() > 0);
+        assert_eq!(t.service.detail_file_reads(), 1, "the second came from it");
+        let (kept, reads, renders) = (
+            t.service.kept_bytes(),
+            t.service.detail_file_reads(),
+            t.service.detail_renders(),
+        );
+
+        // The export decodes the scan itself, writes the same pixels as before, and leaves the
+        // kept picture (and the service) as it was.
+        let after = pixels(&export_to(&t, id, "after-detail"));
+        assert!(before == after, "the file is the same");
+        assert_eq!(
+            (
+                t.service.kept_bytes(),
+                t.service.detail_file_reads(),
+                t.service.detail_renders()
+            ),
+            (kept, reads, renders)
+        );
+
+        // `render_full` is still one render of the whole pipeline, and the render from a picture
+        // after noise reduction (which only the detail view uses) is exactly that, with and
+        // without the size option.
+        let (frame, sources) = t
+            .library
+            .read(|c| Ok((c.get_frame(id)?, c.sources_of(id)?)))
+            .unwrap();
+        let (scan, ir) = read_full(&t.library, &frame, &sources, true).unwrap();
+        let input = PipelineInput {
+            rgb: Arc::new(scan),
+            ir: ir.map(Arc::new),
+            film_base: None,
+            full_long_edge: None,
+        };
+        for long_edge in [None, Some(200)] {
+            let whole = render_full(input.clone(), &recipe, long_edge).unwrap();
+            let kept =
+                render_up_to_noise(&input, &recipe, RenderTarget::Full, &mut |_| {}).unwrap();
+            let split = render_full_from_noise(kept, &recipe, long_edge).unwrap();
+            assert!(split == whole, "{long_edge:?}");
+        }
     }
 
     /// `read_full` before P-31 phase 2: the scan, then the infrared plane, one after the other.

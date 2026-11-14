@@ -1082,6 +1082,15 @@
       "number": 330,
       "title": "Faster full-size render for the detail view",
       "branch": "feat/issue-330-faster-detail-render",
+      "status": "completed",
+      "pr": 358,
+      "commit": "128e183"
+    },
+    {
+      "id": "P-33",
+      "number": 355,
+      "title": "Cache of the picture after noise reduction for the detail view",
+      "branch": "feat/issue-355-keep-noise-picture",
       "status": "in_progress",
       "pr": null,
       "commit": null

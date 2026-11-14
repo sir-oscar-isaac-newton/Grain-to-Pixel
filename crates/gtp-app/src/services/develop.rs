@@ -13,17 +13,19 @@
 //!
 //! The detail view (U-29) shows the picture at full size. The service keeps one such picture (the
 //! frame being looked at, rendered as an export renders it, as RGBA8 sRGB) and cuts the regions the
-//! view asks for out of it; see [`DevelopService::render_detail`].
+//! view asks for out of it; see [`DevelopService::render_detail`]. Beside it the service keeps the
+//! same frame's picture as it is after noise reduction (see [`KeptPicture`], ADR 0016), so an edit
+//! to a stage after noise reduction does not decode or denoise the scan again.
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
-use gtp_core::recipe::{Color, Crop, Invert, BASE_MAX, BASE_MIN};
+use gtp_core::recipe::{Base, Color, Crop, Dust, Invert, Noise, BASE_MAX, BASE_MIN};
 use gtp_core::{
     AppError, ErrorCode, FlatField, Frame, FrameId, ImageF32, Look, Recipe, RecipeField,
     SourceFile, SourceRole,
@@ -34,10 +36,10 @@ use gtp_negative::{levels_from_sample, sample_film_base, LevelPoint, Rect};
 
 use crate::pipeline::{
     analyze_with_axes, build_plane_proxy, build_proxy, inverted_frame, normalized_frame,
-    to_rgba8_srgb, Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
+    render_up_to_noise, to_rgba8_srgb, Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
 };
 use crate::services::counters;
-use crate::services::export::{read_full, render_full};
+use crate::services::export::{read_full_with, render_full_from_noise};
 use crate::services::flat_field::apply_flat_field;
 use crate::services::library::Library;
 use crate::services::roll_balance;
@@ -348,6 +350,88 @@ struct DetailContext {
     dust_removal: bool,
 }
 
+/// A frame's picture at full size after noise reduction (the stages Dust, Crop, Normalize, Invert,
+/// Noise), kept so that an edit to a later stage starts from it (ADR 0016). Linear f32, 3 channels:
+/// 12 bytes a pixel, 288 MB for 24 megapixels. At most one is held.
+struct KeptPicture {
+    /// Everything those stages depended on when it was made.
+    key: KeptKey,
+    image: ImageF32,
+    /// When a request last used it (a request that cut a region from the detail picture counts).
+    used: Instant,
+}
+
+/// Everything the stages up to and including noise reduction read, and so everything the kept
+/// picture depends on. Two renders with equal keys have the same picture after noise reduction.
+///
+/// - `frame`, `has_ir` and `sources`: which scan was decoded, and whether the infrared plane was
+///   asked for. `sources` is the catalog's record of each original (role, path, hash, size).
+/// - `files`: the length and modification time of each original as the file system reports them
+///   now. Originals are immutable, but a file replaced in place under the same record would still
+///   decode to another picture; it changes at least one of the two. Not equal, or not readable,
+///   is a miss, never a wrong picture.
+/// - `flat_field`: the roll's flat field itself (it is small: one grid of light values), the very
+///   value the scan is decoded with.
+/// - `film_base`, `dust_removal`: the context of the detail picture, read at the request.
+/// - `dust`, `crop`, `base`, `invert`, `noise`: the parts of the clamped recipe those stages read.
+///   Straighten, turns, flips, colour, black and white, mixer, tone, split toning, the vignette and
+///   the output sharpening come after noise reduction and are not in it.
+#[derive(Clone, PartialEq)]
+struct KeptKey {
+    frame: FrameId,
+    has_ir: bool,
+    sources: Vec<SourceFile>,
+    files: Vec<Option<(u64, Option<SystemTime>)>>,
+    flat_field: Option<FlatField>,
+    film_base: Option<[f32; 3]>,
+    dust_removal: bool,
+    dust: Dust,
+    crop: Crop,
+    base: Base,
+    invert: Invert,
+    noise: Noise,
+}
+
+impl KeptKey {
+    fn new(
+        library: &Library,
+        frame: &Frame,
+        sources: &[SourceFile],
+        flat_field: Option<FlatField>,
+        recipe: &Recipe,
+        context: DetailContext,
+    ) -> Self {
+        let stamp = |source: &SourceFile| {
+            let path = library.resolve(Path::new(&source.rel_path)).ok()?;
+            let meta = std::fs::metadata(path).ok()?;
+            Some((meta.len(), meta.modified().ok()))
+        };
+        Self {
+            frame: frame.id,
+            has_ir: frame.has_ir,
+            sources: sources.to_vec(),
+            files: sources.iter().map(stamp).collect(),
+            flat_field,
+            film_base: context.film_base,
+            dust_removal: context.dust_removal,
+            dust: recipe.dust,
+            crop: recipe.geometry.crop,
+            base: recipe.base,
+            invert: recipe.invert,
+            noise: recipe.noise,
+        }
+    }
+}
+
+/// A copy of `image` made with a fallible allocation: `None` when the memory cannot be had, so the
+/// caller carries on without it instead of aborting.
+fn try_copy(image: &ImageF32) -> Option<ImageF32> {
+    let mut data = Vec::new();
+    data.try_reserve_exact(image.data.len()).ok()?;
+    data.extend_from_slice(&image.data);
+    ImageF32::new(image.width, image.height, image.channels, data).ok()
+}
+
 /// The detail picture and the sequence numbers of the requests for it. These are separate from the
 /// previews', so a detail request never cancels a preview and the reverse.
 #[derive(Default)]
@@ -360,7 +444,15 @@ struct DetailState {
     /// Bumped by every release: a render that began before one does not keep its picture.
     generation: AtomicU64,
     /// How many full-size renders were made (for tests).
-    renders: std::sync::atomic::AtomicUsize,
+    renders: AtomicUsize,
+    /// The picture after noise reduction of the frame being looked at. Locked after `picture` by
+    /// everything that takes both.
+    kept: Mutex<Option<KeptPicture>>,
+    /// How many times the scan was decoded for a detail render (for tests).
+    file_reads: AtomicUsize,
+    /// Makes every copy of a picture fail, as an allocation that is refused would.
+    #[cfg(test)]
+    fail_copies: AtomicBool,
 }
 
 /// Converts fractions of the picture into whole pixels `(x, y, w, h)`: the origin is rounded down
@@ -831,6 +923,13 @@ impl DevelopService {
     /// in [`DETAIL_IDLE_SECS`] is released. `seq` supersedes older requests for the same frame, which
     /// come back as `Cancelled`; a render that was already running finishes, and its picture is kept
     /// unless a newer request brought another recipe.
+    ///
+    /// Beside that picture one more is kept: the frame's picture after noise reduction, at 12 bytes
+    /// a pixel (ADR 0016). A request for another recipe whose key (see [`KeptKey`]: the scan, the
+    /// roll's flat field and film base, the dust flag and the recipe's dust, crop, base, invert and
+    /// noise) is unchanged starts from a copy of it and does not decode the scan or run the first
+    /// five stages; any other request makes it afresh. It is released with the detail picture, by
+    /// the same rules, and the export never uses it.
     pub fn render_detail(
         &self,
         library: &Library,
@@ -880,7 +979,9 @@ impl DevelopService {
             .picture
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        let mut kept = detail.kept.lock().unwrap_or_else(PoisonError::into_inner);
         Self::release_if_idle(&mut slot, now);
+        Self::release_kept_if_idle(&mut kept, now);
         let context = DetailContext {
             film_base: library
                 .read(|c| c.get_roll(c.get_frame(id)?.roll_id))?
@@ -893,7 +994,20 @@ impl DevelopService {
         if !held {
             // The old picture goes before the new one is made, so two never coexist.
             *slot = None;
-            let picture = self.render_detail_picture(library, id, &recipe, context, now)?;
+            // A request for another frame releases the kept picture; one for this frame keeps it
+            // for the edits that leave it valid (`render_detail_picture` decides).
+            if kept.as_ref().is_some_and(|k| k.key.frame != id) {
+                *kept = None;
+            }
+            let rendered =
+                self.render_detail_picture(library, id, &recipe, context, now, &mut kept);
+            // The view was left meanwhile: nothing of this render is kept, the picture after
+            // noise reduction included (`release_detail` could not take it from a render in
+            // flight).
+            if detail.generation.load(Ordering::SeqCst) != generation {
+                *kept = None;
+            }
+            let picture = rendered?;
             detail.renders.fetch_add(1, Ordering::SeqCst);
             let (newest_seq, newest_recipe) = newest().unwrap_or((seq, recipe.clone()));
             // Kept unless another recipe was asked for meanwhile, or the view released it.
@@ -912,11 +1026,20 @@ impl DevelopService {
             return Err(superseded());
         };
         picture.used = now;
+        if let Some(kept) = kept.as_mut() {
+            kept.used = now;
+        }
         let pixels = detail_pixels(region, picture.width, picture.height)?;
         Ok(picture.cut(seq, pixels))
     }
 
-    /// Decodes and renders the frame at full size with `recipe`, the way an export does.
+    /// Renders the frame at full size with `recipe`, the way an export does: the scan decoded and
+    /// taken through the stages up to noise reduction, a copy of that picture put into `kept`,
+    /// then the stages after it, the output sharpening and the conversion. When `kept` already
+    /// holds the picture for this very key (see [`KeptKey`]) the decode and those stages are
+    /// skipped and the render starts from a copy of it. Whenever `kept` cannot be used it is
+    /// emptied before the new picture is made, so two are never held; when a copy cannot be
+    /// allocated nothing is kept and the render goes on as it did before the picture was kept.
     fn render_detail_picture(
         &self,
         library: &Library,
@@ -924,16 +1047,54 @@ impl DevelopService {
         recipe: &Recipe,
         context: DetailContext,
         now: Instant,
+        kept: &mut Option<KeptPicture>,
     ) -> Result<DetailPicture, AppError> {
-        let (frame, sources) = library.read(|c| Ok((c.get_frame(id)?, c.sources_of(id)?)))?;
-        let (full, ir) = read_full(library, &frame, &sources, context.dust_removal)?;
-        let input = PipelineInput {
-            rgb: Arc::new(full),
-            ir: ir.map(Arc::new),
-            film_base: context.film_base,
-            full_long_edge: None,
+        let (frame, sources, flat) = library.read(|c| {
+            let frame = c.get_frame(id)?;
+            let flat = c.get_flat_field(frame.roll_id)?;
+            Ok((frame, c.sources_of(id)?, flat))
+        })?;
+        let key = KeptKey::new(library, &frame, &sources, flat, recipe, context);
+        let start = if kept.as_ref().is_some_and(|k| k.key == key) {
+            let copy = kept.as_ref().and_then(|k| self.copy(&k.image));
+            if copy.is_none() {
+                *kept = None;
+            }
+            copy
+        } else {
+            *kept = None;
+            None
         };
-        let image = render_full(input, recipe, None)?;
+        let image = match start {
+            Some(after_noise) => render_full_from_noise(after_noise, recipe, None)?,
+            None => {
+                self.detail.file_reads.fetch_add(1, Ordering::SeqCst);
+                let (full, ir) = read_full_with(
+                    library,
+                    &frame,
+                    &sources,
+                    context.dust_removal,
+                    key.flat_field.as_ref(),
+                )?;
+                let input = PipelineInput {
+                    rgb: Arc::new(full),
+                    ir: ir.map(Arc::new),
+                    film_base: context.film_base,
+                    full_long_edge: None,
+                };
+                let after_noise =
+                    render_up_to_noise(&input, recipe, RenderTarget::Full, &mut |_| {})?;
+                drop(input);
+                if let Some(image) = self.copy(&after_noise) {
+                    *kept = Some(KeptPicture {
+                        key,
+                        image,
+                        used: now,
+                    });
+                }
+                render_full_from_noise(after_noise, recipe, None)?
+            }
+        };
         let rgba = to_rgba8_srgb(&image)?;
         Ok(DetailPicture {
             frame_id: id,
@@ -946,6 +1107,15 @@ impl DevelopService {
         })
     }
 
+    /// [`try_copy`], which a test can make fail.
+    fn copy(&self, image: &ImageF32) -> Option<ImageF32> {
+        #[cfg(test)]
+        if self.detail.fail_copies.load(Ordering::SeqCst) {
+            return None;
+        }
+        try_copy(image)
+    }
+
     fn release_if_idle(slot: &mut Option<DetailPicture>, now: Instant) {
         let idle = Duration::from_secs(DETAIL_IDLE_SECS);
         if slot
@@ -956,7 +1126,18 @@ impl DevelopService {
         }
     }
 
-    /// Releases the detail picture when nobody has used it for [`DETAIL_IDLE_SECS`]. Called when a
+    fn release_kept_if_idle(slot: &mut Option<KeptPicture>, now: Instant) {
+        let idle = Duration::from_secs(DETAIL_IDLE_SECS);
+        if slot
+            .as_ref()
+            .is_some_and(|k| now.saturating_duration_since(k.used) >= idle)
+        {
+            *slot = None;
+        }
+    }
+
+    /// Releases the detail picture, and the picture kept after noise reduction, when nobody has
+    /// used them for [`DETAIL_IDLE_SECS`]. Called when a
     /// frame is opened (`develop_open`) and before every detail request; there is no timer thread.
     pub fn release_idle_detail(&self) {
         self.release_idle_detail_at(Instant::now());
@@ -969,6 +1150,12 @@ impl DevelopService {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         Self::release_if_idle(&mut slot, now);
+        let mut kept = self
+            .detail
+            .kept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        Self::release_kept_if_idle(&mut kept, now);
     }
 
     /// Memory held by the detail picture (0 when there is none).
@@ -979,6 +1166,22 @@ impl DevelopService {
             .unwrap_or_else(PoisonError::into_inner)
             .as_ref()
             .map_or(0, |p| p.rgba.len())
+    }
+
+    /// Memory held by the picture kept after noise reduction (0 when there is none).
+    pub fn kept_bytes(&self) -> usize {
+        self.detail
+            .kept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map_or(0, |k| k.image.data.len() * std::mem::size_of::<f32>())
+    }
+
+    /// How many times a detail render decoded the scan (for tests); a render from the kept
+    /// picture does not.
+    pub fn detail_file_reads(&self) -> usize {
+        self.detail.file_reads.load(Ordering::SeqCst)
     }
 
     /// How many full-size detail renders have been made (for tests).
@@ -996,8 +1199,8 @@ impl DevelopService {
         self.cache().iter().map(|(_, e)| e.bytes()).sum()
     }
 
-    /// Drops the detail picture and forgets the detail requests' sequence numbers (the Develop view
-    /// was left); the proxy cache stays. Safe with nothing cached. It does not wait for a render in
+    /// Drops the detail picture and the picture kept after noise reduction and forgets the detail
+    /// requests' sequence numbers (the Develop view was left); the proxy cache stays. Safe with nothing cached. It does not wait for a render in
     /// flight: it bumps the release generation first, so a render that began before it discards its
     /// picture when it ends (and answers `Cancelled`), and then drops the picture if no render is
     /// holding it.
@@ -1011,6 +1214,10 @@ impl DevelopService {
         if let Ok(mut slot) = self.detail.picture.try_lock() {
             *slot = None;
         }
+        // A render in flight holds both and discards the kept picture itself when it ends.
+        if let Ok(mut kept) = self.detail.kept.try_lock() {
+            *kept = None;
+        }
     }
 
     /// Forgets every proxy and the detail picture (another library was opened).
@@ -1019,6 +1226,11 @@ impl DevelopService {
         *self
             .detail
             .picture
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
+        *self
+            .detail
+            .kept
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = None;
         self.detail
@@ -1033,10 +1245,11 @@ impl DevelopService {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use gtp_core::testing::synthetic::Pattern;
+    use gtp_core::testing::synthetic::{Params, Pattern};
     use gtp_core::FrameKind;
 
     use super::*;
+    use crate::services::export::render_full;
     use crate::services::roll_frame::roll_set_film_base;
     use crate::services::testkit::Fixture;
 
@@ -2185,6 +2398,658 @@ mod tests {
             detail_pixels_of(&get(&quiet, 3)),
             detail_pixels_of(&base),
             "noise reduction applies"
+        );
+    }
+
+    // --- The picture kept after noise reduction (P-33, ADR 0016) ---
+
+    /// A frame with grain, dust and an infrared plane, so each of the first five stages has
+    /// something to do.
+    fn kept_frame(t: &Fixture, index: u32) -> FrameId {
+        t.frame_params(
+            index,
+            &Params {
+                width: 200,
+                height: 150,
+                rebate: [14; 4],
+                pattern: Pattern::Blobs,
+                noise: 0.05,
+                dust_specks: 5,
+                with_ir: true,
+                ..Params::default()
+            },
+        )
+    }
+
+    /// A recipe whose crop, noise reduction and dust removal all do something.
+    fn kept_recipe() -> Recipe {
+        let mut recipe = Recipe::default();
+        recipe.geometry.crop = crop(0.04, 0.05, 0.9, 0.88);
+        recipe.noise.luminance = 50.0;
+        recipe.noise.color = 40.0;
+        recipe
+    }
+
+    /// The detail view of `recipe` as a service that has kept nothing renders it: from the file.
+    fn from_the_file(t: &Fixture, id: FrameId, recipe: &Recipe) -> Vec<u8> {
+        let fresh = DevelopService::default();
+        fresh.set_dust_removal(t.service.dust_removal());
+        let bytes = fresh
+            .render_detail(&t.library, id, recipe, WHOLE, 1)
+            .unwrap();
+        assert_eq!(fresh.detail_file_reads(), 1);
+        bytes
+    }
+
+    /// Two detail answers have the same size and the same pixels (the sequence numbers may differ).
+    fn assert_same_detail(got: &[u8], want: &[u8], label: &str) {
+        assert_eq!(detail_header(got).1, detail_header(want).1, "{label}: size");
+        // Not `assert_eq!` on the slices: a failure would print megabytes.
+        assert!(
+            detail_pixels_of(got) == detail_pixels_of(want),
+            "{label}: pixels"
+        );
+    }
+
+    #[test]
+    fn an_edit_after_noise_reduction_renders_from_the_kept_picture_with_the_same_pixels() {
+        let t = Fixture::new("kept-later");
+        let id = kept_frame(&t, 1);
+        let base = kept_recipe();
+        let first = t
+            .service
+            .render_detail(&t.library, id, &base, WHOLE, 1)
+            .unwrap();
+        let (_, [_, _, _, _, width, height]) = detail_header(&first);
+        assert_eq!(t.service.kept_bytes(), (width * height) as usize * 12);
+        assert_eq!(t.service.detail_file_reads(), 1);
+
+        type Edit = fn(&mut Recipe);
+        let edits: [(&str, Edit); 10] = [
+            ("colour", |r| {
+                r.color.red_cyan = 25.0;
+                r.color.green_magenta = -10.0;
+                r.color.temperature = 12.0;
+                r.color.tint = 6.0;
+                r.color.saturation = 1.3;
+                r.color.vibrance = 30.0;
+            }),
+            ("black and white", |r| {
+                r.mono.enabled = true;
+                r.mono.mix = [0.5, 0.4, 0.1];
+            }),
+            ("colour mixer", |r| {
+                r.color.mixer.hue = [40.0; 8];
+                r.color.mixer.saturation = [-50.0; 8];
+                r.color.mixer.lightness = [30.0; 8];
+            }),
+            ("tone and curves", |r| {
+                r.tone.exposure_ev = 0.4;
+                r.tone.contrast = 30.0;
+                r.tone.highlights = -20.0;
+                r.tone.shadows = 25.0;
+                r.tone.whites = 10.0;
+                r.tone.blacks = -10.0;
+                r.tone.dehaze = 10.0;
+                r.tone.curve.master = vec![[0.0, 0.0], [0.3, 0.2], [1.0, 1.0]];
+                r.tone.curve.b = vec![[0.0, 0.0], [0.5, 0.6], [1.0, 1.0]];
+            }),
+            ("vignette", |r| {
+                r.tone.vignette.amount = -60.0;
+                r.tone.vignette.midpoint = 30.0;
+            }),
+            ("split toning", |r| {
+                r.color.split_tone.highlight_strength = 50.0;
+                r.color.split_tone.shadow_strength = 60.0;
+                r.color.split_tone.balance = 20.0;
+            }),
+            ("straighten", |r| r.geometry.angle_deg = 2.0),
+            ("quarter turn", |r| r.geometry.rot90 = 1),
+            ("flips", |r| {
+                r.geometry.flip_h = true;
+                r.geometry.flip_v = true;
+            }),
+            ("output sharpening", |r| {
+                r.output.sharpen.amount = 80.0;
+                r.output.sharpen.radius_px = 1.5;
+            }),
+        ];
+        for (n, (label, edit)) in edits.iter().enumerate() {
+            let mut recipe = base.clone();
+            edit(&mut recipe);
+            let got = t
+                .service
+                .render_detail(&t.library, id, &recipe, WHOLE, 2 + n as u64)
+                .unwrap();
+            assert_eq!(
+                t.service.detail_file_reads(),
+                1,
+                "{label}: the scan was read"
+            );
+            assert_same_detail(&got, &from_the_file(&t, id, &recipe), label);
+            assert!(
+                detail_pixels_of(&got) != detail_pixels_of(&first),
+                "{label} changes the picture"
+            );
+            // The kept picture is the same one as before, not a new one.
+            assert_eq!(t.service.kept_bytes(), (width * height) as usize * 12);
+        }
+        // Back to the first recipe: still from the kept picture, and the same as the first answer.
+        let again = t
+            .service
+            .render_detail(&t.library, id, &base, WHOLE, 100)
+            .unwrap();
+        assert_eq!(t.service.detail_file_reads(), 1);
+        assert_same_detail(&again, &first, "the first recipe again");
+        assert_eq!(t.service.detail_renders(), 2 + edits.len());
+    }
+
+    #[test]
+    fn a_wild_recipe_is_clamped_before_its_key_is_made() {
+        let t = Fixture::new("kept-clamp");
+        let id = kept_frame(&t, 1);
+        let mut wild = kept_recipe();
+        wild.noise.luminance = 5000.0;
+        let mut clamped = kept_recipe();
+        clamped.noise.luminance = wild.clone().clamped().noise.luminance;
+        let get = |recipe: &Recipe, seq| {
+            t.service
+                .render_detail(&t.library, id, recipe, WHOLE, seq)
+                .unwrap()
+        };
+        get(&wild, 1);
+        let mut brighter = clamped.clone();
+        brighter.tone.exposure_ev = 0.3;
+        get(&brighter, 2);
+        assert_eq!(t.service.detail_file_reads(), 1);
+    }
+
+    #[test]
+    fn each_part_of_the_key_changed_on_its_own_renders_the_scan_afresh() {
+        use std::cell::Cell;
+
+        use gtp_core::testing::synthetic;
+        use gtp_io::{from_f32_linear, write_tiff16, Compression};
+
+        use crate::library_fs::originals_rel;
+
+        let t = Fixture::new("kept-key");
+        let id = kept_frame(&t, 1);
+        let other = kept_frame(&t, 2);
+        let seq = Cell::new(0u64);
+        // Asks for `recipe` and says whether the scan was decoded for it.
+        let read = |id: FrameId, recipe: &Recipe| {
+            let before = t.service.detail_file_reads();
+            seq.set(seq.get() + 1);
+            t.service
+                .render_detail(&t.library, id, recipe, WHOLE, seq.get())
+                .unwrap();
+            t.service.detail_file_reads() > before
+        };
+        // After a change: the next request decodes, and one for a later stage then does not.
+        let changes = |label: &str, id: FrameId, recipe: &Recipe| {
+            assert!(read(id, recipe), "{label}: the scan is read afresh");
+            let mut later = recipe.clone();
+            later.tone.exposure_ev += 0.25;
+            assert!(!read(id, &later), "{label}: and then kept again");
+        };
+
+        let mut recipe = kept_recipe();
+        changes("first request", id, &recipe);
+
+        recipe.dust.threshold = 0.3;
+        changes("dust: threshold", id, &recipe);
+        recipe.dust.grow_px = 5;
+        changes("dust: growth", id, &recipe);
+        recipe.dust.enabled = false;
+        changes("dust: switched off", id, &recipe);
+        recipe.geometry.crop = crop(0.1, 0.1, 0.7, 0.7);
+        changes("crop", id, &recipe);
+        recipe.base.rgb = [0.9, 0.7, 0.5];
+        changes("base: colour", id, &recipe);
+        recipe.base.source = gtp_core::recipe::BaseSource::Manual;
+        changes("base: source", id, &recipe);
+        recipe.invert.white = [1.8, 1.9, 2.0];
+        changes("invert: white", id, &recipe);
+        recipe.invert.black = [0.2, 0.2, 0.2];
+        changes("invert: black", id, &recipe);
+        recipe.noise.luminance = 80.0;
+        changes("noise: luminance", id, &recipe);
+        recipe.noise.color = 10.0;
+        changes("noise: colour", id, &recipe);
+
+        // The frame: another one, and then the first again (the kept picture is the other's).
+        changes("another frame", other, &recipe);
+        changes("the first frame again", id, &recipe);
+
+        // The roll's film base and the dust removal flag.
+        roll_set_film_base(&t.library, t.roll, Some([0.8, 0.5, 0.3])).unwrap();
+        changes("film base", id, &recipe);
+        t.service.set_dust_removal(false);
+        changes("dust removal flag off", id, &recipe);
+        t.service.set_dust_removal(true);
+        changes("dust removal flag on", id, &recipe);
+
+        // The roll's flat field: set, changed, cleared.
+        let flat = |light: f32| FlatField {
+            grid_w: 2,
+            grid_h: 2,
+            frame_w: 200,
+            frame_h: 150,
+            light: vec![light; 12],
+            sources: Vec::new(),
+        };
+        t.library
+            .write(|c| c.set_flat_field(t.roll, &flat(1.0)))
+            .unwrap();
+        changes("flat field set", id, &recipe);
+        t.library
+            .write(|c| c.set_flat_field(t.roll, &flat(0.9)))
+            .unwrap();
+        changes("flat field changed", id, &recipe);
+        crate::services::flat_field::flat_field_clear(&t.library, t.roll).unwrap();
+        changes("flat field cleared", id, &recipe);
+
+        // The scan file replaced in place under the same record: with the same length (only the
+        // time of its last change differs), and with another length.
+        let path = t
+            .library
+            .resolve(&originals_rel(t.roll, id).join("scan.tif"))
+            .unwrap();
+        let replace = |width: u32, stamp: u64| {
+            let params = Params {
+                width,
+                height: 150,
+                rebate: [14; 4],
+                pattern: Pattern::Blobs,
+                noise: 0.05,
+                ..Params::default()
+            };
+            let scan = synthetic::negative(99, &params).unwrap();
+            write_tiff16(&path, &from_f32_linear(&scan.image), Compression::None).unwrap();
+            let file = std::fs::File::options().write(true).open(&path).unwrap();
+            file.set_modified(std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000 + stamp))
+                .unwrap();
+        };
+        replace(200, 1);
+        changes("scan file: same length, new content", id, &recipe);
+        replace(200, 2);
+        changes("scan file: only its time changed", id, &recipe);
+        replace(210, 2);
+        changes("scan file: another length", id, &recipe);
+    }
+
+    #[test]
+    fn the_kept_picture_is_released_when_idle_by_release_detail_and_for_another_frame() {
+        let t = Fixture::new("kept-release");
+        let id = kept_frame(&t, 1);
+        let other = kept_frame(&t, 2);
+        let recipe = kept_recipe();
+        let start = Instant::now();
+        let ask = |id: FrameId, at: Instant, seq| {
+            t.service
+                .render_detail_at(&t.library, id, &recipe, WHOLE, seq, at)
+                .unwrap()
+        };
+        let one_picture = {
+            let bytes = ask(id, start, 1);
+            let (_, [_, _, _, _, w, h]) = detail_header(&bytes);
+            (w * h) as usize * 12
+        };
+        assert_eq!(t.service.kept_bytes(), one_picture);
+
+        // Idle: used again just before the limit it stays, and the clock starts over.
+        let almost = start + Duration::from_secs(DETAIL_IDLE_SECS - 1);
+        ask(id, almost, 2);
+        t.service
+            .release_idle_detail_at(almost + Duration::from_secs(DETAIL_IDLE_SECS - 1));
+        assert_eq!(t.service.kept_bytes(), one_picture);
+        assert!(t.service.detail_bytes() > 0);
+        let later = almost + Duration::from_secs(DETAIL_IDLE_SECS);
+        t.service.release_idle_detail_at(later);
+        assert_eq!(t.service.kept_bytes(), 0, "idle for the limit");
+        assert_eq!(t.service.detail_bytes(), 0);
+        // A request that finds both idle releases them itself, and makes them again.
+        ask(id, later, 3);
+        assert_eq!(t.service.kept_bytes(), one_picture);
+        let reads = t.service.detail_file_reads();
+        let mut brighter = recipe.clone();
+        brighter.tone.exposure_ev = 0.5;
+        t.service
+            .render_detail_at(
+                &t.library,
+                id,
+                &brighter,
+                WHOLE,
+                4,
+                later + Duration::from_secs(DETAIL_IDLE_SECS),
+            )
+            .unwrap();
+        assert_eq!(t.service.detail_file_reads(), reads + 1);
+
+        // Another frame replaces it, and there are never two.
+        ask(other, later, 1);
+        assert_eq!(t.service.kept_bytes(), one_picture);
+        let reads = t.service.detail_file_reads();
+        ask(id, later, 5);
+        assert_eq!(t.service.detail_file_reads(), reads + 1);
+        assert_eq!(t.service.kept_bytes(), one_picture);
+
+        // A request for a frame that cannot be rendered still releases the kept picture.
+        let bare = t.bare(3);
+        let err = t
+            .service
+            .render_detail(&t.library, bare, &recipe, WHOLE, 1)
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        assert_eq!(t.service.kept_bytes(), 0);
+
+        // The view is left.
+        ask(id, later, 6);
+        assert_eq!(t.service.kept_bytes(), one_picture);
+        t.service.release_detail();
+        assert_eq!(t.service.kept_bytes(), 0);
+        assert_eq!(t.service.detail_bytes(), 0);
+        // And another library is opened.
+        ask(id, later, 1);
+        assert_eq!(t.service.kept_bytes(), one_picture);
+        t.service.clear();
+        assert_eq!(t.service.kept_bytes(), 0);
+    }
+
+    #[test]
+    fn a_render_that_began_before_a_release_does_not_keep_its_picture_after_noise_reduction() {
+        let t = Fixture::new("kept-release-flight");
+        let id = kept_frame(&t, 1);
+        let recipe = kept_recipe();
+        let in_flight = |recipe: &Recipe| {
+            // Holding the turn stands in for a render that is running.
+            let turn = t.service.detail.turn.lock().unwrap();
+            let result = std::thread::scope(|scope| {
+                let a = scope.spawn(|| t.service.render_detail(&t.library, id, recipe, WHOLE, 1));
+                // The request has registered itself (and read the release generation).
+                let want = recipe.clone().clamped();
+                while t
+                    .service
+                    .detail
+                    .latest
+                    .lock()
+                    .unwrap()
+                    .get(&id)
+                    .is_none_or(|(_, r)| *r != want)
+                {
+                    std::thread::yield_now();
+                }
+                t.service.release_detail();
+                drop(turn);
+                a.join().unwrap()
+            });
+            assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+            assert_eq!(t.service.kept_bytes(), 0);
+            assert_eq!(t.service.detail_bytes(), 0);
+        };
+        // Nothing kept before: the render makes it and discards it.
+        in_flight(&recipe);
+        // Something kept before, and the render would have used it.
+        t.service
+            .render_detail(&t.library, id, &recipe, WHOLE, 1)
+            .unwrap();
+        assert!(t.service.kept_bytes() > 0);
+        let mut brighter = recipe.clone();
+        brighter.tone.exposure_ev = 0.5;
+        in_flight(&brighter);
+        // A request made after the release is a new one and keeps both.
+        t.service
+            .render_detail(&t.library, id, &recipe, WHOLE, 1)
+            .unwrap();
+        assert!(t.service.kept_bytes() > 0 && t.service.detail_bytes() > 0);
+    }
+
+    #[test]
+    fn when_a_copy_cannot_be_allocated_nothing_is_kept_and_the_render_is_as_before() {
+        let t = Fixture::new("kept-no-memory");
+        let id = kept_frame(&t, 1);
+        let base = kept_recipe();
+        let mut brighter = base.clone();
+        brighter.tone.exposure_ev = 0.5;
+        let mut sharper = base.clone();
+        sharper.output.sharpen.amount = 70.0;
+        let get = |recipe: &Recipe, seq| {
+            t.service
+                .render_detail(&t.library, id, recipe, WHOLE, seq)
+                .unwrap()
+        };
+
+        // No copy at the first render: it succeeds, keeps nothing, and every edit reads the file.
+        t.service.detail.fail_copies.store(true, Ordering::SeqCst);
+        let first = get(&base, 1);
+        assert_eq!(t.service.kept_bytes(), 0);
+        let second = get(&brighter, 2);
+        assert_eq!(t.service.detail_file_reads(), 2);
+        assert_eq!(t.service.kept_bytes(), 0);
+        t.service.detail.fail_copies.store(false, Ordering::SeqCst);
+        assert_same_detail(&first, &from_the_file(&t, id, &base), "no copy: first");
+        assert_same_detail(&second, &from_the_file(&t, id, &brighter), "no copy: edit");
+
+        // Something is kept, and then the copy that a later edit starts from fails: the render
+        // goes on from the file, the kept picture is dropped, and the pixels are the same.
+        get(&base, 3);
+        assert!(t.service.kept_bytes() > 0);
+        t.service.detail.fail_copies.store(true, Ordering::SeqCst);
+        let reads = t.service.detail_file_reads();
+        let edited = get(&sharper, 4);
+        assert_eq!(t.service.detail_file_reads(), reads + 1);
+        assert_eq!(t.service.kept_bytes(), 0);
+        t.service.detail.fail_copies.store(false, Ordering::SeqCst);
+        assert_same_detail(&edited, &from_the_file(&t, id, &sharper), "no copy: reuse");
+        // With memory again, it is kept again.
+        get(&brighter, 5);
+        assert!(t.service.kept_bytes() > 0);
+    }
+
+    #[test]
+    fn a_copy_of_nothing_much_is_a_copy() {
+        let image = ImageF32::new(2, 1, 3, vec![0.5, 0.25, 1.0, 2.0, 0.0, 4.0]).unwrap();
+        assert_eq!(try_copy(&image), Some(image));
+    }
+
+    /// Times the detail view of a 6000 x 4000 frame with every tool on when the picture after noise
+    /// reduction is kept: the first render of the frame (decode, every stage), then a render after
+    /// an edit to the colour and one after an edit to the tone (and the vignette), on rayon pools
+    /// of 6 and 12 threads (median of 5 runs, after one that is not counted), each from the
+    /// service's own `render_detail` with a small region. Run with
+    /// `cargo test --release -p gtp-app time_a_detail_render_from_the_kept_picture -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "timing run, not a check"]
+    fn time_a_detail_render_from_the_kept_picture() {
+        use gtp_core::{FrameFlag, FrameKind, SourceRole};
+        use gtp_io::{from_f32_linear, write_tiff16, Compression};
+
+        use crate::library_fs::originals_rel;
+
+        const RUNS: usize = 5;
+        let (width, height) = (6000u32, 4000u32);
+        let mut data = Vec::with_capacity((width * height * 3) as usize);
+        for y in 0..height {
+            for x in 0..width {
+                let (fx, fy) = (x as f32 / width as f32, y as f32 / height as f32);
+                let px = y * width + x;
+                let n = |k: u32| {
+                    ((px.wrapping_add(k).wrapping_mul(2_654_435_761) >> 16) & 0xff) as f32 / 3000.0
+                };
+                data.extend_from_slice(&[
+                    0.08 + 0.55 * fx + n(0),
+                    0.1 + 0.5 * fy * (1.0 - 0.5 * fx) + n(1),
+                    0.06 + 0.45 * (1.0 - fx) * (0.4 + 0.6 * fy) + n(2),
+                ]);
+            }
+        }
+        let scan = ImageF32::new(width, height, 3, data).unwrap();
+        let mut plane: Vec<f32> = (0..width * height)
+            .map(|i| 0.9 + (i.wrapping_mul(2_246_822_519) >> 28) as f32 / 1000.0)
+            .collect();
+        for k in 0..300u32 {
+            let cx = k.wrapping_mul(2_654_435_761) % (width - 8);
+            let cy = k.wrapping_mul(40_503).wrapping_add(7919) % (height - 8);
+            for dy in 0..5 {
+                for dx in 0..5 {
+                    plane[((cy + dy) * width + cx + dx) as usize] = 0.3;
+                }
+            }
+        }
+        let ir = ImageF32::new(width, height, 1, plane).unwrap();
+
+        // One frame of a library, the files compressed as the import writes them.
+        let t = Fixture::new("p33-timing");
+        let id = FrameId::new();
+        let rel = originals_rel(t.roll, id).join("scan.tif");
+        let ir_rel = originals_rel(t.roll, id).join("ir.tif");
+        let path = t.library.resolve(&rel).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let compression = Compression::DeflatePredictor;
+        write_tiff16(&path, &from_f32_linear(&scan), compression).unwrap();
+        write_tiff16(
+            &t.library.resolve(&ir_rel).unwrap(),
+            &from_f32_linear(&ir),
+            compression,
+        )
+        .unwrap();
+        drop((scan, ir));
+        t.library
+            .write(|c| {
+                c.insert_frame(&Frame {
+                    id,
+                    roll_id: t.roll,
+                    index_in_roll: 1,
+                    kind: FrameKind::ScanRgbIr,
+                    width,
+                    height,
+                    has_ir: true,
+                    note: String::new(),
+                    flag: FrameFlag::None,
+                    created_at: String::new(),
+                    edited_at: None,
+                })?;
+                for (role, rel) in [(SourceRole::Rgb, &rel), (SourceRole::Ir, &ir_rel)] {
+                    c.insert_source(&SourceFile {
+                        frame_id: id,
+                        role,
+                        rel_path: rel.to_string_lossy().replace('\\', "/"),
+                        sha256: String::new(),
+                        bytes: 0,
+                    })?;
+                }
+                Ok(())
+            })
+            .unwrap();
+
+        // Every tool on.
+        let mut base = Recipe::default();
+        base.noise.luminance = 50.0;
+        base.noise.color = 50.0;
+        base.color.red_cyan = 10.0;
+        base.color.green_magenta = -8.0;
+        base.color.blue_yellow = 12.0;
+        base.color.temperature = 15.0;
+        base.color.tint = -10.0;
+        base.color.saturation = 1.2;
+        base.color.vibrance = 25.0;
+        for band in 0..8 {
+            base.color.mixer.hue[band] = 5.0 + band as f32;
+            base.color.mixer.saturation[band] = 10.0 - band as f32;
+            base.color.mixer.lightness[band] = -4.0 + band as f32;
+        }
+        base.tone.exposure_ev = 0.3;
+        base.tone.contrast = 20.0;
+        base.tone.highlights = -15.0;
+        base.tone.shadows = 20.0;
+        base.tone.whites = 5.0;
+        base.tone.blacks = -5.0;
+        base.tone.dehaze = 10.0;
+        base.tone.curve.master = vec![[0.0, 0.0], [0.25, 0.2], [0.75, 0.8], [1.0, 1.0]];
+        base.tone.curve.r = vec![[0.0, 0.0], [0.5, 0.55], [1.0, 1.0]];
+        base.color.split_tone.shadow_hue = 220.0;
+        base.color.split_tone.shadow_strength = 20.0;
+        base.color.split_tone.highlight_hue = 40.0;
+        base.color.split_tone.highlight_strength = 15.0;
+        base.geometry.angle_deg = 0.5;
+        base.tone.vignette.amount = -30.0;
+        base.output.sharpen.amount = 60.0;
+        let mut colour = base.clone();
+        colour.color.temperature = 25.0;
+        colour.color.vibrance = 40.0;
+        let mut tone = base.clone();
+        tone.tone.exposure_ev = 0.5;
+        tone.tone.contrast = 30.0;
+        tone.tone.vignette.amount = -45.0;
+
+        let median = |mut v: Vec<f64>| {
+            v.sort_by(f64::total_cmp);
+            v[v.len() / 2]
+        };
+        let region = crop(0.45, 0.45, 0.1, 0.1);
+        eprintln!("--- {width}x{height}, every tool on, median of {RUNS} runs, ms ---");
+        eprintln!(
+            "{:<8} {:>13} {:>13} {:>13} {:>10} {:>16} {:>16}",
+            "threads",
+            "first",
+            "colour edit",
+            "tone edit",
+            "kept (MB)",
+            "first, no copy",
+            "edit, no copy"
+        );
+        for threads in [6usize, 12] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            let (mut firsts, mut colours, mut tones) = (Vec::new(), Vec::new(), Vec::new());
+            let (mut plain_firsts, mut plain_edits) = (Vec::new(), Vec::new());
+            let mut kept_mb = 0;
+            pool.install(|| {
+                for run in 0..=RUNS {
+                    t.service.release_detail();
+                    let time = |recipe: &Recipe, seq: u64| {
+                        let started = Instant::now();
+                        t.service
+                            .render_detail(&t.library, id, recipe, region, seq)
+                            .unwrap();
+                        started.elapsed().as_secs_f64() * 1000.0
+                    };
+                    let first = time(&base, 1);
+                    kept_mb = t.service.kept_bytes() / 1_000_000;
+                    let after_colour = time(&colour, 2);
+                    let after_tone = time(&tone, 3);
+                    // The same without a kept picture (a copy that fails keeps nothing): the render
+                    // as it was before the picture was kept.
+                    t.service.release_detail();
+                    t.service.detail.fail_copies.store(true, Ordering::SeqCst);
+                    let plain_first = time(&base, 1);
+                    let plain_edit = time(&colour, 2);
+                    t.service.detail.fail_copies.store(false, Ordering::SeqCst);
+                    if run > 0 {
+                        firsts.push(first);
+                        colours.push(after_colour);
+                        tones.push(after_tone);
+                        plain_firsts.push(plain_first);
+                        plain_edits.push(plain_edit);
+                    }
+                }
+            });
+            eprintln!(
+                "{threads:<8} {:>13.0} {:>13.0} {:>13.0} {kept_mb:>10} {:>16.0} {:>16.0}",
+                median(firsts),
+                median(colours),
+                median(tones),
+                median(plain_firsts),
+                median(plain_edits)
+            );
+        }
+        eprintln!(
+            "file reads in all: {} for {} renders",
+            t.service.detail_file_reads(),
+            t.service.detail_renders()
         );
     }
 

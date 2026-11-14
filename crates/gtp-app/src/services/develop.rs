@@ -495,12 +495,24 @@ pub(crate) fn read_ir(
     sources: &[SourceFile],
     like: (u32, u32),
 ) -> Result<ImageF32, AppError> {
+    check_ir(read_ir_plane(library, sources)?, like)
+}
+
+/// The decoded infrared file of a frame, whatever its size.
+pub(crate) fn read_ir_plane(
+    library: &Library,
+    sources: &[SourceFile],
+) -> Result<ImageF32, AppError> {
     let source = sources
         .iter()
         .find(|s| s.role == SourceRole::Ir)
         .ok_or_else(|| AppError::new(ErrorCode::NotFound, "This frame has no infrared file."))?;
     let path = library.resolve(Path::new(&source.rel_path))?;
-    let plane = to_f32_linear(&read_tiff16(&path, &Limits::default())?)?;
+    to_f32_linear(&read_tiff16(&path, &Limits::default())?)
+}
+
+/// `plane` if it is one channel and as big as the scan `like`.
+pub(crate) fn check_ir(plane: ImageF32, like: (u32, u32)) -> Result<ImageF32, AppError> {
     if plane.channels != 1 || (plane.width, plane.height) != like {
         return Err(AppError::new(
             ErrorCode::InvalidInput,
@@ -525,7 +537,15 @@ pub(crate) fn read_ir_or_skip(
     if !frame.has_ir {
         return None;
     }
-    match read_ir(library, sources, like) {
+    skip_unusable_ir(frame, read_ir(library, sources, like))
+}
+
+/// `Some` plane, or `None` with the problem logged: dust removal is then skipped.
+pub(crate) fn skip_unusable_ir(
+    frame: &Frame,
+    result: Result<ImageF32, AppError>,
+) -> Option<ImageF32> {
+    match result {
         Ok(plane) => Some(plane),
         Err(err) => {
             tracing::warn!(frame = %frame.id, error = %err.message, "infrared plane not used");

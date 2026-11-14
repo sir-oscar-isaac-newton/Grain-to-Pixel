@@ -13,7 +13,8 @@ use std::io::{self, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use gtp_core::{AppError, ErrorCode, ImageF32};
-use tiff::decoder::{Decoder, DecodingResult, Limits as DecoderLimits};
+use rayon::prelude::*;
+use tiff::decoder::{ChunkType, Decoder, DecodingResult, Limits as DecoderLimits};
 use tiff::encoder::colortype::{Gray16, RGB16, RGBA16};
 use tiff::encoder::compression::DeflateLevel;
 use tiff::encoder::{Compression as TiffCompression, TiffEncoder};
@@ -107,19 +108,93 @@ pub fn read_tiff16_single_strip(path: &Path, limits: &Limits) -> Result<Tiff16, 
     read_tiff16_with(path, limits, limits.max_decoded_bytes)
 }
 
+/// A decoder on the file at `path` with the app's caps.
+fn open_decoder(
+    path: &Path,
+    buffer_cap: usize,
+    intermediate_cap: usize,
+) -> Result<Decoder<BufReader<File>>, AppError> {
+    let reader = BufReader::new(open(path)?);
+    Ok(Decoder::new(reader)
+        .map_err(map_tiff)?
+        .with_limits(decoder_limits(buffer_cap, intermediate_cap)))
+}
+
+fn header_mismatch(details: String) -> AppError {
+    unsupported("This TIFF file does not match its header.", details)
+}
+
+/// Decodes the strips of a file with more than one strip, chunky (not planar), at the same time,
+/// each task with a decoder of its own on the file, and returns the samples as `read_image` would.
+/// `None` when the file is not laid out like that (tiles, planar, one strip, odd strip sizes): the
+/// caller then reads it whole. The strips are decoded by the same decoder code, so the samples
+/// are the same; if some strips fail, the error of the first one in file order is returned, which
+/// is the one a sequential read meets first.
+fn read_strips_in_parallel(
+    path: &Path,
+    decoder: &mut Decoder<BufReader<File>>,
+    (width, height, channels): (u32, u32, u8),
+    samples: usize,
+    (buffer_cap, intermediate_cap): (usize, usize),
+) -> Result<Option<Vec<u16>>, AppError> {
+    if decoder.get_chunk_type() != ChunkType::Strip {
+        return Ok(None);
+    }
+    let planar = decoder
+        .find_tag_unsigned::<u16>(Tag::PlanarConfiguration)
+        .map_err(map_tiff)?;
+    let rows = decoder
+        .find_tag_unsigned::<u32>(Tag::RowsPerStrip)
+        .map_err(map_tiff)?;
+    let count = decoder.strip_count().map_err(map_tiff)?;
+    let Some(rows) = rows.filter(|rows| *rows > 0 && planar.unwrap_or(1) == 1) else {
+        return Ok(None);
+    };
+    if count < 2 || count != height.div_ceil(rows) {
+        return Ok(None);
+    }
+    let strip_samples = rows as usize * width as usize * usize::from(channels);
+    let mut data = vec![0_u16; samples];
+    let results: Vec<Result<(), AppError>> = data
+        .par_chunks_mut(strip_samples)
+        .enumerate()
+        .map_init(
+            || open_decoder(path, buffer_cap, intermediate_cap),
+            |decoder, (index, dst)| {
+                let decoder = decoder.as_mut().map_err(|err| err.clone())?;
+                let strip = decoder.read_chunk(index as u32).map_err(map_tiff)?;
+                let DecodingResult::U16(strip) = strip else {
+                    return Err(unsupported(
+                        "Only 16-bit TIFF files are supported.",
+                        "the decoder did not return 16-bit samples",
+                    ));
+                };
+                if strip.len() != dst.len() {
+                    return Err(header_mismatch(format!(
+                        "strip {index} has {} samples, expected {}",
+                        strip.len(),
+                        dst.len()
+                    )));
+                }
+                dst.copy_from_slice(&strip);
+                Ok(())
+            },
+        )
+        .collect();
+    results.into_iter().collect::<Result<(), AppError>>()?;
+    Ok(Some(data))
+}
+
 fn read_tiff16_with(
     path: &Path,
     limits: &Limits,
     intermediate_bytes: u64,
 ) -> Result<Tiff16, AppError> {
-    let reader = BufReader::new(open(path)?);
     let buffer_cap = usize::try_from(limits.max_decoded_bytes).unwrap_or(usize::MAX);
     let intermediate_cap = usize::try_from(intermediate_bytes)
         .unwrap_or(usize::MAX)
         .min(buffer_cap);
-    let mut decoder = Decoder::new(reader)
-        .map_err(map_tiff)?
-        .with_limits(decoder_limits(buffer_cap, intermediate_cap));
+    let mut decoder = open_decoder(path, buffer_cap, intermediate_cap)?;
 
     let (width, height) = decoder.dimensions().map_err(map_tiff)?;
     let channels = channels_of(decoder.colortype().map_err(map_tiff)?)?;
@@ -139,17 +214,29 @@ fn read_tiff16_with(
             ),
         ));
     }
-    let DecodingResult::U16(data) = decoder.read_image().map_err(map_tiff)? else {
-        return Err(unsupported(
-            "Only 16-bit TIFF files are supported.",
-            "the decoder did not return 16-bit samples",
-        ));
+    let data = match read_strips_in_parallel(
+        path,
+        &mut decoder,
+        (width, height, channels),
+        samples,
+        (buffer_cap, intermediate_cap),
+    )? {
+        Some(data) => data,
+        None => {
+            let DecodingResult::U16(data) = decoder.read_image().map_err(map_tiff)? else {
+                return Err(unsupported(
+                    "Only 16-bit TIFF files are supported.",
+                    "the decoder did not return 16-bit samples",
+                ));
+            };
+            data
+        }
     };
     if data.len() != samples {
-        return Err(unsupported(
-            "This TIFF file does not match its header.",
-            format!("expected {samples} samples, found {}", data.len()),
-        ));
+        return Err(header_mismatch(format!(
+            "expected {samples} samples, found {}",
+            data.len()
+        )));
     }
     Ok(Tiff16 {
         width,
@@ -252,7 +339,11 @@ pub(crate) fn write_through_temp(
 
 /// Scales 16-bit samples to linear `[0, 1]` floats. Scale only: no gamma, no profile.
 pub fn to_f32_linear(image: &Tiff16) -> Result<ImageF32, AppError> {
-    let data = image.data.iter().map(|&v| f32::from(v) / 65535.0).collect();
+    let data = image
+        .data
+        .par_iter()
+        .map(|&v| f32::from(v) / 65535.0)
+        .collect();
     ImageF32::new(image.width, image.height, image.channels, data)
 }
 
@@ -477,6 +568,230 @@ mod tests {
         };
         assert!(read_tiff16_single_strip(&path, &tight).is_err());
         fs::remove_file(&path).unwrap();
+    }
+
+    // ---- Frozen copies of the readers before P-31 phase 2 (one decoder, one thread).
+
+    /// `read_tiff16_with` before P-31: the whole image through `read_image`.
+    fn read_tiff16_before_p31(
+        path: &Path,
+        limits: &Limits,
+        intermediate_bytes: u64,
+    ) -> Result<Tiff16, AppError> {
+        let reader = BufReader::new(open(path)?);
+        let buffer_cap = usize::try_from(limits.max_decoded_bytes).unwrap_or(usize::MAX);
+        let intermediate_cap = usize::try_from(intermediate_bytes)
+            .unwrap_or(usize::MAX)
+            .min(buffer_cap);
+        let mut decoder = Decoder::new(reader)
+            .map_err(map_tiff)?
+            .with_limits(decoder_limits(buffer_cap, intermediate_cap));
+        let (width, height) = decoder.dimensions().map_err(map_tiff)?;
+        let channels = channels_of(decoder.colortype().map_err(map_tiff)?)?;
+        let samples = limits.check(width, height, channels, BYTES_PER_SAMPLE)?;
+        let stored = decoder
+            .find_tag_unsigned::<u16>(Tag::SamplesPerPixel)
+            .map_err(map_tiff)?;
+        if stored.is_some_and(|stored| stored != u16::from(channels)) {
+            return Err(unsupported(
+                "This TIFF has an extra channel the reader cannot expose yet.",
+                format!("{stored:?} samples per pixel but {channels} readable"),
+            ));
+        }
+        let DecodingResult::U16(data) = decoder.read_image().map_err(map_tiff)? else {
+            return Err(unsupported(
+                "Only 16-bit TIFF files are supported.",
+                "the decoder did not return 16-bit samples",
+            ));
+        };
+        if data.len() != samples {
+            return Err(unsupported(
+                "This TIFF file does not match its header.",
+                format!("expected {samples} samples, found {}", data.len()),
+            ));
+        }
+        Ok(Tiff16 {
+            width,
+            height,
+            channels,
+            data,
+        })
+    }
+
+    /// `to_f32_linear` before P-31.
+    fn to_f32_linear_before_p31(image: &Tiff16) -> Result<ImageF32, AppError> {
+        let data = image.data.iter().map(|&v| f32::from(v) / 65535.0).collect();
+        ImageF32::new(image.width, image.height, image.channels, data)
+    }
+
+    /// Samples over the whole 16-bit range, deterministic.
+    fn noisy(width: u32, height: u32, channels: u8, seed: u32) -> Tiff16 {
+        let mut state = seed;
+        let data = (0..width as usize * height as usize * channels as usize)
+            .map(|i| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                // Smooth ramp plus noise, with the extremes included now and then.
+                match i % 97 {
+                    0 => 0,
+                    1 => u16::MAX,
+                    _ => ((i / 3) as u32 % 40_000 + (state >> 20)) as u16,
+                }
+            })
+            .collect();
+        Tiff16 {
+            width,
+            height,
+            channels,
+            data,
+        }
+    }
+
+    /// Writes `image` with `rows` rows per strip (a whole-image strip when `rows` is its height).
+    fn write_with_rows(path: &Path, image: &Tiff16, compression: Compression, rows: u32) {
+        let mut encoder = TiffEncoder::new(BufWriter::new(File::create(path).unwrap())).unwrap();
+        if compression == Compression::DeflatePredictor {
+            encoder = encoder
+                .with_compression(TiffCompression::Deflate(DeflateLevel::Balanced))
+                .with_predictor(Predictor::Horizontal);
+        }
+        let (w, h) = (image.width, image.height);
+        match image.channels {
+            1 => {
+                let mut file = encoder.new_image::<Gray16>(w, h).unwrap();
+                file.rows_per_strip(rows).unwrap();
+                file.write_data(&image.data).unwrap();
+            }
+            3 => {
+                let mut file = encoder.new_image::<RGB16>(w, h).unwrap();
+                file.rows_per_strip(rows).unwrap();
+                file.write_data(&image.data).unwrap();
+            }
+            _ => {
+                let mut file = encoder.new_image::<RGBA16>(w, h).unwrap();
+                file.rows_per_strip(rows).unwrap();
+                file.write_data(&image.data).unwrap();
+            }
+        }
+    }
+
+    fn assert_same_floats(new: &ImageF32, old: &ImageF32) {
+        assert_eq!(
+            (new.width, new.height, new.channels),
+            (old.width, old.height, old.channels)
+        );
+        assert_eq!(new.data.len(), old.data.len());
+        for (i, (n, o)) in new.data.iter().zip(&old.data).enumerate() {
+            assert_eq!(n.to_bits(), o.to_bits(), "sample {i}");
+        }
+    }
+
+    #[test]
+    fn the_parallel_reader_and_the_float_conversion_match_the_sequential_ones_bit_for_bit() {
+        let limits = Limits::default();
+        let path = temp_path("parallel");
+        // (width, height, rows per strip): many strips with a short last one, strips that divide
+        // the height, one strip per row, a single strip, a strip taller than the image.
+        let layouts = [
+            (37, 50, 7),
+            (40, 48, 8),
+            (23, 9, 1),
+            (64, 33, 33),
+            (31, 12, 500),
+        ];
+        for compression in [Compression::None, Compression::DeflatePredictor] {
+            for channels in [1_u8, 3, 4] {
+                for (n, (width, height, rows)) in layouts.into_iter().enumerate() {
+                    let image = noisy(width, height, channels, 40 + n as u32);
+                    write_with_rows(&path, &image, compression, rows);
+                    let label =
+                        format!("{compression:?}, {channels} ch, {width}x{height}, {rows} rows");
+                    let old =
+                        read_tiff16_before_p31(&path, &limits, MAX_INTERMEDIATE_BYTES).unwrap();
+                    let new = read_tiff16(&path, &limits).unwrap();
+                    assert_eq!(old, image, "{label}: the frozen reader");
+                    assert!(new == old, "{label}");
+                    assert_same_floats(
+                        &to_f32_linear(&new).unwrap(),
+                        &to_f32_linear_before_p31(&old).unwrap(),
+                    );
+                    // The parallel path is taken exactly for a file with more than one strip.
+                    let mut decoder = open_decoder(&path, usize::MAX, usize::MAX).unwrap();
+                    let strips = height.div_ceil(rows.min(height));
+                    let parallel = read_strips_in_parallel(
+                        &path,
+                        &mut decoder,
+                        (width, height, channels),
+                        image.data.len(),
+                        (usize::MAX, usize::MAX),
+                    )
+                    .unwrap();
+                    assert_eq!(parallel.is_some(), strips > 1, "{label}");
+                    if let Some(data) = parallel {
+                        assert!(data == old.data, "{label}");
+                    }
+                }
+            }
+        }
+        // The default layout of the writer (several strips) and the single-strip reader.
+        for image in [synthetic_rgb(), synthetic_rgbi(), gray()] {
+            for compression in [Compression::None, Compression::DeflatePredictor] {
+                write_tiff16(&path, &image, compression).unwrap();
+                let old = read_tiff16_before_p31(&path, &limits, MAX_INTERMEDIATE_BYTES).unwrap();
+                assert!(read_tiff16(&path, &limits).unwrap() == old);
+                assert!(read_tiff16_single_strip(&path, &limits).unwrap() == old);
+            }
+        }
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn the_parallel_reader_reports_the_same_errors_as_the_sequential_one() {
+        let limits = Limits::default();
+        let path = temp_path("parallel-errors");
+        let same_result = |label: &str| {
+            let old = read_tiff16_before_p31(&path, &limits, MAX_INTERMEDIATE_BYTES);
+            let new = read_tiff16(&path, &limits);
+            match (old, new) {
+                (Ok(old), Ok(new)) => assert!(new == old, "{label}"),
+                (Err(old), Err(new)) => assert_eq!(new, old, "{label}"),
+                (old, new) => panic!("{label}: {old:?} against {new:?}"),
+            }
+        };
+        let missing = temp_path("parallel-missing");
+        let old = read_tiff16_before_p31(&missing, &limits, MAX_INTERMEDIATE_BYTES).unwrap_err();
+        assert_eq!(read_tiff16(&missing, &limits).unwrap_err(), old);
+        assert_eq!(old.code, ErrorCode::NotFound);
+
+        for compression in [Compression::None, Compression::DeflatePredictor] {
+            write_with_rows(&path, &noisy(40, 60, 3, 9), compression, 5);
+            let full = fs::read(&path).unwrap();
+            // Every 53rd cut, so the header, the strip tables and each part of the data are hit.
+            for cut in (0..full.len()).step_by(53).chain([full.len() - 1]) {
+                fs::write(&path, &full[..cut]).unwrap();
+                same_result(&format!("{compression:?}, cut at {cut}"));
+            }
+            // Damaged bytes, one position at a time.
+            for at in (8..full.len()).step_by(197) {
+                let mut bytes = full.clone();
+                bytes[at] ^= 0xA5;
+                fs::write(&path, &bytes).unwrap();
+                same_result(&format!("{compression:?}, flip at {at}"));
+            }
+        }
+        fs::write(&path, b"not a tiff at all").unwrap();
+        same_result("garbage");
+        fs::write(&path, b"").unwrap();
+        same_result("empty");
+        write_with_rows(&path, &noisy(40, 60, 3, 9), Compression::None, 5);
+        let tight = Limits {
+            max_decoded_bytes: 64,
+            ..limits
+        };
+        assert_eq!(
+            read_tiff16(&path, &tight).unwrap_err(),
+            read_tiff16_before_p31(&path, &tight, MAX_INTERMEDIATE_BYTES).unwrap_err()
+        );
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

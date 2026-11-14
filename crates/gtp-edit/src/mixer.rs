@@ -474,4 +474,186 @@ mod tests {
         println!("apply_mixer on 6000x4000: {:?}", start.elapsed());
         assert!(image.data.iter().all(|v| v.is_finite()));
     }
+
+    /// Where the time of the mixer goes on a 6000 x 4000 image of random colours (so nearly every
+    /// pixel has an open gate, the worst case): the stage is split into phases that each run over one
+    /// row at a time (the row stays in cache) with the CPU time of each phase summed over the
+    /// threads, and checked to give the same pixels as `apply_mixer`. The phases are: A the
+    /// conversion to Oklab, B chroma and gate (`hypot`), C the hue (`atan2`), D the band weights
+    /// (`locate` and the three weighted sums), E the new hue, chroma and lightness (`sin_cos`,
+    /// `exp2`), F the conversion back. CPU ms divided by the threads is about the wall time. Run with
+    /// `cargo test --release -p gtp-edit mixer_breakdown -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "timing only"]
+    fn mixer_breakdown_on_a_6000_by_4000_image() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::time::Instant;
+
+        let mut next = stream(1);
+        let data = (0..6000 * 4000 * 3).map(|_| next()).collect();
+        let image = ImageF32::new(6000, 4000, 3, data).unwrap();
+        let mixer = Mixer {
+            hue: [20.0, 5.0, -30.0, 8.0, 40.0, -6.0, 9.0, 10.0],
+            saturation: [10.0, 30.0, 4.0, -50.0, 7.0, 20.0, -9.0, 5.0],
+            lightness: [6.0, 8.0, 15.0, -4.0, 9.0, -25.0, 3.0, 30.0],
+        };
+        let limit = |values: &[f32; MIXER_BANDS]| values.map(|v| finite_or_zero(v) / PERCENT);
+        let (hue, saturation, lightness) = (
+            limit(&mixer.hue),
+            limit(&mixer.saturation),
+            limit(&mixer.lightness),
+        );
+        let width = image.width as usize;
+
+        let mut reference = image.clone();
+        apply_mixer(&mut reference, &mixer).unwrap();
+
+        for threads in [1_usize, 6, 12] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            let mut whole_runs = Vec::new();
+            let mut phase_runs: Vec<[f64; 6]> = Vec::new();
+            let mut active_share = 0.0;
+            pool.install(|| {
+                for run in 0..=5 {
+                    let mut copy = image.clone();
+                    let start = Instant::now();
+                    apply_mixer(&mut copy, &mixer).unwrap();
+                    let whole = start.elapsed().as_secs_f64() * 1000.0;
+
+                    let mut split = image.clone();
+                    let nanos: [AtomicU64; 6] = Default::default();
+                    let active_total = AtomicU64::new(0);
+                    let wall = Instant::now();
+                    split.data.par_chunks_mut(width * 3).for_each_init(
+                        || {
+                            (
+                                vec![[0.0_f32; 3]; width],
+                                vec![0.0_f32; width],
+                                vec![0.0_f32; width],
+                                vec![0.0_f32; width],
+                                vec![false; width],
+                                vec![[0.0_f32; 3]; width],
+                            )
+                        },
+                        |(lab, chroma, gate, hues, active, shifts), row| {
+                            let (pixels, _) = row.as_chunks_mut::<3>();
+                            let mut mark = Instant::now();
+                            let lap = |slot: usize, mark: &mut Instant| {
+                                let now = Instant::now();
+                                nanos[slot]
+                                    .fetch_add((now - *mark).as_nanos() as u64, Ordering::Relaxed);
+                                *mark = now;
+                            };
+                            // A
+                            for (i, pixel) in pixels.iter().enumerate() {
+                                active[i] = pixel.iter().all(|c| c.is_finite());
+                                if active[i] {
+                                    lab[i] = rgb_to_oklab(*pixel);
+                                }
+                            }
+                            lap(0, &mut mark);
+                            // B
+                            for i in 0..pixels.len() {
+                                if active[i] {
+                                    chroma[i] = lab[i][1].hypot(lab[i][2]);
+                                    gate[i] =
+                                        smoothstep((chroma[i] / MIXER_CHROMA_KNEE).clamp(0.0, 1.0));
+                                    active[i] = gate[i] != 0.0;
+                                }
+                            }
+                            lap(1, &mut mark);
+                            // C
+                            for i in 0..pixels.len() {
+                                if active[i] {
+                                    hues[i] = hue_deg(lab[i][1], lab[i][2]);
+                                }
+                            }
+                            lap(2, &mut mark);
+                            // D
+                            for i in 0..pixels.len() {
+                                if active[i] {
+                                    let (lower, upper, weight_upper) = locate(hues[i]);
+                                    let weight_lower = 1.0 - weight_upper;
+                                    let mix = |v: &[f32; MIXER_BANDS]| {
+                                        weight_lower * v[lower] + weight_upper * v[upper]
+                                    };
+                                    shifts[i] = [mix(&hue), mix(&saturation), mix(&lightness)];
+                                    active[i] = !(shifts[i] == [0.0; 3]);
+                                }
+                            }
+                            lap(3, &mut mark);
+                            // E
+                            for i in 0..pixels.len() {
+                                if active[i] {
+                                    let [dh, ds, dl] = shifts[i];
+                                    let new_hue = hues[i] + dh * MIXER_HUE_MAX_DEG * gate[i];
+                                    let new_chroma = (chroma[i] * (1.0 + ds * gate[i])).max(0.0);
+                                    let scale = (dl
+                                        * MIXER_LIGHTNESS_MAX_EV
+                                        * gate[i]
+                                        * GAIN_TO_LAB_EXPONENT)
+                                        .exp2();
+                                    let (sin, cos) = new_hue.to_radians().sin_cos();
+                                    let (new_chroma, new_l) =
+                                        (new_chroma * scale, lab[i][0] * scale);
+                                    lab[i] = [new_l, new_chroma * cos, new_chroma * sin];
+                                }
+                            }
+                            lap(4, &mut mark);
+                            // F
+                            let mut count = 0;
+                            for (i, pixel) in pixels.iter_mut().enumerate() {
+                                if active[i] {
+                                    count += 1;
+                                    let out = oklab_to_rgb(lab[i]);
+                                    if out.iter().all(|c| c.is_finite()) {
+                                        *pixel = out;
+                                    }
+                                }
+                            }
+                            lap(5, &mut mark);
+                            active_total.fetch_add(count, Ordering::Relaxed);
+                        },
+                    );
+                    let split_wall = wall.elapsed().as_secs_f64() * 1000.0;
+                    assert!(split == copy && copy == reference, "the phases agree");
+                    if run > 0 {
+                        whole_runs.push((whole, split_wall));
+                        phase_runs.push(nanos.map(|n| n.load(Ordering::Relaxed) as f64 / 1e6));
+                        active_share =
+                            active_total.load(Ordering::Relaxed) as f64 / (6000.0 * 4000.0);
+                    }
+                }
+            });
+            let median = |mut v: Vec<f64>| {
+                v.sort_by(f64::total_cmp);
+                v[v.len() / 2]
+            };
+            eprintln!(
+                "--- mixer, {threads} thread(s), median of 5: apply_mixer {:.1} ms wall, the phased copy {:.1} ms wall; {:.0}% of the pixels changed ---",
+                median(whole_runs.iter().map(|r| r.0).collect()),
+                median(whole_runs.iter().map(|r| r.1).collect()),
+                active_share * 100.0
+            );
+            for (n, name) in [
+                "A rgb_to_oklab",
+                "B hypot + gate",
+                "C hue (atan2)",
+                "D band weights",
+                "E new hue/chroma/L (sin_cos, exp2)",
+                "F oklab_to_rgb + store",
+            ]
+            .iter()
+            .enumerate()
+            {
+                eprintln!(
+                    "  {name:<38} {:>8.1} ms CPU",
+                    median(phase_runs.iter().map(|r| r[n]).collect())
+                );
+            }
+        }
+    }
 }

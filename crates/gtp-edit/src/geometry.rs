@@ -171,17 +171,22 @@ pub fn apply_geometry(image: &ImageF32, geometry: &Geometry) -> Result<ImageF32,
                 let (fx, fy) = (px - 0.5, py - 0.5);
                 let (ix, iy) = (fx.floor(), fy.floor());
                 let (wx, wy) = (weights(fx - ix), weights(fy - iy));
+                // The 16 taps in the order of the sum (rows, then columns): where each pixel
+                // starts in the source and the product of its two weights, the same for every
+                // channel.
+                let mut taps = [(0_usize, 0.0_f64); 16];
+                for (dy, weight_y) in wy.iter().enumerate() {
+                    let tap_row = (iy as i64 + dy as i64 - 1).clamp(0, src_h as i64 - 1) as usize;
+                    for (dx, weight_x) in wx.iter().enumerate() {
+                        let col = (ix as i64 + dx as i64 - 1).clamp(0, src_w as i64 - 1) as usize;
+                        taps[dy * 4 + dx] =
+                            ((tap_row * src_w + col) * channels, weight_x * weight_y);
+                    }
+                }
                 for (c, slot) in row[target..target + channels].iter_mut().enumerate() {
                     let mut sum = 0.0;
-                    for (dy, weight_y) in wy.iter().enumerate() {
-                        let row = (iy as i64 + dy as i64 - 1).clamp(0, src_h as i64 - 1) as usize;
-                        for (dx, weight_x) in wx.iter().enumerate() {
-                            let col =
-                                (ix as i64 + dx as i64 - 1).clamp(0, src_w as i64 - 1) as usize;
-                            sum += weight_x
-                                * weight_y
-                                * f64::from(image.data[(row * src_w + col) * channels + c]);
-                        }
+                    for (start, weight) in &taps {
+                        sum += weight * f64::from(image.data[start + c]);
                     }
                     *slot = (sum as f32).max(0.0);
                 }
@@ -462,6 +467,135 @@ mod tests {
         assert_eq!((out.width, out.height, out.channels), (6, 10, 1));
         let rotated = apply_geometry(&ir, &geo(|g| g.angle_deg = 5.0)).unwrap();
         assert_eq!(rotated.channels, 1);
+    }
+
+    /// `apply_geometry` before P-31: the tap rows, columns and weights recomputed for every channel.
+    fn apply_geometry_before_p31(
+        image: &ImageF32,
+        geometry: &Geometry,
+    ) -> Result<ImageF32, AppError> {
+        let p = plan(image.width, image.height, geometry)?;
+        let channels = usize::from(image.channels);
+        let (src_w, src_h) = (image.width as usize, image.height as usize);
+        let mut out = vec![0.0f32; p.out_w * p.out_h * channels];
+        out.par_chunks_mut(p.out_w * channels)
+            .enumerate()
+            .for_each(|(j, row)| {
+                for i in 0..p.out_w {
+                    let (sx, sy) = p.straight_pixel(i, j);
+                    let target = i * channels;
+                    let Some((sin, cos)) = p.rotation else {
+                        let from = ((p.y0 + sy) * src_w + p.x0 + sx) * channels;
+                        row[target..target + channels]
+                            .copy_from_slice(&image.data[from..from + channels]);
+                        continue;
+                    };
+
+                    let (px, py) = p.source_position(sin, cos, sx, sy);
+                    let (fx, fy) = (px - 0.5, py - 0.5);
+                    let (ix, iy) = (fx.floor(), fy.floor());
+                    let (wx, wy) = (weights(fx - ix), weights(fy - iy));
+                    for (c, slot) in row[target..target + channels].iter_mut().enumerate() {
+                        let mut sum = 0.0;
+                        for (dy, weight_y) in wy.iter().enumerate() {
+                            let row =
+                                (iy as i64 + dy as i64 - 1).clamp(0, src_h as i64 - 1) as usize;
+                            for (dx, weight_x) in wx.iter().enumerate() {
+                                let col =
+                                    (ix as i64 + dx as i64 - 1).clamp(0, src_w as i64 - 1) as usize;
+                                sum += weight_x
+                                    * weight_y
+                                    * f64::from(image.data[(row * src_w + col) * channels + c]);
+                            }
+                        }
+                        *slot = (sum as f32).max(0.0);
+                    }
+                }
+            });
+        ImageF32::new(p.out_w as u32, p.out_h as u32, image.channels, out)
+    }
+
+    /// Samples with negative values, zeros and large ones.
+    fn wild_image(w: u32, h: u32, channels: u8, seed: u32) -> ImageF32 {
+        let mut state = seed;
+        let data = (0..w as usize * h as usize * channels as usize)
+            .map(|i| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let v = (state >> 8) as f32 / (1u32 << 24) as f32;
+                match i % 13 {
+                    4 => 0.0,
+                    9 => (v - 0.5) * 3.0,
+                    11 => v * 1.0e6,
+                    _ => v,
+                }
+            })
+            .collect();
+        ImageF32::new(w, h, channels, data).unwrap()
+    }
+
+    #[test]
+    fn geometry_has_the_same_bits_as_before_p31() {
+        let sizes = [(13, 9), (8, 8), (1, 1), (1, 17), (17, 1), (30, 21), (2, 3)];
+        let angles = [
+            0.0, 0.3, -0.3, 7.5, -12.0, 33.3, 45.0, 89.7, -135.0, 180.0, 359.0,
+        ];
+        let crops = [
+            crop(0.0, 0.0, 1.0, 1.0),
+            crop(0.2, 0.1, 0.6, 0.7),
+            crop(0.5, 0.5, 2.0, 2.0),
+        ];
+        let mut compared = 0;
+        for (n, &(w, h)) in sizes.iter().enumerate() {
+            for channels in [1_u8, 3, 4] {
+                let img = wild_image(w, h, channels, 90 + n as u32);
+                for &angle in &angles {
+                    for crop in crops {
+                        for rot90 in [0, 1, 2, 3, -1, 6] {
+                            for (flip_h, flip_v) in
+                                [(false, false), (true, false), (false, true), (true, true)]
+                            {
+                                if channels != 3 && (!(0..=3).contains(&rot90) || flip_h != flip_v)
+                                {
+                                    continue;
+                                }
+                                let g = geo(|g| {
+                                    g.angle_deg = angle;
+                                    g.crop = crop;
+                                    g.rot90 = rot90;
+                                    g.flip_h = flip_h;
+                                    g.flip_v = flip_v;
+                                });
+                                let new = apply_geometry(&img, &g);
+                                let old = apply_geometry_before_p31(&img, &g);
+                                let label = format!("{w}x{h}x{channels}, {g:?}");
+                                match (new, old) {
+                                    (Ok(new), Ok(old)) => {
+                                        assert_eq!(
+                                            (new.width, new.height, new.channels),
+                                            (old.width, old.height, old.channels),
+                                            "{label}"
+                                        );
+                                        for (i, (n, o)) in
+                                            new.data.iter().zip(&old.data).enumerate()
+                                        {
+                                            assert_eq!(
+                                                n.to_bits(),
+                                                o.to_bits(),
+                                                "{label}: sample {i}"
+                                            );
+                                        }
+                                        compared += 1;
+                                    }
+                                    (Err(new), Err(old)) => assert_eq!(new, old, "{label}"),
+                                    _ => panic!("{label}: one result is an error"),
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(compared > 1000, "{compared} comparisons");
     }
 
     /// 21 megapixels (5616 x 3744) straightened; run with

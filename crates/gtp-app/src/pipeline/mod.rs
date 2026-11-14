@@ -1012,4 +1012,287 @@ mod tests {
             }
         }
     }
+
+    /// Where the time of a full-size detail render goes (issue P-31, phase 1: profile only): the
+    /// decode of the scan and its infrared plane from files in a library (`read_full`), the copy
+    /// the render starts with, each stage of a 6000 x 4000 frame with every tool on, the output
+    /// sharpening and the conversion to 8-bit sRGB, on rayon pools of 6 and 12 threads (median of
+    /// 5 runs, after one that is not counted). The stages are timed with the render's own trace
+    /// hook, so the numbers are those of `render_full`. Run with
+    /// `cargo test --release -p gtp-app time_a_full_size_detail_render_by_stage -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "timing run, not a check"]
+    fn time_a_full_size_detail_render_by_stage() {
+        use std::time::{Duration, Instant};
+
+        use gtp_core::{Frame, FrameFlag, FrameId, FrameKind, SourceFile, SourceRole};
+        use gtp_io::{
+            from_f32_linear, read_tiff16, to_f32_linear, write_tiff16, Compression, Limits,
+        };
+
+        use crate::library_fs::originals_rel;
+        use crate::services::export::read_full;
+        use crate::services::testkit::Fixture;
+
+        const RUNS: usize = 5;
+        let (width, height) = (6000u32, 4000u32);
+
+        // A scan with colour (so the mixer's gate opens) and grain, and an infrared plane with specks.
+        let mut data = Vec::with_capacity((width * height * 3) as usize);
+        for y in 0..height {
+            for x in 0..width {
+                let (fx, fy) = (x as f32 / width as f32, y as f32 / height as f32);
+                let px = y * width + x;
+                let n = |k: u32| {
+                    ((px.wrapping_add(k).wrapping_mul(2_654_435_761) >> 16) & 0xff) as f32 / 3000.0
+                };
+                data.extend_from_slice(&[
+                    0.08 + 0.55 * fx + n(0),
+                    0.1 + 0.5 * fy * (1.0 - 0.5 * fx) + n(1),
+                    0.06 + 0.45 * (1.0 - fx) * (0.4 + 0.6 * fy) + n(2),
+                ]);
+            }
+        }
+        let scan = ImageF32::new(width, height, 3, data).unwrap();
+        let mut plane: Vec<f32> = (0..width * height)
+            .map(|i| 0.9 + (i.wrapping_mul(2_246_822_519) >> 28) as f32 / 1000.0)
+            .collect();
+        for k in 0..300u32 {
+            let cx = k.wrapping_mul(2_654_435_761) % (width - 8);
+            let cy = k.wrapping_mul(40_503).wrapping_add(7919) % (height - 8);
+            for dy in 0..5 {
+                for dx in 0..5 {
+                    plane[((cy + dy) * width + cx + dx) as usize] = 0.3;
+                }
+            }
+        }
+        let ir = ImageF32::new(width, height, 1, plane).unwrap();
+
+        // Two frames of one library: originals compressed as the import writes them (deflate with
+        // the predictor), and uncompressed.
+        let fx = Fixture::new("p31-detail");
+        let frame_of = |index: u32, compression: Compression| -> (Frame, Vec<SourceFile>) {
+            let id = FrameId::new();
+            let rel = originals_rel(fx.roll, id).join("scan.tif");
+            let ir_rel = originals_rel(fx.roll, id).join("ir.tif");
+            let path = fx.library.resolve(&rel).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            write_tiff16(&path, &from_f32_linear(&scan), compression).unwrap();
+            let ir_path = fx.library.resolve(&ir_rel).unwrap();
+            write_tiff16(&ir_path, &from_f32_linear(&ir), compression).unwrap();
+            let frame = Frame {
+                id,
+                roll_id: fx.roll,
+                index_in_roll: index,
+                kind: FrameKind::ScanRgbIr,
+                width,
+                height,
+                has_ir: true,
+                note: String::new(),
+                flag: FrameFlag::None,
+                created_at: String::new(),
+                edited_at: None,
+            };
+            let source = |role, rel: &std::path::Path| SourceFile {
+                frame_id: id,
+                role,
+                rel_path: rel.to_string_lossy().replace('\\', "/"),
+                sha256: String::new(),
+                bytes: 0,
+            };
+            let sources = vec![
+                source(SourceRole::Rgb, &rel),
+                source(SourceRole::Ir, &ir_rel),
+            ];
+            fx.library
+                .write(|c| {
+                    c.insert_frame(&frame)?;
+                    for s in &sources {
+                        c.insert_source(s)?;
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            (frame, sources)
+        };
+        let (frame, sources) = frame_of(1, Compression::DeflatePredictor);
+        let (_, sources_raw) = frame_of(2, Compression::None);
+        let path_of = |s: &SourceFile| {
+            fx.library
+                .resolve(std::path::Path::new(&s.rel_path))
+                .unwrap()
+        };
+        let size_of = |sources: &[SourceFile]| {
+            sources
+                .iter()
+                .map(|s| std::fs::metadata(path_of(s)).unwrap().len())
+                .collect::<Vec<_>>()
+        };
+        eprintln!(
+            "files (scan, ir) in bytes: deflate {:?}, uncompressed {:?}",
+            size_of(&sources),
+            size_of(&sources_raw)
+        );
+
+        // Every tool on.
+        let mut recipe = Recipe::default();
+        recipe.noise.luminance = 50.0;
+        recipe.noise.color = 50.0;
+        recipe.color.red_cyan = 10.0;
+        recipe.color.green_magenta = -8.0;
+        recipe.color.blue_yellow = 12.0;
+        recipe.color.temperature = 15.0;
+        recipe.color.tint = -10.0;
+        recipe.color.saturation = 1.2;
+        recipe.color.vibrance = 25.0;
+        for band in 0..8 {
+            recipe.color.mixer.hue[band] = 5.0 + band as f32;
+            recipe.color.mixer.saturation[band] = 10.0 - band as f32;
+            recipe.color.mixer.lightness[band] = -4.0 + band as f32;
+        }
+        recipe.tone.exposure_ev = 0.3;
+        recipe.tone.contrast = 20.0;
+        recipe.tone.highlights = -15.0;
+        recipe.tone.shadows = 20.0;
+        recipe.tone.whites = 5.0;
+        recipe.tone.blacks = -5.0;
+        recipe.tone.dehaze = 10.0;
+        recipe.tone.curve.master = vec![[0.0, 0.0], [0.25, 0.2], [0.75, 0.8], [1.0, 1.0]];
+        recipe.tone.curve.r = vec![[0.0, 0.0], [0.5, 0.55], [1.0, 1.0]];
+        recipe.color.split_tone.shadow_hue = 220.0;
+        recipe.color.split_tone.shadow_strength = 20.0;
+        recipe.color.split_tone.highlight_hue = 40.0;
+        recipe.color.split_tone.highlight_strength = 15.0;
+        recipe.geometry.angle_deg = 0.5;
+        recipe.tone.vignette.amount = -30.0;
+        recipe.output.sharpen.amount = 60.0;
+        let recipe = recipe.clamped();
+
+        let median = |mut v: Vec<f64>| {
+            v.sort_by(f64::total_cmp);
+            v[v.len() / 2]
+        };
+        let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+        // Rows of (name, one value per counted run), in order of first appearance.
+        fn put(rows: &mut Vec<(String, Vec<f64>)>, name: &str, value: f64) {
+            match rows.iter_mut().find(|(n, _)| n == name) {
+                Some((_, v)) => v.push(value),
+                None => rows.push((name.to_string(), vec![value])),
+            }
+        }
+
+        for threads in [6usize, 12] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            let mut rows: Vec<(String, Vec<f64>)> = Vec::new();
+            pool.install(|| {
+                for run in 0..=RUNS {
+                    let mut out = Vec::new();
+                    let wall = Instant::now();
+                    let t = Instant::now();
+                    let (full, ir) = read_full(&fx.library, &frame, &sources, true).unwrap();
+                    put(&mut out, "decode (read_full: scan + ir)", ms(t.elapsed()));
+                    let input = PipelineInput {
+                        rgb: Arc::new(full),
+                        ir: ir.map(Arc::new),
+                        film_base: None,
+                        full_long_edge: None,
+                    };
+                    let started = Instant::now();
+                    let mut marks = Vec::new();
+                    let mut image =
+                        render_traced(&input, &recipe, RenderTarget::Full, &mut |stage| {
+                            marks.push((stage, Instant::now()));
+                        })
+                        .unwrap();
+                    let ended = Instant::now();
+                    put(
+                        &mut out,
+                        "copy of the scan (start of render)",
+                        ms(marks[0].1 - started),
+                    );
+                    for (n, (stage, at)) in marks.iter().enumerate() {
+                        let until = marks.get(n + 1).map_or(ended, |next| next.1);
+                        put(&mut out, &format!("stage {stage:?}"), ms(until - *at));
+                    }
+                    let t = Instant::now();
+                    drop(input);
+                    put(&mut out, "drop of the input", ms(t.elapsed()));
+                    let t = Instant::now();
+                    gtp_edit::apply_sharpen(&mut image, &recipe.output.sharpen).unwrap();
+                    put(&mut out, "output sharpening", ms(t.elapsed()));
+                    let t = Instant::now();
+                    let rgba = to_rgba8_srgb(&image).unwrap();
+                    put(&mut out, "to_rgba8_srgb", ms(t.elapsed()));
+                    let t = Instant::now();
+                    drop(image);
+                    put(&mut out, "drop of the image", ms(t.elapsed()));
+                    put(
+                        &mut out,
+                        "TOTAL (wall, decode to RGBA8)",
+                        ms(wall.elapsed()),
+                    );
+                    // The straighten angle crops the picture a little.
+                    assert!(rgba.len() > (width * height * 4) as usize / 10 * 9);
+                    if run > 0 {
+                        for (name, v) in out {
+                            put(&mut rows, &name, v[0]);
+                        }
+                    }
+                }
+            });
+            eprintln!("--- {threads} threads, median of {RUNS} runs, ms ---");
+            for (name, values) in rows {
+                eprintln!("{name:<40} {:>9.1}", median(values));
+            }
+
+            // The decode of the 3-channel scan, taken apart.
+            let mut parts: Vec<(String, Vec<f64>)> = Vec::new();
+            pool.install(|| {
+                for (label, sources) in [("deflate", &sources), ("uncompressed", &sources_raw)] {
+                    let path = path_of(&sources[0]);
+                    for run in 0..=RUNS {
+                        let t = Instant::now();
+                        let bytes = std::fs::read(&path).unwrap();
+                        let read = ms(t.elapsed());
+                        drop(bytes);
+                        let t = Instant::now();
+                        let tiff = read_tiff16(&path, &Limits::default()).unwrap();
+                        let decoded = ms(t.elapsed());
+                        let t = Instant::now();
+                        let converted_image = to_f32_linear(&tiff).unwrap();
+                        let converted = ms(t.elapsed());
+                        drop((tiff, converted_image));
+                        if run > 0 {
+                            put(
+                                &mut parts,
+                                &format!("{label}: std::fs::read of the file"),
+                                read,
+                            );
+                            put(
+                                &mut parts,
+                                &format!("{label}: read_tiff16 (open, read, decode)"),
+                                decoded,
+                            );
+                            put(&mut parts, &format!("{label}: to_f32_linear"), converted);
+                        }
+                    }
+                }
+            });
+            eprintln!("--- decode of the 3-channel scan alone, {threads} threads, ms ---");
+            for (name, values) in parts {
+                eprintln!("{name:<50} {:>9.1}", median(values));
+            }
+        }
+
+        // Does the dust stage do anything on this fixture?
+        let mut probe = scan.clone();
+        let report = gtp_edit::remove_dust(&mut probe, &ir, &recipe.dust).unwrap();
+        eprintln!(
+            "dust on the fixture: {} pixels masked, applied: {}",
+            report.masked, report.applied
+        );
+    }
 }

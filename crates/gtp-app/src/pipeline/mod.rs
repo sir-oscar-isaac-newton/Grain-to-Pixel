@@ -65,8 +65,24 @@ pub fn render(
     render_traced(input, recipe, target, &mut |_| {})
 }
 
-/// [`render`], reporting each stage as it starts (used to test the order).
+/// [`render`], reporting each stage as it starts (used to test the order). It is
+/// [`render_up_to_noise`] followed by [`render_from_color`], with the same recipe and input.
 pub(crate) fn render_traced(
+    input: &PipelineInput,
+    recipe: &Recipe,
+    target: RenderTarget,
+    trace: &mut dyn FnMut(Stage),
+) -> Result<ImageF32, AppError> {
+    let image = render_up_to_noise(input, recipe, target, trace)?;
+    render_from_color(image, recipe, trace)
+}
+
+/// The first half of a render: `input` through Dust, Crop, Normalize, Invert and Noise (the stages
+/// of `STAGES_UP_TO_NOISE`), with `recipe` clamped first. Everything the stages after it need
+/// from the scan is in the picture it returns, so [`render_from_color`] finishes the render from
+/// that picture alone. The scale of the render (see [`render_scale`]) is measured here, on the
+/// image the stages start with, and only the noise reduction uses it.
+pub(crate) fn render_up_to_noise(
     input: &PipelineInput,
     recipe: &Recipe,
     target: RenderTarget,
@@ -85,9 +101,27 @@ pub(crate) fn render_traced(
     };
     // Measured before the crop, which comes first: the crop does not change the scale.
     let scale = render_scale(image.width.max(image.height), input);
-    for stage in STAGE_ORDER {
-        trace(stage);
-        image = stages::run_stage(stage, image, input, &recipe, scale)?;
+    for stage in &STAGE_ORDER[..stages::STAGES_UP_TO_NOISE] {
+        trace(*stage);
+        image = stages::run_stage(*stage, image, input, &recipe, scale)?;
+    }
+    Ok(image)
+}
+
+/// The second half of a render: `image`, as [`render_up_to_noise`] returned it, through Color,
+/// Mixer, Tone, SplitTone, Geometry and Vignette, with `recipe` clamped first. These stages read
+/// the image and the recipe only (see `stages::run_late_stage`), so a kept copy of that picture
+/// gives the same result as the render it came from.
+pub(crate) fn render_from_color(
+    image: ImageF32,
+    recipe: &Recipe,
+    trace: &mut dyn FnMut(Stage),
+) -> Result<ImageF32, AppError> {
+    let recipe = recipe.clone().clamped();
+    let mut image = image;
+    for stage in &STAGE_ORDER[stages::STAGES_UP_TO_NOISE..] {
+        trace(*stage);
+        image = stages::run_late_stage(*stage, image, &recipe)?;
     }
     Ok(image)
 }
@@ -920,6 +954,214 @@ mod tests {
             got,
             render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap()
         );
+    }
+
+    /// A small deterministic generator, so the recipes of a test are the same on every run.
+    struct Lcg(u64);
+
+    impl Lcg {
+        /// A value from 0 to 1.
+        fn unit(&mut self) -> f32 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 40) as f32 / (1u64 << 24) as f32
+        }
+
+        fn range(&mut self, low: f32, high: f32) -> f32 {
+            low + (high - low) * self.unit()
+        }
+
+        fn chance(&mut self, p: f32) -> bool {
+            self.unit() < p
+        }
+    }
+
+    /// A recipe with every tool set to something, from the true one for `s`: a part of the time a
+    /// crop inside the frame, a base from the roll or by hand, noise reduction, dust removal, a
+    /// straighten, turns and flips, and every later tool.
+    fn random_recipe(rng: &mut Lcg, s: &Synthetic) -> Recipe {
+        let mut recipe = true_recipe(s);
+        if rng.chance(0.5) {
+            let x = rng.range(0.0, 0.2);
+            let y = rng.range(0.0, 0.2);
+            recipe.geometry.crop = Crop {
+                x,
+                y,
+                w: rng.range(0.5, 0.8),
+                h: rng.range(0.5, 0.8),
+            };
+        }
+        if rng.chance(0.5) {
+            recipe.base.source = BaseSource::Roll;
+        }
+        for v in recipe
+            .invert
+            .white
+            .iter_mut()
+            .chain(&mut recipe.invert.black)
+        {
+            *v *= rng.range(0.9, 1.1);
+        }
+        recipe.dust.enabled = rng.chance(0.7);
+        recipe.dust.threshold = rng.range(0.2, 0.8);
+        recipe.dust.grow_px = (rng.unit() * 4.0) as u32;
+        if rng.chance(0.7) {
+            recipe.noise.luminance = rng.range(0.0, 100.0);
+            recipe.noise.color = rng.range(0.0, 100.0);
+        }
+        let color = &mut recipe.color;
+        for v in [
+            &mut color.red_cyan,
+            &mut color.green_magenta,
+            &mut color.blue_yellow,
+            &mut color.temperature,
+            &mut color.tint,
+            &mut color.vibrance,
+        ] {
+            *v = rng.range(-40.0, 40.0);
+        }
+        color.saturation = rng.range(0.6, 1.5);
+        recipe.mono.enabled = rng.chance(0.25);
+        for band in 0..8 {
+            color.mixer.hue[band] = rng.range(-50.0, 50.0);
+            color.mixer.saturation[band] = rng.range(-50.0, 50.0);
+            color.mixer.lightness[band] = rng.range(-50.0, 50.0);
+        }
+        let split = &mut color.split_tone;
+        split.highlight_hue = rng.range(0.0, 360.0);
+        split.highlight_strength = rng.range(0.0, 60.0);
+        split.shadow_hue = rng.range(0.0, 360.0);
+        split.shadow_strength = rng.range(0.0, 60.0);
+        split.balance = rng.range(-50.0, 50.0);
+        let tone = &mut recipe.tone;
+        tone.exposure_ev = rng.range(-0.5, 0.5);
+        tone.contrast = rng.range(-40.0, 40.0);
+        tone.highlights = rng.range(-40.0, 40.0);
+        tone.shadows = rng.range(-40.0, 40.0);
+        tone.whites = rng.range(-20.0, 20.0);
+        tone.blacks = rng.range(-20.0, 20.0);
+        tone.dehaze = rng.range(-20.0, 20.0);
+        if rng.chance(0.5) {
+            tone.curve.master = vec![[0.0, 0.0], [0.3, rng.range(0.2, 0.4)], [1.0, 1.0]];
+            tone.curve.g = vec![[0.0, 0.0], [0.6, rng.range(0.5, 0.7)], [1.0, 1.0]];
+        }
+        tone.vignette.amount = rng.range(-60.0, 40.0);
+        tone.vignette.midpoint = rng.range(20.0, 80.0);
+        if rng.chance(0.6) {
+            recipe.geometry.angle_deg = rng.range(-3.0, 3.0);
+        }
+        recipe.geometry.rot90 = (rng.unit() * 4.0) as i32;
+        recipe.geometry.flip_h = rng.chance(0.5);
+        recipe.geometry.flip_v = rng.chance(0.5);
+        recipe
+    }
+
+    /// The render as it was before it was split in two: every stage of `STAGE_ORDER` in one loop.
+    fn render_in_one_loop(
+        input: &PipelineInput,
+        recipe: &Recipe,
+        target: RenderTarget,
+    ) -> ImageF32 {
+        let recipe = recipe.clone().clamped();
+        let mut image = match target {
+            RenderTarget::Preview { max_edge } => build_proxy(&input.rgb, max_edge).unwrap(),
+            RenderTarget::Full => (*input.rgb).clone(),
+        };
+        let scale = render_scale(image.width.max(image.height), input);
+        for stage in STAGE_ORDER {
+            image = stages::run_stage(stage, image, input, &recipe, scale).unwrap();
+        }
+        image
+    }
+
+    #[test]
+    fn a_render_is_the_stages_up_to_noise_followed_by_the_stages_from_color() {
+        let s = scan(&Params {
+            width: 160,
+            height: 120,
+            rebate: [10; 4],
+            noise: 0.05,
+            dust_specks: 4,
+            with_ir: true,
+            ..Params::default()
+        });
+        let mut rng = Lcg(7);
+        // A scan, a proxy said to come from a scan twice as long (scale below 1), and the same
+        // scan with a film base, so the base from the roll counts too.
+        let inputs = [
+            with_ir(&s),
+            PipelineInput {
+                full_long_edge: Some(320),
+                ..with_ir(&s)
+            },
+            PipelineInput {
+                film_base: Some([0.8, 0.6, 0.4]),
+                ..with_ir(&s)
+            },
+        ];
+        let targets = [RenderTarget::Full, RenderTarget::Preview { max_edge: 64 }];
+        for round in 0..6 {
+            let recipe = random_recipe(&mut rng, &s);
+            for input in &inputs {
+                for target in targets {
+                    let whole = render(input, &recipe, target).unwrap();
+                    let (mut first, mut second) = (Vec::new(), Vec::new());
+                    let kept = render_up_to_noise(input, &recipe, target, &mut |st| first.push(st))
+                        .unwrap();
+                    let split =
+                        render_from_color(kept, &recipe, &mut |st| second.push(st)).unwrap();
+                    assert_eq!(split, whole, "round {round}, {target:?}");
+                    assert_eq!(first, STAGE_ORDER[..5], "the stages up to noise");
+                    assert_eq!(second, STAGE_ORDER[5..], "the stages from colour");
+                    assert_eq!(
+                        whole,
+                        render_in_one_loop(input, &recipe, target),
+                        "round {round}, {target:?}: the same as one loop over every stage"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_stages_from_color_work_from_a_copy_of_the_picture_after_noise_reduction() {
+        // What the detail view relies on: the picture after noise reduction can be copied, and
+        // finishing the copy gives what finishing the original gives, for every later edit.
+        let s = noisy_scan(160, 100);
+        let mut rng = Lcg(11);
+        let input = input_of(&s, None);
+        let mut base = true_recipe(&s);
+        base.noise = loud_noise();
+        let kept = render_up_to_noise(&input, &base, RenderTarget::Full, &mut |_| {}).unwrap();
+        for _ in 0..4 {
+            // The same first five stages' parts, every later part changed.
+            let mut recipe = random_recipe(&mut rng, &s);
+            recipe.dust = base.dust;
+            recipe.geometry.crop = base.geometry.crop;
+            recipe.base = base.base;
+            recipe.invert = base.invert;
+            recipe.noise = base.noise;
+            let from_kept = render_from_color(kept.clone(), &recipe, &mut |_| {}).unwrap();
+            assert_eq!(
+                from_kept,
+                render(&input, &recipe, RenderTarget::Full).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn the_stages_after_noise_reduction_refuse_a_stage_that_needs_the_scan() {
+        let image = ImageF32::zeros(4, 4, 3).unwrap();
+        for stage in &STAGE_ORDER[..5] {
+            let err =
+                stages::run_late_stage(*stage, image.clone(), &Recipe::default()).unwrap_err();
+            assert_eq!(err.code, ErrorCode::Internal);
+        }
+        for stage in &STAGE_ORDER[5..] {
+            assert!(stages::run_late_stage(*stage, image.clone(), &Recipe::default()).is_ok());
+        }
     }
 
     #[test]

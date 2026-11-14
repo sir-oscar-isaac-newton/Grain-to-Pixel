@@ -3062,3 +3062,55 @@ ROUTES: none.
 MIGRATIONS: none; thumbnails made before the change keep their pixels until they are regenerated, and the ADR says whether a regeneration is needed.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-13 after P-30. The tone stage already has highlight controls; this issue is about what is left above 1 when the image reaches the output conversion, not about a new tone control. Real scans from Q-11 show how often it occurs in practice, so this may be ordered after Q-11. Out of scope: gamut mapping of colours that are in range but outside the output space, soft proofing, a gamut warning, a new slider.
+
+## P-33
+title: Cache of the picture after noise reduction for the detail view
+milestone: M6
+type: feature
+size: M
+estimate: 2d
+deps: P-31, U-29
+adr: yes
+spec: specification section 11
+desc: The detail view renders the whole frame at full size after each change. The profile of P-31 shows that the first part of the pipeline, the decode, the copy of the scan, dust removal, normalize, invert and noise reduction, takes about 1.7 s of a 3.5 s render on 6 threads, and that most edits (colour, mixer, tone, split toning, vignette, sharpening) do not change its result. Keep the picture as it is after noise reduction for the open frame, so an edit to a later stage renders only the stages after it.
+ac:
+- An ADR decides what is kept (the full-size picture after the Noise stage, as 32-bit floats), states its memory (about 288 MB for 24 megapixels, beside the 96 MB of the detail picture), compares it with keeping the decoded scan instead, and says when it is released; the convention's rule for a caching layer (a measured budget miss) is answered with the figures of P-31
+- The kept picture is used only when every recipe field and input the stages up to Noise depend on is unchanged (the frame, its files, the roll's base and flat field, dust, base, invert, noise, the scale given to noise reduction); the ADR lists them, and a test changes each one and shows the picture is rendered afresh
+- A render from the kept picture gives the same pixels as a render from the file, bit for bit, shown by a test over edits to each later stage
+- The kept picture is held for the open frame only, never two at once, and released by the same rules as the detail picture (leaving Develop, another frame, the idle time), shown by tests; the generation counter of U-29 still drops late results
+- The time of a full-size render after a colour or tone edit is measured before and after on 6 and 12 threads and stated in the pull request; the first render of a frame is not slower by more than the copy of the picture
+- If memory cannot be had (the allocation fails) the render falls back to rendering from the file, and nothing else changes
+- The export does not use the kept picture
+- Tests: as above; the timing test marked ignored
+tech:
+FILES: crates/gtp-app/src/services/develop.rs (the detail state), crates/gtp-app/src/pipeline (a render that can start after a stage), crates/gtp-app/src/services/export.rs (read_full and render_full as shared today), docs/specification.md, decisions.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-13 after the profile of P-31. Crop comes before Noise in the stage order, so a crop edit renders afresh; Geometry comes after it. Out of scope: a cache for the preview, keeping more than one stage, a cache on disk, cancelling a render midway.
+
+## P-34
+title: Faster Oklab conversion where results may change within a tolerance
+milestone: M6
+type: feature
+size: M
+estimate: 2d
+deps: P-31, P-25, P-27
+adr: yes
+spec: specification sections 4 and 11
+desc: P-31 kept every result bit for bit and found that about 1.8 s of the 3.5 s full-size render cannot get faster under that rule. The largest single part is the cube root of the Oklab conversion in noise reduction and in the colour mixer, about 0.37 s each on 6 threads, computed by the platform's maths library, whose results already differ between platforms. Decide whether a faster cube root with a stated error may replace it, and if so do it.
+ac:
+- An ADR measures a faster cube root (for example a polynomial start with Newton steps) against the library's: the largest and mean error in units of the last place over the range the pipeline uses, the time per value, and the effect on finished pictures in 16-bit and 8-bit levels on test renders; it also records how far the library's result differs between Windows and macOS today, and decides whether the change is made
+- If it is made: the largest change of any 16-bit export value on the golden and benchmark renders is stated and stays within a tolerance the ADR sets, and the golden files are regenerated in the same pull request with before and after figures
+- The result is the same on Windows and macOS, bit for bit, shown by a test with fixed inputs and expected bits, which the library's cube root cannot promise today
+- The preview, the detail view and the export use the same function, so the screen and the file still agree as in ADR 0015
+- The time of noise reduction, of the mixer and of the full-size render is measured before and after on 6 and 12 threads and stated in the pull request
+- Values that are zero, negative, very small or not finite behave as before, shown by tests
+- No other function is replaced here; the ADR lists the other candidates P-31 found (the mixer's atan2, sin and cos, the powers and logarithms of tone) with their possible gain, for later issues
+- Tests: the error bound, the fixed bits, the edge values, the timing test marked ignored
+tech:
+FILES: crates/gtp-edit/src/oklab.rs (the conversion), crates/gtp-edit/src (noise.rs, mixer.rs as its callers), tools/benchmark and the golden tests, docs/specification.md, decisions.
+ROUTES: none.
+MIGRATIONS: none; thumbnails made before the change keep their pixels until they are regenerated, and the ADR says whether a regeneration is needed.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-13 after the profile of P-31. Real scans from Q-11 show whether the wait at 1:1 matters in practice, so this may be ordered after Q-11 and after P-33, which helps most edits without changing any pixel. Out of scope: SIMD by hand, a GPU path, sharing one Oklab conversion between noise reduction and the mixer (the Colour stage runs between them).

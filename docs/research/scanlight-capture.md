@@ -38,7 +38,7 @@ Every packet is `0xFE`, the header, the length of the data, then the data. There
 
 **Seen so far.**
 - **macOS: works.** `ports` finds the Scanlight and decodes its packets; the byte order is big-endian (above). The official web app also connects. The light reports hardware ID 1, firmware ID 0 (see the results table below); an early reading of hardware ID 0 had the two halves the wrong way round.
-- **Windows 10 (this PC): the port opens and stays silent.** The device appears as a "USB Serial Device" on COM5 (vendor ID 2e8a, product ID 000a; the device calls itself "Pico", with the serial interface "Board CDC" and a "Reset" interface: the stock names of the Raspberry Pi Pico SDK, which the V4's RP2040 firmware uses). `listen` for 3 s with DTR held gets 0 bytes, the probe's first try (no DTR) timed out writing (error 121), a later write blocked in the driver until the cable was pulled, and the official automation web app says "Connection Failed" too. So the fault is on the Windows side of this PC, not the probe or the light. Still to try: another USB port (a USB 2.0 one), another cable.
+- **Windows 10 (this PC): the port opens and stays silent.** The device appears as a "USB Serial Device" on COM5 (vendor ID 2e8a, product ID 000a; the device calls itself "Pico", with the serial interface "Board CDC" and a "Reset" interface: the stock names of the Raspberry Pi Pico SDK, which the V4's RP2040 firmware uses). `listen` for 3 s with DTR held gets 0 bytes, the probe's first try (no DTR) timed out writing (error 121), a later write blocked in the driver until the cable was pulled, and the official automation web app says "Connection Failed" too. So the fault is on the Windows side of this PC, not the probe or the light. **Retested on 2026-11-15 and still silent** (see "Retests of 2026-11-15" below).
 
 Hardware checklist for R-02 (Windows; macOS for the first two lines). Each line is ticked in the list at the top by the person who ran it.
 
@@ -50,11 +50,11 @@ Hardware checklist for R-02 (Windows; macOS for the first two lines). Each line 
 
 | Run | Result |
 |---|---|
-| ports (Windows) | The port opens and stays silent (0 bytes in 3 s with DTR held); the official automation web app fails to connect too. Not understood yet; another USB port and cable still to try. |
+| ports (Windows) | The port opens and stays silent (0 bytes in 3 s with DTR held); the official automation web app fails to connect too. **Retested 2026-11-15:** a rear port straight on the CPU's own USB 3.1 controller (no hub) and two other cables: still nothing back in 2 s. Not understood. |
 | ports (macOS) | **Works** (2026-11-03). `/dev/cu.usbmodem1101` (and `tty.`), vendor 2e8a, product 0x000a, manufacturer "Raspberry Pi", product "Pico". FW_VERSION answers in 4 ms: raw `00 01 00 00`, halves 1 and 0: **hardware ID 1 (the V4 PCB 26a901a, rev A, as printed on the board), firmware ID 0** (the document lists the halves the other way round, see below). LED_TEMP and VBUS every 200 ms (29.7 °C, about 5.15 V). Big-endian words. |
 | colors | macOS: each of red, green and blue lights alone and the light is off afterwards (author's report). |
 | temp | macOS. Level 64, 5 x 10 s: 28.3 °C start, 28.4 peak, 27.4 end, VBUS 5159 idle to 5134 mV (no heating). **Level 255, 3 x 30 s (4.5 min):** 24.0 °C start, 29.9 peak, 29.6 end (levelled off, +6 °C), VBUS 5086 mV (-75 mV). |
-| shutter | macOS: **no pulse fired the D600** (20 to 500 ms, then 1 to 2.55 s, with manual focus, per the author), with an MC-DC2-to-3.5 mm cable in the camera's DC2/GPS port. The light's own web app does not fire it either. |
+| shutter | macOS: **no pulse fired the D600** (20 to 500 ms, then 1 to 2.55 s, with manual focus, per the author), with an MC-DC2-to-3.5 mm cable in the camera's DC2/GPS port. The light's own web app does not fire it either. **With a mono-to-stereo 3.5 mm adapter (2026-11-15): 50 ms and longer fire it every time, 20 ms never** (see below). |
 | shutter --focus | Not run yet (the focus signal may not exist on this light). |
 | settle and levels | Not run: it needs the camera fired by a pulse. Replaced, see the decision above. |
 
@@ -67,6 +67,28 @@ What the V4 documentation says, for anyone who wants the pulse later: "some came
 **Retest planned (the author is ordering the part).** The V4 notes give a workaround for units without the focus signal on Nikon cameras: connect the release cord to the light through a 3.5 mm adapter whose **male end is a mono (two-contact) plug** and whose female end is a stereo socket for the cord. A mono plug in a stereo socket connects the socket's middle contact to ground, so the light would hold the camera's focus line asserted and the pulse alone would release the shutter (a reading of the note, not yet tried). When the adapter arrives: the cord in the adapter in the light's jack, the camera in M mode, single release, manual focus, awake and **not on USB** (rev A's jack is not isolated), then `scanlight-probe shutter` and the web app's trigger. If a pulse fires the camera, record the shortest length; the USB route stays the plan either way.
 
 **What this changes elsewhere** (to be proposed as issue edits, not done here): H-10 and R-04 are written around a camera fired by the Scanlight pulse and would instead fire it over USB; the settle test is replaced by a simple check in the capture work (the light on for a second before a USB-triggered shot, compared with a longer wait), because a USB trigger has a delay of its own that is much longer than any LED settle time.
+
+### Retests of 2026-11-15
+
+**Windows: still silent.** The light was moved from a generic USB hub (an ASMedia chip on the chipset's USB 3.0 controller) to a rear port of the PC, straight on the CPU's own USB 3.1 controller (AMD), with no hub; every rear port of this PC is USB 3, so a USB 2.0 port could not be tried. Two other cables were tried. Windows serves the port with its own `usbser.sys` (10.0.19041.3636) as COM5 (vendor 2e8a, product 000a, serial E6655850931B702A). `ports` opens it and gets **nothing back in 2 s**, not even the LED_TEMP and VBUS packets the light sends by itself every 200 ms. The same light talks at once on the Mac (below), so the light and its firmware are fine and the fault is between this PC's USB serial stack and the light. Not diagnosed further; Windows testing is on hold by the author's choice.
+
+**macOS: the shutter fires through a mono adapter.** The release cord (the MC-DC2 cord with a 3.5 mm plug, in the D600's DC2/GPS port) went into the stereo socket of a 3.5 mm adapter whose male end is a **mono (two-contact) plug**, in the light's jack. The camera was in M mode, single release, manual focus, awake, and **not on USB** (rev A's jack is not isolated from USB). Results, as counted by the author:
+
+| Run | Pulses | Fired |
+|---|---|---|
+| 1 | 20, 50, 100, 200, 300, 500 ms | all but 20 ms |
+| 2 | 5 x 100 ms | 5 of 5 |
+| 3 | 20, 50, 100, 200, 300, 500 ms | all but 20 ms |
+| 4 | 10 x 50 ms | 10 of 10 |
+| 5 | 10 x 100 ms | 10 of 10 |
+
+So the shortest pulse that fires the D600 is **50 ms** (somewhere between 20 and 50 ms; not narrowed down), and 50 ms and 100 ms fired 30 of 30 between them. This confirms the reading above: the mono plug ties the cord's focus line to ground, so the focus is held and the pulse alone releases the shutter. 100 ms leaves a margin of two over the shortest length seen to work. **The decision of 2026-11-03 stands**: the app fires the camera over USB, and the pulse is not used; if the Windows route ever needs a trigger without USB control of the camera (R-04), this one is known to work, with the adapter and with the camera off USB.
+
+**Two things seen on the way.**
+- The probe first got "Device or resource busy" on `/dev/cu.usbmodem101`: `lsof` showed **Google Chrome** holding it, the Scanlight web app's Web Serial connection. The browser tab must be closed before the probe or the app can open the port.
+- The first run started with the light at **43.1 °C** with its LEDs off, then cooled steadily (41.2 °C at the end of run 1, 34.1, 32.8 and 28.6 °C at the starts of runs 2 to 4, 27.8 °C at the start of run 5). The worst seen on 2026-11-03 was about 30 °C at full power, and 43 °C is close to the 45 °C warning limit. The likely cause is the web app having had LEDs on before it was closed; not confirmed. VBUS stayed at about 5.15 V.
+
+**Test vectors.** The five runs are in `samples/public/scanlight/` (one JSON object a line: `t_ms`, `dir` tx or rx, `hex`): SHUTTER_PULSE packets (`fe 03 01 nn`, nn in 10 ms units), the LED_TEMP (`fe 01 04 ...`, int32 millidegrees, big-endian) and VBUS (`fe 02 04 ...`, millivolts) packets the light sends every 200 ms, split across reads as the USB stack delivers them, and the final all-off SET_COLOR (`fe 00 06 00 00 00 00 00 00`). They need no LFS (plain text, under 20 KB each); the folder's README lists them.
 
 ## libgphoto2 on the Mac (R-03)
 

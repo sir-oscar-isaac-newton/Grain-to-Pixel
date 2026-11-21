@@ -22,6 +22,10 @@ ignore = [
   # Approved by the owner on 2026-11-09. Remove this entry and move to `rusqlite` 0.41 or later
   # as soon as `rusqlite_migration` allows it (issue T-10); check on every rusqlite_migration update.
   { id = "RUSTSEC-2026-0459", reason = "no fixed rusqlite that rusqlite_migration 2.6 accepts; the app opens only its own library" },
+  # `chrono` is unmaintained (all versions, no vulnerability, no safe upgrade). It comes only
+  # through `rawler`, the NEF decoder of ADR 0007. Approved by the owner on 2026-11-21 (T-14).
+  # Remove this entry when rawler drops or replaces chrono; check on every rawler update.
+  { id = "RUSTSEC-2026-0543", reason = "unmaintained dependency of rawler; no vulnerability" },
 ]
 
 [licenses]

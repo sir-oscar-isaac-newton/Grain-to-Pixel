@@ -19808,7 +19808,7 @@ THE SOFTWARE.
 ==============================================================================
 Licence: MIT
 Packages:
-  lcms2 6.2.0 (crate)
+  lcms2 6.3.0 (crate)
 
 Copyright (c) Kornel Lesiński
 
@@ -19833,7 +19833,7 @@ SOFTWARE.
 ==============================================================================
 Licence: MIT
 Packages:
-  lcms2-sys 4.0.7 (crate)
+  lcms2-sys 4.2.0 (crate)
 
 Licence: MIT. This package ships no licence file.
 Authors: Kornel Lesiński <kornel@geekhood.net>

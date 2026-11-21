@@ -3168,3 +3168,26 @@ ROUTES: one command to build a roll's flat field again. To be approved by the ow
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-20, from how the grid of P-21 treats the carrier's edges. A real capture with the carrier is needed for the ignored run; until it exists, shooting the flat field without the carrier avoids the band. Out of scope: finding the frame area from the carrier, a finer grid, correcting dust in the flat field.
+
+## T-14
+title: Dependency checks pass again after new advisories for chrono and lcms2
+milestone: M6
+type: chore
+size: S
+estimate: 0.5d
+deps:
+adr: no
+spec: none
+desc: cargo deny check began to fail on develop on 2026-11-21 without a change of ours: RUSTSEC-2026-0543 calls chrono unmaintained (all versions, no safe upgrade), and the versions of lcms2 (6.2.0) and lcms2-sys (4.0.7) in the lock file were yanked. chrono comes only through rawler, the NEF decoder of ADR 0007. Every pull request is blocked until the check passes.
+ac:
+- lcms2 and lcms2-sys are updated in Cargo.lock to versions that are not yanked, without a change of Cargo.toml
+- RUSTSEC-2026-0543 is ignored in deny.toml with a comment that says why (unmaintained, no vulnerability, used only through rawler), that the owner approved it on 2026-11-21, and when to remove it (when rawler drops or replaces chrono; checked on every rawler update)
+- cargo deny check passes, and the workspace tests and clippy pass with the updated lcms2
+- The colour management tests and the golden tests give the same results as before
+- Tests: the existing suite
+tech:
+FILES: Cargo.lock, deny.toml.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-21 when PR 370 and develop failed the advisories check. Out of scope: replacing rawler or chrono.

@@ -650,9 +650,9 @@
       "number": 9,
       "title": "Spike - Scanlight V4 serial control",
       "branch": "docs/issue-9-scanlight-retests",
-      "status": "in_progress",
-      "pr": null,
-      "commit": null
+      "status": "completed",
+      "pr": 360,
+      "commit": "3da7e54"
     },
     {
       "id": "R-03",
@@ -1091,6 +1091,15 @@
       "number": 355,
       "title": "Cache of the picture after noise reduction for the detail view",
       "branch": "feat/issue-355-keep-noise-picture",
+      "status": "completed",
+      "pr": 359,
+      "commit": "bdf4f02"
+    },
+    {
+      "id": "T-14",
+      "number": 371,
+      "title": "Dependency checks pass again after new advisories for chrono and lcms2",
+      "branch": "chore/issue-371-deny-advisories",
       "status": "in_progress",
       "pr": null,
       "commit": null

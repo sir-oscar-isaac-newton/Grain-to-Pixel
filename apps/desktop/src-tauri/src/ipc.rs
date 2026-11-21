@@ -58,6 +58,7 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::capture::capture_focus_check,
             commands::capture::capture_triplet,
             commands::capture::capture_calibrate,
+            commands::capture::capture_flat_field,
             commands::export::export_start,
             commands::develop::develop_open,
             commands::develop::develop_release_detail,
@@ -216,6 +217,7 @@ mod tests {
             "captureFocusCheck",
             "captureTriplet",
             "captureCalibrate",
+            "captureFlatField",
         ] {
             assert!(text.contains(command), "{command} missing from bindings");
         }
@@ -270,6 +272,7 @@ mod tests {
             "StepState",
             "CalibrationResult",
             "CalibrationWarning",
+            "FlatFieldInfo",
             "Region",
         ] {
             assert!(text.contains(ty), "type {ty} missing from bindings");

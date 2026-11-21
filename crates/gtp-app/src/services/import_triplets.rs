@@ -23,8 +23,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use gtp_core::{
-    AppError, ErrorCode, Frame, FrameId, FrameKind, ImageF32, ImportResult, ImportWarning,
-    ImportWarningKind, Look, RollId, SkipReason, SkippedFile, SourceFile, SourceRole,
+    AppError, ErrorCode, FlatField, Frame, FrameId, FrameKind, ImageF32, ImportResult,
+    ImportWarning, ImportWarningKind, Look, RollId, SkipReason, SkippedFile, SourceFile,
+    SourceRole,
 };
 use gtp_ingest::{merge_triplet, TripletMerge, TripletWarning};
 use gtp_io::{from_f32_linear, Limits, RawDecoder, Tiff16};
@@ -36,7 +37,7 @@ use super::import::{
 use crate::jobs::{JobCtx, LibraryEvents};
 use crate::library_fs::originals_rel;
 use crate::services::counters;
-use crate::services::flat_field::apply_flat_field;
+use crate::services::flat_field::{apply_flat_field, exposure_of_files};
 use crate::services::library::Library;
 
 /// A triplet that was not imported, or a failure that stops the whole job.
@@ -88,6 +89,17 @@ fn warning_kind(warning: &TripletWarning) -> ImportWarningKind {
             per_mille: (fraction * 1000.0).round() as u32,
         },
     }
+}
+
+/// The warning that a frame was shot at another aperture than the roll's flat field: given only
+/// when both are known (H-24). The frame's aperture is the first its three files say.
+fn aperture_warning(flat: &FlatField, picked: [&Path; 3]) -> Option<ImportWarningKind> {
+    let flat_f = flat.exposure.f_number?;
+    let frame_f = exposure_of_files(picked).f_number?;
+    (!flat_f.same_as(frame_f)).then_some(ImportWarningKind::FlatFieldApertureDiffers {
+        flat: flat_f,
+        frame: frame_f,
+    })
 }
 
 /// One channel of a 3-channel picture as a single-channel 16-bit plane.
@@ -211,6 +223,7 @@ pub(super) fn store_merged(
         if !apply_flat_field(&mut image, &flat)? {
             warnings.push(ImportWarningKind::FlatFieldSkipped);
         }
+        warnings.extend(aperture_warning(&flat, picked));
     }
     let (recipe, input, _) = analyse_for_import(library, roll, image, look, FrameKind::RgbTriplet)?;
     progress(4.0);
@@ -934,5 +947,114 @@ mod tests {
             let image = read_scan(s.lib(), &sources, None).unwrap();
             assert_eq!((image.width, image.height, image.channels), (6016, 4016, 3));
         }
+    }
+    /// Writes the files with an EXIF that says f/`f_number` (the fake decoder does not read them).
+    fn write_exif(paths: &[PathBuf], f_number: (u32, u32)) {
+        for path in paths {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(
+                path,
+                gtp_ingest::testing::tiff_with_exposure((1, 60), 200, f_number),
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn a_flat_field_made_from_files_remembers_their_exposure_and_keeps_no_files() {
+        let mut s = Setup::new("flat-exposure", 0);
+        let with = add_bare_light(&mut s, "a", &bare_light(W, H));
+        write_exif(&with, (56, 10));
+        let info = attach(&s, &with).unwrap();
+        assert_eq!(
+            info.exposure,
+            gtp_core::ExposureInfo {
+                exposure_time: Some(gtp_core::ExposureRatio { num: 1, den: 60 }),
+                iso: Some(200),
+                f_number: Some(gtp_core::ExposureRatio { num: 56, den: 10 }),
+            }
+        );
+        let flat = s.lib().read(|c| c.get_flat_field(s.roll)).unwrap().unwrap();
+        assert_eq!(flat.exposure, info.exposure);
+        assert!(flat.files.is_empty(), "the files are only read");
+        assert_eq!(
+            s.lib()
+                .read(|c| c.get_roll(s.roll))
+                .unwrap()
+                .flat_field_f_number,
+            Some(gtp_core::ExposureRatio { num: 56, den: 10 })
+        );
+
+        // Files without EXIF give an unknown exposure, and the roll shows no aperture.
+        let without = add_bare_light(&mut s, "b", &bare_light(W, H));
+        let info = attach(&s, &without).unwrap();
+        assert!(info.exposure.is_empty());
+        assert_eq!(
+            s.lib()
+                .read(|c| c.get_roll(s.roll))
+                .unwrap()
+                .flat_field_f_number,
+            None
+        );
+    }
+
+    #[test]
+    fn a_frame_at_another_aperture_than_the_flat_field_warns_and_an_unknown_one_does_not() {
+        let mut s = Setup::new("flat-aperture", 3);
+        let flat_paths = add_bare_light(&mut s, "a", &bare_light(W, H));
+        write_exif(&flat_paths, (56, 10));
+        attach(&s, &flat_paths).unwrap();
+        write_exif(&s.files[0..3], (8, 1));
+        write_exif(&s.files[3..6], (112, 20)); // f/5.6 as another fraction
+                                               // The third frame's files do not exist: no EXIF.
+
+        let unknown = add_bare_light(&mut s, "b", &bare_light(W, H));
+        let apertures = |paths: &[PathBuf]| -> Vec<ImportWarningKind> {
+            run(&s, paths)
+                .unwrap()
+                .warnings
+                .into_iter()
+                .map(|w| w.kind)
+                .collect()
+        };
+        assert_eq!(
+            apertures(&s.files[0..3]),
+            [ImportWarningKind::FlatFieldApertureDiffers {
+                flat: gtp_core::ExposureRatio { num: 56, den: 10 },
+                frame: gtp_core::ExposureRatio { num: 8, den: 1 },
+            }]
+        );
+        assert!(apertures(&s.files[3..6]).is_empty(), "the same aperture");
+        assert!(apertures(&s.files[6..9]).is_empty(), "an unknown aperture");
+
+        // A flat field of unknown aperture warns of nothing either.
+        attach(&s, &unknown).unwrap();
+        assert!(apertures(&s.files[0..3]).is_empty());
+    }
+    #[test]
+    fn importing_a_flat_field_over_one_with_kept_files_removes_those_files() {
+        let mut s = Setup::new("flat-replace-kept", 0);
+        let paths = add_bare_light(&mut s, "a", &bare_light(W, H));
+        attach(&s, &paths).unwrap();
+        // The roll's flat field now keeps a file, as a captured one does.
+        let rel = crate::library_fs::flat_field_rel(s.roll).join("r-old.NEF");
+        let kept = s.lib().resolve(&rel).unwrap();
+        std::fs::create_dir_all(kept.parent().unwrap()).unwrap();
+        std::fs::write(&kept, b"kept").unwrap();
+        let mut flat = s.lib().read(|c| c.get_flat_field(s.roll)).unwrap().unwrap();
+        flat.files = vec![rel.to_string_lossy().replace('\\', "/")];
+        s.lib().write(|c| c.set_flat_field(s.roll, &flat)).unwrap();
+
+        let again = add_bare_light(&mut s, "b", &bare_light(W, H));
+        attach(&s, &again).unwrap();
+        assert!(!kept.exists(), "the replaced flat field's file is removed");
+        assert!(!kept.parent().unwrap().exists(), "and its empty folder");
+        assert!(s
+            .lib()
+            .read(|c| c.get_flat_field(s.roll))
+            .unwrap()
+            .unwrap()
+            .files
+            .is_empty());
     }
 }

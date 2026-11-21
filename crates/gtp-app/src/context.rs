@@ -26,6 +26,11 @@ pub struct ThumbnailRequester {
 }
 
 impl ThumbnailRequester {
+    /// Drops the proxies Develop kept, for a change that makes every frame of a roll look different.
+    pub fn clear_proxies(&self) {
+        self.develop.clear();
+    }
+
     /// Queues the thumbnails of these frames for regeneration from their saved recipes and returns
     /// at once; see [`AppContext::regenerate_thumbnails`].
     pub fn request(&self, events: Arc<dyn LibraryEvents>, frames: Vec<FrameId>) {

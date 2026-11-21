@@ -455,6 +455,14 @@ export async function captureTriplet(rollId: string, levels: Levels): Promise<st
 }
 
 /**
+ * Captures the bare light as a flat field for the roll, replacing its flat field, as a job; the new
+ * flat field arrives in `job://done`. Refuses at once when it cannot start. Returns the job id.
+ */
+export async function captureFlatField(rollId: string, levels: Levels): Promise<string> {
+  return unwrap(await commands.captureFlatField(rollId, levels));
+}
+
+/**
  * Finds the Scanlight level of each colour that fills the camera's range as a job, shooting the
  * whole frame, or only `region` (fractions of the frame) when given; the `CalibrationResult` arrives in `job://done` and nothing is saved. Returns the job id.
  */

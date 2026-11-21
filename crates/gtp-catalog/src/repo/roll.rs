@@ -3,7 +3,7 @@
 use rusqlite::{params, OptionalExtension, Row};
 
 use gtp_core::model::{check_iso, check_shot_range, FILM_BASE_MIN_CONFIDENCE};
-use gtp_core::{AppError, BaseChange, FilmFormat, FrameSize, Roll, RollId};
+use gtp_core::{AppError, BaseChange, ExposureInfo, FilmFormat, FrameSize, Roll, RollId};
 
 use super::{check_len, clean_name, clean_optional, not_found, parse_col, MAX_NOTE_CHARS, NOW};
 use crate::db::db_error;
@@ -19,7 +19,8 @@ const SELECT_COLUMNS: &str =
     notes, film_base_r, film_base_g, film_base_b, created_at, film_base_confidence,
     frame_w, frame_h, frame_samples,
     EXISTS(SELECT 1 FROM flat_field WHERE flat_field.roll_id = roll.id),
-    balance_red_cyan, balance_green_magenta, balance_blue_yellow";
+    balance_red_cyan, balance_green_magenta, balance_blue_yellow,
+    (SELECT exposure FROM flat_field WHERE flat_field.roll_id = roll.id)";
 
 fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
     let base: [Option<f32>; 3] = [row.get(10)?, row.get(11)?, row.get(12)?];
@@ -52,6 +53,10 @@ fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
             [Some(r), Some(g), Some(b)] => Some([r, g, b]),
             _ => None,
         },
+        flat_field_f_number: row
+            .get::<_, Option<String>>(22)?
+            .and_then(|json| serde_json::from_str::<ExposureInfo>(&json).ok())
+            .and_then(|exposure| exposure.f_number),
         created_at: row.get(13)?,
     })
 }

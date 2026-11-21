@@ -245,6 +245,7 @@ fn reading_goes_on_while_another_connection_writes() {
             film_base_confidence: None,
             frame_size: None,
             has_flat_field: false,
+            flat_field_f_number: None,
             color_balance: None,
             created_at: String::new(),
         })

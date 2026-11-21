@@ -184,13 +184,13 @@ fn store_captured(
 }
 
 /// The captured files written to a temporary folder for the merge, removed when dropped.
-struct Staging {
+pub(super) struct Staging {
     dir: PathBuf,
-    paths: [PathBuf; 3],
+    pub(super) paths: [PathBuf; 3],
 }
 
 impl Staging {
-    fn create(frame: FrameId, files: &[CapturedFile]) -> Result<Self, AppError> {
+    pub(super) fn create(frame: FrameId, files: &[CapturedFile]) -> Result<Self, AppError> {
         let dir = std::env::temp_dir().join(format!("gtp-capture-{frame}"));
         std::fs::create_dir_all(&dir).map_err(|err| AppError::from_io(&err))?;
         // From here on the folder is removed by `Drop`, also when a write fails.

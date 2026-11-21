@@ -19,7 +19,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::Duration;
 
-use gtp_capture::calibration::{calibrate, percentile, PERCENTILE};
+use gtp_capture::calibration::{
+    calibrate, percentile, ACCEPT, CLIP_LEVEL as CAL_CLIP_LEVEL, MAX_SHOTS_PER_CHANNEL, PERCENTILE,
+};
 use gtp_capture::settings::clean_value;
 use gtp_capture::{
     CameraFinder, CameraInfo, CameraPreview, CameraSetting, CameraSettingKind, CameraSettings,
@@ -42,8 +44,10 @@ use crate::services::capture::{capture_triplet, safe_name};
 use crate::services::capture_levels::{
     exposure_from_exif, levels_for_roll, levels_from_wide, LevelsUsed,
 };
+use crate::services::flat_field_capture::FlatFieldProgress;
 use crate::services::focus::{self, FocusPattern, Map};
 use crate::services::roll_frame;
+use crate::services::{flat_field, flat_field_capture};
 use crate::shared_light::{tripped_error, LightReading, SharedLight};
 
 /// How long a test shot waits for the light's first temperature reading.
@@ -574,6 +578,164 @@ pub fn start_triplet(
     })
 }
 
+/// `capture_flat_field` (H-24): starts capturing the bare-light triplet of `roll` as a job and
+/// returns its id. The film is out of the carrier. The job first runs the automatic level
+/// calibration (the same as `start_calibration`, the whole frame) on the bare light, starting from
+/// `levels` (the working levels, 0 to 255 each): the working levels are normally set through the film
+/// base, so the bare light would clip at them, and only the shape of the light matters for a flat
+/// field, not its brightness. Then it shoots red, green and blue at the calibrated levels and the
+/// camera's current settings, as a frame is. Nothing the user set changes: the sliders, the working
+/// levels and the saved levels stay as they were. The three NEF files are kept beside the roll's
+/// originals and the flat field built from them replaces the roll's (see `flat_field_capture`); the
+/// roll's proxies, thumbnails and automatic film base follow.
+///
+/// The job reports "Calibrating red: shot 2, level 120" while it calibrates and "Capturing the flat
+/// field" for the three shots and the store. It ends with `JobResult::FlatField` (the calibrated
+/// levels come with it), or with an error that says which colour could not be brought below
+/// clipping, which clipped or which setting differed, and then nothing is attached or kept. Same
+/// preconditions as [`start_triplet`]; the busy flag is held until the job ends, and the light is
+/// off on every way out.
+pub fn start_flat_field(
+    ctx: &AppContext,
+    jobs: &JobManager,
+    hardware: &Hardware,
+    library_events: Arc<dyn LibraryEvents>,
+    events: Arc<dyn CaptureEvents>,
+    roll: RollId,
+    levels: [u32; 3],
+) -> Result<JobId, AppError> {
+    let levels = levels_from_wide(levels)?;
+    let camera = hardware.camera.clone().ok_or_else(no_camera)?;
+    let library = ctx.library()?;
+    // Fail now, not inside the job, when the roll is gone or the library is read-only.
+    library.read(|c| c.get_roll(roll))?;
+    library.write(|_| Ok(()))?;
+    let busy = hardware.busy().acquire()?;
+    let profile = ctx.settings().capture_profile();
+    let thumbnails = ctx.thumbnail_requester()?;
+    let light = hardware.light.clone();
+    let decoder = Arc::clone(&hardware.decoder);
+
+    jobs.spawn(JobKind::FlatField, move |job| {
+        // Held until the job ends, also by a panic.
+        let _busy = busy;
+        camera.connect()?;
+        let (info, used) = {
+            let mut cam = camera.take()?;
+            let used = calibrate_bare_light(
+                &profile,
+                &light,
+                &mut **cam,
+                events.as_ref(),
+                decoder.as_ref(),
+                job,
+                levels,
+            )?;
+            job.check_cancelled()?;
+            // Only this job's sequence uses the calibrated levels: the saved profile is untouched.
+            let sequence = CaptureSequence::new(CaptureProfile {
+                levels: used,
+                ..profile
+            });
+            let mut stepped = StepCamera {
+                inner: &mut **cam,
+                events: events.as_ref(),
+                channels: &TripletChannel::ALL,
+                light: &light,
+                next: 0,
+            };
+            let mut handle = light.clone();
+            let info = flat_field_capture::capture_flat_field(
+                &library,
+                roll,
+                &sequence,
+                &mut handle,
+                &mut stepped,
+                decoder.as_ref(),
+                &FlatFieldProgress {
+                    job,
+                    from: BARE_LIGHT_SHARE,
+                },
+            )?;
+            (info, used)
+        };
+        flat_field::after_flat_field_change(
+            &library,
+            &thumbnails,
+            Arc::clone(&library_events),
+            roll,
+        )?;
+        library_events.library_changed(Some(roll));
+        Ok(JobResult::FlatField { info, levels: used })
+    })
+}
+
+/// The share of a flat field job's progress that the calibration of the bare light takes.
+const BARE_LIGHT_SHARE: f32 = 0.6;
+
+/// Calibrates the bare light (the whole frame) starting from `start` and returns the levels to shoot
+/// the flat field at. Fails naming the colour that cannot be brought below clipping.
+fn calibrate_bare_light(
+    profile: &CaptureProfile,
+    light: &SharedLight,
+    camera: &mut dyn CameraSource,
+    events: &dyn CaptureEvents,
+    decoder: &dyn RawDecoder,
+    job: &JobCtx,
+    start: [u8; 3],
+) -> Result<[u8; 3], AppError> {
+    let mut meter = SceneMeter {
+        profile: profile.clone(),
+        light,
+        camera,
+        events,
+        decoder,
+        region: None,
+        job,
+        shots: 0,
+        exposure: ExposureInfo::default(),
+        bare_light: true,
+        last: None,
+        failed: false,
+    };
+    let result = match calibrate(&mut meter, start) {
+        Ok(result) => result,
+        Err(err) if meter.failed || err.code == ErrorCode::Cancelled => return Err(err),
+        Err(err) => return Err(bare_light_error(err, meter.last)),
+    };
+    // A level that still reads clipped would make a flat field that corrects wrongly.
+    if let Some(i) = result.reached.iter().position(|r| *r >= CAL_CLIP_LEVEL) {
+        let last = Some((TripletChannel::ALL[i], result.levels[i], result.reached[i]));
+        return Err(bare_light_error(
+            AppError::new(ErrorCode::Io, "clipped"),
+            last,
+        ));
+    }
+    tracing::info!(
+        levels = ?result.levels,
+        shots = ?result.shots,
+        "bare light calibrated for a flat field"
+    );
+    Ok(result.levels)
+}
+
+/// The words for a calibration of the bare light that failed on its own (not a camera or light
+/// error): `last` is the last colour measured, at which level and what it read.
+fn bare_light_error(err: AppError, last: Option<(TripletChannel, u8, f32)>) -> AppError {
+    let Some((channel, level, reading)) = last else {
+        return err;
+    };
+    let name = ["Red", "Green", "Blue"][channel.index()];
+    let message = if reading.is_finite() && reading >= CAL_CLIP_LEVEL {
+        format!("{name} is at full scale even at the lowest light level, so the bare light is too bright to calibrate. Shorten the exposure (a faster shutter speed, a smaller aperture or a lower ISO) and capture the flat field again.")
+    } else if level == 255 && (!reading.is_finite() || reading < *ACCEPT.start()) {
+        format!("{name} is too dark even at the highest light level. Lengthen the exposure (a slower shutter speed, a larger aperture or a higher ISO) and capture the flat field again.")
+    } else {
+        format!("{name} did not settle in {MAX_SHOTS_PER_CHANNEL} shots while the light was calibrated on the bare light. Check that nothing moved and the light is steady, then capture the flat field again.")
+    };
+    AppError::new(ErrorCode::InvalidInput, message)
+}
+
 // --- the calibration job ---------------------------------------------------------------------
 
 /// `capture_calibrate`: starts the automatic level calibration as a job and returns its id. `levels`
@@ -617,6 +779,9 @@ pub fn start_calibration(
             job,
             shots: 0,
             exposure: ExposureInfo::default(),
+            bare_light: false,
+            last: None,
+            failed: false,
         };
         let mut result = calibrate(&mut meter, levels)?;
         result.exposure = meter.exposure;
@@ -644,18 +809,34 @@ struct SceneMeter<'a> {
     shots: u32,
     /// The camera settings of the last shot, from its EXIF.
     exposure: ExposureInfo,
+    /// Part of a flat field job (the bare light): the progress words and share say so.
+    bare_light: bool,
+    /// The last colour measured, the level it was lit at and what it read.
+    last: Option<(TripletChannel, u8, f32)>,
+    /// True once a measurement itself failed (the camera, the light, a decode), as against the
+    /// calibration giving up on a colour.
+    failed: bool,
 }
 
 /// The most shots a calibration can take: the limit per colour for each of the three.
 const MAX_SHOTS: f32 = 3.0 * gtp_capture::calibration::MAX_SHOTS_PER_CHANNEL as f32;
 
-impl ChannelMeter for SceneMeter<'_> {
-    fn measure(&mut self, channel: TripletChannel, level: u8, shot: u8) -> Result<f32, AppError> {
+impl SceneMeter<'_> {
+    fn take(&mut self, channel: TripletChannel, level: u8, shot: u8) -> Result<f32, AppError> {
         let name = ["Red", "Green", "Blue"][channel.index()];
-        self.job.progress(
-            &format!("{name}: shot {shot}, level {level}"),
-            self.shots as f32 / MAX_SHOTS,
-        );
+        let (words, share) = if self.bare_light {
+            (
+                format!(
+                    "Calibrating {}: shot {shot}, level {level}",
+                    name.to_lowercase()
+                ),
+                BARE_LIGHT_SHARE,
+            )
+        } else {
+            (format!("{name}: shot {shot}, level {level}"), 1.0)
+        };
+        self.job
+            .progress(&words, self.shots as f32 / MAX_SHOTS * share);
         self.shots += 1;
         let mut profile = self.profile.clone();
         profile.levels[channel.index()] = level;
@@ -665,6 +846,21 @@ impl ChannelMeter for SceneMeter<'_> {
         let mut area = region_values(&plane, self.region);
         percentile(&mut area, PERCENTILE)
             .ok_or_else(|| AppError::new(ErrorCode::Io, "The picture has no pixels to measure."))
+    }
+}
+
+impl ChannelMeter for SceneMeter<'_> {
+    fn measure(&mut self, channel: TripletChannel, level: u8, shot: u8) -> Result<f32, AppError> {
+        match self.take(channel, level, shot) {
+            Ok(reading) => {
+                self.last = Some((channel, level, reading));
+                Ok(reading)
+            }
+            Err(err) => {
+                self.failed = true;
+                Err(err)
+            }
+        }
     }
 
     fn cancelled(&self) -> bool {

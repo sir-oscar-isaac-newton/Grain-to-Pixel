@@ -74,23 +74,19 @@ pub fn roll_set_frame_size(
     Ok(roll)
 }
 
-/// What changes when a roll's flat field is attached or removed: the proxies Develop kept were built
-/// without it, an automatic film base was measured without it, and every frame of the roll looks
-/// different, so all their thumbnails are made again in the background.
+/// What changes when a roll's flat field is attached or removed (see
+/// [`flat_field::after_flat_field_change`]).
 fn after_flat_field_change(
     ctx: &AppContext,
     events: &EventsState,
     id: RollId,
 ) -> Result<(), gtp_core::AppError> {
-    let library = ctx.library()?;
-    ctx.develop().clear();
-    flat_field::remeasure_roll_base(&library, id)?;
-    let frames = library
-        .read(|c| c.list_frames(id))?
-        .into_iter()
-        .map(|f| f.id)
-        .collect();
-    ctx.regenerate_thumbnails(Arc::clone(&events.0), frames)
+    flat_field::after_flat_field_change(
+        &*ctx.library()?,
+        &ctx.thumbnail_requester()?,
+        Arc::clone(&events.0),
+        id,
+    )
 }
 
 /// Makes the roll's flat field from three bare-light exposures (red, green and blue, in any order:

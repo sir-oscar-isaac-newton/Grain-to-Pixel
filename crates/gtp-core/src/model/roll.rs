@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, ErrorCode};
 use crate::ids::RollId;
+use crate::model::exposure::ExposureRatio;
 
 /// Film format of a roll: 35 mm, or a medium-format frame on 120 film.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -136,6 +137,10 @@ pub struct Roll {
     /// divided by when they are loaded; the field itself is kept apart (see `FlatField`).
     #[serde(default)]
     pub has_flat_field: bool,
+    /// The aperture the flat field was shot at (H-24); `None` without a flat field or when its
+    /// pictures did not say.
+    #[serde(default)]
+    pub flat_field_f_number: Option<ExposureRatio>,
     /// The automatic colour balance of the roll's scanner frames: the colour axes
     /// `[red_cyan, green_magenta, blue_yellow]` of their recipes (P-22). `None` until a frame was
     /// judged; the first one stored stays. Camera triplets do not use it.

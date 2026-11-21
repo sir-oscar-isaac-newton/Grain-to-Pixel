@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use gtp_catalog::{backup_path, Catalog, SCHEMA_VERSION};
 use gtp_core::testing::TempDir;
 use gtp_core::{
-    BaseChange, ErrorCode, FilmFormat, Frame, FrameFlag, FrameId, FrameKind, FrameSize, Recipe,
-    Roll, RollId, SearchQuery, SourceFile, SourceRole,
+    BaseChange, ErrorCode, ExposureInfo, ExposureRatio, FilmFormat, Frame, FrameFlag, FrameId,
+    FrameKind, FrameSize, Recipe, Roll, RollId, SearchQuery, SourceFile, SourceRole,
 };
 use rusqlite::Connection;
 
@@ -54,6 +54,7 @@ fn roll(name: &str) -> Roll {
         film_base_confidence: None,
         frame_size: None,
         has_flat_field: false,
+        flat_field_f_number: None,
         color_balance: None,
         created_at: String::new(),
     }
@@ -155,8 +156,8 @@ fn a_v3_library_upgrades_with_a_backup_and_keeps_its_rolls() {
     assert_eq!(old.format, FilmFormat::Mm35);
     drop(cat);
 
-    assert_eq!(SCHEMA_VERSION, 10);
-    assert_eq!(user_version(&dir.db()), 10);
+    assert_eq!(SCHEMA_VERSION, 11);
+    assert_eq!(user_version(&dir.db()), 11);
     assert!(!old.has_flat_field, "an existing roll has no flat field");
     let backup = backup_path(&dir.db(), 3);
     assert!(backup.exists());
@@ -202,7 +203,7 @@ fn a_v7_library_upgrades_to_v8_and_its_rolls_have_no_colour_balance() {
     assert!(cat.store_roll_color_balance(id, [1.0, 2.0, 3.0]).unwrap().1);
     drop(cat);
 
-    assert_eq!(user_version(&dir.db()), 10);
+    assert_eq!(user_version(&dir.db()), 11);
     let backup = backup_path(&dir.db(), 7);
     assert_eq!(user_version(&backup), 7, "the backup is the old schema");
     assert!(Connection::open(&backup)
@@ -384,6 +385,8 @@ fn a_rolls_flat_field_is_stored_replaced_cleared_and_removed_with_the_roll() {
         frame_h: 400,
         light: (0..18).map(|i| value + i as f32 * 0.01).collect(),
         sources: vec!["r.NEF".into(), "g.NEF".into(), "b.NEF".into()],
+        exposure: ExposureInfo::default(),
+        files: Vec::new(),
     };
     cat.set_flat_field(r.id, &flat(0.5)).unwrap();
     assert_eq!(cat.get_flat_field(r.id).unwrap(), Some(flat(0.5)));
@@ -1216,7 +1219,7 @@ fn a_v8_library_upgrades_to_v9_and_its_frames_have_no_capture_info() {
     let cat = Catalog::open(&dir.db()).unwrap();
     assert_eq!(cat.capture_info(frame_id).unwrap(), None);
     drop(cat);
-    assert_eq!(user_version(&dir.db()), 10);
+    assert_eq!(user_version(&dir.db()), 11);
     let backup = backup_path(&dir.db(), 8);
     assert_eq!(user_version(&backup), 8, "the backup is the old schema");
     assert!(Connection::open(&backup)
@@ -1501,7 +1504,7 @@ fn a_v9_library_upgrades_to_v10_and_every_frame_is_unflagged() {
     let cat = Catalog::open(&dir.db()).unwrap();
     assert_eq!(cat.get_frame(frame_id).unwrap().flag, FrameFlag::None);
     drop(cat);
-    assert_eq!(user_version(&dir.db()), 10);
+    assert_eq!(user_version(&dir.db()), 11);
     assert_eq!(user_version(&backup_path(&dir.db(), 9)), 9);
 
     // The column only takes the three words.
@@ -1841,4 +1844,75 @@ fn a_recipe_edit_after_an_export_needs_an_export_but_a_flag_or_note_does_not() {
     cat.save_recipe(f, &Recipe::default()).unwrap();
     assert!(cat.get_frame(f).unwrap().edited_at.is_some());
     assert_eq!(cat.count_frames(None, None, true).unwrap(), 1);
+}
+
+#[test]
+fn a_v10_library_upgrades_to_v11_and_its_flat_field_has_no_exposure_and_no_files() {
+    let dir = TempDir::new("upgrade-v10");
+    let roll_id = RollId::new();
+    let light: Vec<u8> = (0..12).flat_map(|_| 1.0f32.to_le_bytes()).collect();
+    {
+        let conn = Connection::open(dir.db()).unwrap();
+        for sql in [
+            include_str!("../migrations/0001_init.sql"),
+            include_str!("../migrations/0002_search.sql"),
+            include_str!("../migrations/0003_export_log.sql"),
+            include_str!("../migrations/0004_roll_base_confidence.sql"),
+            include_str!("../migrations/0005_roll_frame_size.sql"),
+            include_str!("../migrations/0006_frame_scan.sql"),
+            include_str!("../migrations/0007_flat_field.sql"),
+            include_str!("../migrations/0008_roll_color_balance.sql"),
+            include_str!("../migrations/0009_frame_capture_info.sql"),
+            include_str!("../migrations/0010_frame_flag.sql"),
+        ] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO roll(id, name, created_at) VALUES (?1, 'Old', '2026-01-01T00:00:00Z')",
+            [roll_id.to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO flat_field(roll_id, grid_w, grid_h, frame_w, frame_h, light, sources, created_at)
+             VALUES (?1, 2, 2, 100, 80, ?2, '[\"r.NEF\",\"g.NEF\",\"b.NEF\"]', '2026-01-01T00:00:00Z')",
+            rusqlite::params![roll_id.to_string(), light],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 10).unwrap();
+    }
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let old = cat.get_flat_field(roll_id).unwrap().unwrap();
+    assert!(old.is_valid());
+    assert_eq!(old.sources, ["r.NEF", "g.NEF", "b.NEF"]);
+    assert!(
+        old.exposure.is_empty(),
+        "an old flat field has an unknown exposure"
+    );
+    assert!(old.files.is_empty(), "and no kept files");
+    let roll = cat.get_roll(roll_id).unwrap();
+    assert!(roll.has_flat_field);
+    assert_eq!(roll.flat_field_f_number, None);
+
+    // A flat field with its exposure and files round-trips, and the roll shows the aperture.
+    let f_number = ExposureRatio { num: 56, den: 10 };
+    let mut flat = old;
+    flat.exposure = ExposureInfo {
+        exposure_time: Some(ExposureRatio { num: 1, den: 60 }),
+        iso: Some(200),
+        f_number: Some(f_number),
+    };
+    flat.files = vec!["originals/x/flat-field/r.NEF".into()];
+    cat.set_flat_field(roll_id, &flat).unwrap();
+    assert_eq!(cat.get_flat_field(roll_id).unwrap(), Some(flat));
+    assert_eq!(
+        cat.get_roll(roll_id).unwrap().flat_field_f_number,
+        Some(f_number)
+    );
+    assert_eq!(
+        cat.list_rolls().unwrap()[0].flat_field_f_number,
+        Some(f_number)
+    );
+    drop(cat);
+    assert_eq!(user_version(&dir.db()), 11);
+    assert_eq!(user_version(&backup_path(&dir.db(), 10)), 10);
 }

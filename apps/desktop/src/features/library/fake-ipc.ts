@@ -83,6 +83,7 @@ export function makeRoll(over: Partial<Roll> = {}): Roll {
     film_base_confidence: null,
     frame_size: null,
     has_flat_field: false,
+    flat_field_f_number: null,
     color_balance: null,
     created_at: '2026-10-30T10:00:00Z',
     ...over,
@@ -441,6 +442,10 @@ export const state = {
   /** The id capture_triplet answers, or the message it fails with. */
   captureJob: 'job-capture-1' as string,
   captureFail: null as string | null,
+  /** The id capture_flat_field answers, or the message it refuses with, and the aperture it records. */
+  flatFieldJob: 'job-flat-field-1' as string,
+  flatFieldFail: null as string | null,
+  flatFieldFNumber: { num: 56, den: 10 } as { num: number; den: number } | null,
   /** The id capture_calibrate answers, or the message it fails with. */
   calibrationJob: 'job-calibration-1' as string,
   calibrationFail: null as string | null,
@@ -855,12 +860,21 @@ export const ipc = {
     return state.rolls.find((r) => r.id === id) as Roll;
   }),
   flatFieldImport: vi.fn(async (id: string, paths: string[]) => {
-    state.rolls = state.rolls.map((r) => (r.id === id ? { ...r, has_flat_field: true } : r));
-    return { frame_width: 6016, frame_height: 4016, sources: paths };
+    state.rolls = state.rolls.map((r) =>
+      r.id === id ? { ...r, has_flat_field: true, flat_field_f_number: null } : r,
+    );
+    return {
+      frame_width: 6016,
+      frame_height: 4016,
+      sources: paths,
+      exposure: { exposure_time: null, iso: null, f_number: null },
+    };
   }),
   flatFieldClear: vi.fn(async (id: string) => {
     const had = state.rolls.find((r) => r.id === id)?.has_flat_field ?? false;
-    state.rolls = state.rolls.map((r) => (r.id === id ? { ...r, has_flat_field: false } : r));
+    state.rolls = state.rolls.map((r) =>
+      r.id === id ? { ...r, has_flat_field: false, flat_field_f_number: null } : r,
+    );
     return had;
   }),
   logClientEvent: vi.fn(async () => undefined),
@@ -1065,6 +1079,25 @@ export const ipc = {
       return state.captureJob;
     },
   ),
+  /**
+   * Starts the flat field capture (which calibrates the light on the bare light first): the roll
+   * has the flat field (and the aperture) from now on, as after the job; a test sends the progress,
+   * the steps and `job://done` itself, as for `captureTriplet`.
+   */
+  captureFlatField: vi.fn(
+    async (rollId: string, levels?: [number, number, number]): Promise<string> => {
+      void levels;
+      if (state.flatFieldFail) {
+        throw new IpcError({ code: 'InvalidInput', message: state.flatFieldFail });
+      }
+      state.rolls = state.rolls.map((r) =>
+        r.id === rollId
+          ? { ...r, has_flat_field: true, flat_field_f_number: state.flatFieldFNumber }
+          : r,
+      );
+      return state.flatFieldJob;
+    },
+  ),
   captureCalibrate: vi.fn(
     async (
       rollId: string,
@@ -1197,6 +1230,9 @@ export function resetFake() {
   state.focusCheck = { ...DEFAULT_FOCUS_CHECK };
   state.captureJob = 'job-capture-1';
   state.captureFail = null;
+  state.flatFieldJob = 'job-flat-field-1';
+  state.flatFieldFail = null;
+  state.flatFieldFNumber = { num: 56, den: 10 };
   state.calibrationJob = 'job-calibration-1';
   state.calibrationFail = null;
   listeners.step.length = 0;

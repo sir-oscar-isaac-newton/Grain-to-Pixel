@@ -6,19 +6,15 @@ import {
   captureTriplet,
   frameList,
   jobCancel,
-  onCaptureStep,
   type ImportWarning,
-  type CaptureStep,
   type Levels,
   type Roll,
 } from '../../../shared/ipc';
 import { messageOf, useLibraryStore } from '../../library/library-store';
 import { useThumbnail } from '../../library/use-thumbnail';
 import styles from '../import.module.css';
-
-const CHANNELS = ['red', 'green', 'blue'] as const;
-
-type Steps = Partial<Record<CaptureStep['channel'], CaptureStep['state']>>;
+import { CaptureSteps, useCaptureSteps } from './CaptureSteps';
+import { formatAperture } from './exposure';
 
 interface Result {
   frameId: string | null;
@@ -54,6 +50,15 @@ export function warningTexts(warnings: ImportWarning[], t: TFunction): string[] 
         break;
       case 'flat_field_skipped':
         texts.set(kind.kind, t('import.capture.warn.flat_field_skipped'));
+        break;
+      case 'flat_field_aperture_differs':
+        texts.set(
+          kind.kind,
+          t('import.capture.warn.flat_field_aperture_differs', {
+            flat: formatAperture(kind.flat) ?? '',
+            frame: formatAperture(kind.frame) ?? '',
+          }),
+        );
         break;
       case 'exposure_differs_from_levels':
         texts.set(kind.kind, t('import.capture.warn.exposure_differs_from_levels'));
@@ -116,7 +121,7 @@ export function NextFrameButton({ ready, roll, levels, onBusyChange }: NextFrame
 
   const [jobId, setJobId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const [steps, setSteps] = useState<Steps>({});
+  const [steps, resetSteps] = useCaptureSteps();
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -131,25 +136,6 @@ export function NextFrameButton({ ready, roll, levels, onBusyChange }: NextFrame
   }, [running]);
 
   const canStart = ready && !running && !readOnly && roll !== null && levels !== null;
-
-  // The steps of the running capture.
-  useEffect(() => {
-    let alive = true;
-    let stop: (() => void) | undefined;
-    onCaptureStep((step) => setSteps((all) => ({ ...all, [step.channel]: step.state }))).then(
-      (stopListening) => {
-        if (alive) stop = stopListening;
-        else stopListening();
-      },
-      () => {
-        // No backend (tests, plain browser): there are no steps to follow.
-      },
-    );
-    return () => {
-      alive = false;
-      stop?.();
-    };
-  }, []);
 
   // What came of the capture: the new frame, its warnings and the roll's frame count.
   const frameId = job?.importedFrames?.[0] ?? null;
@@ -184,7 +170,7 @@ export function NextFrameButton({ ready, roll, levels, onBusyChange }: NextFrame
     setStarting(true);
     setError(null);
     setResult(null);
-    setSteps({});
+    resetSteps();
     rollOfJob.current = roll.id;
     try {
       const id = await captureTriplet(roll.id, levels);
@@ -233,18 +219,7 @@ export function NextFrameButton({ ready, roll, levels, onBusyChange }: NextFrame
       </div>
       {readOnly && <p role="status">{t('import.capture.next.readOnly')}</p>}
 
-      {running && (
-        <ol aria-label={t('import.capture.next.steps')} className={styles.captureSteps}>
-          {CHANNELS.map((channel) => (
-            <li key={channel}>
-              {t('import.capture.next.step', {
-                channel: t(`import.channel.${channel}`),
-                state: t(`import.capture.next.state.${steps[channel] ?? 'waiting'}`),
-              })}
-            </li>
-          ))}
-        </ol>
-      )}
+      {running && <CaptureSteps steps={steps} />}
 
       {error && <p role="alert">{error}</p>}
       {jobState === 'cancelled' && <p role="status">{t('import.capture.next.cancelled')}</p>}

@@ -15,7 +15,7 @@ use gtp_core::{AppError, ErrorCode, FrameId, RollId, VerifyProblem, VerifyReason
 use gtp_io::sha256_file_with;
 
 use crate::jobs::JobCtx;
-use crate::library_fs::{thumb_rel, ORIGINALS_DIR};
+use crate::library_fs::{thumb_rel, FLAT_FIELD_DIR, ORIGINALS_DIR};
 use crate::paths::display_path;
 use crate::services::library::{Library, VERIFY_AT_KEY, VERIFY_PROBLEMS_KEY};
 
@@ -134,6 +134,10 @@ fn stray_folders(
             continue;
         };
         for frame_dir in list(&roll_dir) {
+            // The roll's kept flat-field files (H-24) are no frame's folder, and are not stray.
+            if name(&frame_dir).as_deref() == Some(FLAT_FIELD_DIR) {
+                continue;
+            }
             let known = name(&frame_dir)
                 .and_then(|n| n.parse::<FrameId>().ok())
                 .is_some_and(|f| frames.contains(&(roll, f)));
@@ -519,6 +523,11 @@ mod tests {
             "scan.tif",
         );
         make(PathBuf::from(t.roll.to_string()).join("junk"), "x");
+        // The roll's kept flat-field files are not stray.
+        make(
+            PathBuf::from(t.roll.to_string()).join("flat-field"),
+            "r-1-DSC_0001.NEF",
+        );
         // Empty folders are not worth reporting.
         std::fs::create_dir_all(
             originals

@@ -64,6 +64,7 @@ impl RollInput {
             film_base_confidence: film_base.1,
             frame_size,
             has_flat_field: false,
+            flat_field_f_number: None,
             color_balance: None,
             created_at,
         }
@@ -426,7 +427,7 @@ fn summary(library: &Library, f: Frame, exported_at: Option<String>) -> FrameSum
 }
 
 /// Removes a file or folder inside the library, adding what could not be removed to `left`.
-fn remove_in_library(library: &Library, rel: &Path, left: &mut Vec<String>) {
+pub(crate) fn remove_in_library(library: &Library, rel: &Path, left: &mut Vec<String>) {
     match library.resolve(rel) {
         Ok(path) => remove_tree(&path, left),
         Err(_) => left.push(rel.display().to_string()),

@@ -2,6 +2,7 @@ import { ProgressList, type ProgressItem } from '@gtp/ui';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { jobCancel, type ImportWarning } from '../../shared/ipc';
+import { formatAperture } from '../import/capture/exposure';
 import styles from './library.module.css';
 import { useLibraryStore, type JobRow } from './library-store';
 
@@ -24,7 +25,12 @@ function warningText(job: JobRow, warning: ImportWarning, t: TFunction): string 
         ? t('jobs.warning.high_temperature', { temp_c: kind.temp_c })
         : kind.kind === 'low_supply'
           ? t('jobs.warning.low_supply', { volts: (kind.vbus_mv / 1000).toFixed(2) })
-          : t(`jobs.warning.${kind.kind}`);
+          : kind.kind === 'flat_field_aperture_differs'
+            ? t('jobs.warning.flat_field_aperture_differs', {
+                flat: formatAperture(kind.flat) ?? '',
+                frame: formatAperture(kind.frame) ?? '',
+              })
+            : t(`jobs.warning.${kind.kind}`);
   return t('jobs.warningLine', { frame, what });
 }
 
@@ -129,7 +135,9 @@ export function describeJob(job: JobRow, t: TFunction, language: string): Progre
               ? t('jobs.capture', { roll: job.rollName })
               : job.kind === 'calibration'
                 ? t('jobs.calibration', { roll: job.rollName })
-                : t('jobs.import', { roll: job.rollName }),
+                : job.kind === 'flat_field'
+                  ? t('jobs.flatField', { roll: job.rollName })
+                  : t('jobs.import', { roll: job.rollName }),
     fraction: job.fraction,
     state: job.state,
     stateLabel: t(`jobs.${job.state}`),

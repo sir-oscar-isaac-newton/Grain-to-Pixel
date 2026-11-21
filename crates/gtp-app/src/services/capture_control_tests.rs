@@ -24,10 +24,13 @@ enum Outcome {
     Error(AppError),
 }
 
-struct Collect(Mutex<mpsc::Sender<Outcome>>);
+/// The outcomes of the jobs, and every progress report (stage and fraction) in order.
+struct Collect(Mutex<mpsc::Sender<Outcome>>, Arc<Mutex<Vec<(String, f32)>>>);
 
 impl JobSink for Collect {
-    fn progress(&self, _: JobId, _: &str, _: f32) {}
+    fn progress(&self, _: JobId, stage: &str, fraction: f32) {
+        self.1.lock().unwrap().push((stage.to_owned(), fraction));
+    }
     fn done(&self, _: JobId, result: JobResult) {
         let _ = self.0.lock().unwrap().send(Outcome::Done(result));
     }
@@ -133,6 +136,7 @@ struct Rig {
     jobs: JobManager,
     outcomes: mpsc::Receiver<Outcome>,
     events: Arc<Recorder>,
+    stages: Arc<Mutex<Vec<(String, f32)>>>,
 }
 
 impl Rig {
@@ -197,15 +201,17 @@ impl Rig {
             decoder(light.clone()),
         );
         let (tx, outcomes) = mpsc::channel();
+        let stages = Arc::new(Mutex::new(Vec::new()));
         Self {
             dir,
             ctx: Some(ctx),
             roll,
             hardware,
             light,
-            jobs: JobManager::new(Arc::new(Collect(Mutex::new(tx)))),
+            jobs: JobManager::new(Arc::new(Collect(Mutex::new(tx), stages.clone()))),
             outcomes,
             events: Arc::new(Recorder::default()),
+            stages,
         }
     }
 
@@ -1689,5 +1695,594 @@ mod focus_check {
             [44, 22, 2],
         ));
         assert!(!hardware.busy().is_busy());
+    }
+}
+
+/// The flat-field capture (H-24) on the fake camera and light.
+mod flat_field_capture {
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+
+    use gtp_core::{ExposureRatio, FlatFieldInfo, ImportWarningKind};
+    use gtp_ingest::testing::tiff_with_exposure;
+
+    use super::*;
+    use crate::library_fs::flat_field_rel;
+    use crate::services::flat_field::flat_field_clear;
+    use crate::services::roll_frame::roll_delete;
+
+    const F56: ExposureRatio = ExposureRatio { num: 56, den: 10 };
+    const F8: ExposureRatio = ExposureRatio { num: 8, den: 1 };
+
+    fn exif_file(name: &str, f_number: (u32, u32)) -> CapturedFile {
+        CapturedFile {
+            name: name.to_owned(),
+            bytes: tiff_with_exposure((1, 60), 200, f_number),
+        }
+    }
+
+    /// The levels the sliders have in most tests; the fake bare light calibrates from them.
+    const START: [u32; 3] = [44, 22, 2];
+    /// Levels at which the fake bare light clips in red and green (and in blue at 5 and above).
+    const CLIPPING: [u32; 3] = [100, 60, 8];
+
+    /// A camera whose pictures are those of `inner` for its first `skip` shots (the calibration),
+    /// and then `then`, one per shot.
+    struct AfterCalibration {
+        inner: FakeCamera,
+        skip: usize,
+        taken: usize,
+        then: VecDeque<Shot>,
+    }
+
+    impl CameraSource for AfterCalibration {
+        fn is_connected(&self) -> bool {
+            self.inner.is_connected()
+        }
+        fn arm(&mut self) -> Result<(), AppError> {
+            self.inner.arm()
+        }
+        fn trigger(&mut self) -> Result<(), AppError> {
+            self.inner.trigger()
+        }
+        fn wait_for_image(&mut self, timeout: Duration) -> Result<CapturedFile, AppError> {
+            if self.taken < self.skip {
+                self.taken += 1;
+                return self.inner.wait_for_image(timeout);
+            }
+            match self.then.pop_front() {
+                Some(Shot::File(file)) => Ok(file),
+                Some(Shot::Fail(error)) => Err(error),
+                None => Err(no_picture()),
+            }
+        }
+    }
+
+    /// The shots the calibration of the fake bare light takes from `start`.
+    fn calibration_shots(start: [u32; 3]) -> usize {
+        let rig = Rig::levelled("flat-shots");
+        rig.calibrate(start, None).unwrap();
+        calibrated(&rig).shots.iter().map(|n| usize::from(*n)).sum()
+    }
+
+    /// A rig whose light and pictures follow each other (so the bare light calibrates) and whose
+    /// camera takes every picture at 1/60 s, ISO 200, f/5.6 (as the EXIF says).
+    fn rig(label: &str) -> Rig {
+        Rig::build_with(
+            label,
+            |light| Arc::new(LevelledRawDecoder::new(light)),
+            |light| {
+                Box::new(
+                    FakeCamera::new(Vec::new())
+                        .repeating(exif_file("FAKE_0001.NEF", (56, 10)))
+                        .linked_to(light),
+                )
+            },
+        )
+    }
+
+    /// A rig whose first calibration shots are the repeating picture and whose final three are
+    /// `then`.
+    fn rig_then(label: &str, then: Vec<Shot>) -> Rig {
+        let skip = calibration_shots(START);
+        Rig::build_with(
+            label,
+            |light| Arc::new(LevelledRawDecoder::new(light)),
+            |light| {
+                Box::new(AfterCalibration {
+                    inner: FakeCamera::new(Vec::new())
+                        .repeating(exif_file("FAKE_0001.NEF", (56, 10)))
+                        .linked_to(light),
+                    skip,
+                    taken: 0,
+                    then: then.into(),
+                })
+            },
+        )
+    }
+
+    fn start_from(rig: &Rig, levels: [u32; 3]) -> Result<JobId, AppError> {
+        start_flat_field(
+            rig.ctx(),
+            &rig.jobs,
+            &rig.hardware,
+            Arc::new(NoLibraryEvents),
+            rig.events.clone(),
+            rig.roll,
+            levels,
+        )
+    }
+
+    fn start(rig: &Rig) -> Result<JobId, AppError> {
+        start_from(rig, START)
+    }
+
+    /// Runs the job from `levels`: what it attached and the levels it shot at.
+    fn capture_from(rig: &Rig, levels: [u32; 3]) -> (FlatFieldInfo, [u8; 3]) {
+        start_from(rig, levels).unwrap();
+        match rig.outcome() {
+            Outcome::Done(JobResult::FlatField { info, levels }) => (info, levels),
+            Outcome::Done(_) => panic!("the job ended with another result"),
+            Outcome::Error(err) => panic!("the flat field was not captured: {err}"),
+        }
+    }
+
+    fn capture(rig: &Rig) -> FlatFieldInfo {
+        capture_from(rig, START).0
+    }
+
+    fn refused(rig: &Rig) -> AppError {
+        start(rig).unwrap();
+        match rig.outcome() {
+            Outcome::Error(err) => err,
+            Outcome::Done(_) => panic!("the flat field should have been refused"),
+        }
+    }
+
+    fn lib(rig: &Rig) -> Arc<crate::services::library::Library> {
+        rig.ctx().library().unwrap()
+    }
+
+    fn flat(rig: &Rig) -> Option<gtp_core::FlatField> {
+        lib(rig).read(|c| c.get_flat_field(rig.roll)).unwrap()
+    }
+
+    fn folder(rig: &Rig) -> PathBuf {
+        lib(rig).resolve(&flat_field_rel(rig.roll)).unwrap()
+    }
+
+    /// The names of the files in the flat-field folder, sorted; none when the folder is not there.
+    fn kept(rig: &Rig) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(folder(rig))
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    }
+
+    fn assert_nothing_attached_or_kept(rig: &Rig) {
+        assert!(flat(rig).is_none());
+        assert!(kept(rig).is_empty());
+        assert!(!folder(rig).exists(), "no folder is left behind");
+        assert_eq!(rig.light.levels(), [0; 3], "the light is off");
+        assert!(!rig.hardware.busy().is_busy());
+    }
+
+    fn set_flat_aperture(rig: &Rig, f_number: Option<ExposureRatio>) {
+        let mut stored = flat(rig).unwrap();
+        stored.exposure.f_number = f_number;
+        lib(rig)
+            .write(|c| c.set_flat_field(rig.roll, &stored))
+            .unwrap();
+    }
+
+    fn frame_warnings(rig: &Rig) -> Vec<ImportWarningKind> {
+        rig.start().unwrap();
+        match rig.outcome() {
+            Outcome::Done(JobResult::Imported(result)) => {
+                result.warnings.into_iter().map(|w| w.kind).collect()
+            }
+            _ => panic!("the frame was not captured"),
+        }
+    }
+
+    #[test]
+    fn a_flat_field_capture_keeps_three_files_attaches_and_stores_the_exposure() {
+        let rig = rig("flat-capture");
+        let (info, used) = capture_from(&rig, CLIPPING);
+        assert_eq!(
+            info.exposure,
+            ExposureInfo {
+                exposure_time: Some(ExposureRatio { num: 1, den: 60 }),
+                iso: Some(200),
+                f_number: Some(F56),
+            }
+        );
+        assert_eq!(info.sources.len(), 3);
+        assert!(info.frame_width > 0 && info.frame_height > 0);
+
+        // The bare light was calibrated first, from the clipping levels: one colour at a time,
+        // from the given levels. Then the three pictures were shot at the calibrated levels, which
+        // are not the clipping ones, one colour at a time, the light off at the end.
+        let lit = rig.lit_levels();
+        assert!(lit.len() > 3, "{lit:?}");
+        assert_eq!(lit[0], [100, 0, 0]);
+        let shot_at = lit.len() - 3;
+        assert_eq!(
+            lit[shot_at..].to_vec(),
+            vec![[used[0], 0, 0], [0, used[1], 0], [0, 0, used[2]]]
+        );
+        assert_ne!(used[0], 100);
+        assert_ne!(used[1], 60);
+        assert_ne!(used[2], 8);
+        assert!(used.iter().all(|l| *l > 0));
+        assert!(
+            lit[..shot_at]
+                .iter()
+                .all(|l| l.iter().filter(|v| **v > 0).count() == 1),
+            "{lit:?}"
+        );
+        assert_eq!(rig.light.levels(), [0; 3]);
+        assert_eq!(
+            rig.light.commands().last(),
+            Some(&LightCommand::SetLevels([0; 3]))
+        );
+        for channel in TripletChannel::ALL {
+            assert!(rig.events.steps().contains(&(channel, StepState::Received)));
+        }
+        assert!(!rig.hardware.busy().is_busy());
+        assert_eq!(rig.frames(), 0, "a flat field is no frame");
+
+        // Attached with its exposure and the three kept files, read-only like originals.
+        let stored = flat(&rig).unwrap();
+        assert_eq!(stored.exposure, info.exposure);
+        assert_eq!(stored.sources, info.sources);
+        assert_eq!(stored.files.len(), 3);
+        let mut on_disk = kept(&rig);
+        let mut named = info.sources.clone();
+        named.sort();
+        on_disk.sort();
+        assert_eq!(on_disk, named);
+        for file in &stored.files {
+            assert!(file.starts_with(&format!("originals/{}/flat-field/", rig.roll)));
+            let path = lib(&rig).resolve(std::path::Path::new(file)).unwrap();
+            assert!(path.is_file());
+            assert!(std::fs::metadata(&path).unwrap().permissions().readonly());
+        }
+        let roll = lib(&rig).read(|c| c.get_roll(rig.roll)).unwrap();
+        assert!(roll.has_flat_field);
+        assert_eq!(roll.flat_field_f_number, Some(F56));
+    }
+
+    #[test]
+    fn pictures_without_exif_make_a_flat_field_of_unknown_exposure() {
+        let rig = Rig::levelled("flat-no-exif");
+        let info = capture(&rig);
+        assert!(info.exposure.is_empty());
+        assert!(flat(&rig).unwrap().exposure.is_empty());
+        assert_eq!(kept(&rig).len(), 3);
+        let roll = lib(&rig).read(|c| c.get_roll(rig.roll)).unwrap();
+        assert!(roll.has_flat_field);
+        assert_eq!(roll.flat_field_f_number, None);
+    }
+
+    #[test]
+    fn a_new_capture_replaces_the_flat_field_and_removes_the_files_of_the_old_one() {
+        let rig = rig("flat-replace");
+        capture(&rig);
+        let first = flat(&rig).unwrap().files;
+        capture(&rig);
+        let second = flat(&rig).unwrap().files;
+        assert_eq!(second.len(), 3);
+        assert!(first.iter().all(|f| !second.contains(f)));
+        assert_eq!(kept(&rig).len(), 3, "only the new files are kept");
+        for file in &first {
+            assert!(!lib(&rig)
+                .resolve(std::path::Path::new(file))
+                .unwrap()
+                .exists());
+        }
+    }
+
+    #[test]
+    fn clearing_the_flat_field_and_deleting_the_roll_remove_the_kept_files() {
+        let rig = rig("flat-remove");
+        capture(&rig);
+        assert!(flat_field_clear(&lib(&rig), rig.roll).unwrap());
+        assert!(flat(&rig).is_none());
+        assert!(kept(&rig).is_empty());
+        assert!(!folder(&rig).exists());
+        assert!(!flat_field_clear(&lib(&rig), rig.roll).unwrap());
+
+        capture(&rig);
+        assert_eq!(kept(&rig).len(), 3);
+        let report = roll_delete(&lib(&rig), rig.roll).unwrap();
+        assert!(report.files_left.is_empty(), "{:?}", report.files_left);
+        assert!(!folder(&rig).exists());
+        let originals = lib(&rig)
+            .resolve(std::path::Path::new("originals"))
+            .unwrap();
+        assert!(
+            !originals.join(rig.roll.to_string()).exists(),
+            "the roll's folder went with its flat field"
+        );
+    }
+
+    #[test]
+    fn a_colour_that_clips_even_at_level_1_fails_naming_it_and_attaches_nothing() {
+        // Red is clipped whatever the level: the calibration cannot get below clipping.
+        let rig = Rig::build("flat-clip", Arc::new(ClipRed), |light| {
+            Box::new(fake_camera().linked_to(light))
+        });
+        let err = refused(&rig);
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(err.message.starts_with("Red is at full scale"), "{err}");
+        assert!(err.message.contains("Shorten the exposure"), "{err}");
+        assert!(!err.message.contains("Green"), "{err}");
+        assert!(!err.message.contains("Blue"), "{err}");
+        // Only red was lit, and only by the calibration: the light never shot the three pictures.
+        let lit = rig.lit_levels();
+        assert!(!lit.is_empty());
+        assert!(lit.iter().all(|l| l[1] == 0 && l[2] == 0), "{lit:?}");
+        assert_nothing_attached_or_kept(&rig);
+    }
+
+    /// A decoder that follows the light and, once told to, clips red in the pictures of the flat
+    /// field itself (not in the test shots of the calibration).
+    struct ClipAtCapture(Arc<AtomicBool>, LevelledRawDecoder);
+
+    impl RawDecoder for ClipAtCapture {
+        fn decode(&self, path: &std::path::Path, limits: &Limits) -> Result<RawLinear, AppError> {
+            let mut raw = self.1.decode(path, limits)?;
+            let name = |p: Option<&std::path::Path>| {
+                p.and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .map(str::to_owned)
+                    .unwrap_or_default()
+            };
+            let red = name(Some(path)).starts_with('r');
+            let calibration = name(path.parent()).starts_with("gtp-capture-test-");
+            if self.0.load(AtomicOrdering::SeqCst) && red && !calibration {
+                let width = raw.width as usize;
+                for (i, value) in raw.data.iter_mut().enumerate() {
+                    if Cfa::RGGB.color_at(i % width, i / width) == 0 {
+                        *value = 10_000;
+                    }
+                }
+            }
+            Ok(raw)
+        }
+    }
+
+    fn clipping_rig(label: &str, clip: &Arc<AtomicBool>) -> Rig {
+        let clip = clip.clone();
+        Rig::build_with(
+            label,
+            |light| Arc::new(ClipAtCapture(clip, LevelledRawDecoder::new(light))),
+            |light| Box::new(fake_camera().linked_to(light)),
+        )
+    }
+
+    #[test]
+    fn a_picture_that_clips_after_the_calibration_is_still_refused_and_names_the_colour() {
+        let clip = Arc::new(AtomicBool::new(true));
+        let rig = clipping_rig("flat-clip-safety", &clip);
+        let err = refused(&rig);
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(err.message.contains("red"), "{err}");
+        assert!(!err.message.contains("green"), "{err}");
+        assert!(
+            err.message.contains("level") && err.message.contains("exposure"),
+            "{err}"
+        );
+        assert_nothing_attached_or_kept(&rig);
+    }
+
+    #[test]
+    fn a_capture_that_clips_leaves_an_existing_flat_field_and_its_files() {
+        let clip = Arc::new(AtomicBool::new(false));
+        let rig = clipping_rig("flat-clip-after", &clip);
+        capture(&rig);
+        let before = flat(&rig).unwrap();
+        clip.store(true, AtomicOrdering::SeqCst);
+        let err = refused(&rig);
+        assert!(err.message.contains("red"), "{err}");
+        assert_eq!(flat(&rig).unwrap(), before);
+        assert_eq!(kept(&rig).len(), 3, "the old files, and no new ones");
+        assert_eq!(rig.light.levels(), [0; 3]);
+    }
+
+    #[test]
+    fn the_calibration_changes_neither_the_working_nor_the_saved_levels() {
+        let rig = rig("flat-levels");
+        let settings_before = std::fs::read_to_string(rig.dir.join("settings.json")).unwrap();
+        let profile_before = rig.ctx().settings().capture_profile();
+        let roll_levels_before = levels_for_roll(rig.ctx(), rig.roll).unwrap();
+        let (_, used) = capture_from(&rig, CLIPPING);
+        assert_ne!(used, [100, 60, 8]);
+        assert_eq!(rig.ctx().settings().capture_profile(), profile_before);
+        assert_eq!(
+            std::fs::read_to_string(rig.dir.join("settings.json")).unwrap(),
+            settings_before
+        );
+        assert_eq!(
+            levels_for_roll(rig.ctx(), rig.roll).unwrap(),
+            roll_levels_before
+        );
+    }
+
+    #[test]
+    fn progress_says_calibrating_first_and_then_capturing_the_flat_field() {
+        let rig = rig("flat-progress");
+        capture_from(&rig, CLIPPING);
+        let stages = rig.stages.lock().unwrap().clone();
+        let words: Vec<&str> = stages.iter().map(|(w, _)| w.as_str()).collect();
+        assert_eq!(words[0], "Calibrating red: shot 1, level 100");
+        let first_capture = words
+            .iter()
+            .position(|w| *w == "Capturing the flat field")
+            .unwrap();
+        assert!(first_capture > 2, "{words:?}");
+        assert!(words[..first_capture]
+            .iter()
+            .all(|w| w.starts_with("Calibrating ")));
+        assert!(words[first_capture..]
+            .iter()
+            .all(|w| *w == "Capturing the flat field"));
+        for colour in ["red", "green", "blue"] {
+            assert!(
+                words
+                    .iter()
+                    .any(|w| w.starts_with(&format!("Calibrating {colour}: shot 1"))),
+                "{words:?}"
+            );
+        }
+        // One progress bar over both parts: it never goes back and ends at 1.
+        let fractions: Vec<f32> = stages.iter().map(|(_, f)| *f).collect();
+        assert!(fractions.windows(2).all(|w| w[0] <= w[1]), "{fractions:?}");
+        assert!(fractions[first_capture] >= 0.59, "{fractions:?}");
+        assert_eq!(fractions.last(), Some(&1.0));
+    }
+
+    #[test]
+    fn a_cancel_during_the_calibration_attaches_nothing_and_leaves_the_light_off() {
+        let mut gate = None;
+        let rig = Rig::build_with(
+            "flat-cancel",
+            |light| Arc::new(LevelledRawDecoder::new(light)),
+            |light| {
+                let (camera, held) = gated(light);
+                gate = Some(held);
+                camera
+            },
+        );
+        let gate = gate.unwrap();
+        let id = start(&rig).unwrap();
+        // The first calibration shot is in flight: cancel, then let it finish.
+        gate.entered.recv_timeout(WAIT).unwrap();
+        assert!(rig.jobs.cancel(id));
+        gate.release.send(()).unwrap();
+        let Outcome::Error(err) = rig.outcome() else {
+            panic!("a cancelled flat field must not finish");
+        };
+        assert_eq!(err.code, ErrorCode::Cancelled);
+        assert_eq!(rig.lit_levels().len(), 1, "no further colour was lit");
+        assert_nothing_attached_or_kept(&rig);
+    }
+
+    #[test]
+    fn three_different_apertures_refuse_the_flat_field() {
+        let rig = rig_then(
+            "flat-aperture",
+            vec![
+                Shot::File(exif_file("A.NEF", (56, 10))),
+                Shot::File(exif_file("B.NEF", (8, 1))),
+                Shot::File(exif_file("C.NEF", (56, 10))),
+            ],
+        );
+        let err = refused(&rig);
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(err.message.contains("aperture"), "{err}");
+        assert_nothing_attached_or_kept(&rig);
+    }
+
+    #[test]
+    fn a_failed_shot_leaves_the_light_off_and_nothing_attached_or_kept() {
+        let rig = rig_then(
+            "flat-fail",
+            vec![
+                Shot::File(exif_file("A.NEF", (56, 10))),
+                Shot::Fail(no_picture()),
+            ],
+        );
+        assert_eq!(refused(&rig), no_picture());
+        assert_eq!(
+            rig.lit_levels().len(),
+            calibration_shots(START) + 2,
+            "the second colour of the three pictures was lit when it failed"
+        );
+        assert_nothing_attached_or_kept(&rig);
+    }
+
+    #[test]
+    fn a_flat_field_is_refused_like_a_frame_before_anything_is_lit() {
+        let rig = rig("flat-refuse");
+        let held = rig.hardware.busy().acquire().unwrap();
+        assert_busy(start(&rig));
+        drop(held);
+        let err = start_flat_field(
+            rig.ctx(),
+            &rig.jobs,
+            &rig.hardware,
+            Arc::new(NoLibraryEvents),
+            rig.events.clone(),
+            RollId::new(),
+            [44, 22, 2],
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        let err = start_flat_field(
+            rig.ctx(),
+            &rig.jobs,
+            &rig.hardware,
+            Arc::new(NoLibraryEvents),
+            rig.events.clone(),
+            rig.roll,
+            [1, 2, 300],
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(rig.lit_levels().is_empty());
+        assert!(!rig.hardware.busy().is_busy());
+    }
+
+    /// Only where there is no backend (with `tether` on macOS this would drive the real camera).
+    #[cfg(not(all(target_os = "macos", feature = "tether")))]
+    #[test]
+    fn without_a_camera_backend_a_flat_field_is_refused() {
+        let hardware = Hardware::from_vars(None, None);
+        let rig = rig("flat-no-camera");
+        assert_no_camera(start_flat_field(
+            rig.ctx(),
+            &rig.jobs,
+            &hardware,
+            Arc::new(NoLibraryEvents),
+            rig.events.clone(),
+            rig.roll,
+            [44, 22, 2],
+        ));
+        assert!(!hardware.busy().is_busy());
+    }
+
+    #[test]
+    fn a_frame_captured_at_another_aperture_than_the_flat_field_warns_only_when_both_are_known() {
+        let rig = rig("flat-warn");
+        capture(&rig);
+        // The same aperture, also as another fraction: no warning.
+        assert!(frame_warnings(&rig).is_empty());
+        set_flat_aperture(&rig, Some(ExposureRatio { num: 112, den: 20 }));
+        assert!(frame_warnings(&rig).is_empty());
+        // The flat field was shot at f/8, the frame at f/5.6.
+        set_flat_aperture(&rig, Some(F8));
+        assert_eq!(
+            frame_warnings(&rig),
+            [ImportWarningKind::FlatFieldApertureDiffers {
+                flat: F8,
+                frame: F56
+            }]
+        );
+        // A flat field of unknown aperture warns of nothing.
+        set_flat_aperture(&rig, None);
+        assert!(frame_warnings(&rig).is_empty());
+
+        // Nor does a frame of unknown aperture.
+        let rig = Rig::levelled("flat-warn-unknown");
+        capture(&rig);
+        set_flat_aperture(&rig, Some(F8));
+        assert!(frame_warnings(&rig).is_empty());
     }
 }

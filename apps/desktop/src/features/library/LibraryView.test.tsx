@@ -358,6 +358,30 @@ describe('LibraryView', () => {
       expect(ipc.flatFieldClear).toHaveBeenCalledWith('winter');
     });
 
+    it('shows the aperture the flat field was shot at when it is known, and plain "set" when not', async () => {
+      const user = userEvent.setup();
+      const { winter } = openLibrary();
+      state.rolls = state.rolls.map((r) =>
+        r.id === winter.id
+          ? { ...r, has_flat_field: true, flat_field_f_number: { num: 8, den: 1 } }
+          : r,
+      );
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      expect(await screen.findByText(/^Flat field set, shot at f\/8:/)).toBeInTheDocument();
+
+      state.rolls = state.rolls.map((r) =>
+        r.id === winter.id ? { ...r, flat_field_f_number: null } : r,
+      );
+      await user.click(screen.getByRole('button', { name: /Summer/ }));
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      await act(async () => {
+        await useLibraryStore.getState().reloadRolls();
+      });
+      expect(await screen.findByText(/^Flat field set: /)).toBeInTheDocument();
+    });
+
     it('does nothing when the picker is cancelled, and says why when it fails', async () => {
       const user = userEvent.setup();
       openLibrary();

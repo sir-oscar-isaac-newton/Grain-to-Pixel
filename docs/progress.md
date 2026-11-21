@@ -649,7 +649,7 @@
       "id": "R-02",
       "number": 9,
       "title": "Spike - Scanlight V4 serial control",
-      "branch": "feat/issue-9-spike-scanlight-serial",
+      "branch": "docs/issue-9-scanlight-retests",
       "status": "in_progress",
       "pr": null,
       "commit": null

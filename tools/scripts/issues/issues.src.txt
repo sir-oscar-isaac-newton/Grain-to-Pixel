@@ -3114,3 +3114,80 @@ ROUTES: none.
 MIGRATIONS: none; thumbnails made before the change keep their pixels until they are regenerated, and the ADR says whether a regeneration is needed.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-13 after the profile of P-31. Real scans from Q-11 show whether the wait at 1:1 matters in practice, so this may be ordered after Q-11 and after P-33, which helps most edits without changing any pixel. Out of scope: SIMD by hand, a GPU path, sharing one Oklab conversion between noise reduction and the mixer (the Colour stage runs between them).
+
+## H-24
+title: Capture a roll's flat field from the capture view
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: P-21, H-16, H-15
+needs: hw, mac
+adr: no
+spec: specification sections 4.2 (load) and 7
+desc: A roll's flat field (P-21, ADR 0010) can only be made from three NEF files shot beforehand and picked in the library. The capture view, which already lights the Scanlight one colour at a time and drives the D600, cannot shoot them, so the owner has to make the bare-light triplet by hand and keep the camera settings the same as the frames' without help. ADR 0010 also notes that a flat field made at another aperture or distance corrects wrongly and that the app does not check this. Let the capture view shoot the bare-light triplet, attach it to the roll, and remember the settings it was shot with.
+ac:
+- The capture view offers "Capture flat field" for the current roll; it says to take the film out and leave the carrier, camera, focus and light as they are, and shoots red, green and blue with the working levels and the camera's current settings, as a frame is shot
+- The three pictures are merged and built into the roll's flat field with the code of P-21, and attached the same way (thumbnails made again, an automatic base measured again, a hand-picked base kept); attaching replaces a flat field the roll had, after a confirmation
+- When more than a stated share of any channel is at full scale, nothing is attached and the message says which colour clipped and to lower its level or the exposure
+- The three NEF files are kept in the library beside the roll's originals, so the flat field can be built again later; removing the flat field or the roll removes them
+- The flat field stores the aperture, shutter time and ISO of its pictures (from their EXIF), also when it is imported from files as today; one made before has none and is treated as unknown
+- A frame captured or imported into the roll at another aperture than its flat field's gets the warning that the flat field was shot at f/… and the frame at f/…; an unknown aperture gives no warning
+- The library's roll status shows the flat field's aperture when it is known
+- Nothing touches the real camera or light in the tests; the light is off after the capture on every way out, as for a frame
+- Tests: the capture with the fake camera and light, the clipped refusal, the files kept and removed, the stored settings with and without EXIF, the warning for a differing and an unknown aperture, the migration keeping existing flat fields, component tests with mocked ipc; axe clean
+- A checklist for the human on the Mac with the D600: the flat field is captured with the carrier empty, the roll shows it with its aperture, a frame shot at another aperture warns, and a corrected frame has no visible falloff
+tech:
+FILES: crates/gtp-app/src/services/capture_control.rs (the bare-light capture), crates/gtp-app/src/services/flat_field.rs (building, attaching, the stored settings), crates/gtp-core (the flat field type), crates/gtp-catalog (a migration for the settings and the kept files), apps/desktop/src-tauri/src/commands, apps/desktop/src/features/import (the capture step) and library (the roll status), en.json, packages/ipc-types.
+ROUTES: one command to capture the flat field into a roll; flat field info gains its exposure. To be approved by the owner with the plan.
+MIGRATIONS: one, adding the exposure and the kept files to the flat_field table; existing rows get none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-20. With the carrier in the picture the flat field brightens a band near the carrier's edges; P-35 fixes that, and until then taking the carrier out for the flat field avoids it. Out of scope: a library of flat fields per set-up, choosing the camera settings for the owner, checking the focus distance.
+
+## P-35
+title: Flat field that ignores the film carrier
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: P-21, H-24
+adr: yes
+spec: specification section 4.2 (load) and rules/colour-pipeline.md
+desc: The flat field of P-21 averages the bare-light picture in a grid of about 63 pixels a cell on the D600. When the empty film carrier is in the picture, cells it covers fall to the floor of 0.05 and cells on the edge of its opening are part carrier and part light, so their light is too low: frames come out too bright in a band of one to two cells inside the opening. With a carrier whose opening is close to the picture, that band is in the picture. Build the flat field so that the carrier does not reach it.
+ac:
+- An ADR decides how cells covered by the carrier are found (for example a cell much darker than the light of the opening, or with a sharp edge inside it) and how their light is filled from the open cells next to them, supersedes the parts of ADR 0010 it changes, and states what happens at the edges of the frame where there are no open neighbours
+- A bare-light picture without a carrier gives the same flat field as today within a stated tolerance, so rolls without a carrier do not change, shown by a test
+- On a synthetic bare light with a carrier mask, a frame with the same mask divided by the flat field is even within a stated share up to the edge of the opening, where today it is not, shown by a test
+- Frames are still divided as today; only the building changes, and the floor of ADR 0010 stays for light that is truly low
+- An existing flat field can be built again from its kept files (H-24) with one action in the library; one imported from files that are gone says so and stays as it is
+- An ignored run on a real bare-light capture with the carrier reports the band before and after
+- Tests: as above
+tech:
+FILES: crates/gtp-app/src/services/flat_field.rs (building), crates/gtp-app/src/services (rebuilding a roll's flat field), apps/desktop/src/features/library (the rebuild action), en.json, docs/specification.md, decisions.
+ROUTES: one command to build a roll's flat field again. To be approved by the owner with the plan.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-20, from how the grid of P-21 treats the carrier's edges. A real capture with the carrier is needed for the ignored run; until it exists, shooting the flat field without the carrier avoids the band. Out of scope: finding the frame area from the carrier, a finer grid, correcting dust in the flat field.
+
+## T-14
+title: Dependency checks pass again after new advisories for chrono and lcms2
+milestone: M6
+type: chore
+size: S
+estimate: 0.5d
+deps:
+adr: no
+spec: none
+desc: cargo deny check began to fail on develop on 2026-11-21 without a change of ours: RUSTSEC-2026-0543 calls chrono unmaintained (all versions, no safe upgrade), and the versions of lcms2 (6.2.0) and lcms2-sys (4.0.7) in the lock file were yanked. chrono comes only through rawler, the NEF decoder of ADR 0007. Every pull request is blocked until the check passes.
+ac:
+- lcms2 and lcms2-sys are updated in Cargo.lock to versions that are not yanked, without a change of Cargo.toml
+- RUSTSEC-2026-0543 is ignored in deny.toml with a comment that says why (unmaintained, no vulnerability, used only through rawler), that the owner approved it on 2026-11-21, and when to remove it (when rawler drops or replaces chrono; checked on every rawler update)
+- cargo deny check passes, and the workspace tests and clippy pass with the updated lcms2
+- The colour management tests and the golden tests give the same results as before
+- Tests: the existing suite
+tech:
+FILES: Cargo.lock, deny.toml.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-21 when PR 370 and develop failed the advisories check. Out of scope: replacing rawler or chrono.

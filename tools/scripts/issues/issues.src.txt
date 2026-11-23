@@ -3372,3 +3372,104 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-23 when PR 380 failed the advisories check again after T-15. Out of scope: other dependency updates.
+
+## H-26
+title: Reuse another roll's flat field
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: H-24
+adr: no
+spec: specification sections 4.2 (load) and 6 (Rolls)
+desc: A flat field stays right while the light, lens, aperture and focus stay the same, which is often true from one roll to the next. Let a roll take the flat field of another roll instead of capturing it again.
+ac:
+- A roll can take the flat field of another roll in the library: its kept files are copied into the roll's flat-field folder and it is built and attached as an imported one would be, with its exposure; a roll whose flat field kept no files can still be copied from its stored flat field
+- The choice lists rolls with a flat field, newest first, with its aperture and date; the guide's Flat field step (U-36) offers the last roll's when its aperture matches the camera's
+- A flat field taken from a roll at another aperture than the camera's warns, as for a frame
+- Replacing and clearing work as for a captured flat field; deleting the source roll does not touch the copy
+- Tests: copy with and without kept files, the aperture warning, deleting the source; component tests with mocked ipc; axe clean
+tech:
+FILES: crates/gtp-app/src/services/flat_field.rs, crates/gtp-catalog (reading another roll's flat field), apps/desktop/src-tauri/src/commands/roll.rs, apps/desktop/src/features (the choice), en.json, packages/ipc-types, docs/specification.md.
+ROUTES: one command to copy a roll's flat field to another. To be approved by the owner with the plan.
+MIGRATIONS: none expected.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23 with the guided import. Out of scope: a library of flat fields per set-up.
+
+## U-35
+title: Guided import: the step guide and the Roll page
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: L-12
+adr: no
+spec: specification section 7 (Import)
+desc: Import is one long page with Scanner, Files and Capture sections, and a roll is created in the Library. Make importing a guided process that starts with the roll: a Roll page, then one page per step, chosen by the roll's source and film type. This issue builds the guide and the Roll page; U-36 and U-37 fill in the steps.
+ac:
+- Import opens on the Roll page: create a roll (name, film type, film stock, format, camera, ISO box and shot, dates, notes, tags) or choose an existing roll to resume, and choose its source: camera capture, scanner or files
+- A step bar shows the steps of that source and film type, the current one, and each done step with a one-line summary; Back and Next move between pages, Next is enabled when the step is done, and a step that may be skipped says why when it is
+- The guide remembers each roll's source and last step in settings.json, keyed by roll id (decided by the owner on 2026-11-23: no migration, and a capture set-up belongs to the computer that has the rig), so leaving Import and coming back, or choosing the roll again, resumes it; deleting a roll removes its entry
+- Whether a step is done is not stored but read from the roll and the set-up as they are (for example a flat field at the camera's present aperture, levels set, frames captured), so a tick never goes stale
+- The film type chooses the steps through one table in the code, so later issues (U-36, U-37, H-25) add or change steps in one place
+- Until U-36 and U-37 are done, each source's steps show the existing sections on one page, so nothing is lost on the way
+- The Library's new roll dialog stays; both create rolls the same way
+- Keyboard: the step bar is a navigation list, Next and Back have keys, focus moves to the page heading on each step
+- Tests: component tests with mocked ipc for the Roll page (create, resume, validation), the step bar and resume; axe clean
+tech:
+FILES: apps/desktop/src/features/import (the guide, its step bar, the Roll page), apps/desktop/src/features/library (RollEditor shared fields), the settings type for the guide's entries, en.json, docs/specification.md. The step bar stays in the desktop app, not packages/ui (decided by the owner on 2026-11-23); it moves only if a second view needs it.
+ROUTES: none expected (roll_create, roll_update, roll_list, settings_get, settings_set).
+MIGRATIONS: none expected.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23. The guide replaces the Import page; no page of all tools is kept. Out of scope: the camera, scanner and files steps themselves.
+
+## U-36
+title: Guided import: the camera capture steps
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: U-35
+adr: no
+spec: specification sections 6.1 and 7 (Import)
+desc: Split the capture tools of the Import page into the guide's camera steps, in the order the set-up needs: settings fixed first, focus before the flat field (ADR 0010: a flat field at another distance corrects wrongly), the flat field with the film out, the levels on the rebate with the film back in, then the capture.
+ac:
+- Set up: the light and camera connect and show their state; the camera's aperture, shutter speed and ISO are set; a checklist says M mode, manual focus, the lens ring at its smallest aperture where the camera needs it, and the release cable; Next needs the light and camera connected
+- Focus and framing: live view, the zoomed view, the focus check and the flatness map, with a film frame in the carrier
+- Flat field: says to take the film out and touch nothing else, and captures it (H-24); it is done with a tick when the roll has a flat field at the camera's present aperture, and may be skipped with a warning that frames are not corrected
+- Light levels: choose the levels saved for the roll's stock, the global levels, or calibrate on the rebate (H-17); a test shot shows the result; the levels can be saved for the stock
+- Capture: Next frame, a counter of frames captured (and of the roll's length when known), a strip of the captured frames, the warnings of a frame (aperture, clipping), and Finish roll, which opens the roll in the Library
+- A changed camera setting after the flat field or the levels marks those steps as needing a look again
+- The steps follow the film type through the table of U-35: colour and chromogenic film capture red, green and blue; black-and-white silver film uses the one-shot capture once H-25 exists
+- Nothing touches the real camera or light in the tests; the light is off when a step is left, as today
+- Tests: component tests with mocked ipc for each step, the skip and redo rules, and a whole roll through the fakes; axe clean
+- A checklist for the human on the Mac: one roll from the Roll page to Finish
+tech:
+FILES: apps/desktop/src/features/import/capture (the steps, built from the existing components), en.json, docs/specification.md.
+ROUTES: none expected.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23. Out of scope: new capture features; the steps use what H-14 to H-24 built.
+
+## U-37
+title: Guided import: the scanner and files steps
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: U-35
+adr: no
+spec: specification section 7 (Import)
+desc: Move the Scanner and Files sections of the Import page into the guide's steps for those sources.
+ac:
+- Scanner: find the scanner (or say why there is none), the roll preview and frame choice where H-12 and H-13 provide them, the scan settings with IR off by default for black-and-white silver film and on otherwise, then the scan with its progress and Done
+- Files: choose the files, check the groups (triplets, or single files for kinds that have them), import with progress and Done
+- Done opens the roll in the Library
+- Tests: component tests with mocked ipc for both paths; axe clean
+tech:
+FILES: apps/desktop/src/features/import (ScannerSection, FilesSection split into steps), en.json, docs/specification.md.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23. Out of scope: new scanner features.
+

@@ -1118,6 +1118,15 @@
       "number": 381,
       "title": "Dependency checks pass again after a vulnerability in url",
       "branch": "chore/issue-381-url-advisory",
+      "status": "completed",
+      "pr": 382,
+      "commit": "6a37a70"
+    },
+    {
+      "id": "T-16",
+      "number": 384,
+      "title": "Dependency checks pass again after an advisory for cookie",
+      "branch": "chore/issue-384-cookie-advisory",
       "status": "in_progress",
       "pr": null,
       "commit": null

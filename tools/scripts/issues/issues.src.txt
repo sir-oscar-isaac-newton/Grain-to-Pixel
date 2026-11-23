@@ -3350,3 +3350,25 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-23 when PR 380 and develop failed the advisories check. Out of scope: other dependency updates.
+
+## T-16
+title: Dependency checks pass again after an advisory for cookie
+milestone: M6
+type: chore
+size: S
+estimate: 0.5d
+deps:
+adr: no
+spec: none
+desc: cargo deny check began to fail on 2026-11-23 without a change of ours: RUSTSEC-2026-0594 reports that private cookie nonces can repeat in processes that fork, in cookie 0.18.2. cookie comes through Tauri; the app does not fork and Windows is not affected, but every pull request is blocked until the check passes. cookie 0.18.3 fixes it.
+ac:
+- cookie is updated in Cargo.lock to 0.18.3 or later, without a change of Cargo.toml
+- The third-party notices are regenerated for the new version
+- cargo deny check passes, and the workspace tests and clippy pass
+- Tests: the existing suite
+tech:
+FILES: Cargo.lock, docs/third-party-licenses.txt.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23 when PR 380 failed the advisories check again after T-15. Out of scope: other dependency updates.

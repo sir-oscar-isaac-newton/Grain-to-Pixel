@@ -3191,3 +3191,285 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-21 when PR 370 and develop failed the advisories check. Out of scope: replacing rawler or chrono.
+
+## R-07
+title: Spike - capturing and scanning black-and-white negatives
+milestone: M6
+type: spike
+size: S
+estimate: 0.5d
+deps: H-24
+needs: hw
+adr: yes
+labels: spike
+spec: specification sections 4.2 and 6.1; docs/research/scanlight-capture.md
+desc: The camera path shoots three pictures per frame, red, green and blue, which suits colour film. On a black-and-white negative the three carry the same picture, so one shot may do as well or better. Find out how a black-and-white frame is best captured with the Scanlight and the D600, and how the LS-50 behaves on silver and chromogenic film.
+ac:
+- On one silver roll (for example HP5 or Tri-X) and one chromogenic roll (XP2 or BW400CN), the same frames are captured as an RGB triplet, as one shot under the light's white LED, and as one shot under the green LED alone, at the same aperture and focus (human runs the captures)
+- Each way is compared on sharpness (the focus check of H-19 at the middle and a corner), noise in an even mid-grey area, the tonal range from the base to the densest highlight, and the number of shots per frame; the numbers are recorded
+- The white LED's colour and its flat field (H-24) are checked: one white bare-light shot is not clipped and is even enough to use
+- On the LS-50, the IR channel on the silver roll is recorded (expected: the whole picture reads as dust) and on the chromogenic roll (expected: dust removal works); nkscan's `--film mono` is tried and its effect recorded
+- An ADR recommends how black-and-white film is captured and scanned, and what H-25 builds
+tech:
+SCOPE: captures, measurements and a throwaway probe; no change to production code.
+NOTES: asked for by the owner on 2026-11-22. Scans stay outside the repository.
+
+## L-12
+title: Film type on the roll
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps:
+adr: no
+spec: specification sections 3 (Roll), 5.2 and 6 (Rolls, Search)
+desc: The app treats every roll as colour negative. Add the roll's film type, so that the conversion, capture, scan and export can follow it: colour negative, black-and-white silver, or black-and-white chromogenic (dye, developed C-41).
+ac:
+- Roll gains `film_type` (`color_negative`, `bw_silver`, `bw_chromogenic`), default `color_negative`; a migration gives existing rolls the default
+- The roll dialog sets it, the roll sidebar shows it, and search can filter by it
+- Changing it on a roll with frames regenerates their thumbnails, as a change of film base does
+- Nothing else changes yet: the conversion still treats the roll as colour until P-36
+- Tests: the migration, create and update, search by type; component tests with mocked ipc; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-core (Roll), crates/gtp-catalog (migration, repo, search), apps/desktop/src-tauri/src/commands/roll.rs, apps/desktop/src/features/library, en.json, packages/ipc-types, docs/specification.md.
+ROUTES: Roll and RollPatch gain `film_type`; the search query gains `film_type?`. To be approved by the owner with the plan.
+MIGRATIONS: one, adding `film_type` to roll.
+NOTES: asked for by the owner on 2026-11-22. Out of scope: slide (positive) film.
+
+## P-36
+title: Black-and-white conversion
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: L-12
+adr: yes
+spec: specification section 4.2; rules/colour-pipeline.md
+desc: A black-and-white negative goes through the colour pipeline today: three channels inverted with their own black and white points, then made mono in the colour stage. The three channels carry one picture, so they can be combined into one density before inversion, with one pair of points, giving less noise and a neutral grey by construction. Convert frames of black-and-white rolls this way.
+ac:
+- An ADR decides how the three densities are combined (for example weights by each channel's noise, or the channel R-07 recommends), where in the order the picture becomes one plane, and which stages still run (noise reduction on luminance only, tone, curves, split toning, geometry, vignette) and which are skipped (colour axes, saturation, vibrance, the colour mixer, colour noise)
+- A frame of a black-and-white roll is inverted from the combined density with one black and one white point, auto-filled from its percentiles; the white and black pickers and the levels sliders work on it
+- Its automatic recipe is mono; a colour roll's frames are unchanged bit for bit (golden tests)
+- On a synthetic black-and-white negative with per-channel noise, the combined plane has less noise than any one channel, shown by a test
+- An old recipe on a frame whose roll becomes black and white still loads; per-channel points it held are ignored with the reason recorded in the ADR
+- Tests: as above, preview against full size
+tech:
+FILES: crates/gtp-negative (combined inversion), crates/gtp-app/src/pipeline (order, analyze), crates/gtp-core (recipe, if it changes), rules/colour-pipeline.md, docs/specification.md, decisions.
+ROUTES: none expected; any recipe change is approved by the owner with the plan.
+MIGRATIONS: none.
+NOTES: asked for by the owner on 2026-11-22. The `mono` mix of the colour stage stays for making colour film black and white.
+
+## H-25
+title: One-shot capture and IR defaults for black-and-white film
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: R-07, L-12, P-36
+adr: no
+spec: specification sections 6 and 6.1; ADR 0004
+desc: Capture a frame of a black-and-white roll the way R-07 recommends, expected to be one shot under one light instead of three, and set the scanner's IR for the film type.
+ac:
+- On a black-and-white roll, Next frame takes the shot R-07 chose, stores it as one frame of a new kind with one source file, and converts it through P-36; colour rolls keep the triplet
+- The capture levels, the test shot, the automatic calibration and the saved levels per stock work for that light
+- The flat field of H-24 is captured with the same light on a black-and-white roll, and a frame is not corrected with a flat field of another light (a warning, as for the aperture)
+- Importing files offers the single-shot kind for black-and-white rolls
+- The scan dialog starts with IR off for a silver roll and says why when it is turned on; chromogenic and colour rolls keep IR on
+- Nothing touches the real camera, light or scanner in the tests; the light is off on every way out
+- Tests: the capture and import with the fakes, the flat field light check, the IR default; component tests with mocked ipc; axe clean
+- A checklist for the human on the Mac: one black-and-white roll captured end to end, its flat field, and a scan of a silver roll without IR
+tech:
+FILES: crates/gtp-capture, crates/gtp-app/src/services (capture, import, flat field), crates/gtp-core (frame kind), crates/gtp-catalog, apps/desktop/src-tauri/src/commands, apps/desktop/src/features/import, en.json, packages/ipc-types, docs/specification.md, docs/research/scanlight-capture.md.
+ROUTES: the capture and import commands gain the single-shot kind. To be approved by the owner with the plan.
+MIGRATIONS: one if the frame kind or the flat field's light needs it.
+NOTES: asked for by the owner on 2026-11-22. Guard no-backend tests with cfg(not(macos+tether)).
+
+## U-34
+title: Black-and-white editing in Develop
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: P-36
+adr: no
+spec: specification section 7 (Develop)
+desc: For a frame of a black-and-white roll, Develop still shows the colour tools. Show the tools that matter for black and white instead, and add the usual darkroom starting points.
+ac:
+- For a black-and-white frame, the Colour panel is replaced by a Black and white panel; the colour axes, saturation, vibrance, the colour mixer and colour noise are not shown
+- Paper grades 0 to 5 set the contrast in the Tone stage as named starting points that stay editable (no new pipeline stage)
+- Toning presets (sepia, selenium, platinum, cyanotype) set split toning, stay editable, and a "None" resets it
+- Apply settings and Develop presets copy these as they copy Tone and split toning today
+- The histogram shows one luminance curve for a black-and-white frame
+- Tests: component tests with mocked ipc for the panel, the grades and the toning presets; axe clean
+tech:
+FILES: apps/desktop/src/features/develop, en.json, docs/specification.md; packages/ui only if the owner approves it.
+ROUTES: none.
+MIGRATIONS: none.
+NOTES: asked for by the owner on 2026-11-22. Out of scope: grain simulation, dodging and burning (masking is a non-goal).
+
+## P-37
+title: Greyscale export
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: P-36
+adr: no
+spec: specification sections 4.2 (output) and 7 (Export)
+desc: Exports are RGB today, so a black-and-white frame is written as three equal channels. Export untoned black-and-white frames as greyscale files.
+ac:
+- An untoned black-and-white frame exports as one-channel 16-bit TIFF or greyscale JPEG, with an embedded grey ICC profile of the sRGB tone curve (or Gray Gamma 2.2, decided in the plan)
+- A toned frame (split toning on) exports as RGB, and the export dialog says why
+- The export dialog can still choose RGB for a black-and-white frame
+- The greyscale file matches the luma of the RGB export within a stated tolerance, shown by a test
+- Tests: TIFF and JPEG written and read back, the profile embedded, toned and colour frames unchanged
+tech:
+FILES: crates/gtp-io (writers), crates/gtp-color (the grey profile), crates/gtp-app/src/services/export, apps/desktop/src/features/export, en.json, docs/specification.md.
+ROUTES: the export options gain the greyscale choice. To be approved by the owner with the plan.
+MIGRATIONS: none.
+NOTES: asked for by the owner on 2026-11-22.
+
+## T-15
+title: Dependency checks pass again after a vulnerability in url
+milestone: M6
+type: chore
+size: S
+estimate: 0.5d
+deps:
+adr: no
+spec: none
+desc: cargo deny check began to fail on 2026-11-23 without a change of ours: RUSTSEC-2026-0592 reports a stack overflow in `Url::origin()` on nested `blob:` URLs in url 2.5.8 and earlier. url comes through reqwest, used by Tauri. url 2.5.9 fixes it. Every pull request is blocked until the check passes.
+ac:
+- url is updated in Cargo.lock to 2.5.9 or later, without a change of Cargo.toml
+- The third-party notices are regenerated for the new versions
+- cargo deny check passes, and the workspace tests and clippy pass
+- Tests: the existing suite
+tech:
+FILES: Cargo.lock, docs/third-party-licenses.txt.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23 when PR 380 and develop failed the advisories check. Out of scope: other dependency updates.
+
+## T-16
+title: Dependency checks pass again after an advisory for cookie
+milestone: M6
+type: chore
+size: S
+estimate: 0.5d
+deps:
+adr: no
+spec: none
+desc: cargo deny check began to fail on 2026-11-23 without a change of ours: RUSTSEC-2026-0594 reports that private cookie nonces can repeat in processes that fork, in cookie 0.18.2. cookie comes through Tauri; the app does not fork and Windows is not affected, but every pull request is blocked until the check passes. cookie 0.18.3 fixes it.
+ac:
+- cookie is updated in Cargo.lock to 0.18.3 or later, without a change of Cargo.toml
+- The third-party notices are regenerated for the new version
+- cargo deny check passes, and the workspace tests and clippy pass
+- Tests: the existing suite
+tech:
+FILES: Cargo.lock, docs/third-party-licenses.txt.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23 when PR 380 failed the advisories check again after T-15. Out of scope: other dependency updates.
+
+## H-26
+title: Reuse another roll's flat field
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: H-24
+adr: no
+spec: specification sections 4.2 (load) and 6 (Rolls)
+desc: A flat field stays right while the light, lens, aperture and focus stay the same, which is often true from one roll to the next. Let a roll take the flat field of another roll instead of capturing it again.
+ac:
+- A roll can take the flat field of another roll in the library: its kept files are copied into the roll's flat-field folder and it is built and attached as an imported one would be, with its exposure; a roll whose flat field kept no files can still be copied from its stored flat field
+- The choice lists rolls with a flat field, newest first, with its aperture and date; the guide's Flat field step (U-36) offers the last roll's when its aperture matches the camera's
+- A flat field taken from a roll at another aperture than the camera's warns, as for a frame
+- Replacing and clearing work as for a captured flat field; deleting the source roll does not touch the copy
+- Tests: copy with and without kept files, the aperture warning, deleting the source; component tests with mocked ipc; axe clean
+tech:
+FILES: crates/gtp-app/src/services/flat_field.rs, crates/gtp-catalog (reading another roll's flat field), apps/desktop/src-tauri/src/commands/roll.rs, apps/desktop/src/features (the choice), en.json, packages/ipc-types, docs/specification.md.
+ROUTES: one command to copy a roll's flat field to another. To be approved by the owner with the plan.
+MIGRATIONS: none expected.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23 with the guided import. Out of scope: a library of flat fields per set-up.
+
+## U-35
+title: Guided import: the step guide and the Roll page
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: L-12
+adr: no
+spec: specification section 7 (Import)
+desc: Import is one long page with Scanner, Files and Capture sections, and a roll is created in the Library. Make importing a guided process that starts with the roll: a Roll page, then one page per step, chosen by the roll's source and film type. This issue builds the guide and the Roll page; U-36 and U-37 fill in the steps.
+ac:
+- Import opens on the Roll page: create a roll (name, film type, film stock, format, camera, ISO box and shot, dates, notes, tags) or choose an existing roll to resume, and choose its source: camera capture, scanner or files
+- A step bar shows the steps of that source and film type, the current one, and each done step with a one-line summary; Back and Next move between pages, Next is enabled when the step is done, and a step that may be skipped says why when it is
+- The guide remembers each roll's source and last step in settings.json, keyed by roll id (decided by the owner on 2026-11-23: no migration, and a capture set-up belongs to the computer that has the rig), so leaving Import and coming back, or choosing the roll again, resumes it; deleting a roll removes its entry
+- Whether a step is done is not stored but read from the roll and the set-up as they are (for example a flat field at the camera's present aperture, levels set, frames captured), so a tick never goes stale
+- The film type chooses the steps through one table in the code, so later issues (U-36, U-37, H-25) add or change steps in one place
+- Until U-36 and U-37 are done, each source's steps show the existing sections on one page, so nothing is lost on the way
+- The Library's new roll dialog stays; both create rolls the same way
+- Keyboard: the step bar is a navigation list, Next and Back have keys, focus moves to the page heading on each step
+- Tests: component tests with mocked ipc for the Roll page (create, resume, validation), the step bar and resume; axe clean
+tech:
+FILES: apps/desktop/src/features/import (the guide, its step bar, the Roll page), apps/desktop/src/features/library (RollEditor shared fields), the settings type for the guide's entries, en.json, docs/specification.md. The step bar stays in the desktop app, not packages/ui (decided by the owner on 2026-11-23); it moves only if a second view needs it.
+ROUTES: none expected (roll_create, roll_update, roll_list, settings_get, settings_set).
+MIGRATIONS: none expected.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23. The guide replaces the Import page; no page of all tools is kept. Out of scope: the camera, scanner and files steps themselves.
+
+## U-36
+title: Guided import: the camera capture steps
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: U-35
+adr: no
+spec: specification sections 6.1 and 7 (Import)
+desc: Split the capture tools of the Import page into the guide's camera steps, in the order the set-up needs: settings fixed first, focus before the flat field (ADR 0010: a flat field at another distance corrects wrongly), the flat field with the film out, the levels on the rebate with the film back in, then the capture.
+ac:
+- Set up: the light and camera connect and show their state; the camera's aperture, shutter speed and ISO are set; a checklist says M mode, manual focus, the lens ring at its smallest aperture where the camera needs it, and the release cable; Next needs the light and camera connected
+- Focus and framing: live view, the zoomed view, the focus check and the flatness map, with a film frame in the carrier
+- Flat field: says to take the film out and touch nothing else, and captures it (H-24); it is done with a tick when the roll has a flat field at the camera's present aperture, and may be skipped with a warning that frames are not corrected
+- Light levels: choose the levels saved for the roll's stock, the global levels, or calibrate on the rebate (H-17); a test shot shows the result; the levels can be saved for the stock
+- Capture: Next frame, a counter of frames captured (and of the roll's length when known), a strip of the captured frames, the warnings of a frame (aperture, clipping), and Finish roll, which opens the roll in the Library
+- A changed camera setting after the flat field or the levels marks those steps as needing a look again
+- The steps follow the film type through the table of U-35: colour and chromogenic film capture red, green and blue; black-and-white silver film uses the one-shot capture once H-25 exists
+- Nothing touches the real camera or light in the tests; the light is off when a step is left, as today
+- Tests: component tests with mocked ipc for each step, the skip and redo rules, and a whole roll through the fakes; axe clean
+- A checklist for the human on the Mac: one roll from the Roll page to Finish
+tech:
+FILES: apps/desktop/src/features/import/capture (the steps, built from the existing components), en.json, docs/specification.md.
+ROUTES: none expected.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23. Out of scope: new capture features; the steps use what H-14 to H-24 built.
+
+## U-37
+title: Guided import: the scanner and files steps
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: U-35
+adr: no
+spec: specification section 7 (Import)
+desc: Move the Scanner and Files sections of the Import page into the guide's steps for those sources.
+ac:
+- Scanner: find the scanner (or say why there is none), the roll preview and frame choice where H-12 and H-13 provide them, the scan settings with IR off by default for black-and-white silver film and on otherwise, then the scan with its progress and Done
+- Files: choose the files, check the groups (triplets, or single files for kinds that have them), import with progress and Done
+- Done opens the roll in the Library
+- Tests: component tests with mocked ipc for both paths; axe clean
+tech:
+FILES: apps/desktop/src/features/import (ScannerSection, FilesSection split into steps), en.json, docs/specification.md.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23. Out of scope: new scanner features.
+

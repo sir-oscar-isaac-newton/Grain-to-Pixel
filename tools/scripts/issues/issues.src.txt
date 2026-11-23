@@ -3191,3 +3191,140 @@ ROUTES: none.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-21 when PR 370 and develop failed the advisories check. Out of scope: replacing rawler or chrono.
+
+## R-07
+title: Spike - capturing and scanning black-and-white negatives
+milestone: M6
+type: spike
+size: S
+estimate: 0.5d
+deps: H-24
+needs: hw
+adr: yes
+labels: spike
+spec: specification sections 4.2 and 6.1; docs/research/scanlight-capture.md
+desc: The camera path shoots three pictures per frame, red, green and blue, which suits colour film. On a black-and-white negative the three carry the same picture, so one shot may do as well or better. Find out how a black-and-white frame is best captured with the Scanlight and the D600, and how the LS-50 behaves on silver and chromogenic film.
+ac:
+- On one silver roll (for example HP5 or Tri-X) and one chromogenic roll (XP2 or BW400CN), the same frames are captured as an RGB triplet, as one shot under the light's white LED, and as one shot under the green LED alone, at the same aperture and focus (human runs the captures)
+- Each way is compared on sharpness (the focus check of H-19 at the middle and a corner), noise in an even mid-grey area, the tonal range from the base to the densest highlight, and the number of shots per frame; the numbers are recorded
+- The white LED's colour and its flat field (H-24) are checked: one white bare-light shot is not clipped and is even enough to use
+- On the LS-50, the IR channel on the silver roll is recorded (expected: the whole picture reads as dust) and on the chromogenic roll (expected: dust removal works); nkscan's `--film mono` is tried and its effect recorded
+- An ADR recommends how black-and-white film is captured and scanned, and what H-25 builds
+tech:
+SCOPE: captures, measurements and a throwaway probe; no change to production code.
+NOTES: asked for by the owner on 2026-11-22. Scans stay outside the repository.
+
+## L-12
+title: Film type on the roll
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps:
+adr: no
+spec: specification sections 3 (Roll), 5.2 and 6 (Rolls, Search)
+desc: The app treats every roll as colour negative. Add the roll's film type, so that the conversion, capture, scan and export can follow it: colour negative, black-and-white silver, or black-and-white chromogenic (dye, developed C-41).
+ac:
+- Roll gains `film_type` (`color_negative`, `bw_silver`, `bw_chromogenic`), default `color_negative`; a migration gives existing rolls the default
+- The roll dialog sets it, the roll sidebar shows it, and search can filter by it
+- Changing it on a roll with frames regenerates their thumbnails, as a change of film base does
+- Nothing else changes yet: the conversion still treats the roll as colour until P-36
+- Tests: the migration, create and update, search by type; component tests with mocked ipc; bindings regenerated; axe clean
+tech:
+FILES: crates/gtp-core (Roll), crates/gtp-catalog (migration, repo, search), apps/desktop/src-tauri/src/commands/roll.rs, apps/desktop/src/features/library, en.json, packages/ipc-types, docs/specification.md.
+ROUTES: Roll and RollPatch gain `film_type`; the search query gains `film_type?`. To be approved by the owner with the plan.
+MIGRATIONS: one, adding `film_type` to roll.
+NOTES: asked for by the owner on 2026-11-22. Out of scope: slide (positive) film.
+
+## P-36
+title: Black-and-white conversion
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: L-12
+adr: yes
+spec: specification section 4.2; rules/colour-pipeline.md
+desc: A black-and-white negative goes through the colour pipeline today: three channels inverted with their own black and white points, then made mono in the colour stage. The three channels carry one picture, so they can be combined into one density before inversion, with one pair of points, giving less noise and a neutral grey by construction. Convert frames of black-and-white rolls this way.
+ac:
+- An ADR decides how the three densities are combined (for example weights by each channel's noise, or the channel R-07 recommends), where in the order the picture becomes one plane, and which stages still run (noise reduction on luminance only, tone, curves, split toning, geometry, vignette) and which are skipped (colour axes, saturation, vibrance, the colour mixer, colour noise)
+- A frame of a black-and-white roll is inverted from the combined density with one black and one white point, auto-filled from its percentiles; the white and black pickers and the levels sliders work on it
+- Its automatic recipe is mono; a colour roll's frames are unchanged bit for bit (golden tests)
+- On a synthetic black-and-white negative with per-channel noise, the combined plane has less noise than any one channel, shown by a test
+- An old recipe on a frame whose roll becomes black and white still loads; per-channel points it held are ignored with the reason recorded in the ADR
+- Tests: as above, preview against full size
+tech:
+FILES: crates/gtp-negative (combined inversion), crates/gtp-app/src/pipeline (order, analyze), crates/gtp-core (recipe, if it changes), rules/colour-pipeline.md, docs/specification.md, decisions.
+ROUTES: none expected; any recipe change is approved by the owner with the plan.
+MIGRATIONS: none.
+NOTES: asked for by the owner on 2026-11-22. The `mono` mix of the colour stage stays for making colour film black and white.
+
+## H-25
+title: One-shot capture and IR defaults for black-and-white film
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: R-07, L-12, P-36
+adr: no
+spec: specification sections 6 and 6.1; ADR 0004
+desc: Capture a frame of a black-and-white roll the way R-07 recommends, expected to be one shot under one light instead of three, and set the scanner's IR for the film type.
+ac:
+- On a black-and-white roll, Next frame takes the shot R-07 chose, stores it as one frame of a new kind with one source file, and converts it through P-36; colour rolls keep the triplet
+- The capture levels, the test shot, the automatic calibration and the saved levels per stock work for that light
+- The flat field of H-24 is captured with the same light on a black-and-white roll, and a frame is not corrected with a flat field of another light (a warning, as for the aperture)
+- Importing files offers the single-shot kind for black-and-white rolls
+- The scan dialog starts with IR off for a silver roll and says why when it is turned on; chromogenic and colour rolls keep IR on
+- Nothing touches the real camera, light or scanner in the tests; the light is off on every way out
+- Tests: the capture and import with the fakes, the flat field light check, the IR default; component tests with mocked ipc; axe clean
+- A checklist for the human on the Mac: one black-and-white roll captured end to end, its flat field, and a scan of a silver roll without IR
+tech:
+FILES: crates/gtp-capture, crates/gtp-app/src/services (capture, import, flat field), crates/gtp-core (frame kind), crates/gtp-catalog, apps/desktop/src-tauri/src/commands, apps/desktop/src/features/import, en.json, packages/ipc-types, docs/specification.md, docs/research/scanlight-capture.md.
+ROUTES: the capture and import commands gain the single-shot kind. To be approved by the owner with the plan.
+MIGRATIONS: one if the frame kind or the flat field's light needs it.
+NOTES: asked for by the owner on 2026-11-22. Guard no-backend tests with cfg(not(macos+tether)).
+
+## U-34
+title: Black-and-white editing in Develop
+milestone: M6
+type: feature
+size: M
+estimate: 1d
+deps: P-36
+adr: no
+spec: specification section 7 (Develop)
+desc: For a frame of a black-and-white roll, Develop still shows the colour tools. Show the tools that matter for black and white instead, and add the usual darkroom starting points.
+ac:
+- For a black-and-white frame, the Colour panel is replaced by a Black and white panel; the colour axes, saturation, vibrance, the colour mixer and colour noise are not shown
+- Paper grades 0 to 5 set the contrast in the Tone stage as named starting points that stay editable (no new pipeline stage)
+- Toning presets (sepia, selenium, platinum, cyanotype) set split toning, stay editable, and a "None" resets it
+- Apply settings and Develop presets copy these as they copy Tone and split toning today
+- The histogram shows one luminance curve for a black-and-white frame
+- Tests: component tests with mocked ipc for the panel, the grades and the toning presets; axe clean
+tech:
+FILES: apps/desktop/src/features/develop, en.json, docs/specification.md; packages/ui only if the owner approves it.
+ROUTES: none.
+MIGRATIONS: none.
+NOTES: asked for by the owner on 2026-11-22. Out of scope: grain simulation, dodging and burning (masking is a non-goal).
+
+## P-37
+title: Greyscale export
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: P-36
+adr: no
+spec: specification sections 4.2 (output) and 7 (Export)
+desc: Exports are RGB today, so a black-and-white frame is written as three equal channels. Export untoned black-and-white frames as greyscale files.
+ac:
+- An untoned black-and-white frame exports as one-channel 16-bit TIFF or greyscale JPEG, with an embedded grey ICC profile of the sRGB tone curve (or Gray Gamma 2.2, decided in the plan)
+- A toned frame (split toning on) exports as RGB, and the export dialog says why
+- The export dialog can still choose RGB for a black-and-white frame
+- The greyscale file matches the luma of the RGB export within a stated tolerance, shown by a test
+- Tests: TIFF and JPEG written and read back, the profile embedded, toned and colour frames unchanged
+tech:
+FILES: crates/gtp-io (writers), crates/gtp-color (the grey profile), crates/gtp-app/src/services/export, apps/desktop/src/features/export, en.json, docs/specification.md.
+ROUTES: the export options gain the greyscale choice. To be approved by the owner with the plan.
+MIGRATIONS: none.
+NOTES: asked for by the owner on 2026-11-22.

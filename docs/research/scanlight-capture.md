@@ -326,3 +326,18 @@ The calibration of H-17 measures the whole frame unless it is given an area. The
 - [x] Calibrate with the area over the rebate between two frames: record the levels; they are close to a whole-frame calibration on a leader (record both).
 - [x] Calibrate with the area over image content: the levels differ.
 - [x] Clearing the area returns the calibration to the whole frame.
+
+## Flat field capture (H-24)
+
+"Capture flat field" in the capture view makes a roll's flat field (ADR 0010) from the bare light. The levels calibrated through film clip the bare light, so the job first runs the automatic calibration of H-17 on the bare light (whole frame) and then shoots red, green and blue at those levels; the sliders and the saved levels are not changed. A picture that still clips, or three pictures at different apertures, attach nothing. The three NEF files are kept in `originals/<roll_id>/flat-field/`, and the flat field stores the aperture, shutter time and ISO it was shot at; a frame shot at another aperture warns. With the empty carrier in the picture the flat field brightens a band inside the carrier's opening until P-35; taking the carrier out avoids it.
+
+**Hardware checklist for H-24** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
+
+- [ ] Build the app: `pnpm --filter @gtp/desktop exec tauri build --bundles app,dmg --features tether`, install it and start it with the camera connected and switched on, and the release cord unplugged from the light.
+- [ ] On a roll with film levels (calibrated through the film), take the film out and Capture flat field: the job calibrates (the progress names the colour, shot and level), then shoots three pictures, and ends with the aperture and the levels; the light is off afterwards. Record the levels.
+- [ ] The sliders still show the film levels afterwards, and the roll's saved levels are unchanged.
+- [ ] The library sidebar shows the flat field with its aperture, and a frame captured afterwards at the same aperture has no falloff towards the edges (compare with a frame from before).
+- [ ] Change the aperture by one stop and capture a frame: the warning names both apertures.
+- [ ] Capture the flat field again: the dialog says it replaces the roll's one, and `originals/<roll_id>/flat-field/` holds only the three new files.
+- [ ] Capture with the empty carrier in place and once with it taken out (if it can come out without moving anything): record whether a bright band shows inside the carrier's opening on a corrected frame (for P-35).
+- [ ] A flat field capture is refused while a frame capture runs, and Cancel during the calibration stops it with the light off and nothing attached.

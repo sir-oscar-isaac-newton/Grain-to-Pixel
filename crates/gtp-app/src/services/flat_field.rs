@@ -7,15 +7,22 @@
 
 use std::path::{Path, PathBuf};
 
-use gtp_core::{AppError, ErrorCode, FlatField, ImageF32, RollId};
-use gtp_ingest::merge_triplet;
+use std::sync::Arc;
+
+use gtp_core::{AppError, ErrorCode, ExposureInfo, FlatField, ImageF32, RollId};
+use gtp_ingest::{merge_triplet, read_exposure_info};
 use gtp_io::{Limits, RawDecoder, RawlerDecoder};
 use rayon::prelude::*;
-use serde::Serialize;
 
+use crate::context::ThumbnailRequester;
+use crate::jobs::LibraryEvents;
+use crate::library_fs::flat_field_rel;
+use crate::services::capture_levels::exposure_from_exif;
 use crate::services::develop::read_scan;
 use crate::services::library::Library;
-use crate::services::roll_frame::{ensure_roll_base_from_image, roll_set_film_base};
+use crate::services::roll_frame::{
+    ensure_roll_base_from_image, remove_in_library, roll_set_film_base,
+};
 use crate::services::triplets::triplet_group;
 
 /// Cells across the grid; the cells down follow the frame's shape. A coarse grid is the point: the
@@ -24,26 +31,7 @@ pub const GRID_WIDTH: u32 = 96;
 /// Every how many pixels of a cell is looked at when its mean is taken.
 const SAMPLE_STEP: usize = 3;
 
-/// What the UI is told of a roll's flat field.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-pub struct FlatFieldInfo {
-    /// The size in pixels of the frames it fits.
-    pub frame_width: u32,
-    pub frame_height: u32,
-    /// The names of the three files it was made from.
-    pub sources: Vec<String>,
-}
-
-impl From<&FlatField> for FlatFieldInfo {
-    fn from(flat: &FlatField) -> Self {
-        Self {
-            frame_width: flat.frame_w,
-            frame_height: flat.frame_h,
-            sources: flat.sources.clone(),
-        }
-    }
-}
+pub use gtp_core::FlatFieldInfo;
 
 fn invalid(message: &str, details: impl Into<String>) -> AppError {
     AppError::new(ErrorCode::InvalidInput, message.to_owned()).with_details(details.into())
@@ -122,6 +110,8 @@ pub fn build_flat_field(image: &ImageF32, sources: Vec<String>) -> Result<FlatFi
         frame_h: image.height,
         light,
         sources,
+        exposure: ExposureInfo::default(),
+        files: Vec::new(),
     };
     if flat.is_valid() {
         Ok(flat)
@@ -239,9 +229,21 @@ pub fn flat_field_import(
     )
 }
 
+/// The exposure of a bare-light triplet from the EXIF of its three files: each field is the first
+/// one the files (red, green, blue) say; empty when none does.
+pub(crate) fn exposure_of_files(files: [&Path; 3]) -> ExposureInfo {
+    let all = files.map(|path| exposure_from_exif(read_exposure_info(path)));
+    ExposureInfo {
+        exposure_time: all.iter().find_map(|e| e.exposure_time),
+        iso: all.iter().find_map(|e| e.iso),
+        f_number: all.iter().find_map(|e| e.f_number),
+    }
+}
+
 /// Makes a flat field from the three exposures (red, green, blue, in that order) decoded by
 /// `decoder` and attaches it to the roll, replacing the one it has. The roll's frames, if it has
-/// any, must be the size of the exposures.
+/// any, must be the size of the exposures. The flat field remembers how the files were exposed;
+/// the files themselves are only read, not kept.
 pub fn flat_field_attach(
     library: &Library,
     roll: RollId,
@@ -250,6 +252,33 @@ pub fn flat_field_attach(
 ) -> Result<FlatFieldInfo, AppError> {
     let [r, g, b] = exposures;
     let merged = merge_triplet(decoder, r, g, b, &Limits::default())?.image;
+    let name = |path: &Path| {
+        path.file_name().map_or_else(
+            || path.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        )
+    };
+    attach_merged(
+        library,
+        roll,
+        &merged,
+        vec![name(r), name(g), name(b)],
+        exposure_of_files(exposures),
+        Vec::new(),
+    )
+}
+
+/// Builds the flat field of a merged bare-light picture and attaches it to the roll, replacing the
+/// one it has (and removing the files that one kept, except those in `files`, the library-relative
+/// paths this one keeps). The roll's frames, if it has any, must be the size of the picture.
+pub(crate) fn attach_merged(
+    library: &Library,
+    roll: RollId,
+    merged: &ImageF32,
+    sources: Vec<String>,
+    exposure: ExposureInfo,
+    files: Vec<String>,
+) -> Result<FlatFieldInfo, AppError> {
     let sizes: Vec<(u32, u32)> = library
         .read(|c| c.list_frames(roll))?
         .iter()
@@ -267,20 +296,69 @@ pub fn flat_field_attach(
             ),
         ));
     }
-    let name = |path: &Path| {
-        path.file_name().map_or_else(
-            || path.display().to_string(),
-            |n| n.to_string_lossy().into_owned(),
-        )
-    };
-    let flat = build_flat_field(&merged, vec![name(r), name(g), name(b)])?;
+    let mut flat = build_flat_field(merged, sources)?;
+    flat.exposure = exposure;
+    flat.files = files;
+    let old = library.read(|c| c.get_flat_field(roll))?;
     library.write(|c| c.set_flat_field(roll, &flat))?;
+    if let Some(old) = old {
+        let replaced: Vec<String> = old
+            .files
+            .into_iter()
+            .filter(|f| !flat.files.contains(f))
+            .collect();
+        remove_kept_files(library, roll, &replaced);
+    }
     Ok(FlatFieldInfo::from(&flat))
 }
 
-/// Removes the roll's flat field; true when it had one.
+/// Removes the files a flat field kept, best effort: what cannot be removed is logged and left,
+/// as a roll delete does. The folder goes too when it is then empty.
+pub(crate) fn remove_kept_files(library: &Library, roll: RollId, files: &[String]) {
+    if files.is_empty() {
+        return;
+    }
+    let mut left = Vec::new();
+    for file in files {
+        remove_in_library(library, Path::new(file), &mut left);
+    }
+    if let Ok(dir) = library.resolve(&flat_field_rel(roll)) {
+        // Only an empty folder goes; anything else in it stays.
+        let _ = std::fs::remove_dir(dir);
+    }
+    if !left.is_empty() {
+        tracing::warn!(roll = %roll, files = ?left, "flat-field files left after removal");
+    }
+}
+
+/// Removes the roll's flat field and the files it kept; true when it had one.
 pub fn flat_field_clear(library: &Library, roll: RollId) -> Result<bool, AppError> {
-    library.write(|c| c.clear_flat_field(roll))
+    let old = library.read(|c| c.get_flat_field(roll))?;
+    let removed = library.write(|c| c.clear_flat_field(roll))?;
+    if let Some(old) = old {
+        remove_kept_files(library, roll, &old.files);
+    }
+    Ok(removed)
+}
+
+/// After a flat field was attached or removed: the proxies Develop kept were built without it, an
+/// automatic film base was measured without it, and every frame of the roll looks different, so all
+/// their thumbnails are made again in the background.
+pub fn after_flat_field_change(
+    library: &Library,
+    thumbnails: &ThumbnailRequester,
+    events: Arc<dyn LibraryEvents>,
+    roll: RollId,
+) -> Result<(), AppError> {
+    thumbnails.clear_proxies();
+    remeasure_roll_base(library, roll)?;
+    let frames = library
+        .read(|c| c.list_frames(roll))?
+        .into_iter()
+        .map(|f| f.id)
+        .collect();
+    thumbnails.request(events, frames);
+    Ok(())
 }
 
 /// After a flat field was attached or removed: an automatic film base of the roll was measured on

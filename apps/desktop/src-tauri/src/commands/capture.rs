@@ -222,6 +222,37 @@ pub fn capture_triplet(
     )
 }
 
+/// Captures the roll's flat field as a job (H-24): the film must be out of the carrier. First
+/// calibrates the light on the bare light (the whole frame), starting from `levels` (the working
+/// levels, 0 to 255 each), then shoots red, green and blue at the calibrated levels and the
+/// camera's current settings, keeps the three files beside the roll's originals and attaches the
+/// flat field built from them, replacing the roll's. The working and saved levels are not changed.
+/// The result arrives in `job://done` as `FlatField` (the new flat field's info and the calibrated
+/// levels), the steps as `capture://step`. A colour that cannot be brought below clipping, a clipped
+/// capture or differing apertures end in `job://error`, and then nothing is attached or kept.
+/// Returns the job id at once.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn capture_flat_field(
+    ctx: State<'_, AppContext>,
+    jobs: State<'_, JobManager>,
+    hardware: State<'_, Hardware>,
+    library_events: State<'_, EventsState>,
+    events: State<'_, CaptureEventsState>,
+    roll_id: RollId,
+    levels: [u32; 3],
+) -> CmdResult<JobId> {
+    capture::start_flat_field(
+        &ctx,
+        &jobs,
+        &hardware,
+        Arc::clone(&library_events.0),
+        Arc::clone(&events.0),
+        roll_id,
+        levels,
+    )
+}
+
 /// Finds the Scanlight levels automatically as a job: test shots, one colour at a time, until the
 /// brightest pixels of each sit just below clipping. `levels` are the working levels it starts from
 /// (0 to 255 each); `region` is the part of the frame it measures, as fractions of its width and
@@ -611,6 +642,65 @@ mod tests {
     }
 
     #[test]
+    fn a_flat_field_capture_returns_a_job_that_ends_with_the_flat_field_info() {
+        let f = fixture("flat-field");
+        let rx = listen(&f.app, &["job://done", "job://error", "capture://step"]);
+        let id = capture_flat_field(
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            f.roll,
+            [44, 22, 2],
+        )
+        .unwrap();
+        let mut steps = 0;
+        let done = loop {
+            let (name, payload) = rx.recv_timeout(WAIT).unwrap();
+            match name.as_str() {
+                "capture://step" => steps += 1,
+                "job://done" => break payload,
+                other => panic!("{other}: {payload}"),
+            }
+        };
+        assert_eq!(done["id"], id.to_string());
+        assert_eq!(done["result"]["kind"], "FlatField");
+        let info = &done["result"]["info"];
+        assert_eq!(info["sources"].as_array().map(Vec::len), Some(3));
+        assert!(info["frame_width"].as_u64().unwrap() > 0);
+        // The fake camera's pictures have no EXIF: the exposure is unknown, field by field.
+        assert!(info["exposure"]["f_number"].is_null());
+        // The calibrated levels the three pictures were shot at come with it.
+        let levels = done["result"]["levels"].as_array().unwrap();
+        assert_eq!(levels.len(), 3);
+        assert!(levels.iter().all(|l| l.as_u64().is_some_and(|l| l > 0)));
+        // Three steps for each calibration shot, then three for each of the three pictures.
+        assert!(steps > 9 && steps % 3 == 0, "{steps}");
+        let roll = gtp_app::services::roll_frame::roll_list(
+            &f.app.state::<AppContext>().library().unwrap(),
+        )
+        .unwrap()
+        .into_iter()
+        .find(|r| r.id == f.roll)
+        .unwrap();
+        assert!(roll.has_flat_field);
+
+        // A roll that is not there is refused at once, with nothing lit.
+        let err = capture_flat_field(
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            f.app.state(),
+            RollId::new(),
+            [44, 22, 2],
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    #[test]
     fn a_calibration_returns_a_job_that_ends_with_levels_and_saves_nothing() {
         let f = fixture("calibrate");
         let before = std::fs::read_to_string(f.dir.join("settings.json")).unwrap();
@@ -709,6 +799,17 @@ mod tests {
             f.roll,
             [44, 22, 2],
             None,
+        )
+        .unwrap_err();
+        assert!(err.message.contains("No camera backend"), "{err}");
+        let err = capture::start_flat_field(
+            &ctx,
+            &jobs,
+            &real,
+            Arc::clone(&f.app.state::<EventsState>().0),
+            Arc::clone(&events.0),
+            f.roll,
+            [44, 22, 2],
         )
         .unwrap_err();
         assert!(err.message.contains("No camera backend"), "{err}");

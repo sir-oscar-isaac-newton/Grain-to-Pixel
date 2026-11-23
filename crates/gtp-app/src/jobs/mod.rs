@@ -26,6 +26,7 @@ pub enum JobKind {
     Export,
     Capture,
     Calibration,
+    FlatField,
     LibraryVerify,
 }
 

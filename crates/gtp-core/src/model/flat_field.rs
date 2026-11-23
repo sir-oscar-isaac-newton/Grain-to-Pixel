@@ -7,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::exposure::ExposureInfo;
+
 /// The smoothed light of a bare-light triplet, for one roll.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FlatField {
@@ -21,6 +23,38 @@ pub struct FlatField {
     pub light: Vec<f32>,
     /// The names of the three files it was made from, red, green, blue.
     pub sources: Vec<String>,
+    /// How the three pictures were exposed, from their EXIF (H-24); empty when unknown (a flat field
+    /// made before it was recorded, or from files without EXIF).
+    #[serde(default)]
+    pub exposure: ExposureInfo,
+    /// The library-relative paths of the three NEF files kept for rebuilding it (the capture view
+    /// keeps them); empty when none were kept (a flat field made from files that were only read).
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
+/// What the UI is told of a roll's flat field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct FlatFieldInfo {
+    /// The size in pixels of the frames it fits.
+    pub frame_width: u32,
+    pub frame_height: u32,
+    /// The names of the three files it was made from.
+    pub sources: Vec<String>,
+    /// How the three pictures were exposed (H-24); empty fields are unknown.
+    pub exposure: ExposureInfo,
+}
+
+impl From<&FlatField> for FlatFieldInfo {
+    fn from(flat: &FlatField) -> Self {
+        Self {
+            frame_width: flat.frame_w,
+            frame_height: flat.frame_h,
+            sources: flat.sources.clone(),
+            exposure: flat.exposure,
+        }
+    }
 }
 
 impl FlatField {
@@ -54,6 +88,8 @@ mod tests {
             frame_h: 80,
             light,
             sources: vec!["r".into(), "g".into(), "b".into()],
+            exposure: ExposureInfo::default(),
+            files: Vec::new(),
         }
     }
 

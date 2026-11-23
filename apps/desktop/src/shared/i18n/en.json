@@ -54,6 +54,7 @@
       "setFlatField": "Set flat field…",
       "removeFlatField": "Remove flat field",
       "flatFieldOn": "Flat field set: the roll's camera frames are corrected for uneven light.",
+      "flatFieldOnAperture": "Flat field set, shot at {{aperture}}: the roll's camera frames are corrected for uneven light.",
       "flatFieldOff": "No flat field.",
       "actions": "Actions for the selected roll"
     },
@@ -212,6 +213,7 @@
     "scan": "Scan into {{roll}}",
     "capture": "Capture into {{roll}}",
     "calibration": "Calibrate the light for {{roll}}",
+    "flatField": "Capture the flat field of {{roll}}",
     "running": "Working",
     "done": "Done",
     "error": "Failed",
@@ -256,6 +258,7 @@
       "aperture_mismatch": "the three shots used different apertures",
       "clipped": "the {{channel}}-lit shot is clipped in {{percent}} % of its picture",
       "flat_field_skipped": "not corrected: the roll’s flat field is for frames of another size",
+      "flat_field_aperture_differs": "the roll’s flat field was shot at {{flat}} and this frame at {{frame}}: it may correct the light wrongly",
       "balance_skipped": "no colour balance for the roll: none of the frames in this job had a neutral to judge by",
       "high_temperature": "the light was warm while this frame was taken ({{temp_c}} °C); let it cool if you take many frames in a row",
       "low_supply": "the light’s supply voltage sagged to {{volts}} V; try another USB port or a powered hub",
@@ -1090,6 +1093,22 @@
         "stored": "Frame stored.",
         "counter": "Frame {{count}} on this roll"
       },
+      "flatField": {
+        "label": "Capture flat field",
+        "title": "Capture the flat field",
+        "body": "Take the film out of the carrier. Leave the carrier, the camera, the focus and the light as they are. The light is calibrated for the bare light first, then red, green and blue are shot at the calibrated levels with the camera's settings. The sliders and the saved levels are not changed.",
+        "replace": "This roll has a flat field. The new one replaces it.",
+        "confirm": "Capture",
+        "cancel": "Cancel",
+        "stop": "Cancel flat field",
+        "readOnly": "The library is read-only, so no flat field can be captured.",
+        "done": "Flat field captured.",
+        "doneAperture": "Flat field captured at {{aperture}}.",
+        "doneLevels": "Flat field captured, levels {{levels}}.",
+        "doneApertureLevels": "Flat field captured at {{aperture}}, levels {{levels}}.",
+        "failed": "The flat field could not be captured.",
+        "cancelled": "The flat field capture was cancelled."
+      },
       "warn": {
         "temperature": "The light was warm during this frame ({{temp}} °C).",
         "supply": "The light's USB supply dropped to {{mv}} mV during this frame.",
@@ -1098,6 +1117,7 @@
         "aperture_mismatch": "The three pictures used different apertures. Set the camera to manual exposure.",
         "clipped": "The {{channel}} picture is clipped ({{pct}} %). Lower its level.",
         "flat_field_skipped": "The roll's flat field is for another frame size, so it was not applied.",
+        "flat_field_aperture_differs": "The flat field was shot at {{flat}} and this frame at {{frame}}: it may correct the light wrongly.",
         "exposure_differs_from_levels": "The camera settings differ from when these levels were saved."
       }
     },

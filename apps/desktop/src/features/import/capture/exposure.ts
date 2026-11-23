@@ -34,6 +34,12 @@ function formatShutter(time: Ratio): string {
   return `${plain(seconds, 2)} s`;
 }
 
+/** An aperture as a photographer writes it ("f/8", "f/5.6"); null when it is unknown. */
+export function formatAperture(aperture: Ratio | null | undefined): string | null {
+  if (!aperture || !isRatio(aperture)) return null;
+  return `f/${plain(aperture.num / aperture.den, 1)}`;
+}
+
 /**
  * The shutter time, ISO and aperture of an exposure as one line ("1/100 s, ISO 100, f/8"), leaving
  * out what is unknown; null when nothing is known. These are photographic notation, the same in
@@ -44,9 +50,8 @@ export function formatExposure(exposure: ExposureInfo | null): string | null {
   const parts: string[] = [];
   if (isRatio(exposure.exposure_time)) parts.push(formatShutter(exposure.exposure_time));
   if (exposure.iso !== null) parts.push(`ISO ${exposure.iso}`);
-  if (isRatio(exposure.f_number)) {
-    parts.push(`f/${plain(exposure.f_number.num / exposure.f_number.den, 1)}`);
-  }
+  const aperture = formatAperture(exposure.f_number);
+  if (aperture) parts.push(aperture);
   return parts.length > 0 ? parts.join(', ') : null;
 }
 

@@ -31,6 +31,17 @@ pub fn originals_rel(roll: RollId, frame: FrameId) -> PathBuf {
         .join(frame.to_string())
 }
 
+/// The folder name of a roll's kept flat-field files, inside the roll's folder of originals (H-24).
+pub const FLAT_FIELD_DIR: &str = "flat-field";
+
+/// The folder of a roll's kept flat-field files, relative to the library root:
+/// `originals/<roll_id>/flat-field`. It is not a frame's folder, and goes with the roll's.
+pub fn flat_field_rel(roll: RollId) -> PathBuf {
+    Path::new(ORIGINALS_DIR)
+        .join(roll.to_string())
+        .join(FLAT_FIELD_DIR)
+}
+
 /// A frame's thumbnail, relative to the library root.
 pub fn thumb_rel(frame: FrameId) -> PathBuf {
     Path::new(THUMBS_DIR).join(format!("{frame}.jpg"))
@@ -64,6 +75,12 @@ mod tests {
             Path::new("originals")
                 .join(roll.to_string())
                 .join(frame.to_string())
+        );
+        assert_eq!(
+            flat_field_rel(roll),
+            Path::new("originals")
+                .join(roll.to_string())
+                .join("flat-field")
         );
         assert_eq!(
             thumb_rel(frame),

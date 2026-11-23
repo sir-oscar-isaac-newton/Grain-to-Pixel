@@ -25,6 +25,7 @@ import { FocusCheck } from './capture/FocusCheck';
 import { formatExposure } from './capture/exposure';
 import { LevelSliders } from './capture/LevelSliders';
 import { LiveView } from './capture/LiveView';
+import { FlatFieldCapture } from './capture/FlatFieldCapture';
 import { NextFrameButton } from './capture/NextFrameButton';
 import { SaveLevels } from './capture/SaveLevels';
 import { StatusBar, type LightState } from './capture/StatusBar';
@@ -60,7 +61,11 @@ export function CaptureSection() {
 function Capture() {
   const { t } = useTranslation();
   const running = useLibraryStore((s) =>
-    s.jobs.some((j) => (j.kind === 'capture' || j.kind === 'calibration') && j.state === 'running'),
+    s.jobs.some(
+      (j) =>
+        (j.kind === 'capture' || j.kind === 'calibration' || j.kind === 'flat_field') &&
+        j.state === 'running',
+    ),
   );
   const rolls = useLibraryStore((s) => s.rolls);
   const currentRoll = useLibraryStore((s) => s.rollId);
@@ -166,7 +171,10 @@ function Capture() {
       // Live view first: stops its loop, then takes the camera out of live view.
       liveStop.current?.();
       for (const job of useLibraryStore.getState().jobs) {
-        if ((job.kind === 'capture' || job.kind === 'calibration') && job.state === 'running') {
+        if (
+          (job.kind === 'capture' || job.kind === 'calibration' || job.kind === 'flat_field') &&
+          job.state === 'running'
+        ) {
           jobCancel(job.id).catch(() => {
             // The job may have just ended; the switch-off below still runs.
           });
@@ -354,6 +362,12 @@ function Capture() {
         />
       )}
       <NextFrameButton
+        ready={usable && !settingsChanging && !running}
+        roll={roll}
+        levels={levels}
+        onBusyChange={setCapturing}
+      />
+      <FlatFieldCapture
         ready={usable && !settingsChanging && !running}
         roll={roll}
         levels={levels}

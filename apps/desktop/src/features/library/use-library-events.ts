@@ -68,19 +68,26 @@ export function useLibraryEvents(enabled: boolean) {
                 }
               : result.kind === 'Calibrated'
                 ? { state: 'done' as const, fraction: 1, calibrated: result }
-                : result.kind === 'Verified'
+                : result.kind === 'FlatField'
                   ? {
                       state: 'done' as const,
                       fraction: 1,
-                      verified: {
-                        files_checked: result.files_checked,
-                        bytes_checked: result.bytes_checked,
-                        problems: result.problems,
-                        thumbnails_missing: result.thumbnails_missing,
-                        stray_folders: result.stray_folders,
-                      },
+                      flatField: result.info,
+                      flatFieldLevels: result.levels,
                     }
-                  : { state: 'done' as const, fraction: 1 };
+                  : result.kind === 'Verified'
+                    ? {
+                        state: 'done' as const,
+                        fraction: 1,
+                        verified: {
+                          files_checked: result.files_checked,
+                          bytes_checked: result.bytes_checked,
+                          problems: result.problems,
+                          thumbnails_missing: result.thumbnails_missing,
+                          stray_folders: result.stray_folders,
+                        },
+                      }
+                    : { state: 'done' as const, fraction: 1 };
         store().patchJob(e.id, patch);
         // An export changes no frame, so the backend sends no library change: reload the grid
         // here so the export marks and the Needs export filter follow.

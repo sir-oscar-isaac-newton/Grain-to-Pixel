@@ -13,6 +13,7 @@ import {
   type ImportWarning,
   type SkippedFile,
   type ExportedFile,
+  type FlatFieldInfo,
   type FailedExport,
   type Tag,
   type VerifyResult,
@@ -26,7 +27,7 @@ export type JobState = 'running' | 'done' | 'error' | 'cancelled';
 /** A background job started from this screen (an import, an export or a verify), as the progress list shows it. */
 export interface JobRow {
   id: string;
-  kind: 'import' | 'scan' | 'capture' | 'calibration' | 'export' | 'verify';
+  kind: 'import' | 'scan' | 'capture' | 'calibration' | 'flat_field' | 'export' | 'verify';
   /** An import or a scan: the roll the frames go into. An export: empty. */
   rollName: string;
   /** An export: how many frames were asked for, and the folder they go to. */
@@ -49,6 +50,10 @@ export interface JobRow {
   failed?: FailedExport[];
   /** A calibration: the levels it found. */
   calibrated?: CalibrationResult;
+  /** A flat field capture: what was attached to the roll. */
+  flatField?: FlatFieldInfo;
+  /** A flat field capture: the levels the bare light was calibrated to and shot at. */
+  flatFieldLevels?: [number, number, number];
   /** A verify: what it found. */
   verified?: VerifyResult;
   /** The backend's message when the job failed. */

@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 use crate::ids::{FrameId, RollId};
-use crate::model::{ExposureInfo, SourceRole, TripletChannel};
+use crate::model::{ExposureInfo, ExposureRatio, FlatFieldInfo, SourceRole, TripletChannel};
 
 /// The result of a job that finished without error.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -21,6 +21,14 @@ pub enum JobResult {
     Exported(ExportResult),
     /// An automatic Scanlight level calibration (H-17).
     Calibrated(CalibrationResult),
+    /// A roll's flat field was captured and attached (H-24).
+    FlatField {
+        /// What was attached to the roll.
+        info: FlatFieldInfo,
+        /// The levels the bare light was calibrated to and the flat field shot at (1 to 255); the
+        /// user's own levels are unchanged.
+        levels: [u8; 3],
+    },
 }
 
 /// What an automatic calibration found. Nothing is saved: the user reviews it and saves it.
@@ -113,6 +121,14 @@ pub enum ImportWarningKind {
     /// The camera settings (shutter, ISO or aperture) of this capture differ from those the levels
     /// in use were saved with (H-15).
     ExposureDiffersFromLevels,
+    /// The roll's flat field was shot at another aperture than this frame, so it may correct it
+    /// wrongly (H-24). Only given when both apertures are known.
+    FlatFieldApertureDiffers {
+        /// The aperture of the flat field, as an f-number.
+        flat: ExposureRatio,
+        /// The aperture of this frame.
+        frame: ExposureRatio,
+    },
 }
 
 /// A picked file that was not imported.

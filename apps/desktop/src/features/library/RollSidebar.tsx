@@ -9,6 +9,7 @@ import {
   pickTiffFiles,
   type Roll,
 } from '../../shared/ipc';
+import { formatAperture } from '../import/capture/exposure';
 import { DeleteRollDialog } from './DeleteRollDialog';
 import styles from './library.module.css';
 import { messageOf, useLibraryStore } from './library-store';
@@ -28,6 +29,8 @@ export function RollSidebar() {
   const [editing, setEditing] = useState<{ roll: Roll | null } | null>(null);
   const [deleting, setDeleting] = useState<Roll | null>(null);
   const current = rolls.find((r) => r.id === rollId) ?? null;
+
+  const aperture = formatAperture(current?.flat_field_f_number);
 
   const summary = (roll: Roll) =>
     new Intl.ListFormat(i18n.language, { style: 'narrow', type: 'conjunction' }).format(
@@ -131,7 +134,11 @@ export function RollSidebar() {
       )}
       {current && (
         <p className={styles.hint}>
-          {t(current.has_flat_field ? 'library.rolls.flatFieldOn' : 'library.rolls.flatFieldOff')}
+          {current.has_flat_field
+            ? aperture
+              ? t('library.rolls.flatFieldOnAperture', { aperture })
+              : t('library.rolls.flatFieldOn')
+            : t('library.rolls.flatFieldOff')}
         </p>
       )}
 

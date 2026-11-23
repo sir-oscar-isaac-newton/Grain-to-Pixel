@@ -44,7 +44,7 @@ export const commands = {
 	 *  they are told apart by colour) and attaches it, replacing the one it has. The roll's camera-triplet
 	 *  frames are divided by it from now on. The three files must fit the roll's frames in size.
 	 */
-	flatFieldImport: (id: RollId, paths: string[]) => typedError<FlatFieldInfo, AppError_Serialize>(__TAURI_INVOKE("flat_field_import", { id, paths })),
+	flatFieldImport: (id: RollId, paths: string[]) => typedError<FlatFieldInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("flat_field_import", { id, paths })),
 	/**  Removes the roll's flat field; true when it had one. */
 	flatFieldClear: (id: RollId) => typedError<boolean, AppError_Serialize>(__TAURI_INVOKE("flat_field_clear", { id })),
 	/**  Deletes a roll with its frames, then their files. */
@@ -187,6 +187,18 @@ export const commands = {
 	 *  steps as `capture://step`. Nothing is saved: the user saves the levels. Returns the job id at once.
 	 */
 	captureCalibrate: (rollId: RollId, levels: [number, number, number], region: Region | null) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("capture_calibrate", { rollId, levels, region })),
+	/**
+	 *  Captures the roll's flat field as a job (H-24): the film must be out of the carrier. First
+	 *  calibrates the light on the bare light (the whole frame), starting from `levels` (the working
+	 *  levels, 0 to 255 each), then shoots red, green and blue at the calibrated levels and the
+	 *  camera's current settings, keeps the three files beside the roll's originals and attaches the
+	 *  flat field built from them, replacing the roll's. The working and saved levels are not changed.
+	 *  The result arrives in `job://done` as `FlatField` (the new flat field's info and the calibrated
+	 *  levels), the steps as `capture://step`. A colour that cannot be brought below clipping, a clipped
+	 *  capture or differing apertures end in `job://error`, and then nothing is attached or kept.
+	 *  Returns the job id at once.
+	 */
+	captureFlatField: (rollId: RollId, levels: [number, number, number]) => typedError<JobId, AppError_Serialize>(__TAURI_INVOKE("capture_flat_field", { rollId, levels })),
 	/**
 	 *  Starts exporting the frames at full resolution, each with its saved recipe (the automatic one
 	 *  when it was never edited), as a job; progress and the result (the files written and the frames
@@ -1062,12 +1074,28 @@ export type Flags_Serialize = {
 };
 
 /**  What the UI is told of a roll's flat field. */
-export type FlatFieldInfo = {
+export type FlatFieldInfo = FlatFieldInfo_Serialize | FlatFieldInfo_Deserialize;
+
+/**  What the UI is told of a roll's flat field. */
+export type FlatFieldInfo_Deserialize = {
 	/**  The size in pixels of the frames it fits. */
 	frame_width: number,
 	frame_height: number,
 	/**  The names of the three files it was made from. */
 	sources: string[],
+	/**  How the three pictures were exposed (H-24); empty fields are unknown. */
+	exposure: ExposureInfo_Deserialize,
+};
+
+/**  What the UI is told of a roll's flat field. */
+export type FlatFieldInfo_Serialize = {
+	/**  The size in pixels of the frames it fits. */
+	frame_width: number,
+	frame_height: number,
+	/**  The names of the three files it was made from. */
+	sources: string[],
+	/**  How the three pictures were exposed (H-24); empty fields are unknown. */
+	exposure: ExposureInfo_Serialize,
 };
 
 /**  What a focus check (H-19) measured: one picture with one colour lit. */
@@ -1497,7 +1525,16 @@ export type ImportWarningKind =
  *  The camera settings (shutter, ISO or aperture) of this capture differ from those the levels
  *  in use were saved with (H-15).
  */
-{ kind: "exposure_differs_from_levels" };
+{ kind: "exposure_differs_from_levels" } | 
+/**
+ *  The roll's flat field was shot at another aperture than this frame, so it may correct it
+ *  wrongly (H-24). Only given when both apertures are known.
+ */
+{ kind: "flat_field_aperture_differs"; 
+/**  The aperture of the flat field, as an f-number. */
+flat: ExposureRatio; 
+/**  The aperture of this frame. */
+frame: ExposureRatio };
 
 /**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
 export type Invert = Invert_Serialize | Invert_Deserialize;
@@ -1569,7 +1606,7 @@ export type JobResult = JobResult_Serialize | JobResult_Deserialize;
 /**  The result of a job that finished without error. */
 export type JobResult_Deserialize = 
 /**  The job did its work and has nothing to report. */
-{ kind: "Finished" } | 
+({ kind: "Finished" }) & { info?: never; levels?: never } | 
 /**  A file import (L-05). */
 {
 	kind: "Imported",
@@ -1585,12 +1622,21 @@ export type JobResult_Deserialize =
 /**  An automatic Scanlight level calibration (H-17). */
 {
 	kind: "Calibrated",
-} & CalibrationResult_Deserialize;
+} & CalibrationResult_Deserialize | 
+/**  A roll's flat field was captured and attached (H-24). */
+{ kind: "FlatField"; 
+/**  What was attached to the roll. */
+info: FlatFieldInfo_Deserialize; 
+/**
+ *  The levels the bare light was calibrated to and the flat field shot at (1 to 255); the
+ *  user's own levels are unchanged.
+ */
+levels: [number, number, number] };
 
 /**  The result of a job that finished without error. */
 export type JobResult_Serialize = 
 /**  The job did its work and has nothing to report. */
-{ kind: "Finished" } | 
+({ kind: "Finished" }) & { info?: never; levels?: never } | 
 /**  A file import (L-05). */
 {
 	kind: "Imported",
@@ -1606,7 +1652,16 @@ export type JobResult_Serialize =
 /**  An automatic Scanlight level calibration (H-17). */
 {
 	kind: "Calibrated",
-} & CalibrationResult_Serialize;
+} & CalibrationResult_Serialize | 
+/**  A roll's flat field was captured and attached (H-24). */
+{ kind: "FlatField"; 
+/**  What was attached to the roll. */
+info: FlatFieldInfo_Serialize; 
+/**
+ *  The levels the bare light was calibrated to and the flat field shot at (1 to 255); the
+ *  user's own levels are unchanged.
+ */
+levels: [number, number, number] };
 
 /**  The options of the last export started, and the preset they were chosen from, if any. */
 export type LastExport = LastExport_Serialize | LastExport_Deserialize;
@@ -2054,6 +2109,11 @@ export type Roll_Deserialize = {
 	 */
 	has_flat_field?: boolean,
 	/**
+	 *  The aperture the flat field was shot at (H-24); `None` without a flat field or when its
+	 *  pictures did not say.
+	 */
+	flat_field_f_number?: ExposureRatio | null,
+	/**
 	 *  The automatic colour balance of the roll's scanner frames: the colour axes
 	 *  `[red_cyan, green_magenta, blue_yellow]` of their recipes (P-22). `None` until a frame was
 	 *  judged; the first one stored stays. Camera triplets do not use it.
@@ -2102,6 +2162,11 @@ export type Roll_Serialize = {
 	 *  divided by when they are loaded; the field itself is kept apart (see `FlatField`).
 	 */
 	has_flat_field: boolean,
+	/**
+	 *  The aperture the flat field was shot at (H-24); `None` without a flat field or when its
+	 *  pictures did not say.
+	 */
+	flat_field_f_number: ExposureRatio | null,
 	/**
 	 *  The automatic colour balance of the roll's scanner frames: the colour axes
 	 *  `[red_cyan, green_magenta, blue_yellow]` of their recipes (P-22). `None` until a frame was

@@ -1100,6 +1100,15 @@
       "number": 371,
       "title": "Dependency checks pass again after new advisories for chrono and lcms2",
       "branch": "chore/issue-371-deny-advisories",
+      "status": "completed",
+      "pr": 372,
+      "commit": "2d1dc07"
+    },
+    {
+      "id": "H-24",
+      "number": 368,
+      "title": "Capture a roll's flat field from the capture view",
+      "branch": "feat/issue-368-flat-field-capture",
       "status": "in_progress",
       "pr": null,
       "commit": null

@@ -149,6 +149,7 @@ describe('search, filters and tags in the Library view', () => {
           roll_id: null,
           camera: 'Nikon F3',
           film_stock: null,
+          film_type: null,
           iso: 400,
           date_from: '2026-07',
           date_to: '2026-08-02',
@@ -157,6 +158,42 @@ describe('search, filters and tags in the Library view', () => {
         200,
       );
       expect(screen.getByRole('button', { name: 'Filters (4)' })).toBeInTheDocument();
+    });
+
+    it('filter by film type, count as one filter and show only matching rolls', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      state.rolls = state.rolls.map((r) =>
+        r.id === 'winter' ? { ...r, film_type: 'bw_silver' } : r,
+      );
+      await showLibrary();
+      await user.click(screen.getByRole('button', { name: 'Filters' }));
+      const select = screen.getByRole('combobox', { name: 'Film type' });
+      expect(select).toHaveValue('');
+      expect(
+        within(select)
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual([
+        'Any film type',
+        'Colour negative',
+        'Black and white (silver)',
+        'Black and white (chromogenic, C-41)',
+      ]);
+
+      await user.selectOptions(select, 'Black and white (silver)');
+      await waitFor(() => expect(cells()).toHaveLength(2));
+      expect(ipc.search).toHaveBeenLastCalledWith(
+        expect.objectContaining({ film_type: 'bw_silver' }),
+        0,
+        200,
+      );
+      expect(screen.getByRole('button', { name: 'Filters (1)' })).toBeInTheDocument();
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Film type' }), '');
+      // With no filter left the grid lists every frame again.
+      await waitFor(() => expect(cells()).toHaveLength(5));
+      expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument();
     });
 
     it('match tags, which can be added by name and removed again', async () => {

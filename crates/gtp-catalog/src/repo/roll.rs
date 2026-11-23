@@ -3,7 +3,7 @@
 use rusqlite::{params, OptionalExtension, Row};
 
 use gtp_core::model::{check_iso, check_shot_range, FILM_BASE_MIN_CONFIDENCE};
-use gtp_core::{AppError, BaseChange, ExposureInfo, FilmFormat, FrameSize, Roll, RollId};
+use gtp_core::{AppError, BaseChange, ExposureInfo, FilmFormat, FilmType, FrameSize, Roll, RollId};
 
 use super::{check_len, clean_name, clean_optional, not_found, parse_col, MAX_NOTE_CHARS, NOW};
 use crate::db::db_error;
@@ -11,7 +11,7 @@ use crate::{fts, Catalog};
 
 const COLUMNS: &str = "id, name, film_stock, format, camera, iso_box, iso_shot, shot_from, shot_to,
     notes, film_base_r, film_base_g, film_base_b, created_at, film_base_confidence,
-    frame_w, frame_h, frame_samples";
+    frame_w, frame_h, frame_samples, film_type";
 
 /// [`COLUMNS`] and whether the roll has a flat field, for reading a roll (not for writing one).
 const SELECT_COLUMNS: &str =
@@ -20,7 +20,8 @@ const SELECT_COLUMNS: &str =
     frame_w, frame_h, frame_samples,
     EXISTS(SELECT 1 FROM flat_field WHERE flat_field.roll_id = roll.id),
     balance_red_cyan, balance_green_magenta, balance_blue_yellow,
-    (SELECT exposure FROM flat_field WHERE flat_field.roll_id = roll.id)";
+    (SELECT exposure FROM flat_field WHERE flat_field.roll_id = roll.id),
+    film_type";
 
 fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
     let base: [Option<f32>; 3] = [row.get(10)?, row.get(11)?, row.get(12)?];
@@ -29,6 +30,7 @@ fn read(row: &Row<'_>) -> rusqlite::Result<Roll> {
         name: row.get(1)?,
         film_stock: row.get(2)?,
         format: FilmFormat::parse(&row.get::<_, String>(3)?).unwrap_or_default(),
+        film_type: FilmType::parse(&row.get::<_, String>(23)?).unwrap_or_default(),
         camera: row.get(4)?,
         iso_box: row.get(5)?,
         iso_shot: row.get(6)?,
@@ -124,7 +126,7 @@ impl Catalog {
             .execute(
                 &format!(
                     "INSERT INTO roll({COLUMNS}) VALUES
-                     (?1, ?2, ?3, ?14, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, {NOW}, ?13, ?15, ?16, ?17)"
+                     (?1, ?2, ?3, ?14, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, {NOW}, ?13, ?15, ?16, ?17, ?18)"
                 ),
                 params![
                     r.id.to_string(),
@@ -143,7 +145,8 @@ impl Catalog {
                     r.format.as_str(),
                     r.frame_size.map(|s| s.w),
                     r.frame_size.map(|s| s.h),
-                    r.frame_size.map(|s| s.samples)
+                    r.frame_size.map(|s| s.samples),
+                    r.film_type.as_str()
                 ],
             )
             .map_err(db_error)?;
@@ -275,7 +278,7 @@ impl Catalog {
                  iso_shot = ?6, shot_from = ?7, shot_to = ?8, notes = ?9,
                  film_base_r = ?10, film_base_g = ?11, film_base_b = ?12,
                  film_base_confidence = ?13, format = ?14, frame_w = ?15, frame_h = ?16,
-                 frame_samples = ?17 WHERE id = ?1",
+                 frame_samples = ?17, film_type = ?18 WHERE id = ?1",
                 params![
                     r.id.to_string(),
                     r.name,
@@ -293,7 +296,8 @@ impl Catalog {
                     r.format.as_str(),
                     r.frame_size.map(|s| s.w),
                     r.frame_size.map(|s| s.h),
-                    r.frame_size.map(|s| s.samples)
+                    r.frame_size.map(|s| s.samples),
+                    r.film_type.as_str()
                 ],
             )
             .map_err(db_error)?;

@@ -24,11 +24,24 @@ pub fn roll_create(ctx: State<'_, AppContext>, input: RollInput) -> CmdResult<Ro
     roll_frame::roll_create(&*ctx.library()?, input)
 }
 
-/// Replaces every editable field of the roll with `input` (an empty field is cleared).
+/// Replaces every editable field of the roll with `input` (an empty field is cleared). When the
+/// film type changes, all frames of the roll get new thumbnails in the background, since the
+/// conversion will follow the film type.
 #[tauri::command(async)]
 #[specta::specta]
-pub fn roll_update(ctx: State<'_, AppContext>, id: RollId, input: RollInput) -> CmdResult<Roll> {
-    roll_frame::roll_update(&*ctx.library()?, id, input)
+pub fn roll_update(
+    ctx: State<'_, AppContext>,
+    events: State<'_, EventsState>,
+    id: RollId,
+    input: RollInput,
+) -> CmdResult<Roll> {
+    let library = ctx.library()?;
+    let updated = roll_frame::roll_update_reporting(&library, id, input)?;
+    if updated.film_type_changed {
+        let frames = roll_frame::frames_of_roll(&library, id)?;
+        ctx.regenerate_thumbnails(Arc::clone(&events.0), frames)?;
+    }
+    Ok(updated.roll)
 }
 
 /// All rolls, newest first.
@@ -257,10 +270,12 @@ mod tests {
         let input = RollInput {
             name: "Renamed".into(),
             format: gtp_core::FilmFormat::Mf645,
+            film_type: gtp_core::FilmType::BwSilver,
             ..RollInput::default()
         };
-        let updated = roll_update(app.state(), roll.id, input).unwrap();
+        let updated = roll_update(app.state(), app.state(), roll.id, input).unwrap();
         assert_eq!(updated.format, gtp_core::FilmFormat::Mf645);
+        assert_eq!(updated.film_type, gtp_core::FilmType::BwSilver);
         assert!(updated.frame_size.is_some());
         let cleared = roll_set_frame_size(app.state(), app.state(), roll.id, None).unwrap();
         assert_eq!(cleared.frame_size, None);

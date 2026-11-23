@@ -74,6 +74,7 @@ export function makeRoll(over: Partial<Roll> = {}): Roll {
     name: `Roll ${rollCounter}`,
     film_stock: null,
     format: '35mm',
+    film_type: 'color_negative',
     camera: null,
     iso_box: null,
     iso_shot: null,
@@ -505,6 +506,7 @@ function matching(q: SearchQuery): FrameSummary[] {
     if (q.flag && f.flag !== q.flag) return false;
     if (q.needs_export && !needsExport(f)) return false;
     if (q.film_stock && keyOf(roll?.film_stock ?? '') !== keyOf(q.film_stock)) return false;
+    if (q.film_type && roll?.film_type !== q.film_type) return false;
     if (q.camera && keyOf(roll?.camera ?? '') !== keyOf(q.camera)) return false;
     if (q.iso && roll?.iso_box !== q.iso && roll?.iso_shot !== q.iso) return false;
     for (const id of q.tags_all ?? []) {

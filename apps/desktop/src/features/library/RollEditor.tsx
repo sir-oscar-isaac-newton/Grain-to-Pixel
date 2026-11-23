@@ -8,11 +8,13 @@ import {
   rollUpdate,
   tagApplyRoll,
   type FilmFormat,
+  type FilmType,
   type Roll,
   type RollInput,
 } from '../../shared/ipc';
 import styles from './library.module.css';
 import { messageOf, useLibraryStore } from './library-store';
+import { FILM_TYPES } from './search-query';
 
 interface RollEditorProps {
   /** The roll to edit, or null to create one. */
@@ -75,7 +77,7 @@ function iso(value: string): number | null | undefined {
 }
 
 /**
- * The roll form: name, film, camera, box and shot ISO, the shooting dates and notes. Camera and
+ * The roll form: name, film, camera, film type, box and shot ISO, the shooting dates and notes. Camera and
  * film suggest what earlier rolls used. The backend checks the dates and ISO range too, and its
  * message is shown if it refuses.
  */
@@ -127,6 +129,7 @@ function RollForm({ roll, onDone }: { roll: Roll | null; onDone: () => void }) {
   const [film, setFilm] = useState(roll?.film_stock ?? '');
   const [camera, setCamera] = useState(roll?.camera ?? '');
   const [format, setFormat] = useState<FilmFormat>(roll?.format ?? '35mm');
+  const [filmType, setFilmType] = useState<FilmType>(roll?.film_type ?? 'color_negative');
   const [isoBox, setIsoBox] = useState(roll?.iso_box?.toString() ?? '');
   const [isoShot, setIsoShot] = useState(roll?.iso_shot?.toString() ?? '');
   const [from, setFrom] = useState(roll?.shot_from ?? '');
@@ -158,6 +161,7 @@ function RollForm({ roll, onDone }: { roll: Roll | null; onDone: () => void }) {
       film_stock: text(film),
       camera: text(camera),
       format,
+      film_type: filmType,
       iso_box: box ?? null,
       iso_shot: shot ?? null,
       shot_from: text(from),
@@ -248,6 +252,21 @@ function RollForm({ roll, onDone }: { roll: Roll | null; onDone: () => void }) {
               {FORMATS.map((f) => (
                 <option key={f} value={f}>
                   {t(`rollEditor.formats.${f}`)}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+        <Field label={t('rollEditor.filmType')}>
+          {(props) => (
+            <select
+              {...props}
+              value={filmType}
+              onChange={(e) => setFilmType(e.target.value as FilmType)}
+            >
+              {FILM_TYPES.map((f) => (
+                <option key={f} value={f}>
+                  {t(`rollEditor.filmTypes.${f}`)}
                 </option>
               ))}
             </select>

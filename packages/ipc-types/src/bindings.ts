@@ -23,7 +23,11 @@ export const commands = {
 	 */
 	folderCheck: (path: string) => typedError<FolderCheck_Serialize, AppError_Serialize>(__TAURI_INVOKE("folder_check", { path })),
 	rollCreate: (input: RollInput_Deserialize) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_create", { input })),
-	/**  Replaces every editable field of the roll with `input` (an empty field is cleared). */
+	/**
+	 *  Replaces every editable field of the roll with `input` (an empty field is cleared). When the
+	 *  film type changes, all frames of the roll get new thumbnails in the background, since the
+	 *  conversion will follow the film type.
+	 */
 	rollUpdate: (id: RollId, input: RollInput_Deserialize) => typedError<Roll_Serialize, AppError_Serialize>(__TAURI_INVOKE("roll_update", { id, input })),
 	/**  All rolls, newest first. */
 	rollList: () => typedError<Roll_Serialize[], AppError_Serialize>(__TAURI_INVOKE("roll_list")),
@@ -1026,6 +1030,12 @@ export type FailedExport_Serialize = {
 
 /**  Film format of a roll: 35 mm, or a medium-format frame on 120 film. */
 export type FilmFormat = "35mm" | "645" | "6x6" | "6x7" | "6x9";
+
+/**
+ *  What kind of film a roll is: colour negative, or black and white on a silver or a chromogenic
+ *  (C-41) emulsion. The conversion does not use it yet (P-36).
+ */
+export type FilmType = "color_negative" | "bw_silver" | "bw_chromogenic";
 
 /**
  *  Runtime feature flags with their defaults (spec section 10). Each flag is deleted after one
@@ -2059,6 +2069,7 @@ export type RollInput = RollInput_Serialize | RollInput_Deserialize;
 export type RollInput_Deserialize = {
 	name?: string,
 	format?: FilmFormat,
+	film_type?: FilmType,
 	film_stock?: string | null,
 	camera?: string | null,
 	iso_box?: number | null,
@@ -2075,6 +2086,7 @@ export type RollInput_Deserialize = {
 export type RollInput_Serialize = {
 	name: string,
 	format: FilmFormat,
+	film_type: FilmType,
 	film_stock: string | null,
 	camera: string | null,
 	iso_box: number | null,
@@ -2108,6 +2120,8 @@ export type Roll_Deserialize = {
 	name: string,
 	film_stock?: string | null,
 	format?: FilmFormat,
+	/**  Colour negative or black and white; colour negative until set. */
+	film_type?: FilmType,
 	/**  The camera the roll was shot in. */
 	camera?: string | null,
 	/**  The film's rated speed (box ISO). */
@@ -2162,6 +2176,8 @@ export type Roll_Serialize = {
 	name: string,
 	film_stock: string | null,
 	format: FilmFormat,
+	/**  Colour negative or black and white; colour negative until set. */
+	film_type: FilmType,
 	/**  The camera the roll was shot in. */
 	camera: string | null,
 	/**  The film's rated speed (box ISO). */
@@ -2229,6 +2245,7 @@ export type ScanRequest = {
  *    (the frame's own and its roll's).
  *  - `tags_all`: the frame must have every one of these tags, its own or from its roll.
  *  - `film_stock`, `camera`: the roll's value, equal ignoring upper and lower case (plain letters).
+ *  - `film_type`: the roll's film type.
  *  - `iso`: the roll's box ISO or shot ISO.
  *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
  *    its shooting dates overlap the range; a roll without dates never matches a date filter.
@@ -2245,6 +2262,7 @@ export type SearchQuery = SearchQuery_Serialize | SearchQuery_Deserialize;
  *    (the frame's own and its roll's).
  *  - `tags_all`: the frame must have every one of these tags, its own or from its roll.
  *  - `film_stock`, `camera`: the roll's value, equal ignoring upper and lower case (plain letters).
+ *  - `film_type`: the roll's film type.
  *  - `iso`: the roll's box ISO or shot ISO.
  *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
  *    its shooting dates overlap the range; a roll without dates never matches a date filter.
@@ -2259,6 +2277,7 @@ export type SearchQuery_Deserialize = {
 	date_to?: string | null,
 	film_stock?: string | null,
 	camera?: string | null,
+	film_type?: FilmType | null,
 	iso?: number | null,
 	flag?: FrameFlag | null,
 	needs_export?: boolean,
@@ -2272,6 +2291,7 @@ export type SearchQuery_Deserialize = {
  *    (the frame's own and its roll's).
  *  - `tags_all`: the frame must have every one of these tags, its own or from its roll.
  *  - `film_stock`, `camera`: the roll's value, equal ignoring upper and lower case (plain letters).
+ *  - `film_type`: the roll's film type.
  *  - `iso`: the roll's box ISO or shot ISO.
  *  - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
  *    its shooting dates overlap the range; a roll without dates never matches a date filter.
@@ -2286,6 +2306,7 @@ export type SearchQuery_Serialize = {
 	date_to: string | null,
 	film_stock: string | null,
 	camera: string | null,
+	film_type: FilmType | null,
 	iso: number | null,
 	flag: FrameFlag | null,
 	needs_export: boolean,

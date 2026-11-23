@@ -132,6 +132,11 @@ export function RollSidebar() {
       )}
       {current && (
         <p className={styles.hint}>
+          {t('library.rolls.filmType', { type: t(`rollEditor.filmTypes.${current.film_type}`) })}
+        </p>
+      )}
+      {current && (
+        <p className={styles.hint}>
           {baseStatusText(
             baseStatus(current.film_base_rgb !== null, current.film_base_confidence ?? null),
             t,

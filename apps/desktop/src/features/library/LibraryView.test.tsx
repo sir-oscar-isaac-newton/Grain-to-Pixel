@@ -195,6 +195,14 @@ describe('LibraryView', () => {
         within(dialog).getByRole('combobox', { name: 'Film format' }),
         '645 (6 × 4.5 cm)',
       );
+      // Colour negative until another film type is chosen.
+      expect(within(dialog).getByRole('combobox', { name: 'Film type' })).toHaveValue(
+        'color_negative',
+      );
+      await user.selectOptions(
+        within(dialog).getByRole('combobox', { name: 'Film type' }),
+        'Black and white (chromogenic, C-41)',
+      );
       await user.type(within(dialog).getByRole('textbox', { name: 'Box ISO' }), '100');
       await user.type(within(dialog).getByRole('textbox', { name: 'Shot at ISO' }), '200');
       await user.type(within(dialog).getByRole('textbox', { name: 'Shot from' }), '2026-09');
@@ -208,6 +216,7 @@ describe('LibraryView', () => {
         film_stock: 'Ektar 100',
         camera: 'Nikon F3',
         format: '645',
+        film_type: 'bw_chromogenic',
         iso_box: 100,
         iso_shot: 200,
         shot_from: '2026-09',
@@ -288,6 +297,27 @@ describe('LibraryView', () => {
         camera: 'Nikon F3',
       });
       expect(await screen.findByRole('button', { name: /Summer 2026/ })).toBeInTheDocument();
+    });
+
+    it('shows the film type of the selected roll and sends the changed one on update', async () => {
+      const user = userEvent.setup();
+      const { summer } = openLibrary();
+      state.rolls = [{ ...summer, film_type: 'bw_silver' }, ...state.rolls.slice(1)];
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      expect(screen.queryByText(/^Film type:/)).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /Summer/ }));
+      expect(screen.getByText('Film type: Black and white (silver)')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Edit roll' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Edit roll' });
+      const select = within(dialog).getByRole('combobox', { name: 'Film type' });
+      expect(select).toHaveValue('bw_silver');
+      await user.selectOptions(select, 'Colour negative');
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(ipc.rollUpdate).toHaveBeenCalledTimes(1));
+      expect(ipc.rollUpdate.mock.calls[0]?.[1]).toMatchObject({ film_type: 'color_negative' });
+      expect(await screen.findByText('Film type: Colour negative')).toBeInTheDocument();
     });
 
     it('asks before deleting a roll and says how many frames go with it', async () => {

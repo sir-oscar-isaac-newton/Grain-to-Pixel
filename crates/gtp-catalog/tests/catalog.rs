@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use gtp_catalog::{backup_path, Catalog, SCHEMA_VERSION};
 use gtp_core::testing::TempDir;
 use gtp_core::{
-    BaseChange, ErrorCode, ExposureInfo, ExposureRatio, FilmFormat, Frame, FrameFlag, FrameId,
-    FrameKind, FrameSize, Recipe, Roll, RollId, SearchQuery, SourceFile, SourceRole,
+    BaseChange, ErrorCode, ExposureInfo, ExposureRatio, FilmFormat, FilmType, Frame, FrameFlag,
+    FrameId, FrameKind, FrameSize, Recipe, Roll, RollId, SearchQuery, SourceFile, SourceRole,
 };
 use rusqlite::Connection;
 
@@ -44,6 +44,7 @@ fn roll(name: &str) -> Roll {
         name: name.into(),
         film_stock: Some("Kodak Portra 400".into()),
         format: FilmFormat::Mm35,
+        film_type: FilmType::ColorNegative,
         camera: Some("Nikon F3".into()),
         iso_box: Some(400),
         iso_shot: Some(800),
@@ -156,8 +157,8 @@ fn a_v3_library_upgrades_with_a_backup_and_keeps_its_rolls() {
     assert_eq!(old.format, FilmFormat::Mm35);
     drop(cat);
 
-    assert_eq!(SCHEMA_VERSION, 11);
-    assert_eq!(user_version(&dir.db()), 11);
+    assert_eq!(SCHEMA_VERSION, 12);
+    assert_eq!(user_version(&dir.db()), 12);
     assert!(!old.has_flat_field, "an existing roll has no flat field");
     let backup = backup_path(&dir.db(), 3);
     assert!(backup.exists());
@@ -203,7 +204,7 @@ fn a_v7_library_upgrades_to_v8_and_its_rolls_have_no_colour_balance() {
     assert!(cat.store_roll_color_balance(id, [1.0, 2.0, 3.0]).unwrap().1);
     drop(cat);
 
-    assert_eq!(user_version(&dir.db()), 11);
+    assert_eq!(user_version(&dir.db()), 12);
     let backup = backup_path(&dir.db(), 7);
     assert_eq!(user_version(&backup), 7, "the backup is the old schema");
     assert!(Connection::open(&backup)
@@ -1277,7 +1278,7 @@ fn a_v8_library_upgrades_to_v9_and_its_frames_have_no_capture_info() {
     let cat = Catalog::open(&dir.db()).unwrap();
     assert_eq!(cat.capture_info(frame_id).unwrap(), None);
     drop(cat);
-    assert_eq!(user_version(&dir.db()), 11);
+    assert_eq!(user_version(&dir.db()), 12);
     let backup = backup_path(&dir.db(), 8);
     assert_eq!(user_version(&backup), 8, "the backup is the old schema");
     assert!(Connection::open(&backup)
@@ -1562,7 +1563,7 @@ fn a_v9_library_upgrades_to_v10_and_every_frame_is_unflagged() {
     let cat = Catalog::open(&dir.db()).unwrap();
     assert_eq!(cat.get_frame(frame_id).unwrap().flag, FrameFlag::None);
     drop(cat);
-    assert_eq!(user_version(&dir.db()), 11);
+    assert_eq!(user_version(&dir.db()), 12);
     assert_eq!(user_version(&backup_path(&dir.db(), 9)), 9);
 
     // The column only takes the three words.
@@ -1971,6 +1972,105 @@ fn a_v10_library_upgrades_to_v11_and_its_flat_field_has_no_exposure_and_no_files
         Some(f_number)
     );
     drop(cat);
-    assert_eq!(user_version(&dir.db()), 11);
+    assert_eq!(user_version(&dir.db()), 12);
     assert_eq!(user_version(&backup_path(&dir.db(), 10)), 10);
+}
+
+#[test]
+fn a_v11_library_upgrades_to_v12_and_its_rolls_are_colour_negative() {
+    let dir = TempDir::new("upgrade-v11");
+    let id = RollId::new();
+    {
+        let conn = Connection::open(dir.db()).unwrap();
+        for sql in [
+            include_str!("../migrations/0001_init.sql"),
+            include_str!("../migrations/0002_search.sql"),
+            include_str!("../migrations/0003_export_log.sql"),
+            include_str!("../migrations/0004_roll_base_confidence.sql"),
+            include_str!("../migrations/0005_roll_frame_size.sql"),
+            include_str!("../migrations/0006_frame_scan.sql"),
+            include_str!("../migrations/0007_flat_field.sql"),
+            include_str!("../migrations/0008_roll_color_balance.sql"),
+            include_str!("../migrations/0009_frame_capture_info.sql"),
+            include_str!("../migrations/0010_frame_flag.sql"),
+            include_str!("../migrations/0011_flat_field_capture.sql"),
+        ] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO roll(id, name, created_at) VALUES (?1, 'Old', '2026-01-01T00:00:00Z')",
+            [id.to_string()],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 11).unwrap();
+    }
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    assert_eq!(cat.get_roll(id).unwrap().film_type, FilmType::ColorNegative);
+    assert_eq!(
+        cat.list_rolls().unwrap()[0].film_type,
+        FilmType::ColorNegative
+    );
+    let mut edited = cat.get_roll(id).unwrap();
+    edited.film_type = FilmType::BwChromogenic;
+    assert_eq!(
+        cat.update_roll(&edited).unwrap().film_type,
+        FilmType::BwChromogenic
+    );
+    drop(cat);
+    assert_eq!(user_version(&dir.db()), 12);
+    assert_eq!(user_version(&backup_path(&dir.db(), 11)), 11);
+}
+
+#[test]
+fn a_rolls_film_type_is_stored_on_create_and_update() {
+    let dir = TempDir::new("film-type");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let made = cat.insert_roll(&roll("Plain")).unwrap();
+    assert_eq!(made.film_type, FilmType::ColorNegative);
+    for film_type in [
+        FilmType::BwSilver,
+        FilmType::BwChromogenic,
+        FilmType::ColorNegative,
+    ] {
+        let mut input = roll("Typed");
+        input.film_type = film_type;
+        let created = cat.insert_roll(&input).unwrap();
+        assert_eq!(created.film_type, film_type);
+        assert_eq!(cat.get_roll(created.id).unwrap().film_type, film_type);
+
+        let mut changed = made.clone();
+        changed.film_type = film_type;
+        assert_eq!(cat.update_roll(&changed).unwrap().film_type, film_type);
+    }
+}
+
+#[test]
+fn search_filters_by_film_type_and_combines_with_other_filters() {
+    let dir = TempDir::new("film-type-search");
+    let mut l = filter_library(&dir);
+    let set = |l: &mut Library, i: usize, film_type: FilmType| {
+        let mut r = l.cat.get_roll(l.rolls[i]).unwrap();
+        r.film_type = film_type;
+        l.cat.update_roll(&r).unwrap();
+    };
+    set(&mut l, 1, FilmType::BwSilver);
+    set(&mut l, 2, FilmType::BwChromogenic);
+    let q = |film_type, camera: Option<&str>| {
+        found(
+            &l.cat,
+            &SearchQuery {
+                film_type: Some(film_type),
+                camera: camera.map(str::to_owned),
+                ..SearchQuery::default()
+            },
+        )
+    };
+    assert_eq!(q(FilmType::BwSilver, None), sorted(&[&l.b]));
+    assert_eq!(q(FilmType::BwChromogenic, None), sorted(&[&l.c]));
+    assert_eq!(q(FilmType::ColorNegative, None), sorted(&[&l.a, &l.d]));
+    assert_eq!(
+        q(FilmType::ColorNegative, Some("Nikon F3")),
+        sorted(&[&l.a])
+    );
+    assert!(q(FilmType::BwSilver, Some("Nikon F3")).is_empty());
 }

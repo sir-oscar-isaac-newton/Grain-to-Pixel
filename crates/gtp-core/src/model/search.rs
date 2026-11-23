@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::ids::{RollId, TagId};
-use crate::model::FrameFlag;
+use crate::model::{FilmType, FrameFlag};
 
 /// What to look for in the library. Every part is optional and all given parts must match.
 ///
@@ -10,6 +10,7 @@ use crate::model::FrameFlag;
 ///   (the frame's own and its roll's).
 /// - `tags_all`: the frame must have every one of these tags, its own or from its roll.
 /// - `film_stock`, `camera`: the roll's value, equal ignoring upper and lower case (plain letters).
+/// - `film_type`: the roll's film type.
 /// - `iso`: the roll's box ISO or shot ISO.
 /// - `date_from`, `date_to`: partial dates (`2026`, `2026-07`, `2026-07-14`). A roll matches when
 ///   its shooting dates overlap the range; a roll without dates never matches a date filter.
@@ -26,6 +27,7 @@ pub struct SearchQuery {
     pub date_to: Option<String>,
     pub film_stock: Option<String>,
     pub camera: Option<String>,
+    pub film_type: Option<FilmType>,
     pub iso: Option<u32>,
     pub flag: Option<FrameFlag>,
     pub needs_export: bool,

@@ -91,6 +91,7 @@ mod tests {
             name: "Roll 12".into(),
             film_stock: Some("Kodak Portra 400".into()),
             format: FilmFormat::Mm35,
+            film_type: gtp_core::FilmType::ColorNegative,
             camera: Some("Nikon F3".into()),
             iso_box: Some(400),
             iso_shot: Some(800),

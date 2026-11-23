@@ -14,8 +14,8 @@ pub use exposure::{ExposureInfo, ExposureRatio};
 pub use flat_field::{FlatField, FlatFieldInfo, FlatFieldSummary};
 pub use frame::{Frame, FrameFlag, FrameKind};
 pub use roll::{
-    check_iso, check_shot_range, partial_date_span, BaseChange, FilmFormat, FrameSize, Roll,
-    FILM_BASE_MIN_CONFIDENCE, MAX_ISO,
+    check_iso, check_shot_range, partial_date_span, BaseChange, FilmFormat, FilmType, FrameSize,
+    Roll, FILM_BASE_MIN_CONFIDENCE, MAX_ISO,
 };
 pub use search::SearchQuery;
 pub use source::{SourceFile, SourceRole};

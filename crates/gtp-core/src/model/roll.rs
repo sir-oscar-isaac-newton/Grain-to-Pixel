@@ -58,6 +58,36 @@ impl FilmFormat {
     }
 }
 
+/// What kind of film a roll is: colour negative, or black and white on a silver or a chromogenic
+/// (C-41) emulsion. The conversion does not use it yet (P-36).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum FilmType {
+    #[default]
+    ColorNegative,
+    BwSilver,
+    BwChromogenic,
+}
+
+impl FilmType {
+    /// The text stored in the catalog and written to the UI.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ColorNegative => "color_negative",
+            Self::BwSilver => "bw_silver",
+            Self::BwChromogenic => "bw_chromogenic",
+        }
+    }
+
+    /// The film type of stored text; `None` for text no version of the app wrote.
+    pub fn parse(text: &str) -> Option<Self> {
+        [Self::ColorNegative, Self::BwSilver, Self::BwChromogenic]
+            .into_iter()
+            .find(|t| t.as_str() == text)
+    }
+}
+
 /// The size of one frame of a roll on its captures, as fractions of the image. It places the window
 /// that frame detection slides over a capture; each frame still finds its own position.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -106,6 +136,9 @@ pub struct Roll {
     pub film_stock: Option<String>,
     #[serde(default)]
     pub format: FilmFormat,
+    /// Colour negative or black and white; colour negative until set.
+    #[serde(default)]
+    pub film_type: FilmType,
     /// The camera the roll was shot in.
     #[serde(default)]
     pub camera: Option<String>,
@@ -309,6 +342,32 @@ mod tests {
             assert!((format.aspect() - aspect).abs() < 0.02, "{text}");
         }
         assert_eq!(FilmFormat::parse("8x10"), None);
+    }
+
+    #[test]
+    fn every_film_type_has_its_text() {
+        for (film_type, text) in [
+            (FilmType::ColorNegative, "color_negative"),
+            (FilmType::BwSilver, "bw_silver"),
+            (FilmType::BwChromogenic, "bw_chromogenic"),
+        ] {
+            assert_eq!(film_type.as_str(), text);
+            assert_eq!(FilmType::parse(text), Some(film_type));
+            assert_eq!(
+                serde_json::to_string(&film_type).unwrap(),
+                format!("\"{text}\"")
+            );
+        }
+        assert_eq!(FilmType::parse("slide"), None);
+        assert_eq!(FilmType::default(), FilmType::ColorNegative);
+    }
+
+    #[test]
+    fn a_roll_without_a_film_type_is_colour_negative() {
+        let id = RollId::new();
+        let json = format!(r#"{{"id":"{id}","name":"R","created_at":"x"}}"#);
+        let roll: Roll = serde_json::from_str(&json).unwrap();
+        assert_eq!(roll.film_type, FilmType::ColorNegative);
     }
 
     #[test]

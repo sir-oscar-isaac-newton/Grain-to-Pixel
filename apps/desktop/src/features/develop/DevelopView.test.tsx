@@ -213,7 +213,16 @@ describe('DevelopView', () => {
     it('lists what a search found, as the Library did', async () => {
       openLibrary();
       useLibraryStore.setState({
-        filters: { text: 'summer', tagIds: [], film: '', camera: '', iso: '', from: '', to: '' },
+        filters: {
+          text: 'summer',
+          tagIds: [],
+          film: '',
+          camera: '',
+          filmType: '',
+          iso: '',
+          from: '',
+          to: '',
+        },
       });
       open(1);
       render(<DevelopView />);

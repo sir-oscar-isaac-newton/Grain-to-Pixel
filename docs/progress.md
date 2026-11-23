@@ -1109,6 +1109,15 @@
       "number": 368,
       "title": "Capture a roll's flat field from the capture view",
       "branch": "feat/issue-368-flat-field-capture",
+      "status": "completed",
+      "pr": 373,
+      "commit": "afaa56e"
+    },
+    {
+      "id": "T-15",
+      "number": 381,
+      "title": "Dependency checks pass again after a vulnerability in url",
+      "branch": "chore/issue-381-url-advisory",
       "status": "in_progress",
       "pr": null,
       "commit": null

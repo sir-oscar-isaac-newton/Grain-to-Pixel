@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::exposure::ExposureInfo;
+use crate::ids::RollId;
 
 /// The smoothed light of a bare-light triplet, for one roll.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -31,6 +32,23 @@ pub struct FlatField {
     /// keeps them); empty when none were kept (a flat field made from files that were only read).
     #[serde(default)]
     pub files: Vec<String>,
+    /// RFC 3339 time the picture was shot, as the catalog stored it. `None` in a flat field not yet
+    /// stored, which is stored with the time of storing; a copy of another roll's flat field (H-26)
+    /// carries the source's, since it is the same picture.
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+/// A roll's flat field as the list of reusable ones shows it (H-26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct FlatFieldSummary {
+    pub roll_id: RollId,
+    pub roll_name: String,
+    /// RFC 3339 time the flat field was made.
+    pub created_at: String,
+    /// How the three pictures were exposed; empty fields are unknown.
+    pub exposure: ExposureInfo,
 }
 
 /// What the UI is told of a roll's flat field.
@@ -90,6 +108,7 @@ mod tests {
             sources: vec!["r".into(), "g".into(), "b".into()],
             exposure: ExposureInfo::default(),
             files: Vec::new(),
+            created_at: None,
         }
     }
 

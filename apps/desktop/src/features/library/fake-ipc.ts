@@ -16,6 +16,7 @@ import type {
   DevelopPreset,
   ExportOptions,
   ExportPreset,
+  FlatFieldSummary,
   FolderCheck,
   FramePage,
   FrameSummary,
@@ -446,6 +447,9 @@ export const state = {
   flatFieldJob: 'job-flat-field-1' as string,
   flatFieldFail: null as string | null,
   flatFieldFNumber: { num: 56, den: 10 } as { num: number; den: number } | null,
+  /** The flat fields flat_field_list answers (newest first), and the message flat_field_copy refuses with. */
+  flatFields: [] as FlatFieldSummary[],
+  flatFieldCopyFail: null as string | null,
   /** The id capture_calibrate answers, or the message it fails with. */
   calibrationJob: 'job-calibration-1' as string,
   calibrationFail: null as string | null,
@@ -870,6 +874,24 @@ export const ipc = {
       exposure: { exposure_time: null, iso: null, f_number: null },
     };
   }),
+  flatFieldCopy: vi.fn(async (from: string, to: string) => {
+    if (state.flatFieldCopyFail) {
+      throw new IpcError({ code: 'InvalidInput', message: state.flatFieldCopyFail });
+    }
+    const source = state.flatFields.find((f) => f.roll_id === from);
+    state.rolls = state.rolls.map((r) =>
+      r.id === to
+        ? { ...r, has_flat_field: true, flat_field_f_number: source?.exposure.f_number ?? null }
+        : r,
+    );
+    return {
+      frame_width: 6016,
+      frame_height: 4016,
+      sources: ['r.NEF', 'g.NEF', 'b.NEF'],
+      exposure: source?.exposure ?? { exposure_time: null, iso: null, f_number: null },
+    };
+  }),
+  flatFieldList: vi.fn(async () => state.flatFields),
   flatFieldClear: vi.fn(async (id: string) => {
     const had = state.rolls.find((r) => r.id === id)?.has_flat_field ?? false;
     state.rolls = state.rolls.map((r) =>
@@ -1233,6 +1255,8 @@ export function resetFake() {
   state.flatFieldJob = 'job-flat-field-1';
   state.flatFieldFail = null;
   state.flatFieldFNumber = { num: 56, den: 10 };
+  state.flatFields = [];
+  state.flatFieldCopyFail = null;
   state.calibrationJob = 'job-calibration-1';
   state.calibrationFail = null;
   listeners.step.length = 0;

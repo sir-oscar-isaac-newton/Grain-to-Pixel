@@ -47,6 +47,13 @@ export const commands = {
 	flatFieldImport: (id: RollId, paths: string[]) => typedError<FlatFieldInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("flat_field_import", { id, paths })),
 	/**  Removes the roll's flat field; true when it had one. */
 	flatFieldClear: (id: RollId) => typedError<boolean, AppError_Serialize>(__TAURI_INVOKE("flat_field_clear", { id })),
+	/**
+	 *  Gives the roll `to_roll_id` a copy of the flat field of the roll `from_roll_id`, replacing the one
+	 *  it has (H-26). Refused for a read-only library, like the other flat-field commands.
+	 */
+	flatFieldCopy: (fromRollId: RollId, toRollId: RollId) => typedError<FlatFieldInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("flat_field_copy", { fromRollId, toRollId })),
+	/**  Every roll that has a flat field, newest first. */
+	flatFieldList: () => typedError<FlatFieldSummary_Serialize[], AppError_Serialize>(__TAURI_INVOKE("flat_field_list")),
 	/**  Deletes a roll with its frames, then their files. */
 	rollDelete: (id: RollId) => typedError<DeleteReport, AppError_Serialize>(__TAURI_INVOKE("roll_delete", { id })),
 	/**  One page of frames of a roll, or of the whole library. */
@@ -1095,6 +1102,29 @@ export type FlatFieldInfo_Serialize = {
 	/**  The names of the three files it was made from. */
 	sources: string[],
 	/**  How the three pictures were exposed (H-24); empty fields are unknown. */
+	exposure: ExposureInfo_Serialize,
+};
+
+/**  A roll's flat field as the list of reusable ones shows it (H-26). */
+export type FlatFieldSummary = FlatFieldSummary_Serialize | FlatFieldSummary_Deserialize;
+
+/**  A roll's flat field as the list of reusable ones shows it (H-26). */
+export type FlatFieldSummary_Deserialize = {
+	roll_id: RollId,
+	roll_name: string,
+	/**  RFC 3339 time the flat field was made. */
+	created_at: string,
+	/**  How the three pictures were exposed; empty fields are unknown. */
+	exposure: ExposureInfo_Deserialize,
+};
+
+/**  A roll's flat field as the list of reusable ones shows it (H-26). */
+export type FlatFieldSummary_Serialize = {
+	roll_id: RollId,
+	roll_name: string,
+	/**  RFC 3339 time the flat field was made. */
+	created_at: string,
+	/**  How the three pictures were exposed; empty fields are unknown. */
 	exposure: ExposureInfo_Serialize,
 };
 

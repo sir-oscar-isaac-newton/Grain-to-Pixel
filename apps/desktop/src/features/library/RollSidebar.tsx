@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { baseStatus, baseStatusText } from '../../shared/film-base-status';
 import {
   flatFieldClear,
+  flatFieldCopy,
   flatFieldImport,
   importFiles,
   pickCameraFiles,
@@ -14,6 +15,7 @@ import { DeleteRollDialog } from './DeleteRollDialog';
 import styles from './library.module.css';
 import { messageOf, useLibraryStore } from './library-store';
 import { RollEditor } from './RollEditor';
+import { UseFlatFieldDialog } from './UseFlatFieldDialog';
 
 /** The rolls of the library, with actions on the selected one: edit, delete and import scans. */
 export function RollSidebar() {
@@ -28,6 +30,7 @@ export function RollSidebar() {
 
   const [editing, setEditing] = useState<{ roll: Roll | null } | null>(null);
   const [deleting, setDeleting] = useState<Roll | null>(null);
+  const [reusing, setReusing] = useState<Roll | null>(null);
   const current = rolls.find((r) => r.id === rollId) ?? null;
 
   const aperture = formatAperture(current?.flat_field_f_number);
@@ -113,6 +116,9 @@ export function RollSidebar() {
           <button type="button" disabled={readOnly} onClick={() => void setFlatField(current)}>
             {t('library.rolls.setFlatField')}
           </button>
+          <button type="button" disabled={readOnly} onClick={() => setReusing(current)}>
+            {t('library.rolls.useFlatField')}
+          </button>
           {current.has_flat_field && (
             <button
               type="button"
@@ -148,6 +154,11 @@ export function RollSidebar() {
         onOpenChange={(open) => !open && setEditing(null)}
       />
       <DeleteRollDialog roll={deleting} onClose={() => setDeleting(null)} />
+      <UseFlatFieldDialog
+        roll={reusing}
+        onClose={() => setReusing(null)}
+        onCopy={(fromId, roll) => changeFlatField(() => flatFieldCopy(fromId, roll.id))}
+      />
     </nav>
   );
 }

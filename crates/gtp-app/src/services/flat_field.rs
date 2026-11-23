@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use std::sync::Arc;
 
-use gtp_core::{AppError, ErrorCode, ExposureInfo, FlatField, ImageF32, RollId};
+use gtp_core::{AppError, ErrorCode, ExposureInfo, FlatField, FrameId, ImageF32, RollId};
 use gtp_ingest::{merge_triplet, read_exposure_info};
-use gtp_io::{Limits, RawDecoder, RawlerDecoder};
+use gtp_io::{mark_read_only, Limits, RawDecoder, RawlerDecoder};
 use rayon::prelude::*;
 
 use crate::context::ThumbnailRequester;
@@ -31,7 +31,7 @@ pub const GRID_WIDTH: u32 = 96;
 /// Every how many pixels of a cell is looked at when its mean is taken.
 const SAMPLE_STEP: usize = 3;
 
-pub use gtp_core::FlatFieldInfo;
+pub use gtp_core::{FlatFieldInfo, FlatFieldSummary};
 
 fn invalid(message: &str, details: impl Into<String>) -> AppError {
     AppError::new(ErrorCode::InvalidInput, message.to_owned()).with_details(details.into())
@@ -112,6 +112,7 @@ pub fn build_flat_field(image: &ImageF32, sources: Vec<String>) -> Result<FlatFi
         sources,
         exposure: ExposureInfo::default(),
         files: Vec::new(),
+        created_at: None,
     };
     if flat.is_valid() {
         Ok(flat)
@@ -268,6 +269,27 @@ pub fn flat_field_attach(
     )
 }
 
+/// Refuses a flat field of `width` x `height` pixels when a frame of the roll has another size.
+fn check_frames_fit(
+    library: &Library,
+    roll: RollId,
+    width: u32,
+    height: u32,
+) -> Result<(), AppError> {
+    let sizes: Vec<(u32, u32)> = library
+        .read(|c| c.list_frames(roll))?
+        .iter()
+        .map(|f| (f.width, f.height))
+        .collect();
+    if let Some((fw, fh)) = sizes.into_iter().find(|s| *s != (width, height)) {
+        return Err(invalid(
+            "This flat field is not the size of the roll's frames.",
+            format!("{width}x{height} against frames of {fw}x{fh}"),
+        ));
+    }
+    Ok(())
+}
+
 /// Builds the flat field of a merged bare-light picture and attaches it to the roll, replacing the
 /// one it has (and removing the files that one kept, except those in `files`, the library-relative
 /// paths this one keeps). The roll's frames, if it has any, must be the size of the picture.
@@ -279,28 +301,22 @@ pub(crate) fn attach_merged(
     exposure: ExposureInfo,
     files: Vec<String>,
 ) -> Result<FlatFieldInfo, AppError> {
-    let sizes: Vec<(u32, u32)> = library
-        .read(|c| c.list_frames(roll))?
-        .iter()
-        .map(|f| (f.width, f.height))
-        .collect();
-    if let Some((fw, fh)) = sizes
-        .into_iter()
-        .find(|s| *s != (merged.width, merged.height))
-    {
-        return Err(invalid(
-            "This flat field is not the size of the roll's frames.",
-            format!(
-                "{}x{} against frames of {fw}x{fh}",
-                merged.width, merged.height
-            ),
-        ));
-    }
+    check_frames_fit(library, roll, merged.width, merged.height)?;
     let mut flat = build_flat_field(merged, sources)?;
     flat.exposure = exposure;
     flat.files = files;
+    store_flat_field(library, roll, &flat)
+}
+
+/// Stores `flat` as the roll's flat field, replacing the one it has and removing the files that one
+/// kept, except those `flat` keeps too.
+fn store_flat_field(
+    library: &Library,
+    roll: RollId,
+    flat: &FlatField,
+) -> Result<FlatFieldInfo, AppError> {
     let old = library.read(|c| c.get_flat_field(roll))?;
-    library.write(|c| c.set_flat_field(roll, &flat))?;
+    library.write(|c| c.set_flat_field(roll, flat))?;
     if let Some(old) = old {
         let replaced: Vec<String> = old
             .files
@@ -309,7 +325,107 @@ pub(crate) fn attach_merged(
             .collect();
         remove_kept_files(library, roll, &replaced);
     }
-    Ok(FlatFieldInfo::from(&flat))
+    Ok(FlatFieldInfo::from(flat))
+}
+
+/// Every roll's flat field, newest first (ties by roll name): what "use another roll's flat field"
+/// offers (H-26).
+pub fn flat_field_list(library: &Library) -> Result<Vec<FlatFieldSummary>, AppError> {
+    library.read(|c| c.list_flat_fields())
+}
+
+/// The name of a kept file for its copy: the same pattern as `flat_field_capture` makes
+/// (`r|g|b-<token>-<name>`), with the original's name part and a new token.
+fn copied_name(original: &str, index: usize, token: &str) -> String {
+    let file = Path::new(original)
+        .file_name()
+        .map_or_else(|| original.to_owned(), |n| n.to_string_lossy().into_owned());
+    let mut parts = file.splitn(3, '-');
+    let rest = match (parts.next(), parts.next(), parts.next()) {
+        (Some(prefix), Some(old), Some(rest))
+            if matches!(prefix, "r" | "g" | "b") && old.len() == token.len() =>
+        {
+            rest.to_owned()
+        }
+        _ => file,
+    };
+    let prefix = ["r", "g", "b"].get(index).copied().unwrap_or("x");
+    format!("{prefix}-{token}-{rest}")
+}
+
+/// Copies the kept files of the source into the target roll's flat-field folder under new names and
+/// marks them read-only; returns the new library-relative paths. Removes what it copied on failure.
+fn copy_kept_files(
+    library: &Library,
+    files: &[String],
+    to: RollId,
+) -> Result<Vec<String>, AppError> {
+    let token: String = FrameId::new().to_string().chars().rev().take(8).collect();
+    let dir = flat_field_rel(to);
+    let rels: Vec<String> = files
+        .iter()
+        .enumerate()
+        .map(|(i, file)| {
+            dir.join(copied_name(file, i, &token))
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect();
+    let copy_all = || -> Result<(), AppError> {
+        for (from, rel) in files.iter().zip(&rels) {
+            let from = library.resolve(Path::new(from))?;
+            let to = library.resolve(Path::new(rel))?;
+            if let Some(parent) = to.parent() {
+                std::fs::create_dir_all(parent).map_err(|err| AppError::from_io(&err))?;
+            }
+            std::fs::copy(&from, &to).map_err(|err| AppError::from_io(&err))?;
+            mark_read_only(&to)?;
+        }
+        Ok(())
+    };
+    match copy_all() {
+        Ok(()) => Ok(rels),
+        Err(err) => {
+            remove_kept_files(library, to, &rels);
+            Err(err)
+        }
+    }
+}
+
+/// Gives the roll `to` a copy of the flat field of the roll `from`, replacing the one it has. The
+/// stored picture is copied as it is (nothing is decoded again), with the date it was made. The
+/// files the source kept are copied into the target's own folder, so deleting the source roll later
+/// leaves the copy whole. The target's frames, if it has any, must be the size of the flat field.
+/// Nothing changes when this fails. The caller makes the roll's frames and thumbnails follow (see
+/// [`after_flat_field_change`]).
+pub fn flat_field_copy(
+    library: &Library,
+    from: RollId,
+    to: RollId,
+) -> Result<FlatFieldInfo, AppError> {
+    if from == to {
+        return Err(invalid(
+            "Pick another roll: a roll cannot take its own flat field.",
+            "the same roll as source and target",
+        ));
+    }
+    library.read(|c| c.get_roll(to))?;
+    library.read(|c| c.get_roll(from))?;
+    let Some(mut flat) = library.read(|c| c.get_flat_field(from))? else {
+        return Err(invalid(
+            "That roll has no flat field to copy.",
+            format!("roll {from}"),
+        ));
+    };
+    check_frames_fit(library, to, flat.frame_w, flat.frame_h)?;
+    flat.files = copy_kept_files(library, &flat.files, to)?;
+    match store_flat_field(library, to, &flat) {
+        Ok(info) => Ok(info),
+        Err(err) => {
+            remove_kept_files(library, to, &flat.files);
+            Err(err)
+        }
+    }
 }
 
 /// Removes the files a flat field kept, best effort: what cannot be removed is logged and left,
@@ -542,5 +658,222 @@ mod tests {
         );
         assert!(!lib.read(|c| c.get_roll(roll)).unwrap().has_flat_field);
         assert!(!flat_field_clear(&lib, roll).unwrap());
+    }
+
+    /// A library for the copy tests, with helpers.
+    struct Pair {
+        lib: Library,
+        _temp: TempDir,
+    }
+
+    impl Pair {
+        fn new(label: &str) -> Self {
+            let temp = TempDir::new(label);
+            let lib = Library::create(&temp.path().join("lib"), "Copy").unwrap();
+            Self { lib, _temp: temp }
+        }
+
+        fn roll(&self, name: &str) -> RollId {
+            crate::services::roll_frame::roll_create(
+                &self.lib,
+                crate::services::roll_frame::RollInput {
+                    name: name.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .id
+        }
+
+        /// Gives `roll` a flat field (for frames of 120 x 80) made on `date`, keeping `kept` files
+        /// (written for real); returns it as the catalog has it.
+        fn flat(&self, roll: RollId, date: Option<&str>, kept: &[&str]) -> FlatField {
+            let mut flat = build_flat_field(&vignetted(120, 80), sources()).unwrap();
+            flat.exposure.iso = Some(100);
+            flat.created_at = date.map(str::to_owned);
+            flat.files = kept
+                .iter()
+                .map(|name| {
+                    let rel = flat_field_rel(roll).join(name);
+                    let path = self.lib.resolve(&rel).unwrap();
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(&path, name.as_bytes()).unwrap();
+                    rel.to_string_lossy().replace('\\', "/")
+                })
+                .collect();
+            self.lib.write(|c| c.set_flat_field(roll, &flat)).unwrap();
+            self.get(roll).unwrap()
+        }
+
+        fn get(&self, roll: RollId) -> Option<FlatField> {
+            self.lib.read(|c| c.get_flat_field(roll)).unwrap()
+        }
+
+        fn path(&self, rel: &str) -> PathBuf {
+            self.lib.resolve(Path::new(rel)).unwrap()
+        }
+    }
+
+    #[test]
+    fn a_copy_has_the_picture_the_exposure_the_date_and_files_of_its_own() {
+        let p = Pair::new("flat-copy");
+        let (from, to) = (p.roll("From"), p.roll("To"));
+        let src = p.flat(
+            from,
+            Some("2020-05-01T08:00:00Z"),
+            &[
+                "r-AAAAAAAA-one.NEF",
+                "g-AAAAAAAA-two.NEF",
+                "b-AAAAAAAA-three.NEF",
+            ],
+        );
+
+        let info = flat_field_copy(&p.lib, from, to).unwrap();
+        let copy = p.get(to).unwrap();
+        assert_eq!(info, FlatFieldInfo::from(&src));
+        assert_eq!(
+            (&copy.light, &copy.sources, copy.exposure, &copy.created_at),
+            (&src.light, &src.sources, src.exposure, &src.created_at),
+            "the same picture, shot on the same date"
+        );
+        assert_eq!(copy.created_at.as_deref(), Some("2020-05-01T08:00:00Z"));
+        assert_eq!(copy.files.len(), 3);
+        for (rel, (prefix, name)) in
+            copy.files
+                .iter()
+                .zip([("r", "one.NEF"), ("g", "two.NEF"), ("b", "three.NEF")])
+        {
+            assert!(!src.files.contains(rel), "a new name");
+            assert!(rel.starts_with(&format!("originals/{to}/flat-field/{prefix}-")));
+            assert!(rel.ends_with(&format!("-{name}")), "{rel}");
+            assert!(!rel.contains("AAAAAAAA"), "a new token: {rel}");
+            let path = p.path(rel);
+            assert!(std::fs::metadata(&path).unwrap().permissions().readonly());
+            assert!(std::fs::read(&path).unwrap().ends_with(name.as_bytes()));
+        }
+        for rel in &src.files {
+            assert!(p.path(rel).exists(), "the source keeps its own");
+        }
+    }
+
+    #[test]
+    fn a_copy_of_a_flat_field_without_kept_files_keeps_none() {
+        let p = Pair::new("flat-copy-none");
+        let (from, to) = (p.roll("From"), p.roll("To"));
+        p.flat(from, None, &[]);
+        flat_field_copy(&p.lib, from, to).unwrap();
+        assert!(p.get(to).unwrap().files.is_empty());
+        assert!(!p.path(&flat_field_rel(to).to_string_lossy()).exists());
+    }
+
+    #[test]
+    fn a_copy_that_cannot_be_made_is_refused_and_changes_nothing() {
+        let p = Pair::new("flat-copy-refused");
+        let (from, to, bare) = (p.roll("From"), p.roll("To"), p.roll("Bare"));
+        let old = p.flat(to, Some("2019-01-01T00:00:00Z"), &["r-OLDOLDOL-old.NEF"]);
+        let code = |r: Result<FlatFieldInfo, AppError>| r.unwrap_err().code;
+
+        assert_eq!(
+            code(flat_field_copy(&p.lib, to, to)),
+            ErrorCode::InvalidInput,
+            "its own"
+        );
+        assert_eq!(
+            code(flat_field_copy(&p.lib, bare, to)),
+            ErrorCode::InvalidInput,
+            "no flat field to copy"
+        );
+        assert_eq!(
+            code(flat_field_copy(&p.lib, RollId::new(), to)),
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            code(flat_field_copy(&p.lib, to, RollId::new())),
+            ErrorCode::NotFound
+        );
+
+        // Frames of another size: refused before any file is copied.
+        p.flat(from, None, &["r-AAAAAAAA-one.NEF"]);
+        crate::services::testkit::add_frame(&p.lib, to, 1, 100, 60);
+        assert_eq!(
+            code(flat_field_copy(&p.lib, from, to)),
+            ErrorCode::InvalidInput
+        );
+        let dir = p.path(&flat_field_rel(to).to_string_lossy());
+        assert_eq!(
+            std::fs::read_dir(dir).unwrap().count(),
+            1,
+            "no file was copied"
+        );
+        assert_eq!(p.get(to), Some(old));
+    }
+
+    #[test]
+    fn a_copy_that_fails_part_way_removes_what_it_copied_and_keeps_the_old_flat_field() {
+        let p = Pair::new("flat-copy-cleanup");
+        let (from, to) = (p.roll("From"), p.roll("To"));
+        let old = p.flat(to, None, &["r-OLDOLDOL-old.NEF"]);
+        let src = p.flat(from, None, &["r-AAAAAAAA-one.NEF", "g-AAAAAAAA-two.NEF"]);
+        // The second file of the source is gone.
+        std::fs::remove_file(p.path(&src.files[1])).unwrap();
+
+        assert!(flat_field_copy(&p.lib, from, to).is_err());
+        assert_eq!(p.get(to), Some(old.clone()), "unchanged");
+        let names: Vec<String> = std::fs::read_dir(p.path(&flat_field_rel(to).to_string_lossy()))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["r-OLDOLDOL-old.NEF"], "the first copy was removed");
+        assert!(p.path(&old.files[0]).exists());
+    }
+
+    #[test]
+    fn a_copy_replaces_the_flat_field_of_the_target_and_removes_its_files() {
+        let p = Pair::new("flat-copy-replace");
+        let (from, to) = (p.roll("From"), p.roll("To"));
+        let old = p.flat(to, None, &["r-OLDOLDOL-old.NEF"]);
+        p.flat(from, None, &["r-AAAAAAAA-one.NEF"]);
+        flat_field_copy(&p.lib, from, to).unwrap();
+        assert!(
+            !p.path(&old.files[0]).exists(),
+            "the replaced file is removed"
+        );
+        let copy = p.get(to).unwrap();
+        assert_eq!(copy.files.len(), 1);
+        assert!(p.path(&copy.files[0]).exists());
+    }
+
+    #[test]
+    fn deleting_the_source_roll_leaves_the_copy_and_its_files() {
+        let p = Pair::new("flat-copy-delete");
+        let (from, to) = (p.roll("From"), p.roll("To"));
+        let src = p.flat(from, None, &["r-AAAAAAAA-one.NEF", "g-AAAAAAAA-two.NEF"]);
+        flat_field_copy(&p.lib, from, to).unwrap();
+        crate::services::roll_frame::roll_delete(&p.lib, from).unwrap();
+        for rel in &src.files {
+            assert!(!p.path(rel).exists(), "the source's files went with it");
+        }
+        let copy = p.get(to).unwrap();
+        assert_eq!(copy.files.len(), 2);
+        for rel in &copy.files {
+            assert!(p.path(rel).exists(), "{rel}");
+        }
+    }
+
+    #[test]
+    fn the_list_has_every_flat_field_newest_first_ties_by_roll_name() {
+        let p = Pair::new("flat-list");
+        assert!(flat_field_list(&p.lib).unwrap().is_empty());
+        let (a, b, c) = (p.roll("Beta"), p.roll("Alpha"), p.roll("Gamma"));
+        p.roll("Without");
+        p.flat(a, Some("2021-01-01T00:00:00Z"), &[]);
+        p.flat(b, Some("2021-01-01T00:00:00Z"), &[]);
+        p.flat(c, Some("2022-06-01T00:00:00Z"), &[]);
+        let list = flat_field_list(&p.lib).unwrap();
+        let names: Vec<&str> = list.iter().map(|s| s.roll_name.as_str()).collect();
+        assert_eq!(names, ["Gamma", "Alpha", "Beta"]);
+        assert_eq!(list[0].roll_id, c);
+        assert_eq!(list[0].created_at, "2022-06-01T00:00:00Z");
+        assert_eq!(list[0].exposure.iso, Some(100));
     }
 }

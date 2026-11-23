@@ -1,9 +1,9 @@
 //! The flat field of a roll (P-21).
 
-use gtp_core::{AppError, ErrorCode, ExposureInfo, FlatField, RollId};
+use gtp_core::{AppError, ErrorCode, ExposureInfo, FlatField, FlatFieldSummary, RollId};
 use rusqlite::{params, OptionalExtension};
 
-use super::NOW;
+use super::{parse_col, NOW};
 use crate::db::db_error;
 use crate::Catalog;
 
@@ -39,7 +39,7 @@ impl Catalog {
         tx.execute(
             &format!(
                 "INSERT INTO flat_field(roll_id, grid_w, grid_h, frame_w, frame_h, light, sources, exposure, files, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, {NOW})"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, coalesce(?10, {NOW}))"
             ),
             params![
                 roll.to_string(),
@@ -50,7 +50,8 @@ impl Catalog {
                 light,
                 sources,
                 exposure,
-                files
+                files,
+                flat.created_at
             ],
         )
         .map_err(db_error)?;
@@ -61,7 +62,7 @@ impl Catalog {
     pub fn get_flat_field(&self, roll: RollId) -> Result<Option<FlatField>, AppError> {
         self.conn
             .query_row(
-                "SELECT grid_w, grid_h, frame_w, frame_h, light, sources, exposure, files FROM flat_field
+                "SELECT grid_w, grid_h, frame_w, frame_h, light, sources, exposure, files, created_at FROM flat_field
                  WHERE roll_id = ?1",
                 [roll.to_string()],
                 |row| {
@@ -69,6 +70,7 @@ impl Catalog {
                     let sources: String = row.get(5)?;
                     let exposure: Option<String> = row.get(6)?;
                     let files: Option<String> = row.get(7)?;
+                    let created_at: String = row.get(8)?;
                     Ok(FlatField {
                         grid_w: row.get(0)?,
                         grid_h: row.get(1)?,
@@ -87,11 +89,39 @@ impl Catalog {
                         files: files
                             .and_then(|json| serde_json::from_str(&json).ok())
                             .unwrap_or_default(),
+                        created_at: Some(created_at),
                     })
                 },
             )
             .optional()
             .map_err(db_error)
+    }
+
+    /// Every roll's flat field as a summary, newest first (ties by roll name, then id).
+    pub fn list_flat_fields(&self) -> Result<Vec<FlatFieldSummary>, AppError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT f.roll_id, r.name, f.created_at, f.exposure FROM flat_field f
+                 JOIN roll r ON r.id = f.roll_id
+                 ORDER BY f.created_at DESC, r.name COLLATE NOCASE, r.id",
+            )
+            .map_err(db_error)?;
+        let rows = stmt
+            .query_map([], |row| {
+                let exposure: Option<String> = row.get(3)?;
+                Ok(FlatFieldSummary {
+                    roll_id: parse_col(row, 0)?,
+                    roll_name: row.get(1)?,
+                    created_at: row.get(2)?,
+                    exposure: exposure
+                        .and_then(|json| serde_json::from_str::<ExposureInfo>(&json).ok())
+                        .unwrap_or_default(),
+                })
+            })
+            .map_err(db_error)?;
+        let out = rows.collect::<Result<Vec<_>, _>>().map_err(db_error)?;
+        Ok(out)
     }
 
     /// Removes the roll's flat field; true when it had one. A roll that does not exist is not found.

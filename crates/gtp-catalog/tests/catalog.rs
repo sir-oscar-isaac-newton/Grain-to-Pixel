@@ -387,9 +387,16 @@ fn a_rolls_flat_field_is_stored_replaced_cleared_and_removed_with_the_roll() {
         sources: vec!["r.NEF".into(), "g.NEF".into(), "b.NEF".into()],
         exposure: ExposureInfo::default(),
         files: Vec::new(),
+        created_at: None,
     };
     cat.set_flat_field(r.id, &flat(0.5)).unwrap();
-    assert_eq!(cat.get_flat_field(r.id).unwrap(), Some(flat(0.5)));
+    // It comes back with the date it was stored, which the flat field given had none of.
+    let stored = |cat: &Catalog, id| {
+        let mut got = cat.get_flat_field(id).unwrap().unwrap();
+        assert!(got.created_at.take().is_some(), "stored with a date");
+        Some(got)
+    };
+    assert_eq!(stored(&cat, r.id), Some(flat(0.5)));
     assert!(cat.get_roll(r.id).unwrap().has_flat_field);
     assert!(
         !cat.get_roll(other.id).unwrap().has_flat_field,
@@ -403,7 +410,7 @@ fn a_rolls_flat_field_is_stored_replaced_cleared_and_removed_with_the_roll() {
 
     // A new one replaces the old.
     cat.set_flat_field(r.id, &flat(0.7)).unwrap();
-    assert_eq!(cat.get_flat_field(r.id).unwrap(), Some(flat(0.7)));
+    assert_eq!(stored(&cat, r.id), Some(flat(0.7)));
 
     // A grid that is not usable, and a roll that is not there, are refused.
     let mut bad = flat(0.5);
@@ -419,7 +426,7 @@ fn a_rolls_flat_field_is_stored_replaced_cleared_and_removed_with_the_roll() {
         ErrorCode::NotFound
     );
     assert_eq!(
-        cat.get_flat_field(r.id).unwrap(),
+        stored(&cat, r.id),
         Some(flat(0.7)),
         "unchanged by the refusals"
     );
@@ -435,6 +442,57 @@ fn a_rolls_flat_field_is_stored_replaced_cleared_and_removed_with_the_roll() {
     cat.set_flat_field(other.id, &flat(0.6)).unwrap();
     cat.delete_roll(other.id).unwrap();
     assert_eq!(cat.get_flat_field(other.id).unwrap(), None);
+}
+
+#[test]
+fn a_flat_field_keeps_a_given_date_and_the_list_has_them_newest_first() {
+    use gtp_core::FlatField;
+    let dir = TempDir::new("flat-field-list");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    assert!(cat.list_flat_fields().unwrap().is_empty());
+    let flat = |date: Option<&str>, iso: Option<u32>| FlatField {
+        grid_w: 2,
+        grid_h: 2,
+        frame_w: 60,
+        frame_h: 40,
+        light: vec![1.0; 12],
+        sources: vec!["r.NEF".into(), "g.NEF".into(), "b.NEF".into()],
+        exposure: ExposureInfo {
+            iso,
+            ..ExposureInfo::default()
+        },
+        files: Vec::new(),
+        created_at: date.map(str::to_owned),
+    };
+    let old = cat.insert_roll(&roll("Old")).unwrap();
+    let new = cat.insert_roll(&roll("New")).unwrap();
+    let tie = cat.insert_roll(&roll("Ant")).unwrap();
+    let none = cat.insert_roll(&roll("None")).unwrap();
+    cat.set_flat_field(old.id, &flat(Some("2020-01-02T03:04:05Z"), None))
+        .unwrap();
+    cat.set_flat_field(new.id, &flat(Some("2024-01-01T00:00:00Z"), Some(100)))
+        .unwrap();
+    cat.set_flat_field(tie.id, &flat(Some("2020-01-02T03:04:05Z"), None))
+        .unwrap();
+    assert_eq!(
+        cat.get_flat_field(old.id).unwrap().unwrap().created_at,
+        Some("2020-01-02T03:04:05Z".into()),
+        "a given date is kept"
+    );
+
+    let list = cat.list_flat_fields().unwrap();
+    let names: Vec<&str> = list.iter().map(|s| s.roll_name.as_str()).collect();
+    assert_eq!(names, ["New", "Ant", "Old"], "newest first, ties by name");
+    assert_eq!(list[0].roll_id, new.id);
+    assert_eq!(list[0].exposure.iso, Some(100));
+    assert_eq!(list[2].exposure, ExposureInfo::default());
+    assert_eq!(list[2].created_at, "2020-01-02T03:04:05Z");
+
+    // Without a date it is stored with the time of storing, which is the newest.
+    cat.set_flat_field(none.id, &flat(None, None)).unwrap();
+    assert_eq!(cat.list_flat_fields().unwrap()[0].roll_id, none.id);
+    cat.delete_roll(none.id).unwrap();
+    assert_eq!(cat.list_flat_fields().unwrap().len(), 3);
 }
 
 #[test]

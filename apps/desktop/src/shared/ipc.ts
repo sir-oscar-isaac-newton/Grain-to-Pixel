@@ -30,6 +30,7 @@ import {
   type FailedExport,
   type FilmFormat,
   type FlatFieldInfo,
+  type FlatFieldSummary,
   type FrameFlag,
   type ImportResult,
   type ImportWarning,
@@ -75,6 +76,7 @@ export type {
   FailedExport,
   FilmFormat,
   FlatFieldInfo,
+  FlatFieldSummary,
   FrameFlag,
   ImportResult,
   ImportWarning,
@@ -213,6 +215,16 @@ export async function flatFieldImport(...args: Args<'flatFieldImport'>): Promise
 /** Removes a roll's flat field; false when it had none. */
 export async function flatFieldClear(...args: Args<'flatFieldClear'>): Promise<boolean> {
   return unwrap(await commands.flatFieldClear(...args));
+}
+
+/** Gives a roll a copy of another roll's flat field, replacing the one it has. */
+export async function flatFieldCopy(...args: Args<'flatFieldCopy'>): Promise<FlatFieldInfo> {
+  return unwrap(await commands.flatFieldCopy(...args));
+}
+
+/** The rolls that have a flat field, newest first. */
+export async function flatFieldList(): Promise<FlatFieldSummary[]> {
+  return unwrap(await commands.flatFieldList());
 }
 
 /** Deletes a roll and its frames; `files_left` lists files that could not be removed. */

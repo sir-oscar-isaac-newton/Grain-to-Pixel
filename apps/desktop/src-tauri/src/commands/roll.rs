@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use gtp_app::services::flat_field::{self, FlatFieldInfo};
+use gtp_app::services::flat_field::{self, FlatFieldInfo, FlatFieldSummary};
 use gtp_app::services::roll_frame::{self, DeleteReport, RollInput};
 use gtp_app::AppContext;
 use gtp_core::{Roll, RollId};
@@ -105,6 +105,30 @@ pub fn flat_field_import(
     after_flat_field_change(&ctx, &events, id)?;
     tracing::info!(roll = %id, "flat field attached");
     Ok(info)
+}
+
+/// Gives the roll `to_roll_id` a copy of the flat field of the roll `from_roll_id`, replacing the one
+/// it has (H-26). Refused for a read-only library, like the other flat-field commands.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn flat_field_copy(
+    ctx: State<'_, AppContext>,
+    events: State<'_, EventsState>,
+    from_roll_id: RollId,
+    to_roll_id: RollId,
+) -> CmdResult<FlatFieldInfo> {
+    let info = flat_field::flat_field_copy(&*ctx.library()?, from_roll_id, to_roll_id)?;
+    after_flat_field_change(&ctx, &events, to_roll_id)?;
+    tracing::info!(from = %from_roll_id, to = %to_roll_id, "flat field copied");
+    Ok(info)
+}
+
+/// Every roll that has a flat field, newest first.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn flat_field_list(ctx: State<'_, AppContext>) -> CmdResult<Vec<FlatFieldSummary>> {
+    let list = flat_field::flat_field_list(&*ctx.library()?)?;
+    Ok(list)
 }
 
 /// Removes the roll's flat field; true when it had one.

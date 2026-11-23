@@ -401,6 +401,118 @@ describe('LibraryView', () => {
     });
   });
 
+  describe("using another roll's flat field", () => {
+    const summary = (id: string, name: string, created_at: string, f: number | null) => ({
+      roll_id: id,
+      roll_name: name,
+      created_at,
+      exposure: {
+        exposure_time: null,
+        iso: null,
+        f_number: f === null ? null : { num: f, den: 1 },
+      },
+    });
+
+    async function openDialog(user: ReturnType<typeof userEvent.setup>) {
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      await user.click(screen.getByRole('button', { name: "Use another roll's flat field…" }));
+      return screen.findByRole('dialog', { name: "Use another roll's flat field" });
+    }
+
+    it('lists the other rolls newest first with their aperture, and copies the chosen one', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      state.rolls = [...state.rolls, makeRoll({ id: 'autumn', name: 'Autumn' })];
+      state.flatFields = [
+        summary('autumn', 'Autumn', '2025-01-15T10:00:00Z', 8),
+        summary('winter', 'Winter', '2024-06-01T10:00:00Z', 4),
+        summary('summer', 'Summer', '2024-03-02T10:00:00Z', null),
+      ];
+      const dialog = await openDialog(user);
+      const radios = await within(dialog).findAllByRole('radio');
+      expect(radios.map((r) => r.closest('label')?.textContent)).toEqual([
+        expect.stringMatching(/^Autumn, .*2025.*, f\/8$/),
+        expect.stringMatching(/^Summer, .*2024.*, aperture unknown$/),
+      ]);
+      expect(within(dialog).queryByRole('note')).not.toBeInTheDocument();
+      const copy = within(dialog).getByRole('button', { name: 'Copy' });
+      expect(copy).toBeDisabled();
+      await expectNoA11yViolations(dialog);
+
+      await user.click(radios[0] as HTMLElement);
+      expect(copy).toBeEnabled();
+      await user.click(copy);
+      await waitFor(() => expect(ipc.flatFieldCopy).toHaveBeenCalledWith('autumn', 'winter'));
+      expect(await screen.findByText(/^Flat field set, shot at f\/8:/)).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('says that copying replaces the flat field the roll has', async () => {
+      const user = userEvent.setup();
+      const { winter } = openLibrary();
+      state.rolls = state.rolls.map((r) =>
+        r.id === winter.id ? { ...r, has_flat_field: true } : r,
+      );
+      state.flatFields = [summary('summer', 'Summer', '2024-03-02T10:00:00Z', 8)];
+      const dialog = await openDialog(user);
+      expect(await within(dialog).findByRole('note')).toHaveTextContent(
+        'Winter already has a flat field. Copying replaces it.',
+      );
+    });
+
+    it('says so when no other roll has a flat field, and can be cancelled', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      state.flatFields = [summary('winter', 'Winter', '2024-06-01T10:00:00Z', 4)];
+      const dialog = await openDialog(user);
+      expect(
+        await within(dialog).findByText('No other roll has a flat field.'),
+      ).toBeInTheDocument();
+      expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
+      expect(within(dialog).getByRole('button', { name: 'Copy' })).toBeDisabled();
+      await expectNoA11yViolations(dialog);
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(ipc.flatFieldCopy).not.toHaveBeenCalled();
+    });
+
+    it('shows the failure of a copy as the flat field notice', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      state.flatFields = [summary('summer', 'Summer', '2024-03-02T10:00:00Z', 8)];
+      state.flatFieldCopyFail = "This flat field is not the size of the roll's frames.";
+      const dialog = await openDialog(user);
+      await user.click(await within(dialog).findByRole('radio'));
+      await user.click(within(dialog).getByRole('button', { name: 'Copy' }));
+      expect(
+        await screen.findByText(
+          "The flat field could not be changed: This flat field is not the size of the roll's frames.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('says why the list could not be had', async () => {
+      const user = userEvent.setup();
+      openLibrary();
+      ipc.flatFieldList.mockRejectedValueOnce(new Error('The catalog is busy.'));
+      const dialog = await openDialog(user);
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+        'The flat fields could not be listed: The catalog is busy.',
+      );
+    });
+
+    it('is disabled for a read-only library', async () => {
+      const user = userEvent.setup();
+      openLibrary({ read_only: true });
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      expect(screen.getByRole('button', { name: "Use another roll's flat field…" })).toBeDisabled();
+    });
+  });
+
   describe('importing', () => {
     it('imports the picked scans into the roll and follows the job to its result', async () => {
       const user = userEvent.setup();

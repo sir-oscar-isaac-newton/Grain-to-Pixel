@@ -2640,6 +2640,7 @@ mod tests {
             sources: Vec::new(),
             exposure: gtp_core::ExposureInfo::default(),
             files: Vec::new(),
+            created_at: None,
         };
         t.library
             .write(|c| c.set_flat_field(t.roll, &flat(1.0)))

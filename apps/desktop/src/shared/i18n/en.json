@@ -52,11 +52,25 @@
       "delete": "Delete roll",
       "import": "Import TIFF files…",
       "setFlatField": "Set flat field…",
+      "useFlatField": "Use another roll's flat field…",
       "removeFlatField": "Remove flat field",
       "flatFieldOn": "Flat field set: the roll's camera frames are corrected for uneven light.",
       "flatFieldOnAperture": "Flat field set, shot at {{aperture}}: the roll's camera frames are corrected for uneven light.",
       "flatFieldOff": "No flat field.",
       "actions": "Actions for the selected roll"
+    },
+    "useFlatField": {
+      "title": "Use another roll's flat field",
+      "description": "Copy the flat field of another roll to {{roll}}. The copy is its own: removing or deleting the other roll does not change it.",
+      "replaces": "{{roll}} already has a flat field. Copying replaces it.",
+      "choose": "Roll to copy from",
+      "loading": "Looking for flat fields…",
+      "none": "No other roll has a flat field.",
+      "loadFailed": "The flat fields could not be listed: {{message}}",
+      "entry": "{{name}}, {{date}}, {{aperture}}",
+      "apertureUnknown": "aperture unknown",
+      "copy": "Copy",
+      "cancel": "Cancel"
     },
     "location": {
       "label": "Library: {{name}}",

@@ -12823,7 +12823,7 @@ SOFTWARE.
 ==============================================================================
 Licence: MIT OR Apache-2.0
 Packages:
-  form_urlencoded 1.2.2 (crate)
+  form_urlencoded 1.2.3 (crate)
 
 Apache License
                         Version 2.0, January 2004
@@ -17368,7 +17368,7 @@ Licence: MIT OR Apache-2.0
 Packages:
   idna 1.1.0 (crate)
   percent-encoding 2.3.2 (crate)
-  url 2.5.8 (crate)
+  url 2.5.9 (crate)
 
 Apache License
                         Version 2.0, January 2004

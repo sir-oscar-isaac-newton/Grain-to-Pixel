@@ -3328,3 +3328,25 @@ FILES: crates/gtp-io (writers), crates/gtp-color (the grey profile), crates/gtp-
 ROUTES: the export options gain the greyscale choice. To be approved by the owner with the plan.
 MIGRATIONS: none.
 NOTES: asked for by the owner on 2026-11-22.
+
+## T-15
+title: Dependency checks pass again after a vulnerability in url
+milestone: M6
+type: chore
+size: S
+estimate: 0.5d
+deps:
+adr: no
+spec: none
+desc: cargo deny check began to fail on 2026-11-23 without a change of ours: RUSTSEC-2026-0592 reports a stack overflow in `Url::origin()` on nested `blob:` URLs in url 2.5.8 and earlier. url comes through reqwest, used by Tauri. url 2.5.9 fixes it. Every pull request is blocked until the check passes.
+ac:
+- url is updated in Cargo.lock to 2.5.9 or later, without a change of Cargo.toml
+- The third-party notices are regenerated for the new versions
+- cargo deny check passes, and the workspace tests and clippy pass
+- Tests: the existing suite
+tech:
+FILES: Cargo.lock, docs/third-party-licenses.txt.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-23 when PR 380 and develop failed the advisories check. Out of scope: other dependency updates.

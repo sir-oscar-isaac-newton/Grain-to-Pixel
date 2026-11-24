@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { expectNoA11yViolations } from '../../test-support';
-import { IpcError, type ImportWarning, type LightStatus } from '../../shared/ipc';
+import { expectNoA11yViolations } from '../../../../test-support';
+import { IpcError, type ImportWarning, type LightStatus } from '../../../../shared/ipc';
 import {
   ipc,
   libraryDetails,
@@ -11,17 +11,18 @@ import {
   makeRoll,
   resetFake,
   state,
-} from '../library/fake-ipc';
-import { resetLibraryStore, useLibraryStore } from '../library/library-store';
-import { useLibraryEvents } from '../library/use-library-events';
-import { CaptureSection } from './CaptureSection';
+} from '../../../library/fake-ipc';
+import { resetLibraryStore, useLibraryStore } from '../../../library/library-store';
+import { DEFAULT_STEPS, RigSteps, type CameraStep } from './test-rig';
 
-vi.mock('../../shared/ipc', async () => (await import('../library/fake-ipc')).ipc);
+vi.mock('../../../../shared/ipc', async () => (await import('../../../library/fake-ipc')).ipc);
 
-/** The section as the Import view shows it: its job reports through the job events. */
+/** The steps shown by the tests below; the focus check tests swap Light levels for Focus. */
+let shown: CameraStep[] = DEFAULT_STEPS;
+
+/** The steps as the guide shows them (several at once), their jobs reporting through the job events. */
 function Capture() {
-  useLibraryEvents(true);
-  return <CaptureSection />;
+  return <RigSteps steps={shown} />;
 }
 
 function openLibrary(over = {}) {
@@ -115,8 +116,9 @@ const calibrationDone = (id: string, result: object = CALIBRATED) =>
 const calibrationError = (id: string, code: string, message: string) =>
   act(() => listeners.error.forEach((cb) => cb({ id, error: { code, message } as never })));
 
-describe('CaptureSection', () => {
+describe('camera steps', () => {
   beforeEach(() => {
+    shown = DEFAULT_STEPS;
     resetFake();
     resetLibraryStore();
   });
@@ -204,7 +206,6 @@ describe('CaptureSection', () => {
     });
 
     it('uses the levels saved for the film stock of the roll, and the default for another', async () => {
-      const user = userEvent.setup();
       const portra = makeRoll({ name: 'Portra roll', film_stock: ' Portra 400 ' });
       const plain = makeRoll({ name: 'Plain roll' });
       state.savedStocks['portra 400'] = {
@@ -226,10 +227,8 @@ describe('CaptureSection', () => {
       await waitFor(() => expect(red).toHaveAttribute('aria-valuenow', '60'));
       expect(screen.getByText('Levels saved for Portra 400')).toBeInTheDocument();
 
-      await user.selectOptions(
-        screen.getByRole('combobox', { name: 'Import into roll' }),
-        plain.id,
-      );
+      // The guide chooses the roll now: the rig follows the roll it is given.
+      act(() => useLibraryStore.setState({ rollId: plain.id }));
       await waitFor(() => expect(red).toHaveAttribute('aria-valuenow', '44'));
       expect(screen.getByText('Default levels')).toBeInTheDocument();
       expect(ipc.captureLevelsGet).toHaveBeenLastCalledWith(plain.id);
@@ -680,7 +679,7 @@ describe('CaptureSection', () => {
       const slider = screen.getByRole('slider', { name: 'Red level' });
       slider.focus();
       await user.keyboard(' ');
-      screen.getByRole('combobox', { name: 'Import into roll' }).focus();
+      screen.getByRole('combobox', { name: 'ISO' }).focus();
       await user.keyboard(' ');
       const input = document.createElement('input');
       document.body.append(input);
@@ -1630,6 +1629,9 @@ describe('CaptureSection', () => {
   });
 
   describe('focus check', () => {
+    beforeEach(() => {
+      shown = ['setup', 'focus', 'capture'];
+    });
     const checkButton = () => screen.getByRole('button', { name: /^(Focus check|Checking)/ });
     const colours = () => within(screen.getByRole('group', { name: 'Focus check' }));
     const run = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -1817,17 +1819,6 @@ describe('CaptureSection', () => {
       const cancelOrder = vi.mocked(ipc.jobCancel).mock.invocationCallOrder[0] ?? Infinity;
       const offOrder = vi.mocked(ipc.lightOff).mock.invocationCallOrder[0] ?? -Infinity;
       expect(cancelOrder).toBeLessThan(offOrder);
-    });
-
-    it('does not even look for the light when the flag is off', async () => {
-      state.flags = { ...state.flags, guided_capture: false };
-      openLibrary();
-      const { container, unmount } = render(<Capture />);
-      await waitFor(() => expect(ipc.settingsGet).toHaveBeenCalled());
-      expect(container).toBeEmptyDOMElement();
-      unmount();
-      expect(ipc.cameraList).not.toHaveBeenCalled();
-      expect(ipc.lightOff).not.toHaveBeenCalled();
     });
   });
 

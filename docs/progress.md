@@ -1154,6 +1154,15 @@
       "number": 387,
       "title": "Guided import: the step guide and the Roll page",
       "branch": "feat/issue-387-guided-import",
+      "status": "completed",
+      "pr": 392,
+      "commit": "4d67922"
+    },
+    {
+      "id": "U-36",
+      "number": 388,
+      "title": "Guided import: the camera capture steps",
+      "branch": "feat/issue-388-camera-steps",
       "status": "in_progress",
       "pr": null,
       "commit": null

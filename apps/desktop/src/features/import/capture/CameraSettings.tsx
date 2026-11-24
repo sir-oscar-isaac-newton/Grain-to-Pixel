@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   cameraSettingsGet,
@@ -20,18 +20,26 @@ interface CameraSettingsProps {
   running: boolean;
   /** Called with true while a change is on its way to the camera. */
   onChanging: (changing: boolean) => void;
+  /** Called with the settings as they were read or as the camera answered a change. */
+  onValues?: (settings: CameraSetting[]) => void;
 }
 
 /**
  * The camera's ISO, shutter speed and aperture, as the camera has them, with the choices it
  * allows. The camera's own dials are locked while it is tethered, so this is where they change.
  */
-export function CameraSettings({ cameras, running, onChanging }: CameraSettingsProps) {
+export function CameraSettings({ cameras, running, onChanging, onValues }: CameraSettingsProps) {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<CameraSetting[] | null>(null);
   const [changing, setChanging] = useState<CameraSettingKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const found = cameras.length > 0;
+  const onValuesRef = useRef(onValues);
+  onValuesRef.current = onValues;
+  // Tells the owner what the camera has, whenever that is read or changed.
+  useEffect(() => {
+    if (settings) onValuesRef.current?.(settings);
+  }, [settings]);
 
   useEffect(() => {
     if (!found) {

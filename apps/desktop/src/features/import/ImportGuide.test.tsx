@@ -248,19 +248,26 @@ describe('ImportGuide', () => {
   });
 
   it.each([
-    ['Camera capture', 'Capture with the camera'],
-    ['Scanner', 'Scan a roll'],
-    ['Files', 'Camera files (RGB triplets)'],
-  ])('shows the page of the %s source without a roll select', async (source, heading) => {
-    openLibrary(makeRoll({ name: 'Harbour' }), makeRoll({ name: 'Beach' }));
-    const user = userEvent.setup();
-    render(<ImportView />);
-    await pick(user, 'Harbour', source);
-    await user.click(next());
-    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: 'Import into roll' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Finish' })).toBeEnabled();
-  });
+    ['Camera capture', 'Set up the camera and light', 'Next', false],
+    ['Scanner', 'Scan a roll', 'Finish', true],
+    ['Files', 'Camera files (RGB triplets)', 'Finish', true],
+  ])(
+    'shows the page of the %s source without a roll select',
+    async (source, heading, label, on) => {
+      openLibrary(makeRoll({ name: 'Harbour' }), makeRoll({ name: 'Beach' }));
+      const user = userEvent.setup();
+      render(<ImportView />);
+      await pick(user, 'Harbour', source);
+      await user.click(next());
+      expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
+      expect(screen.queryByRole('combobox', { name: 'Import into roll' })).not.toBeInTheDocument();
+      // The scanner and files pages are the last step; the camera's Set up is not done before the
+      // light is connected.
+      const button = screen.getByRole('button', { name: label });
+      if (on) expect(button).toBeEnabled();
+      else expect(button).toBeDisabled();
+    },
+  );
 
   it('ends in the Library with the roll selected', async () => {
     const roll = makeRoll({ name: 'Harbour' });

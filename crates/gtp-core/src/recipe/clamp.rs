@@ -74,6 +74,25 @@ fn clamp_invert(invert: &mut Invert) {
         let white = fin(invert.white[i], 0.0, INVERT_MAX, 1.0);
         invert.white[i] = white.max(invert.black[i] + INVERT_GAP);
     }
+    invert.combine = invert.combine.map(combine_weights);
+}
+
+/// Weights of the combined density: finite and at least 0, with a positive sum, scaled to add up
+/// to 1; anything else becomes one third each.
+fn combine_weights(weights: [f32; 3]) -> [f32; 3] {
+    let sum: f32 = weights.iter().sum();
+    let usable = weights.iter().all(|w| w.is_finite() && *w >= 0.0) && sum.is_finite() && sum > 0.0;
+    if usable {
+        // Weights that already add up to 1 (within rounding) stay as they are, which keeps
+        // clamping idempotent.
+        if (sum - 1.0).abs() <= 1e-6 {
+            weights
+        } else {
+            weights.map(|w| w / sum)
+        }
+    } else {
+        [1.0 / 3.0; 3]
+    }
 }
 
 fn clamp_mono(mono: &mut Mono) {
@@ -214,10 +233,14 @@ mod tests {
             vec(ANY, 32),
             (curve(), curve(), curve(), curve()),
             (any::<i32>(), any::<u32>(), any::<bool>()),
-            (uniform3(ANY), uniform3(ANY)),
+            (
+                uniform3(ANY),
+                uniform3(ANY),
+                proptest::option::of(uniform3(ANY)),
+            ),
         )
             .prop_map(
-                |(f, (cm, cr, cg, cb), (rot90, grow_px, flag), (black, white))| {
+                |(f, (cm, cr, cg, cb), (rot90, grow_px, flag), (black, white, combine))| {
                     let mut next = f.into_iter();
                     let mut n = move || next.next().unwrap_or(0.0);
                     let mut r = Recipe::default();
@@ -231,7 +254,11 @@ mod tests {
                     r.geometry.rot90 = rot90;
                     r.geometry.flip_h = flag;
                     r.base.rgb = [n(), n(), n()];
-                    r.invert = Invert { black, white };
+                    r.invert = Invert {
+                        black,
+                        white,
+                        combine,
+                    };
                     r.color = Color {
                         red_cyan: n(),
                         green_magenta: n(),
@@ -666,11 +693,54 @@ mod tests {
         r.invert = Invert {
             black: [3.0, 0.5, 9.99],
             white: [1.0, 0.5, 0.0],
+            combine: None,
         };
         let inv = r.clamped().invert;
         for i in 0..3 {
             assert!(inv.white[i] > inv.black[i]);
         }
+    }
+
+    #[test]
+    fn bad_combine_weights_become_equal_and_good_ones_are_normalised() {
+        let clamp = |combine: Option<[f32; 3]>| {
+            let mut r = Recipe::default();
+            r.invert.combine = combine;
+            r.clamped().invert.combine
+        };
+        assert_eq!(clamp(None), None);
+        for bad in [
+            [f32::NAN, 1.0, 1.0],
+            [1.0, f32::INFINITY, 0.0],
+            [-0.5, 1.0, 1.0],
+            [0.0, 0.0, 0.0],
+        ] {
+            assert_eq!(clamp(Some(bad)), Some([1.0 / 3.0; 3]), "{bad:?}");
+        }
+        let got = clamp(Some([2.0, 1.0, 1.0])).unwrap();
+        assert!((got.iter().sum::<f32>() - 1.0).abs() < 1e-6);
+        assert!((got[0] - 0.5).abs() < 1e-6 && (got[1] - 0.25).abs() < 1e-6);
+        let exact = [0.25, 0.5, 0.25];
+        assert_eq!(
+            clamp(Some(exact)),
+            Some(exact),
+            "already normalised: unchanged"
+        );
+    }
+
+    #[test]
+    fn a_colour_recipe_serialises_without_combine_and_an_old_one_loads_with_none() {
+        let json = serde_json::to_string(&Recipe::default()).unwrap();
+        assert!(!json.contains("combine"), "{json}");
+        let old = r#"{"v":1,"invert":{"black":[0.1,0.1,0.1],"white":[1.5,1.5,1.5]}}"#;
+        let r: Recipe = serde_json::from_str(old).unwrap();
+        assert_eq!(r.invert.combine, None);
+        assert_eq!(r.invert.white, [1.5; 3]);
+        let mut combined = Recipe::default();
+        combined.invert.combine = Some([0.2, 0.5, 0.3]);
+        let back: Recipe =
+            serde_json::from_str(&serde_json::to_string(&combined).unwrap()).unwrap();
+        assert_eq!(back.invert.combine, Some([0.2, 0.5, 0.3]));
     }
 
     #[test]

@@ -27,10 +27,10 @@ pub use gtp_negative::{BaseEstimate, FrameHint};
 pub use hardware::{log_camera_libraries, prepare_camera_libraries, Hardware};
 pub use jobs::{JobCtx, JobErrorEntry, JobKind, JobManager, JobSink, LibraryEvents, PROGRESS_STEP};
 pub use pipeline::{
-    analyze, analyze_with, analyze_with_axes, analyze_with_balance, analyze_with_levels,
-    analyze_with_look, apply_balance_axes, build_proxy, histogram, render, to_rgba8_srgb, Analysis,
-    Histogram, LevelsPercentiles, PipelineInput, RenderTarget, Stage, PREVIEW_EDGE, PROXY_EDGE,
-    STAGE_ORDER,
+    analyze, analyze_for_film, analyze_with, analyze_with_axes, analyze_with_balance,
+    analyze_with_levels, analyze_with_look, apply_balance_axes, build_proxy, histogram, render,
+    to_rgba8_srgb, Analysis, Histogram, LevelsPercentiles, PipelineInput, RenderTarget, Stage,
+    PREVIEW_EDGE, PROXY_EDGE, STAGE_ORDER,
 };
 pub use services::capture_control::{CameraSlot, CaptureEvents, FocusCheck, StepState, TestShot};
 pub use services::capture_levels::{CaptureLevels, LevelsScope, LevelsSource};

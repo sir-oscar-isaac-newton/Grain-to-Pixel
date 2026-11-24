@@ -19,9 +19,11 @@ pub enum Stage {
     Invert,
     /// Noise reduction (`noise`): a guided filter in Oklab on the positive, before the colour stage.
     Noise,
-    /// Colour axes, temperature, tint, black and white, saturation, vibrance.
+    /// Colour axes, temperature, tint, black and white, saturation, vibrance; skipped for a frame
+    /// inverted from a combined density (`invert.combine`, ADR 0017), which is grey already.
     Color,
-    /// Per-hue changes of hue, saturation and lightness (`color.mixer`); skipped in black and white.
+    /// Per-hue changes of hue, saturation and lightness (`color.mixer`); skipped in black and white
+    /// and for a combined frame.
     Mixer,
     /// Exposure, contrast, highlights, shadows, whites, blacks, dehaze, curves.
     Tone,
@@ -127,9 +129,15 @@ pub(crate) fn run_late_stage(
     recipe: &Recipe,
 ) -> Result<ImageF32, AppError> {
     match stage {
-        Stage::Color => gtp_edit::apply_color(&mut image, &recipe.color, &recipe.mono)?,
+        Stage::Color => {
+            // A combined frame is one grey plane in three channels; every colour edit would only
+            // tint it (ADR 0017).
+            if recipe.invert.combine.is_none() {
+                gtp_edit::apply_color(&mut image, &recipe.color, &recipe.mono)?;
+            }
+        }
         Stage::Mixer => {
-            if !recipe.mono.enabled {
+            if !recipe.mono.enabled && recipe.invert.combine.is_none() {
                 gtp_edit::apply_mixer(&mut image, &recipe.color.mixer)?;
             }
         }

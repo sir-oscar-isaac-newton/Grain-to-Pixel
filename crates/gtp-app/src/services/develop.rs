@@ -30,16 +30,17 @@ use gtp_core::{
     AppError, ErrorCode, FlatField, Frame, FrameId, ImageF32, Look, Recipe, RecipeField,
     SourceFile, SourceRole,
 };
-use gtp_edit::{neutral_balance, Area};
+use gtp_edit::{neutral_balance, Area, BalanceMethod};
 use gtp_io::{read_tiff16, to_f32_linear, Limits};
 use gtp_negative::{levels_from_sample, sample_film_base, LevelPoint, Rect};
 
 use crate::pipeline::{
-    analyze_with_axes, build_plane_proxy, build_proxy, inverted_frame, normalized_frame,
+    analyze_for_film, build_plane_proxy, build_proxy, inverted_frame, normalized_frame,
     render_up_to_noise, to_rgba8_srgb, Histogram, PipelineInput, RenderTarget, PROXY_EDGE,
 };
 use crate::services::counters;
 use crate::services::export::{read_full_with, render_full_from_noise};
+use crate::services::film_recipe;
 use crate::services::flat_field::apply_flat_field;
 use crate::services::library::Library;
 use crate::services::roll_balance;
@@ -763,6 +764,18 @@ impl DevelopService {
         })?;
         let base = roll.film_base_rgb;
         entry.set_base(base);
+        // A saved recipe that disagrees with the roll's film type is fitted to it (ADR 0017).
+        let recipe = recipe
+            .map(|saved| {
+                film_recipe::fit(
+                    library,
+                    id,
+                    saved,
+                    roll.film_type,
+                    || Ok(entry.input(false)),
+                )
+            })
+            .transpose()?;
         Ok(DevelopInfo {
             width: frame.width,
             height: frame.height,
@@ -802,9 +815,17 @@ impl DevelopService {
         let (roll, hint) = hint_for_frame(library, id)?;
         // A scanner frame takes its roll's stored colour balance, so running auto again keeps it.
         let balance = roll_balance::frame_balance(library, id)?;
-        let analysis = analyze_with_axes(&input, hint, look, balance)?;
+        // A frame of a black-and-white roll gets the combined inversion (ADR 0017).
+        let analysis = analyze_for_film(
+            &input,
+            hint,
+            look,
+            BalanceMethod::Off,
+            balance,
+            roll.film_type,
+        )?;
         if let Some(size) = analysis.frame.measured_size.filter(|_| hint.is_some()) {
-            record_frame_measurement(library, roll, size)?;
+            record_frame_measurement(library, roll.id, size)?;
         }
         Ok(DevelopAnalysis {
             frame_rect: analysis.frame.rect,
@@ -1762,6 +1783,87 @@ mod tests {
         assert_eq!(black.white, auto.invert.white, "the other end is kept");
     }
 
+    fn set_film_type(t: &Fixture, film_type: gtp_core::FilmType) {
+        crate::services::roll_frame::roll_update(
+            &t.library,
+            t.roll,
+            crate::services::roll_frame::RollInput {
+                name: "Roll".into(),
+                film_type,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn analysis_of_a_black_and_white_roll_gives_the_combined_inversion_and_a_colour_roll_does_not()
+    {
+        let t = Fixture::new("analyze-bw");
+        let id = t.frame_with(1, 800, 560, Pattern::Wedge);
+        let colour = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        assert_eq!(colour.invert.combine, None);
+        assert!(!colour.mono.enabled);
+
+        set_film_type(&t, gtp_core::FilmType::BwSilver);
+        let bw = t.service.analyze(&t.library, id, None).unwrap();
+        let recipe = bw.auto_recipe;
+        assert!(recipe.invert.combine.is_some());
+        assert!(recipe.mono.enabled);
+        assert_eq!(
+            [
+                recipe.color.red_cyan,
+                recipe.color.green_magenta,
+                recipe.color.blue_yellow
+            ],
+            [0.0; 3]
+        );
+        // The crop and the base are what the colour analysis found.
+        assert_eq!(recipe.geometry.crop, colour.geometry.crop);
+        assert_eq!(recipe.base, colour.base);
+    }
+
+    #[test]
+    fn a_picked_level_on_a_combined_frame_sets_one_point_in_all_three_channels() {
+        let t = Fixture::new("levels-combined");
+        let id = t.frame_with(1, 1000, 700, Pattern::Wedge);
+        set_film_type(&t, gtp_core::FilmType::BwChromogenic);
+        let auto = t.service.analyze(&t.library, id, None).unwrap().auto_recipe;
+        assert!(auto.invert.combine.is_some());
+        // The wedge steps go from black on the left to white on the right.
+        let strip = |x: f32| Crop {
+            x,
+            y: 0.2,
+            w: 0.05,
+            h: 0.6,
+        };
+        let white = t
+            .service
+            .sample_levels(&t.library, id, &auto, strip(0.93), LevelsPoint::White)
+            .unwrap();
+        let black = t
+            .service
+            .sample_levels(&t.library, id, &auto, strip(0.01), LevelsPoint::Black)
+            .unwrap();
+        let span = auto.invert.white[0] - auto.invert.black[0];
+        for set in [white, black] {
+            assert_eq!(set.combine, auto.invert.combine);
+            assert!(set.white[0] == set.white[1] && set.white[1] == set.white[2]);
+            assert!(set.black[0] == set.black[1] && set.black[1] == set.black[2]);
+        }
+        assert!((white.white[0] - auto.invert.white[0]).abs() < 0.1 * span);
+        assert!((black.black[0] - auto.invert.black[0]).abs() < 0.1 * span);
+        assert_eq!(white.black, auto.invert.black, "the other end is kept");
+        assert_eq!(black.white, auto.invert.white, "the other end is kept");
+        // The new points render: the result is still one grey.
+        let mut recipe = auto.clone();
+        recipe.invert = white;
+        let bytes = t.service.render(&t.library, id, &recipe, 512, 1).unwrap();
+        assert!(bytes[HEADER_BYTES..]
+            .chunks(4)
+            .all(|p| p[0] == p[1] && p[1] == p[2]));
+    }
+
     #[test]
     fn a_picked_level_follows_the_recipes_film_base() {
         let t = Fixture::new("levels-base");
@@ -2542,6 +2644,66 @@ mod tests {
         assert_eq!(t.service.detail_file_reads(), 1);
         assert_same_detail(&again, &first, "the first recipe again");
         assert_eq!(t.service.detail_renders(), 2 + edits.len());
+    }
+
+    #[test]
+    fn a_combined_frame_renders_from_the_kept_picture_and_ignores_colour_edits() {
+        let t = Fixture::new("kept-combined");
+        let id = kept_frame(&t, 1);
+        let mut base = kept_recipe();
+        base.invert = Invert {
+            black: [0.3; 3],
+            white: [2.0; 3],
+            combine: Some([0.2, 0.5, 0.3]),
+        };
+        let first = t
+            .service
+            .render_detail(&t.library, id, &base, WHOLE, 1)
+            .unwrap();
+        assert_eq!(t.service.detail_file_reads(), 1);
+
+        // The colour stage and the mixer are skipped, so a colour edit gives the same picture,
+        // from the kept one, and the same as a render from the file.
+        let mut colour = base.clone();
+        colour.color.temperature = 40.0;
+        colour.color.saturation = 1.8;
+        colour.color.red_cyan = 30.0;
+        colour.color.mixer.hue = [40.0; 8];
+        colour.mono.enabled = false;
+        let got = t
+            .service
+            .render_detail(&t.library, id, &colour, WHOLE, 2)
+            .unwrap();
+        assert_eq!(t.service.detail_file_reads(), 1, "the scan was read again");
+        assert_same_detail(&got, &first, "colour edit");
+        assert_same_detail(
+            &got,
+            &from_the_file(&t, id, &colour),
+            "colour edit, from file",
+        );
+
+        // A tone edit changes it, still from the kept picture.
+        let mut tone = base.clone();
+        tone.tone.exposure_ev = 0.6;
+        let got = t
+            .service
+            .render_detail(&t.library, id, &tone, WHOLE, 3)
+            .unwrap();
+        assert_eq!(t.service.detail_file_reads(), 1, "the scan was read again");
+        assert!(detail_pixels_of(&got) != detail_pixels_of(&first));
+        assert_same_detail(&got, &from_the_file(&t, id, &tone), "tone edit");
+
+        // The inversion is part of the key: the per-channel one makes the picture afresh.
+        let mut per_channel = base.clone();
+        per_channel.invert.combine = None;
+        let reads = t.service.detail_file_reads();
+        let got = t
+            .service
+            .render_detail(&t.library, id, &per_channel, WHOLE, 4)
+            .unwrap();
+        assert_eq!(t.service.detail_file_reads(), reads + 1);
+        assert!(detail_pixels_of(&got) != detail_pixels_of(&first));
+        assert_same_detail(&got, &from_the_file(&t, id, &per_channel), "per channel");
     }
 
     #[test]

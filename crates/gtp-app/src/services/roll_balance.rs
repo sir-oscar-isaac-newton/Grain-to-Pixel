@@ -116,8 +116,11 @@ pub fn with_frame_balance(
     frame: FrameId,
     mut recipe: Recipe,
 ) -> Result<Recipe, AppError> {
-    if let Some(axes) = frame_balance(library, frame)? {
-        apply_balance_axes(&mut recipe, axes);
+    // A black-and-white frame (a combined inversion) has no colour balance (ADR 0017).
+    if recipe.invert.combine.is_none() {
+        if let Some(axes) = frame_balance(library, frame)? {
+            apply_balance_axes(&mut recipe, axes);
+        }
     }
     Ok(recipe)
 }

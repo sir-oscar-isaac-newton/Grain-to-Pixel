@@ -8,7 +8,6 @@ import {
   curvesOf,
   dustOf,
   geometryOf,
-  levelsOf,
   mixerOf,
   monoOf,
   noiseOf,
@@ -19,7 +18,7 @@ import {
   withColour,
   withDust,
   withGeometry,
-  withLevels,
+  withAutoLevels,
   withMixer,
   withMono,
   withNoise,
@@ -57,7 +56,7 @@ export function resetGeometry(recipe: Recipe, auto: Recipe): Recipe {
 
 /** The Base and Invert panel: the film base (source and values) and the black and white points. */
 export function resetBaseInvert(recipe: Recipe, auto: Recipe): Recipe {
-  return withLevels(withBase(recipe, baseOf(auto)), levelsOf(auto));
+  return withAutoLevels(withBase(recipe, baseOf(auto)), auto);
 }
 
 /** The Dust panel: on or off, the threshold and the growth. */

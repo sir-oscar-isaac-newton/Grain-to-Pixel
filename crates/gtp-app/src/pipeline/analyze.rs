@@ -3,10 +3,10 @@
 use std::sync::Arc;
 
 use gtp_core::recipe::Geometry;
-use gtp_core::{AppError, FilmFormat, Look, Recipe, Roll};
+use gtp_core::{AppError, FilmFormat, FilmType, Look, Recipe, Roll};
 use gtp_negative::{
-    auto_film_base, auto_levels, detect_frame_with, normalize, BaseEstimate, FrameDetection,
-    FrameHint, DEFAULT_HIGH_PERCENTILE, DEFAULT_LOW_PERCENTILE,
+    auto_film_base, auto_levels, auto_levels_combined, detect_frame_with, normalize, BaseEstimate,
+    FrameDetection, FrameHint, DEFAULT_HIGH_PERCENTILE, DEFAULT_LOW_PERCENTILE,
 };
 
 use gtp_edit::BalanceMethod;
@@ -25,7 +25,9 @@ pub struct Analysis {
     pub base_from_roll: bool,
     /// Histogram of the auto recipe's render, in display values.
     pub histogram: Histogram,
-    /// A recipe with the automatic crop, base and levels, everything else at its default.
+    /// A recipe with the automatic crop, base and levels, everything else at its default. For a
+    /// black-and-white roll (see [`analyze_for_film`]) the levels are the combined inversion
+    /// (`invert.combine`) and `mono` is on.
     pub auto_recipe: Recipe,
     /// The colour axes `[red_cyan, green_magenta, blue_yellow]` the balance method found, which
     /// `auto_recipe` carries; `None` when the method is off or the frame could not be judged.
@@ -112,7 +114,15 @@ pub fn analyze_with_balance(
     percentiles: LevelsPercentiles,
     balance: BalanceMethod,
 ) -> Result<Analysis, AppError> {
-    analyze_inner(input, hint, look, percentiles, balance, None)
+    analyze_inner(
+        input,
+        hint,
+        look,
+        percentiles,
+        balance,
+        None,
+        FilmType::ColorNegative,
+    )
 }
 
 /// [`analyze_with_look`] whose automatic recipe carries the colour axes `axes` (a roll's stored
@@ -124,7 +134,36 @@ pub fn analyze_with_axes(
     axes: Option<[f32; 3]>,
 ) -> Result<Analysis, AppError> {
     let percentiles = LevelsPercentiles::DEFAULT;
-    analyze_inner(input, hint, look, percentiles, BalanceMethod::Off, axes)
+    let film_type = FilmType::ColorNegative;
+    analyze_inner(
+        input,
+        hint,
+        look,
+        percentiles,
+        BalanceMethod::Off,
+        axes,
+        film_type,
+    )
+}
+
+/// [`analyze_with_balance`] and [`analyze_with_axes`] for a frame of a roll of `film_type` (ADR
+/// 0017): `balance` estimates the colour axes and `axes` gives a roll's stored ones, as there.
+///
+/// A colour roll is analyzed exactly as by those. For a black-and-white roll ([`FilmType::BwSilver`]
+/// or [`FilmType::BwChromogenic`]) the automatic recipe carries the combined inversion (the weights
+/// and one pair of points from the combined density, see `gtp_negative::auto_levels_combined`) and
+/// `mono` on; the colour axes and the saturation stay at their defaults, `balance` and `axes` are
+/// not used, and the returned balance is `None`.
+pub fn analyze_for_film(
+    input: &PipelineInput,
+    hint: Option<FrameHint>,
+    look: Look,
+    balance: BalanceMethod,
+    axes: Option<[f32; 3]>,
+    film_type: FilmType,
+) -> Result<Analysis, AppError> {
+    let percentiles = LevelsPercentiles::DEFAULT;
+    analyze_inner(input, hint, look, percentiles, balance, axes, film_type)
 }
 
 fn analyze_inner(
@@ -134,7 +173,9 @@ fn analyze_inner(
     percentiles: LevelsPercentiles,
     balance: BalanceMethod,
     axes: Option<[f32; 3]>,
+    film_type: FilmType,
 ) -> Result<Analysis, AppError> {
+    let black_and_white = film_type.is_black_and_white();
     let proxy = build_proxy(&input.rgb, PREVIEW_EDGE)?;
     let (base, base_from_roll) = match input.film_base {
         Some(rgb) => (
@@ -155,17 +196,24 @@ fn analyze_inner(
         ..Geometry::default()
     };
     let cropped = gtp_edit::apply_geometry(&normalized, &crop_only)?;
-    let levels = auto_levels(&cropped, percentiles.low, percentiles.high)?;
+    let levels = if black_and_white {
+        auto_levels_combined(&cropped, percentiles.low, percentiles.high)?
+    } else {
+        auto_levels(&cropped, percentiles.low, percentiles.high)?
+    };
 
     let mut auto_recipe = Recipe::default();
     auto_recipe.geometry.crop = frame.rect;
     auto_recipe.base.rgb = base.rgb;
     auto_recipe.invert = levels;
-    let mut found = axes;
-    if let Some(axes) = axes {
+    // A black-and-white frame has no colour balance: the axes stay neutral and nothing estimates
+    // them.
+    let mut found = axes.filter(|_| !black_and_white);
+    auto_recipe.mono.enabled = black_and_white;
+    if let Some(axes) = found {
         apply_balance_axes(&mut auto_recipe, axes);
     }
-    if balance != BalanceMethod::Off {
+    if balance != BalanceMethod::Off && !black_and_white {
         let mut inverted = cropped.clone();
         gtp_negative::invert(&mut inverted, &auto_recipe.invert)?;
         if let Some(color) = gtp_edit::balance_color(&inverted, balance, &auto_recipe.color) {
@@ -177,7 +225,7 @@ fn analyze_inner(
     if let Some(curve) = values.master {
         auto_recipe.tone.curve.master = curve;
     }
-    if let Some(saturation) = values.saturation {
+    if let Some(saturation) = values.saturation.filter(|_| !black_and_white) {
         auto_recipe.color.saturation = saturation;
     }
     let auto_recipe = auto_recipe.clamped();
@@ -501,6 +549,112 @@ mod tests {
         assert_eq!(a.base.rgb, roll);
         assert_eq!(a.base.confidence, 1.0);
         assert_frame_matches(&s, &a);
+    }
+
+    /// A black-and-white negative with some noise: the wedge is the same in every channel.
+    fn bw_scan() -> Synthetic {
+        synthetic::negative(
+            8,
+            &Params {
+                width: 600,
+                height: 400,
+                rebate: [40; 4],
+                pattern: Pattern::Wedge,
+                noise: 0.04,
+                ..Params::default()
+            },
+        )
+        .unwrap()
+    }
+
+    fn analyze_as(
+        s: &Synthetic,
+        film_type: FilmType,
+        balance: BalanceMethod,
+        axes: Option<[f32; 3]>,
+    ) -> Analysis {
+        analyze_for_film(
+            &input_of(s, None),
+            None,
+            Look::Neutral,
+            balance,
+            axes,
+            film_type,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_black_and_white_roll_gets_the_combined_inversion_mono_and_neutral_colour() {
+        let s = bw_scan();
+        for film_type in [FilmType::BwSilver, FilmType::BwChromogenic] {
+            // The roll's colour balance and a method that would estimate one are both ignored.
+            let a = analyze_as(
+                &s,
+                film_type,
+                BalanceMethod::GreyWorld,
+                Some([20.0, -10.0, 5.0]),
+            );
+            let invert = a.auto_recipe.invert;
+            let weights = invert.combine.expect("the combined inversion");
+            assert!(
+                (weights.iter().sum::<f32>() - 1.0).abs() < 1e-5,
+                "{weights:?}"
+            );
+            assert!(invert.black[0] == invert.black[1] && invert.black[1] == invert.black[2]);
+            assert!(invert.white[0] == invert.white[1] && invert.white[1] == invert.white[2]);
+            assert!(invert.white[0] > invert.black[0]);
+            assert!(a.auto_recipe.mono.enabled);
+            let color = a.auto_recipe.color;
+            assert_eq!(
+                [color.red_cyan, color.green_magenta, color.blue_yellow],
+                [0.0; 3]
+            );
+            assert_eq!(color.saturation, 1.0);
+            assert_eq!(a.balance, None);
+            assert_frame_matches(&s, &a);
+            // And it renders: one grey plane.
+            let image = render(&input_of(&s, None), &a.auto_recipe, RenderTarget::Full).unwrap();
+            assert!(image
+                .data
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .all(|p| p[0] == p[1] && p[1] == p[2]));
+        }
+    }
+
+    #[test]
+    fn a_colour_roll_is_analyzed_exactly_as_before() {
+        let s = scan(600, 400, 40);
+        let before = analyze_with_axes(
+            &input_of(&s, None),
+            None,
+            Look::Neutral,
+            Some([5.0, 0.0, -5.0]),
+        )
+        .unwrap();
+        let now = analyze_as(
+            &s,
+            FilmType::ColorNegative,
+            BalanceMethod::Off,
+            Some([5.0, 0.0, -5.0]),
+        );
+        assert_eq!(now, before);
+        assert_eq!(now.auto_recipe.invert.combine, None);
+        assert!(!now.auto_recipe.mono.enabled);
+        let estimated = analyze_with_balance(
+            &input_of(&s, None),
+            None,
+            Look::Neutral,
+            LevelsPercentiles::DEFAULT,
+            BalanceMethod::GreyWorld,
+        )
+        .unwrap();
+        assert_eq!(
+            analyze_as(&s, FilmType::ColorNegative, BalanceMethod::GreyWorld, None),
+            estimated
+        );
     }
 
     #[test]

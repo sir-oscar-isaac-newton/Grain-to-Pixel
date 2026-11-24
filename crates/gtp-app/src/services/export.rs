@@ -18,20 +18,21 @@ use serde::{Deserialize, Serialize};
 use gtp_core::recipe::OutputSpace;
 use gtp_core::{
     AppError, ErrorCode, ExportResult, ExportedFile, FailedExport, FlatField, Frame, FrameId,
-    ImageF32, Recipe, SourceFile,
+    ImageF32, Look, Recipe, SourceFile,
 };
-use gtp_edit::apply_sharpen;
+use gtp_edit::{apply_sharpen, BalanceMethod};
 use gtp_io::{encode_jpeg, encode_tiff16, JPEG_QUALITY};
 
 use crate::jobs::JobCtx;
 use crate::paths::{canonical_dir, display_path};
 use crate::pipeline::{
-    analyze_with, build_proxy, render, render_from_color, resize_to_long_edge, PipelineInput,
+    analyze_for_film, build_proxy, render, render_from_color, resize_to_long_edge, PipelineInput,
     RenderTarget, PROXY_EDGE,
 };
 use crate::services::counters;
 use crate::services::develop::{check_ir, read_ir_plane, read_scan, skip_unusable_ir};
 use crate::services::export_metadata;
+use crate::services::film_recipe;
 use crate::services::library::Library;
 use crate::services::roll_balance::with_frame_balance;
 
@@ -395,18 +396,30 @@ fn export_one(
     let (full, ir) = read_full(library, &frame, &sources, dust_removal)?;
     progress(1.0);
     ctx.check_cancelled()?;
+    // The levels are found on a proxy (their values do not depend on the size; the crop is in
+    // fractions).
+    let proxy = || -> Result<PipelineInput, AppError> {
+        Ok(PipelineInput {
+            rgb: Arc::new(build_proxy(&full, PROXY_EDGE)?),
+            ir: None,
+            film_base: roll.film_base_rgb,
+            full_long_edge: None,
+        })
+    };
     let recipe: Recipe = match saved {
-        Some(recipe) => recipe,
+        // Fitted to the roll's film type first (ADR 0017).
+        Some(recipe) => film_recipe::fit(library, frame_id, recipe, roll.film_type, proxy)?,
         None => {
-            // Never edited: the automatic recipe, found on a proxy (its values do not depend on
-            // the size; the crop is in fractions).
-            let proxy = PipelineInput {
-                rgb: Arc::new(build_proxy(&full, PROXY_EDGE)?),
-                ir: None,
-                film_base: roll.film_base_rgb,
-                full_long_edge: None,
-            };
-            let auto = analyze_with(&proxy, crate::pipeline::frame_hint(&roll))?.auto_recipe;
+            // Never edited: the automatic recipe.
+            let auto = analyze_for_film(
+                &proxy()?,
+                crate::pipeline::frame_hint(&roll),
+                Look::Neutral,
+                BalanceMethod::Off,
+                None,
+                roll.film_type,
+            )?
+            .auto_recipe;
             with_frame_balance(library, frame_id, auto)?
         }
     };
@@ -1027,6 +1040,68 @@ mod tests {
         .unwrap();
         let written = std::fs::read_dir(&out).unwrap().next().unwrap().unwrap();
         written.path()
+    }
+
+    #[test]
+    fn a_frame_whose_saved_recipe_disagrees_with_its_roll_is_exported_fitted_to_it() {
+        use crate::services::roll_frame::{roll_update, RollInput};
+        let t = Fixture::new("export-film-type");
+        let params = Params {
+            width: 300,
+            height: 200,
+            rebate: [20; 4],
+            pattern: Pattern::Wedge,
+            noise: 0.03,
+            ..Params::default()
+        };
+        // The roll is black and white now; the frame still holds the colour recipe it was
+        // analyzed with.
+        let colour = t
+            .service
+            .analyze(&t.library, t.frame_params(1, &params), None);
+        let colour = colour.unwrap().auto_recipe;
+        let id = t.imported(&params, &colour);
+        roll_update(
+            &t.library,
+            t.roll,
+            RollInput {
+                name: "Roll".into(),
+                film_type: gtp_core::FilmType::BwSilver,
+                ..RollInput::default()
+            },
+        )
+        .unwrap();
+        let out = t.dir.join("fitted");
+        run(
+            &t,
+            &[id],
+            &options(&out, ExportFormat::Tiff16, OutputSpace::Srgb),
+        )
+        .unwrap();
+        let stored = t.stored(id).unwrap();
+        assert!(
+            stored.invert.combine.is_some(),
+            "the fitted recipe was saved"
+        );
+        assert!(!t.edited(id));
+
+        // The file is a grey picture (within the rounding of the colour conversion), and the
+        // same as the export of the recipe that was saved.
+        let file = pixels(&out.join("Roll_002.tif"));
+        for p in file.chunks(3) {
+            assert!(
+                p[0].abs_diff(p[1]) <= 2 && p[1].abs_diff(p[2]) <= 2,
+                "{p:?}"
+            );
+        }
+        let again = t.dir.join("again");
+        run(
+            &t,
+            &[id],
+            &options(&again, ExportFormat::Tiff16, OutputSpace::Srgb),
+        )
+        .unwrap();
+        assert_eq!(pixels(&again.join("Roll_002.tif")), file);
     }
 
     #[test]

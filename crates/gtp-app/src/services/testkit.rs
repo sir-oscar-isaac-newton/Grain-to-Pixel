@@ -60,6 +60,27 @@ pub(crate) fn add_frame_params(
     index: u32,
     params: &Params,
 ) -> FrameId {
+    add_frame_inner(library, roll, index, params, None)
+}
+
+/// [`add_frame_params`] for a frame the way an import stores it: with a starting recipe, and not
+/// marked edited. The catalog gives it the next index in the roll.
+pub(crate) fn add_imported_frame(
+    library: &Library,
+    roll: RollId,
+    params: &Params,
+    recipe: &Recipe,
+) -> FrameId {
+    add_frame_inner(library, roll, 0, params, Some(recipe))
+}
+
+fn add_frame_inner(
+    library: &Library,
+    roll: RollId,
+    index: u32,
+    params: &Params,
+    recipe: Option<&Recipe>,
+) -> FrameId {
     let (width, height) = (params.width, params.height);
     let scan = synthetic::negative(u64::from(index), params).unwrap();
     let id = FrameId::new();
@@ -72,38 +93,47 @@ pub(crate) fn add_frame_params(
         let ir_path = library.resolve(&ir_rel).unwrap();
         write_tiff16(&ir_path, &from_f32_linear(ir), Compression::None).unwrap();
     }
+    let frame = Frame {
+        id,
+        roll_id: roll,
+        index_in_roll: index,
+        kind: FrameKind::ScanRgbIr,
+        width,
+        height,
+        has_ir: scan.ir.is_some(),
+        note: String::new(),
+        flag: gtp_core::FrameFlag::None,
+        created_at: String::new(),
+        edited_at: None,
+    };
+    let mut sources = vec![SourceFile {
+        frame_id: id,
+        role: SourceRole::Rgb,
+        rel_path: rel.to_string_lossy().replace('\\', "/"),
+        sha256: String::new(),
+        bytes: 0,
+    }];
+    if scan.ir.is_some() {
+        sources.push(SourceFile {
+            frame_id: id,
+            role: SourceRole::Ir,
+            rel_path: ir_rel.to_string_lossy().replace('\\', "/"),
+            sha256: String::new(),
+            bytes: 0,
+        });
+    }
     library
-        .write(|c| {
-            c.insert_frame(&Frame {
-                id,
-                roll_id: roll,
-                index_in_roll: index,
-                kind: FrameKind::ScanRgbIr,
-                width,
-                height,
-                has_ir: scan.ir.is_some(),
-                note: String::new(),
-                flag: gtp_core::FrameFlag::None,
-                created_at: String::new(),
-                edited_at: None,
-            })?;
-            c.insert_source(&SourceFile {
-                frame_id: id,
-                role: SourceRole::Rgb,
-                rel_path: rel.to_string_lossy().replace('\\', "/"),
-                sha256: String::new(),
-                bytes: 0,
-            })?;
-            if scan.ir.is_some() {
-                c.insert_source(&SourceFile {
-                    frame_id: id,
-                    role: SourceRole::Ir,
-                    rel_path: ir_rel.to_string_lossy().replace('\\', "/"),
-                    sha256: String::new(),
-                    bytes: 0,
-                })?;
+        .write(|c| match recipe {
+            Some(recipe) => c
+                .insert_imported_frame(&frame, &sources, recipe)
+                .map(|_| ()),
+            None => {
+                c.insert_frame(&frame)?;
+                for source in &sources {
+                    c.insert_source(source)?;
+                }
+                Ok(())
             }
-            Ok(())
         })
         .unwrap();
     id
@@ -151,6 +181,11 @@ impl Fixture {
     /// A frame whose original and infrared plane are the synthetic negative of `params`.
     pub(crate) fn frame_params(&self, index: u32, params: &Params) -> FrameId {
         add_frame_params(&self.library, self.roll, index, params)
+    }
+
+    /// A frame as an import stores it (see [`add_imported_frame`]): with `recipe`, not edited.
+    pub(crate) fn imported(&self, params: &Params, recipe: &Recipe) -> FrameId {
+        add_imported_frame(&self.library, self.roll, params, recipe)
     }
 
     /// A frame with no original file, enough for saving and copying recipes.

@@ -1163,6 +1163,15 @@
       "number": 388,
       "title": "Guided import: the camera capture steps",
       "branch": "feat/issue-388-camera-steps",
+      "status": "completed",
+      "pr": 393,
+      "commit": "99bad81"
+    },
+    {
+      "id": "P-36",
+      "number": 376,
+      "title": "Black-and-white conversion",
+      "branch": "feat/issue-376-bw-conversion",
       "status": "in_progress",
       "pr": null,
       "commit": null

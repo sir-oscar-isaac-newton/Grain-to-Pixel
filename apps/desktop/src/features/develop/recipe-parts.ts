@@ -385,9 +385,27 @@ export function withBase(recipe: Recipe, base: BaseSetting): Recipe {
   return { ...recipe, base: { source: base.source, rgb: [...base.rgb] } } as Recipe;
 }
 
-/** The recipe with both sets of levels replaced. */
+/**
+ * The recipe with both sets of levels replaced. The channel weights of a combined (black-and-white)
+ * inversion are kept: moving a point never turns the combination off.
+ */
 export function withLevels(recipe: Recipe, levels: Levels): Recipe {
-  return { ...recipe, invert: { black: [...levels.black], white: [...levels.white] } } as Recipe;
+  return {
+    ...recipe,
+    invert: { ...recipe.invert, black: [...levels.black], white: [...levels.white] },
+  } as Recipe;
+}
+
+/**
+ * The recipe with the inversion of `auto` (an automatic recipe): its black and white points and,
+ * for a black-and-white frame, its channel weights. A colour frame ends with none.
+ */
+export function withAutoLevels(recipe: Recipe, auto: Recipe): Recipe {
+  const levels = levelsOf(auto);
+  const invert: Record<string, unknown> = { black: [...levels.black], white: [...levels.white] };
+  const weights = auto.invert?.combine;
+  if (weights) invert.combine = [...weights];
+  return { ...recipe, invert } as Recipe;
 }
 
 /** The recipe with one channel of the black or white point set. */

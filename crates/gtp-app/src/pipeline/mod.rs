@@ -22,8 +22,9 @@ use std::sync::Arc;
 use gtp_core::{AppError, ErrorCode, ImageF32, Recipe};
 
 pub use analyze::{
-    analyze, analyze_with, analyze_with_axes, analyze_with_balance, analyze_with_levels,
-    analyze_with_look, apply_balance_axes, frame_hint, Analysis, LevelsPercentiles,
+    analyze, analyze_for_film, analyze_with, analyze_with_axes, analyze_with_balance,
+    analyze_with_levels, analyze_with_look, apply_balance_axes, frame_hint, Analysis,
+    LevelsPercentiles,
 };
 pub use display::{histogram, to_rgba8_srgb, Histogram};
 pub use proxy::{
@@ -166,7 +167,7 @@ pub(crate) fn inverted_frame(input: &PipelineInput, recipe: &Recipe) -> Result<I
 #[cfg(test)]
 mod tests {
     use gtp_core::recipe::{BaseSource, Crop, Invert};
-    use gtp_core::testing::synthetic::{self, Params, Synthetic};
+    use gtp_core::testing::synthetic::{self, Params, Pattern, Synthetic};
 
     use super::stages::resolve_base;
     use super::*;
@@ -200,6 +201,7 @@ mod tests {
         recipe.invert = Invert {
             black: s.truth.black,
             white: s.truth.white,
+            combine: None,
         };
         recipe
     }
@@ -519,6 +521,7 @@ mod tests {
         recipe.invert = Invert {
             black: s.truth.black,
             white: s.truth.white,
+            combine: None,
         };
         let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
         let target = RenderTarget::Preview { max_edge: 200 };
@@ -533,6 +536,124 @@ mod tests {
             let g_full = at(&full, fx, fy)[1] / at(&plain, fx, fy)[1];
             let g_preview = at(&preview, fx, fy)[1] / at(&plain_preview, fx, fy)[1];
             assert!((g_full - g_preview).abs() < 0.03, "({fx}, {fy})");
+        }
+    }
+
+    /// A black-and-white scan (the same picture in every channel, a different density gain per
+    /// channel) and the automatic recipe of a black-and-white roll for it.
+    fn bw_frame(pattern: Pattern, width: u32, height: u32) -> (Synthetic, Recipe) {
+        let s = scan(&Params {
+            width,
+            height,
+            rebate: [0; 4],
+            pattern,
+            noise: 0.03,
+            ..Params::default()
+        });
+        let analysis = analyze_for_film(
+            &input_of(&s, None),
+            None,
+            gtp_core::Look::Neutral,
+            gtp_edit::BalanceMethod::Off,
+            None,
+            gtp_core::FilmType::BwSilver,
+        )
+        .unwrap();
+        (s, analysis.auto_recipe)
+    }
+
+    fn is_grey(image: &ImageF32) -> bool {
+        image
+            .data
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .all(|p| p[0] == p[1] && p[1] == p[2])
+    }
+
+    #[test]
+    fn colour_edits_do_not_tint_a_combined_frame() {
+        let (s, recipe) = bw_frame(Pattern::Wedge, 200, 120);
+        assert!(recipe.invert.combine.is_some());
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        assert!(is_grey(&plain), "R == G == B before any colour edit");
+
+        let mut edited = recipe.clone();
+        edited.color.temperature = 70.0;
+        edited.color.tint = -40.0;
+        edited.color.red_cyan = 50.0;
+        edited.color.green_magenta = -30.0;
+        edited.color.blue_yellow = 80.0;
+        edited.color.saturation = 2.0;
+        edited.color.vibrance = 90.0;
+        edited.mono.mix = [1.0, 0.0, 0.0];
+        edited.mono.enabled = false;
+        edited.color.mixer.hue = [100.0; 8];
+        edited.color.mixer.saturation = [100.0; 8];
+        edited.color.mixer.lightness = [-60.0; 8];
+        // No split toning (both strengths are 0): the picture is as grey as it was, and the same.
+        let out = render(&input_of(&s, None), &edited, RenderTarget::Full).unwrap();
+        assert!(is_grey(&out));
+        assert_eq!(out, plain, "the colour stage and the mixer are skipped");
+
+        // The same edits do change a colour frame, so the test would notice a stage that ran.
+        let mut colour = true_recipe(&s);
+        let before = render(&input_of(&s, None), &colour, RenderTarget::Full).unwrap();
+        colour.color.temperature = 70.0;
+        assert_ne!(
+            render(&input_of(&s, None), &colour, RenderTarget::Full).unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn the_stages_after_the_inversion_still_work_on_a_combined_frame() {
+        let (s, recipe) = bw_frame(Pattern::Gradient, 200, 120);
+        let plain = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        let mut edited = recipe.clone();
+        edited.tone.exposure_ev = 0.7;
+        edited.tone.contrast = 30.0;
+        edited.tone.vignette.amount = -60.0;
+        edited.noise.luminance = 50.0;
+        edited.geometry.rot90 = 1;
+        let out = render(&input_of(&s, None), &edited, RenderTarget::Full).unwrap();
+        assert_eq!((out.width, out.height), (plain.height, plain.width));
+        assert_ne!(out.data, plain.data);
+        // Noise reduction works in Oklab, so a grey may leave it a rounding error off the grey
+        // axis; it stays that close.
+        for p in out.data.as_chunks::<3>().0 {
+            assert!(
+                (p[0] - p[1]).abs() <= 1e-4 && (p[1] - p[2]).abs() <= 1e-4,
+                "{p:?}"
+            );
+        }
+        // Split toning is the way to colour a combined frame, and it still can.
+        edited.color.split_tone.highlight_strength = 80.0;
+        let toned = render(&input_of(&s, None), &edited, RenderTarget::Full).unwrap();
+        assert!(!is_grey(&toned));
+    }
+
+    #[test]
+    fn a_preview_and_a_full_render_of_a_combined_frame_agree() {
+        let (s, mut recipe) = bw_frame(Pattern::Gradient, 800, 400);
+        recipe.tone.vignette.amount = -50.0;
+        recipe.noise.luminance = 40.0;
+        let full = render(&input_of(&s, None), &recipe, RenderTarget::Full).unwrap();
+        let preview = render(
+            &input_of(&s, None),
+            &recipe,
+            RenderTarget::Preview { max_edge: 200 },
+        )
+        .unwrap();
+        assert_eq!((preview.width, preview.height), (200, 100));
+        for (fx, fy) in [(0.1, 0.2), (0.5, 0.5), (0.8, 0.9), (0.95, 0.5), (0.3, 0.7)] {
+            let (a, b) = (at(&full, fx, fy), at(&preview, fx, fy));
+            assert!(
+                (a[1] - b[1]).abs() < 0.03,
+                "({fx}, {fy}): {} vs {}",
+                a[1],
+                b[1]
+            );
         }
     }
 
@@ -632,6 +753,7 @@ mod tests {
         recipe.invert = Invert {
             black: s.truth.black,
             white: s.truth.white,
+            combine: None,
         };
         recipe.color.split_tone.highlight_hue = 20.0;
         recipe.color.split_tone.highlight_strength = 90.0;
@@ -755,6 +877,7 @@ mod tests {
         recipe.invert = Invert {
             black: s.truth.black,
             white: s.truth.white,
+            combine: None,
         };
         recipe.color.mixer = loud_mixer();
         let plain_recipe = Recipe {
@@ -862,6 +985,7 @@ mod tests {
         recipe.invert = Invert {
             black: s.truth.black,
             white: s.truth.white,
+            combine: None,
         };
         let mut plain = recipe.clone();
         recipe.noise = loud_noise();

@@ -1033,7 +1033,8 @@ export type FilmFormat = "35mm" | "645" | "6x6" | "6x7" | "6x9";
 
 /**
  *  What kind of film a roll is: colour negative, or black and white on a silver or a chromogenic
- *  (C-41) emulsion. The conversion does not use it yet (P-36).
+ *  (C-41) emulsion. A frame of a black-and-white roll is inverted from one combined density, a
+ *  frame of a colour roll per channel (P-36, ADR 0017).
  */
 export type FilmType = "color_negative" | "bw_silver" | "bw_chromogenic";
 
@@ -1603,19 +1604,56 @@ flat: ExposureRatio;
 /**  The aperture of this frame. */
 frame: ExposureRatio };
 
-/**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
+/**
+ *  Per-channel density range mapped to the positive image (auto-filled from the histogram).
+ * 
+ *  With `combine` set (a frame of a black-and-white roll, ADR 0017) the three channels carry one
+ *  picture, so they are combined into one density before the points are applied; see `combine`.
+ */
 export type Invert = Invert_Serialize | Invert_Deserialize;
 
-/**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
+/**
+ *  Per-channel density range mapped to the positive image (auto-filled from the histogram).
+ * 
+ *  With `combine` set (a frame of a black-and-white roll, ADR 0017) the three channels carry one
+ *  picture, so they are combined into one density before the points are applied; see `combine`.
+ */
 export type Invert_Deserialize = {
 	black?: [(number | null), (number | null), (number | null)],
 	white?: [(number | null), (number | null), (number | null)],
+	/**
+	 *  Weights of the red, green and blue densities in the combined density of a black-and-white
+	 *  frame: every weight is at least 0 and they add up to 1 (`Recipe::clamped` brings bad ones
+	 *  to that, or to one third each). Absent, the default, is the colour inversion: each channel
+	 *  with its own points. When set, the inversion uses one black point (the mean of the three
+	 *  `black` values) and one white point (the mean of the three `white` values) on the combined
+	 *  density and writes the result to all three channels, and the colour stages are skipped. A
+	 *  colour recipe does not write the field, and a recipe saved before it existed loads without
+	 *  it.
+	 */
+	combine?: [(number | null), (number | null), (number | null)] | null,
 };
 
-/**  Per-channel density range mapped to the positive image (auto-filled from the histogram). */
+/**
+ *  Per-channel density range mapped to the positive image (auto-filled from the histogram).
+ * 
+ *  With `combine` set (a frame of a black-and-white roll, ADR 0017) the three channels carry one
+ *  picture, so they are combined into one density before the points are applied; see `combine`.
+ */
 export type Invert_Serialize = {
 	black: [(number | null), (number | null), (number | null)],
 	white: [(number | null), (number | null), (number | null)],
+	/**
+	 *  Weights of the red, green and blue densities in the combined density of a black-and-white
+	 *  frame: every weight is at least 0 and they add up to 1 (`Recipe::clamped` brings bad ones
+	 *  to that, or to one third each). Absent, the default, is the colour inversion: each channel
+	 *  with its own points. When set, the inversion uses one black point (the mean of the three
+	 *  `black` values) and one white point (the mean of the three `white` values) on the combined
+	 *  density and writes the result to all three channels, and the colour stages are skipped. A
+	 *  colour recipe does not write the field, and a recipe saved before it existed loads without
+	 *  it.
+	 */
+	combine?: [(number | null), (number | null), (number | null)],
 };
 
 /**  A job finished. Sent once per job, after its last progress event. */

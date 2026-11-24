@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Recipe } from '../../shared/ipc';
 import { makeRecipe } from '../library/fake-ipc';
-import { baseOf, levelsOf, triple, withBase, withLevel, withLevels } from './recipe-parts';
+import {
+  baseOf,
+  levelsOf,
+  triple,
+  withAutoLevels,
+  withBase,
+  withLevel,
+  withLevels,
+} from './recipe-parts';
 
 const recipe = (parts: Record<string, unknown>) => parts as unknown as Recipe;
 
@@ -55,5 +63,34 @@ describe('recipe parts', () => {
     const other = withLevel(one, 'black', 2, 0);
     expect(levelsOf(other)).toEqual({ black: [0.1, 0.2, 0], white: [0.9, 0.55, 0.7] });
     expect(levelsOf(before).white[1]).toBe(0.8);
+  });
+
+  it('keeps the channel weights of a combined inversion when a point moves', () => {
+    const before = makeRecipe('x');
+    const combined = {
+      ...before,
+      invert: { ...before.invert, combine: [0.2, 0.5, 0.3] },
+    } as Recipe;
+    expect(
+      withLevels(combined, { black: [0.4, 0.4, 0.4], white: [1, 1, 1] }).invert?.combine,
+    ).toEqual([0.2, 0.5, 0.3]);
+    expect(withLevel(combined, 'white', 0, 0.95).invert?.combine).toEqual([0.2, 0.5, 0.3]);
+    expect(
+      withLevels(before, { black: [0, 0, 0], white: [1, 1, 1] }).invert?.combine,
+    ).toBeUndefined();
+  });
+
+  it('takes the weights of the automatic inversion, and none for a colour frame', () => {
+    const colour = makeRecipe('colour');
+    const mono = {
+      ...colour,
+      invert: { black: [0.3, 0.3, 0.3], white: [1.7, 1.7, 1.7], combine: [0.1, 0.6, 0.3] },
+    } as Recipe;
+    const toMono = withAutoLevels(colour, mono);
+    expect(toMono.invert?.combine).toEqual([0.1, 0.6, 0.3]);
+    expect(levelsOf(toMono)).toEqual({ black: [0.3, 0.3, 0.3], white: [1.7, 1.7, 1.7] });
+    const back = withAutoLevels(mono, colour);
+    expect(back.invert?.combine).toBeUndefined();
+    expect(levelsOf(back)).toEqual(levelsOf(colour));
   });
 });

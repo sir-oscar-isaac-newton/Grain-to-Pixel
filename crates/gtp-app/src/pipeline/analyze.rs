@@ -276,6 +276,7 @@ mod tests {
             name: "R".into(),
             film_stock: None,
             format: FilmFormat::Mm35,
+            film_type: gtp_core::FilmType::ColorNegative,
             camera: None,
             iso_box: None,
             iso_shot: None,

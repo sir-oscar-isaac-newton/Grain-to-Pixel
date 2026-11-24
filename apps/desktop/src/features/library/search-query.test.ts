@@ -12,12 +12,14 @@ describe('search-query', () => {
     expect(isFiltered({ ...NO_FILTERS, text: 'tokyo' })).toBe(true);
     expect(isFiltered({ ...NO_FILTERS, tagIds: ['t1'] })).toBe(true);
     expect(isFiltered({ ...NO_FILTERS, iso: '400' })).toBe(true);
+    expect(isFiltered({ ...NO_FILTERS, filmType: 'bw_silver' })).toBe(true);
     expect(isFiltered({ ...NO_FILTERS, from: '2026' })).toBe(true);
   });
 
   it('counts the filters under the search box, not the text', () => {
     const filters = { ...NO_FILTERS, text: 'x', film: 'Portra', iso: '400', tagIds: ['a', 'b'] };
     expect(activeFilterCount(filters)).toBe(3);
+    expect(activeFilterCount({ ...filters, filmType: 'bw_chromogenic' })).toBe(4);
   });
 
   it('builds the backend query, trimming and leaving unset parts null', () => {
@@ -29,6 +31,7 @@ describe('search-query', () => {
       date_to: null,
       film_stock: null,
       camera: null,
+      film_type: null,
       iso: null,
     });
     expect(
@@ -38,6 +41,7 @@ describe('search-query', () => {
           tagIds: ['t1'],
           film: ' Portra 400',
           camera: 'Nikon F3 ',
+          filmType: 'bw_silver',
           iso: '400',
           from: '2026-07',
           to: '2026-08-02',
@@ -52,6 +56,7 @@ describe('search-query', () => {
       date_to: '2026-08-02',
       film_stock: 'Portra 400',
       camera: 'Nikon F3',
+      film_type: 'bw_silver',
       iso: 400,
     });
   });

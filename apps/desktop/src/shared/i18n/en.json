@@ -57,6 +57,7 @@
       "flatFieldOn": "Flat field set: the roll's camera frames are corrected for uneven light.",
       "flatFieldOnAperture": "Flat field set, shot at {{aperture}}: the roll's camera frames are corrected for uneven light.",
       "flatFieldOff": "No flat field.",
+      "filmType": "Film type: {{type}}",
       "actions": "Actions for the selected roll"
     },
     "useFlatField": {
@@ -88,6 +89,8 @@
       "noMatches": "No frames match. Try fewer words or clear a filter.",
       "film": "Film",
       "camera": "Camera",
+      "filmType": "Film type",
+      "anyFilmType": "Any film type",
       "iso": "ISO",
       "from": "Shot from",
       "to": "Shot to",
@@ -143,6 +146,12 @@
     "name": "Name",
     "film": "Film",
     "camera": "Camera",
+    "filmType": "Film type",
+    "filmTypes": {
+      "color_negative": "Colour negative",
+      "bw_silver": "Black and white (silver)",
+      "bw_chromogenic": "Black and white (chromogenic, C-41)"
+    },
     "format": "Film format",
     "formats": {
       "35mm": "35 mm",

@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use gtp_core::recipe::BaseSource;
 use gtp_core::{
-    AppError, BaseChange, ErrorCode, FilmFormat, Frame, FrameFlag, FrameId, FrameKind, FrameSize,
-    ImageF32, Roll, RollId,
+    AppError, BaseChange, ErrorCode, FilmFormat, FilmType, Frame, FrameFlag, FrameId, FrameKind,
+    FrameSize, ImageF32, Roll, RollId,
 };
 use gtp_negative::{auto_film_base, BaseEstimate};
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,7 @@ pub const MAX_PAGE_SIZE: u32 = 500;
 pub struct RollInput {
     pub name: String,
     pub format: FilmFormat,
+    pub film_type: FilmType,
     pub film_stock: Option<String>,
     pub camera: Option<String>,
     pub iso_box: Option<u32>,
@@ -54,6 +55,7 @@ impl RollInput {
             name: self.name,
             film_stock: self.film_stock,
             format: self.format,
+            film_type: self.film_type,
             camera: self.camera,
             iso_box: self.iso_box,
             iso_shot: self.iso_shot,
@@ -130,14 +132,42 @@ pub fn roll_create(library: &Library, input: RollInput) -> Result<Roll, AppError
     library.write(|c| c.insert_roll(&roll))
 }
 
+/// A roll after an update, and whether its film type changed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RollUpdated {
+    pub roll: Roll,
+    /// True when the update gave the roll another film type, so its frames convert differently.
+    pub film_type_changed: bool,
+}
+
 /// Replaces a roll's editable fields; its film base (with its confidence), frame size and creation
 /// time are kept.
 pub fn roll_update(library: &Library, id: RollId, input: RollInput) -> Result<Roll, AppError> {
+    roll_update_reporting(library, id, input).map(|updated| updated.roll)
+}
+
+/// [`roll_update`], also saying whether the film type changed.
+pub fn roll_update_reporting(
+    library: &Library,
+    id: RollId,
+    input: RollInput,
+) -> Result<RollUpdated, AppError> {
     library.write(|c| {
         let current = c.get_roll(id)?;
         let base = (current.film_base_rgb, current.film_base_confidence);
-        c.update_roll(&input.into_roll(id, base, current.frame_size, current.created_at))
+        let film_type_changed = current.film_type != input.film_type;
+        let roll =
+            c.update_roll(&input.into_roll(id, base, current.frame_size, current.created_at))?;
+        Ok(RollUpdated {
+            roll,
+            film_type_changed,
+        })
     })
+}
+
+/// Every frame of a roll.
+pub fn frames_of_roll(library: &Library, roll: RollId) -> Result<Vec<FrameId>, AppError> {
+    library.read(|c| Ok(c.list_frames(roll)?.into_iter().map(|f| f.id).collect()))
 }
 
 /// Sets the size of one frame on the roll's captures by hand (fractions of the image, each above 0
@@ -606,6 +636,38 @@ mod tests {
         assert_eq!(cleared.frame_size, None);
         let err = roll_set_frame_size(t.lib(), RollId::new(), None).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn a_roll_is_colour_negative_until_given_a_film_type_and_updates_say_when_it_changed() {
+        let t = TempLib::new("film-type");
+        let created = roll_create(t.lib(), input("R")).unwrap();
+        assert_eq!(created.film_type, FilmType::ColorNegative);
+        record_frame_measurement(t.lib(), created.id, [0.6, 0.9]).unwrap();
+        roll_set_film_base(t.lib(), created.id, Some([0.8, 0.5, 0.3])).unwrap();
+        let frame = frame_with_files(t.lib(), created.id, 1);
+
+        let same = roll_update_reporting(t.lib(), created.id, input("Renamed")).unwrap();
+        assert!(!same.film_type_changed);
+
+        let bw = RollInput {
+            film_type: FilmType::BwSilver,
+            ..input("Renamed")
+        };
+        let changed = roll_update_reporting(t.lib(), created.id, bw.clone()).unwrap();
+        assert!(changed.film_type_changed);
+        assert_eq!(changed.roll.film_type, FilmType::BwSilver);
+        assert_eq!(changed.roll.film_base_rgb, Some([0.8, 0.5, 0.3]));
+        assert_eq!(changed.roll.frame_size.map(|s| s.samples), Some(1));
+        assert_eq!(changed.roll.created_at, created.created_at);
+
+        let again = roll_update_reporting(t.lib(), created.id, bw).unwrap();
+        assert!(!again.film_type_changed);
+        let plain = roll_update(t.lib(), created.id, input("Back")).unwrap();
+        assert_eq!(plain.film_type, FilmType::ColorNegative);
+
+        assert_eq!(frames_of_roll(t.lib(), created.id).unwrap(), vec![frame.id]);
+        assert!(frames_of_roll(t.lib(), RollId::new()).unwrap().is_empty());
     }
 
     #[test]

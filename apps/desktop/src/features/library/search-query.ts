@@ -1,4 +1,7 @@
-import type { FrameFlag, SearchQuery } from '../../shared/ipc';
+import type { FilmType, FrameFlag, SearchQuery } from '../../shared/ipc';
+
+/** The film types a roll can have, in the order the pickers list them. */
+export const FILM_TYPES: readonly FilmType[] = ['color_negative', 'bw_silver', 'bw_chromogenic'];
 
 /** The flag filter of the grid: every frame, or only those with one flag (`none` is unflagged). */
 export type FlagFilter = FrameFlag | 'all';
@@ -10,6 +13,8 @@ export interface Filters {
   tagIds: string[];
   film: string;
   camera: string;
+  /** Empty for any film type. */
+  filmType: FilmType | '';
   /** Digits only. */
   iso: string;
   from: string;
@@ -21,6 +26,7 @@ export const NO_FILTERS: Filters = {
   tagIds: [],
   film: '',
   camera: '',
+  filmType: '',
   iso: '',
   from: '',
   to: '',
@@ -33,6 +39,7 @@ export function isFiltered(filters: Filters): boolean {
     filters.tagIds.length > 0 ||
     filters.film.trim() !== '' ||
     filters.camera.trim() !== '' ||
+    filters.filmType !== '' ||
     filters.iso !== '' ||
     filters.from.trim() !== '' ||
     filters.to.trim() !== ''
@@ -45,6 +52,7 @@ export function activeFilterCount(filters: Filters): number {
     filters.tagIds.length > 0,
     filters.film.trim() !== '',
     filters.camera.trim() !== '',
+    filters.filmType !== '',
     filters.iso !== '',
     filters.from.trim() !== '',
     filters.to.trim() !== '',
@@ -69,6 +77,7 @@ export function toQuery(
     date_to: blank(filters.to),
     film_stock: blank(filters.film),
     camera: blank(filters.camera),
+    film_type: filters.filmType || null,
     iso: iso && iso > 0 ? iso : null,
     ...(flag === 'all' ? {} : { flag }),
     ...(needsExport ? { needs_export: true } : {}),

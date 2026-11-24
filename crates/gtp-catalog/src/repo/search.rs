@@ -90,6 +90,10 @@ fn compile(q: &SearchQuery) -> Result<Compiled, AppError> {
         wh.push("r.camera = ? COLLATE NOCASE".into());
         params.push(Value::Text(camera));
     }
+    if let Some(film_type) = q.film_type {
+        wh.push("r.film_type = ?".into());
+        params.push(Value::Text(film_type.as_str().to_owned()));
+    }
     check_iso(q.iso)?;
     if let Some(iso) = q.iso {
         wh.push("(r.iso_box = ? OR r.iso_shot = ?)".into());

@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use gtp_catalog::Catalog;
 use gtp_core::testing::TempDir;
-use gtp_core::{FilmFormat, Frame, FrameId, FrameKind, Roll, RollId, SearchQuery, TagId};
+use gtp_core::{FilmFormat, FilmType, Frame, FrameId, FrameKind, Roll, RollId, SearchQuery, TagId};
 use rusqlite::{params, Connection};
 
 const ROLLS: usize = 1_000;
@@ -235,6 +235,7 @@ fn reading_goes_on_while_another_connection_writes() {
             name: "Busy".into(),
             film_stock: Some("Kodak Portra 400".into()),
             format: FilmFormat::Mm35,
+            film_type: FilmType::ColorNegative,
             camera: None,
             iso_box: None,
             iso_shot: None,

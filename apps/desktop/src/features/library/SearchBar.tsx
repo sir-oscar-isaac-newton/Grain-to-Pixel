@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { TagChips } from '@gtp/ui';
 import styles from './library.module.css';
 import { useLibraryStore } from './library-store';
+import type { FilmType } from '../../shared/ipc';
 import {
+  FILM_TYPES,
   NO_FILTERS,
   activeFilterCount,
   isFiltered,
@@ -154,6 +156,20 @@ export function SearchBar({ total }: { total: number | null }) {
                 <option key={v} value={v} />
               ))}
             </datalist>
+          </label>
+          <label className={styles.field}>
+            <span>{t('library.search.filmType')}</span>
+            <select
+              value={filters.filmType}
+              onChange={(e) => change({ filmType: e.target.value as FilmType | '' })}
+            >
+              <option value="">{t('library.search.anyFilmType')}</option>
+              {FILM_TYPES.map((value) => (
+                <option key={value} value={value}>
+                  {t(`rollEditor.filmTypes.${value}`)}
+                </option>
+              ))}
+            </select>
           </label>
           <label className={styles.field}>
             <span>{t('library.search.iso')}</span>

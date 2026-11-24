@@ -1136,6 +1136,15 @@
       "number": 386,
       "title": "Reuse another roll's flat field",
       "branch": "feat/issue-386-flat-field-reuse",
+      "status": "completed",
+      "pr": 390,
+      "commit": "9ab07c4"
+    },
+    {
+      "id": "L-12",
+      "number": 375,
+      "title": "Film type on the roll",
+      "branch": "feat/issue-375-roll-film-type",
       "status": "in_progress",
       "pr": null,
       "commit": null

@@ -721,6 +721,20 @@
         "magenta": "Magenta"
       }
     },
+    "blackWhite": {
+      "heading": "Black and white",
+      "gradeHeading": "Paper grade",
+      "grade": "Grade {{n}}",
+      "gradeHint": "Grade 2 is normal paper. The contrast in the Tone panel stays editable.",
+      "toningHeading": "Toning",
+      "toning": {
+        "none": "None",
+        "sepia": "Sepia",
+        "selenium": "Selenium",
+        "platinum": "Platinum",
+        "cyanotype": "Cyanotype"
+      }
+    },
     "splitTone": {
       "heading": "Split toning",
       "highlight_hue": "Highlights hue",

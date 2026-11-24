@@ -21,6 +21,8 @@ interface DetailPanelProps {
   readOnly: boolean;
   /** Something is being done elsewhere in the view. */
   working: boolean;
+  /** The frame is black and white: there is no colour to reduce noise in, so that slider is hidden. */
+  blackAndWhite?: boolean;
   /**
    * The automatic recipe: what the sliders and "Reset" go back to. Null or missing until it is
    * known; the resets are then off.
@@ -46,6 +48,7 @@ export function DetailPanel({
   recipe,
   readOnly,
   working,
+  blackAndWhite = false,
   onChange,
   auto = null,
 }: DetailPanelProps) {
@@ -109,21 +112,23 @@ export function DetailPanel({
               onChange(withNoise(recipe, { luminance: next }), { dragging })
             }
           />
-          <Slider
-            label={t('develop.noise.color')}
-            value={noise.color}
-            min={0}
-            max={NOISE_MAX}
-            step={1}
-            format={number(0)}
-            disabled={locked}
-            onReset={
-              autoNoise && (() => resetNoiseSlider(withNoise(recipe, { color: autoNoise.color })))
-            }
-            onChange={(next, dragging) =>
-              onChange(withNoise(recipe, { color: next }), { dragging })
-            }
-          />
+          {!blackAndWhite && (
+            <Slider
+              label={t('develop.noise.color')}
+              value={noise.color}
+              min={0}
+              max={NOISE_MAX}
+              step={1}
+              format={number(0)}
+              disabled={locked}
+              onReset={
+                autoNoise && (() => resetNoiseSlider(withNoise(recipe, { color: autoNoise.color })))
+              }
+              onChange={(next, dragging) =>
+                onChange(withNoise(recipe, { color: next }), { dragging })
+              }
+            />
+          )}
         </div>
       </section>
       <section aria-labelledby="sharpen-heading" className={styles.panelSection}>

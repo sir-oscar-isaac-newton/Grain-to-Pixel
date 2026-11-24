@@ -112,6 +112,59 @@ export function withSplitTone(recipe: Recipe, values: Partial<SplitToneSetting>)
   } as Recipe;
 }
 
+/**
+ * The paper grades of the Black and white panel, as the Tone panel's contrast (-100 to 100). Grade 2
+ * is normal paper: no change to the contrast.
+ */
+export const PAPER_GRADES: Readonly<Record<0 | 1 | 2 | 3 | 4 | 5, number>> = {
+  0: -50,
+  1: -25,
+  2: 0,
+  3: 25,
+  4: 50,
+  5: 75,
+};
+
+/** The toning presets of the Black and white panel: all five split toning values of each. */
+export const TONING_PRESETS = {
+  none: SPLIT_TONE_DEFAULT,
+  sepia: {
+    highlight_hue: 35,
+    highlight_strength: 35,
+    shadow_hue: 30,
+    shadow_strength: 25,
+    balance: 20,
+  },
+  selenium: {
+    highlight_hue: 40,
+    highlight_strength: 0,
+    shadow_hue: 330,
+    shadow_strength: 25,
+    balance: -40,
+  },
+  platinum: {
+    highlight_hue: 45,
+    highlight_strength: 12,
+    shadow_hue: 35,
+    shadow_strength: 18,
+    balance: 0,
+  },
+  cyanotype: {
+    highlight_hue: 205,
+    highlight_strength: 45,
+    shadow_hue: 215,
+    shadow_strength: 55,
+    balance: 0,
+  },
+} as const satisfies Record<string, SplitToneSetting>;
+
+export type ToningName = keyof typeof TONING_PRESETS;
+
+/** True when the frame is black and white: its inversion combines the channels into one density. */
+export function isBlackAndWhite(recipe: Recipe): boolean {
+  return recipe.invert?.combine != null;
+}
+
 export type MixerMode = 'hue' | 'saturation' | 'lightness';
 
 /** The three lists of the colour mixer, eight values each, in the order of {@link MIXER_BANDS}. */

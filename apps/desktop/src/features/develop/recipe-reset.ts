@@ -38,6 +38,11 @@ export function resetColour(recipe: Recipe, auto: Recipe): Recipe {
   );
 }
 
+/** The Black and white panel: the split toning (the paper grade is the Tone panel's contrast). */
+export function resetBlackWhite(recipe: Recipe, auto: Recipe): Recipe {
+  return withSplitTone(recipe, splitToneOf(auto));
+}
+
 /** The Tone panel: the tone sliders and all four curves. */
 export function resetTone(recipe: Recipe, auto: Recipe): Recipe {
   const curve = curvesOf(auto);

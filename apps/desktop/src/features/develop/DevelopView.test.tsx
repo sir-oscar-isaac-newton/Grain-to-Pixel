@@ -121,6 +121,66 @@ describe('DevelopView', () => {
       ).toBeInTheDocument();
     });
 
+    describe('a black-and-white frame', () => {
+      const blackAndWhite = (tag: string) =>
+        makeRecipe(tag, {
+          invert: { black: [0, 0, 0], white: [1, 1, 1], combine: [0.3, 0.5, 0.2] },
+        });
+
+      it('shows the Black and white panel instead of the colour controls, no colour noise and a luma histogram', async () => {
+        state.recipes['summer-f00001'] = blackAndWhite('bw');
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        expect(await screen.findByRole('heading', { name: 'Black and white' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Grade 2' })).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Colour' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: 'Temperature' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Pick neutral grey' })).not.toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Luminance' })).toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: 'Colour' })).not.toBeInTheDocument();
+        const histogram = screen.getByRole('img', { name: 'Histogram of the picture shown' });
+        expect(histogram.querySelectorAll('path')).toHaveLength(1);
+      });
+
+      it('keeps the Colour panel, colour noise and four histogram paths for a colour frame', async () => {
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        expect(
+          await screen.findByRole('button', { name: 'Pick neutral grey' }),
+        ).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Grade 2' })).not.toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Colour' })).toBeInTheDocument();
+        const histogram = screen.getByRole('img', { name: 'Histogram of the picture shown' });
+        expect(histogram.querySelectorAll('path')).toHaveLength(4);
+      });
+
+      it('does not leave the neutral picker on when the next frame is black and white', async () => {
+        state.recipes['summer-f00002'] = blackAndWhite('bw');
+        const user = userEvent.setup();
+        openLibrary();
+        open(1);
+        render(<DevelopView />);
+        await canvas();
+        await user.click(await screen.findByRole('button', { name: 'Pick neutral grey' }));
+        expect(screen.getByRole('button', { name: 'Pick neutral grey' })).toHaveAttribute(
+          'aria-pressed',
+          'true',
+        );
+        await user.click(within(strip()).getAllByRole('option')[1] as HTMLElement);
+        expect(await screen.findByRole('button', { name: 'Grade 2' })).toBeInTheDocument();
+        expect(document.querySelector('[class*="picking"]')).toBeNull();
+        await user.click(within(strip()).getAllByRole('option')[0] as HTMLElement);
+        expect(await screen.findByRole('button', { name: 'Pick neutral grey' })).toHaveAttribute(
+          'aria-pressed',
+          'false',
+        );
+      });
+    });
+
     it('says why a frame could not be opened, and still lets you leave', async () => {
       state.noScan.add('summer-f00003');
       openLibrary();

@@ -49,6 +49,7 @@ import styles from './develop.module.css';
 import { Filmstrip } from './Filmstrip';
 import { clipping as clippingShare, computeHistogram } from './histogram';
 import { BaseInvertPanel } from './panels/BaseInvertPanel';
+import { BlackWhitePanel } from './panels/BlackWhitePanel';
 import { ColourPanel } from './panels/ColourPanel';
 import { DustPanel } from './panels/DustPanel';
 import { GeometryPanel } from './panels/GeometryPanel';
@@ -69,6 +70,7 @@ import {
   withCurve,
   withAutoLevels,
   withLevels,
+  isBlackAndWhite,
 } from './recipe-parts';
 import { useCompare } from './use-compare';
 import { useDetail, type FullSize } from './use-detail';
@@ -151,6 +153,12 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
   }, []);
 
   const [pick, setPick] = useState<PickTarget | null>(null);
+  const blackAndWhite = recipe ? isBlackAndWhite(recipe) : false;
+  // A black-and-white frame has no neutral to pick (the panel with the picker is not shown), so a
+  // pick that was on when the frame became black and white is turned off.
+  useEffect(() => {
+    if (blackAndWhite) setPick((current) => (current === 'neutral' ? null : current));
+  }, [blackAndWhite]);
   const [exporting, setExporting] = useState(false);
   const [applying, setApplying] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
@@ -834,6 +842,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
         <aside className={styles.side} aria-label={t('develop.side')}>
           <Histogram
             data={bins}
+            channels={blackAndWhite ? 'luma' : 'rgb'}
             label={t('develop.histogram.label')}
             caption={
               lost
@@ -932,16 +941,26 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                   onChange={(next, options) => setRecipe(next, options)}
                 />
               )}
-              <ColourPanel
-                recipe={recipe}
-                auto={auto}
-                readOnly={readOnly}
-                working={working}
-                picking={pick === 'neutral'}
-                pickReady={develop.showingFrame}
-                onPickingChange={(on) => setPick(on ? 'neutral' : null)}
-                onChange={(next, options) => setRecipe(next, options)}
-              />
+              {blackAndWhite ? (
+                <BlackWhitePanel
+                  recipe={recipe}
+                  auto={auto}
+                  readOnly={readOnly}
+                  working={working}
+                  onChange={(next, options) => setRecipe(next, options)}
+                />
+              ) : (
+                <ColourPanel
+                  recipe={recipe}
+                  auto={auto}
+                  readOnly={readOnly}
+                  working={working}
+                  picking={pick === 'neutral'}
+                  pickReady={develop.showingFrame}
+                  onPickingChange={(on) => setPick(on ? 'neutral' : null)}
+                  onChange={(next, options) => setRecipe(next, options)}
+                />
+              )}
               <TonePanel
                 recipe={recipe}
                 auto={auto}
@@ -951,6 +970,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
                 onApplyStartingLook={() => void applyStartingLook()}
               />
               <DetailPanel
+                blackAndWhite={blackAndWhite}
                 recipe={recipe}
                 auto={auto}
                 readOnly={readOnly}

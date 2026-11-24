@@ -3,32 +3,23 @@ import { useTranslation } from 'react-i18next';
 import { Slider } from '@gtp/ui';
 import type { Recipe } from '../../../shared/ipc';
 import styles from '../develop.module.css';
-import {
-  type BalanceAxis,
-  axisGradientCss,
-  bandCss,
-  bandHueGradientCss,
-  hueGradientCss,
-  tintCss,
-} from '../hue-colour';
+import { type BalanceAxis, axisGradientCss, bandCss, bandHueGradientCss } from '../hue-colour';
 import {
   colourOf,
   mixerOf,
   monoOf,
-  splitToneOf,
   withColour,
   withMixerValue,
   withMono,
-  withSplitTone,
   MIXER_BANDS,
   MIXER_MODES,
   type MixerMode,
-  type SplitToneKey,
   type Channel,
   type ColourKey,
 } from '../recipe-parts';
 import { resetColour } from '../recipe-reset';
 import { ResetPanelButton } from './ResetPanelButton';
+import { SplitToneSliders } from './SplitToneSliders';
 
 /** The colour sliders that run from -100 to 100, in the order they are shown. */
 const BALANCE: readonly ColourKey[] = [
@@ -43,19 +34,6 @@ const isBalanceAxis = (key: ColourKey): key is BalanceAxis =>
 const SATURATION_MAX = 2;
 const MIX_MAX = 2;
 const MIX_STEP = 0.01;
-/** The split toning sliders in the order they are shown: label key, range and whether it is a hue. */
-const SPLIT_TONE_SLIDERS: ReadonlyArray<{
-  key: SplitToneKey;
-  min: number;
-  max: number;
-  hue: boolean;
-}> = [
-  { key: 'highlight_hue', min: 0, max: 360, hue: true },
-  { key: 'highlight_strength', min: 0, max: 100, hue: false },
-  { key: 'shadow_hue', min: 0, max: 360, hue: true },
-  { key: 'shadow_strength', min: 0, max: 100, hue: false },
-  { key: 'balance', min: -100, max: 100, hue: false },
-];
 const CHANNELS: ReadonlyArray<{ channel: Channel; name: 'red' | 'green' | 'blue' }> = [
   { channel: 0, name: 'red' },
   { channel: 1, name: 'green' },
@@ -105,8 +83,6 @@ export function ColourPanel({
   const locked = readOnly || working;
   const autoColour = auto ? colourOf(auto) : undefined;
   const autoMix = auto ? monoOf(auto).mix : undefined;
-  const split = splitToneOf(recipe);
-  const autoSplit = auto ? splitToneOf(auto) : undefined;
   const [mixerMode, setMixerMode] = useState<MixerMode>('hue');
   const mixer = mixerOf(recipe);
   const autoMixer = auto ? mixerOf(auto) : undefined;
@@ -114,8 +90,6 @@ export function ColourPanel({
   const resetSlider = (next: Recipe) => onChange(next, { dragging: false, merge: true });
   const whole = (value: number) =>
     new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 0 }).format(value);
-  const gradient = hueGradientCss();
-  const degrees = (value: number) => `${whole(value)}°`;
   const hundredths = (value: number) =>
     new Intl.NumberFormat(i18n.language, {
       minimumFractionDigits: 2,
@@ -307,28 +281,7 @@ export function ColourPanel({
         <h3 id="split-tone-heading" className={styles.panelTitle}>
           {t('develop.splitTone.heading')}
         </h3>
-        <div className={styles.sliders}>
-          {SPLIT_TONE_SLIDERS.map(({ key, min, max, hue }) => (
-            <Slider
-              key={key}
-              label={t(`develop.splitTone.${key}`)}
-              value={split[key]}
-              min={min}
-              max={max}
-              step={1}
-              format={hue ? degrees : whole}
-              swatch={hue ? tintCss(split[key]) : undefined}
-              trackGradient={hue ? gradient : undefined}
-              disabled={locked}
-              onReset={
-                autoSplit && (() => resetSlider(withSplitTone(recipe, { [key]: autoSplit[key] })))
-              }
-              onChange={(next, dragging) =>
-                onChange(withSplitTone(recipe, { [key]: next }), { dragging })
-              }
-            />
-          ))}
-        </div>
+        <SplitToneSliders recipe={recipe} auto={auto} locked={locked} onChange={onChange} />
       </section>
     </div>
   );

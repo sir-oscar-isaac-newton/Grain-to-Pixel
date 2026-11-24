@@ -19,9 +19,11 @@ import { messageOf, useLibraryStore } from './library-store';
 
 type Format = ExportOptions['format'];
 type Space = ExportOptions['space'];
+type Colour = ExportOptions['colour'];
 
 const FORMATS: readonly Format[] = ['tiff16', 'jpeg'];
 const SPACES: readonly Space[] = ['srgb', 'adobe_rgb', 'prophoto'];
+const COLOURS: readonly Colour[] = ['auto', 'rgb'];
 const DEFAULT_TEMPLATE = '{roll}_{index:03}';
 /** The sizes the list offers, in pixels on the long edge; anything else is "Custom". */
 const SIZES: readonly number[] = [1600, 2048, 3000, 4000];
@@ -39,6 +41,7 @@ const DEFAULTS: ExportOptions = {
   template: DEFAULT_TEMPLATE,
   write_metadata: true,
   long_edge: null,
+  colour: 'auto',
 };
 
 /** What the file name would be for a roll "Roll", frame 1; null when the template is not valid. */
@@ -177,7 +180,11 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
         setPresets(list);
         const last = settings.last_export;
         if (last && !touched.current) {
-          setOptions({ ...last.options, long_edge: last.options.long_edge ?? null });
+          setOptions({
+            ...last.options,
+            long_edge: last.options.long_edge ?? null,
+            colour: last.options.colour ?? 'auto',
+          });
           setSizeCustom(false);
           setCustomText(null);
           setPresetName(findPreset(list, last.preset)?.name ?? null);
@@ -498,6 +505,23 @@ export function ExportDialog({ frameIds, open, onClose }: ExportDialogProps) {
                 </select>
                 <span className={styles.hint}>{t(`export.spaceHint.${options.space}`)}</span>
               </label>
+
+              <fieldset className={styles.fieldset}>
+                <legend>{t('export.colour')}</legend>
+                {COLOURS.map((colour) => (
+                  <label key={colour} className={styles.radio}>
+                    <input
+                      type="radio"
+                      name="colour"
+                      value={colour}
+                      checked={options.colour === colour}
+                      onChange={() => change({ colour })}
+                    />
+                    {t(`export.colourChoice.${colour}`)}
+                  </label>
+                ))}
+                <span className={styles.hint}>{t('export.colourHint')}</span>
+              </fieldset>
 
               <label className={styles.field}>
                 {t('export.size')}

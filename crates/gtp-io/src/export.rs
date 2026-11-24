@@ -8,12 +8,12 @@ use std::path::Path;
 use gtp_core::recipe::OutputSpace;
 use gtp_core::{AppError, ErrorCode, ImageF32};
 use jpeg_encoder::{ColorType, Encoder, SamplingFactor};
-use tiff::encoder::colortype::RGB16;
+use tiff::encoder::colortype::{ColorType as TiffColorType, Gray16, RGB16};
 use tiff::encoder::compression::DeflateLevel;
 use tiff::encoder::{Compression as TiffCompression, TiffEncoder, TiffValue};
 use tiff::tags::{Predictor, Tag, Type};
 
-use crate::icc::{to_output, Tiff16Output};
+use crate::icc::{to_grey_output, to_output, Grey16Output, Tiff16Output};
 use crate::metadata::{jpeg_exif_block, ExportMetadata, Fields, EXIF_VERSION};
 use crate::tiff::write_through_temp;
 
@@ -67,9 +67,12 @@ fn write_exif_directory<W: Write + Seek>(
     Ok(dir.finish_with_offsets()?.offset)
 }
 
-fn encode_tiff(
+/// Writes one 16-bit TIFF of colour type `C` (`RGB16` or `Gray16`) with its profile and tags.
+fn encode_tiff_as<C: TiffColorType<Inner = u16>>(
     writer: impl Write + Seek,
-    image: &Tiff16Output,
+    (width, height): (u32, u32),
+    data: &[u16],
+    icc: &[u8],
     metadata: Option<&ExportMetadata>,
 ) -> tiff::TiffResult<()> {
     let fields = metadata
@@ -82,9 +85,9 @@ fn encode_tiff(
         Some(fields) if fields.has_exif_tags() => Some(write_exif_directory(&mut encoder, fields)?),
         _ => None,
     };
-    let mut tiff = encoder.new_image::<RGB16>(image.width, image.height)?;
+    let mut tiff = encoder.new_image::<C>(width, height)?;
     let dir = tiff.encoder();
-    dir.write_tag(Tag::IccProfile, UndefinedValue(&image.icc))?;
+    dir.write_tag(Tag::IccProfile, UndefinedValue(icc))?;
     if let Some(fields) = &fields {
         for (tag, text) in [
             (Tag::ImageDescription, &fields.description),
@@ -101,7 +104,35 @@ fn encode_tiff(
         // Type LONG, as Exif asks (the tiff crate's IFD type is not read as a pointer by Exif readers).
         dir.write_tag(Tag::ExifDirectory, offset)?;
     }
-    tiff.write_data(&image.data)
+    tiff.write_data(data)
+}
+
+fn encode_tiff(
+    writer: impl Write + Seek,
+    image: &Tiff16Output,
+    metadata: Option<&ExportMetadata>,
+) -> tiff::TiffResult<()> {
+    encode_tiff_as::<RGB16>(
+        writer,
+        (image.width, image.height),
+        &image.data,
+        &image.icc,
+        metadata,
+    )
+}
+
+fn encode_tiff_grey(
+    writer: impl Write + Seek,
+    image: &Grey16Output,
+    metadata: Option<&ExportMetadata>,
+) -> tiff::TiffResult<()> {
+    encode_tiff_as::<Gray16>(
+        writer,
+        (image.width, image.height),
+        &image.data,
+        &image.icc,
+        metadata,
+    )
 }
 
 /// Writes an already converted image as a Deflate-compressed 16-bit RGB TIFF with its profile, and
@@ -115,6 +146,29 @@ pub fn write_output_tiff16(
         encode_tiff(writer, image, metadata)
             .map_err(|err| encode_failed("The TIFF file could not be written.", err))
     })
+}
+
+/// Writes an already converted grey image as a Deflate-compressed one-channel 16-bit TIFF
+/// (BlackIsZero) with its grey profile, and the metadata when given.
+pub fn write_grey_output_tiff16(
+    path: &Path,
+    image: &Grey16Output,
+    metadata: Option<&ExportMetadata>,
+) -> Result<(), AppError> {
+    write_through_temp(path, |writer| {
+        encode_tiff_grey(writer, image, metadata)
+            .map_err(|err| encode_failed("The TIFF file could not be written.", err))
+    })
+}
+
+/// Converts a linear Rec.2020 image to one grey channel and writes it as a 16-bit TIFF, with
+/// `metadata` when given.
+pub fn encode_tiff16_grey(
+    image: &ImageF32,
+    path: &Path,
+    metadata: Option<&ExportMetadata>,
+) -> Result<(), AppError> {
+    write_grey_output_tiff16(path, &to_grey_output(image)?, metadata)
 }
 
 /// Converts a linear Rec.2020 image to `space` and writes it as a 16-bit TIFF, with `metadata`
@@ -145,13 +199,8 @@ pub fn encode_jpeg(
     })
 }
 
-/// [`encode_jpeg`] to memory.
-pub fn encode_jpeg_bytes(
-    image: &ImageF32,
-    space: OutputSpace,
-    quality: u8,
-    metadata: Option<&ExportMetadata>,
-) -> Result<Vec<u8>, AppError> {
+/// Checks the quality and the size of a JPEG and returns the width and height.
+fn check_jpeg(image: &ImageF32, quality: u8) -> Result<(u16, u16), AppError> {
     if !JPEG_QUALITY.contains(&quality) {
         return Err(
             AppError::new(ErrorCode::InvalidInput, "JPEG quality runs from 1 to 100.")
@@ -167,20 +216,30 @@ pub fn encode_jpeg_bytes(
     };
     let width = u16::try_from(image.width).map_err(|_| too_large())?;
     let height = u16::try_from(image.height).map_err(|_| too_large())?;
+    Ok((width, height))
+}
 
-    let output = to_output(image, space)?;
-    // 16 to 8 bits on the same curve: round(v / 257).
-    let rgb8: Vec<u8> = output
-        .data
-        .iter()
+/// 16 to 8 bits on the same curve: round(v / 257).
+fn to_8_bit(data: &[u16]) -> Vec<u8> {
+    data.iter()
         .map(|&v| ((u32::from(v) + 128) / 257) as u8)
-        .collect();
+        .collect()
+}
 
+/// Encodes 8-bit pixels of `color` as a JPEG with the profile and the Exif block.
+fn jpeg_from_8_bit(
+    pixels: &[u8],
+    (width, height): (u16, u16),
+    color: ColorType,
+    icc: &[u8],
+    quality: u8,
+    metadata: Option<&ExportMetadata>,
+) -> Result<Vec<u8>, AppError> {
     let mut bytes = Vec::new();
     let mut encoder = Encoder::new(&mut bytes, quality);
     encoder.set_sampling_factor(SamplingFactor::F_1_1);
     encoder
-        .add_icc_profile(&output.icc)
+        .add_icc_profile(icc)
         .map_err(|err| encode_failed("The JPEG file could not be written.", err))?;
     if let Some(block) = metadata.map(jpeg_exif_block).transpose()?.flatten() {
         encoder
@@ -188,9 +247,63 @@ pub fn encode_jpeg_bytes(
             .map_err(|err| encode_failed("The JPEG file could not be written.", err))?;
     }
     encoder
-        .encode(&rgb8, width, height, ColorType::Rgb)
+        .encode(pixels, width, height, color)
         .map_err(|err| encode_failed("The JPEG file could not be written.", err))?;
     Ok(bytes)
+}
+
+/// [`encode_jpeg`] to memory.
+pub fn encode_jpeg_bytes(
+    image: &ImageF32,
+    space: OutputSpace,
+    quality: u8,
+    metadata: Option<&ExportMetadata>,
+) -> Result<Vec<u8>, AppError> {
+    let size = check_jpeg(image, quality)?;
+    let output = to_output(image, space)?;
+    jpeg_from_8_bit(
+        &to_8_bit(&output.data),
+        size,
+        ColorType::Rgb,
+        &output.icc,
+        quality,
+        metadata,
+    )
+}
+
+/// Converts a linear Rec.2020 image to one grey channel and writes it as an 8-bit greyscale
+/// baseline JPEG of the given quality (1 to 100) with the grey profile, with `metadata` when
+/// given.
+pub fn encode_jpeg_grey(
+    image: &ImageF32,
+    quality: u8,
+    path: &Path,
+    metadata: Option<&ExportMetadata>,
+) -> Result<(), AppError> {
+    let bytes = encode_jpeg_grey_bytes(image, quality, metadata)?;
+    write_through_temp(path, |writer| {
+        writer
+            .write_all(&bytes)
+            .map_err(|err| AppError::from_io(&err))
+    })
+}
+
+/// [`encode_jpeg_grey`] to memory.
+pub fn encode_jpeg_grey_bytes(
+    image: &ImageF32,
+    quality: u8,
+    metadata: Option<&ExportMetadata>,
+) -> Result<Vec<u8>, AppError> {
+    let size = check_jpeg(image, quality)?;
+    let output = to_grey_output(image)?;
+    jpeg_from_8_bit(
+        &to_8_bit(&output.data),
+        size,
+        ColorType::Luma,
+        &output.icc,
+        quality,
+        metadata,
+    )
 }
 
 #[cfg(test)]
@@ -202,7 +315,7 @@ mod tests {
     use tiff::decoder::Decoder;
 
     use super::*;
-    use crate::{read_tiff16, ExifDate, Limits};
+    use crate::{grey_icc_profile, read_tiff16, ExifDate, Limits};
 
     /// A smooth colourful test picture with some fine detail, in linear Rec.2020.
     fn picture(width: u32, height: u32) -> ImageF32 {
@@ -633,6 +746,155 @@ mod tests {
             .join("a.tif");
         let err = encode_tiff16(&picture(4, 4), OutputSpace::Srgb, &path, None).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    /// A smooth colourful picture with equal channels: a ramp from 0 to 1 plus a few fixed values.
+    fn grey_ramp() -> ImageF32 {
+        let mut data = Vec::new();
+        for x in 0..256 {
+            let v = x as f32 / 255.0;
+            data.extend_from_slice(&[v, v, v]);
+        }
+        for v in [0.001_f32, 0.003, 0.18, 0.5, 0.999] {
+            data.extend_from_slice(&[v, v, v]);
+        }
+        let width = (data.len() / 3) as u32;
+        ImageF32::new(width, 1, 3, data).unwrap()
+    }
+
+    /// A pseudo-random mildly colourful image inside the sRGB gamut: mid tones with each channel
+    /// within 15% of a random grey (a fixed LCG, so the test is repeatable).
+    fn colourful() -> ImageF32 {
+        let mut state = 12345u32;
+        let mut next = || {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (state >> 8) as f32 / (1u32 << 24) as f32
+        };
+        let mut data = Vec::new();
+        for _ in 0..64 * 16 {
+            let base = 0.2 + 0.6 * next();
+            data.extend((0..3).map(|_| base * (1.0 + 0.15 * (next() - 0.5))));
+        }
+        ImageF32::new(64, 16, 3, data).unwrap()
+    }
+
+    /// The luma of the sRGB export of a pixel: the linear sRGB pixel's Y re-encoded with the
+    /// sRGB curve, 16-bit. The pixel goes through Little CMS to sRGB, is made linear again, and
+    /// weighted with the Rec.709 coefficients.
+    fn srgb_luma16(rgb16: &[u16]) -> f64 {
+        let lin = |v: u16| {
+            let c = f64::from(v) / 65535.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let y = 0.2126 * lin(rgb16[0]) + 0.7152 * lin(rgb16[1]) + 0.0722 * lin(rgb16[2]);
+        let e = if y <= 0.003_130_8 {
+            y * 12.92
+        } else {
+            1.055 * y.powf(1.0 / 2.4) - 0.055
+        };
+        e * 65535.0
+    }
+
+    /// The grey TIFF values against the luma of the sRGB RGB export of the same image.
+    ///
+    /// Tolerance: 65 of 65535 (0.1% of full scale) per pixel, both on the equal-channel ramp,
+    /// where the grey value is simply the R value of the sRGB export, and on a mildly colourful
+    /// image kept inside the sRGB gamut (outside it the sRGB export clips per channel before
+    /// the luma is taken, and the two legitimately differ).
+    #[test]
+    fn a_grey_tiff_matches_the_luma_of_the_srgb_export() {
+        let dir = TempDir::new("grey-luma");
+        let ramp = grey_ramp();
+        let path = dir.join("ramp.tif");
+        encode_tiff16_grey(&ramp, &path, None).unwrap();
+        let back = read_tiff16(&path, &Limits::default()).unwrap();
+        let rgb = to_output(&ramp, OutputSpace::Srgb).unwrap();
+        assert_eq!((back.channels, back.data.len()), (1, rgb.data.len() / 3));
+        for (i, &g) in back.data.iter().enumerate() {
+            let r = rgb.data[3 * i];
+            assert!(g.abs_diff(r) <= 65, "pixel {i}: grey {g} vs sRGB {r}");
+        }
+
+        let image = colourful();
+        let grey = to_grey_output(&image).unwrap();
+        let rgb = to_output(&image, OutputSpace::Srgb).unwrap();
+        for (i, &g) in grey.data.iter().enumerate() {
+            let luma = srgb_luma16(&rgb.data[3 * i..3 * i + 3]);
+            assert!(
+                (f64::from(g) - luma).abs() <= 65.0,
+                "pixel {i}: grey {g} vs sRGB luma {luma}"
+            );
+        }
+    }
+
+    /// The 8-bit grey JPEG input against the sRGB export, to 2 of 255 levels on a smooth ramp.
+    /// (No JPEG decoder is in the tree, so the picture the encoder is given is compared.)
+    #[test]
+    fn the_grey_jpeg_encoder_input_matches_the_srgb_export() {
+        let ramp = grey_ramp();
+        let grey = to_8_bit(&to_grey_output(&ramp).unwrap().data);
+        let rgb = to_8_bit(&to_output(&ramp, OutputSpace::Srgb).unwrap().data);
+        for (i, &g) in grey.iter().enumerate() {
+            assert!(g.abs_diff(rgb[3 * i]) <= 2, "pixel {i}");
+        }
+    }
+
+    #[test]
+    fn a_grey_tiff_is_one_channel_16_bit_with_the_grey_profile() {
+        let dir = TempDir::new("grey-tiff");
+        let path = dir.join("g.tif");
+        encode_tiff16_grey(&grey_ramp(), &path, Some(&sample_metadata())).unwrap();
+        let mut decoder = Decoder::new(File::open(&path).unwrap()).unwrap();
+        assert_eq!(
+            decoder.colortype().unwrap(),
+            tiff::ColorType::Gray(16),
+            "one channel, 16 bits"
+        );
+        let icc = decoder.get_tag_u8_vec(Tag::IccProfile).unwrap();
+        assert_eq!(
+            without_date(&icc),
+            without_date(&grey_icc_profile().unwrap())
+        );
+        let parsed = Profile::new_icc(&icc).unwrap();
+        assert_eq!(parsed.color_space(), ColorSpaceSignature::GrayData);
+        assert_sample_tags(&read_exif(&path));
+    }
+
+    #[test]
+    fn a_grey_jpeg_is_one_component_with_the_grey_profile_and_exif() {
+        let dir = TempDir::new("grey-jpeg");
+        let path = dir.join("g.jpg");
+        encode_jpeg_grey(&picture(64, 40), 90, &path, Some(&sample_metadata())).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        // The start-of-frame segment (SOF0, 0xFFC0): length, precision, height, width, components.
+        let sof = bytes.windows(2).position(|w| w == [0xFF, 0xC0]).unwrap();
+        assert_eq!(bytes[sof + 4], 8, "8 bits");
+        assert_eq!(bytes[sof + 9], 1, "one component");
+        assert_eq!(
+            without_date(&jpeg_icc(&bytes)),
+            without_date(&grey_icc_profile().unwrap())
+        );
+        assert_sample_tags(&read_exif(&path));
+    }
+
+    #[test]
+    fn grey_encoders_reject_bad_input() {
+        let dir = TempDir::new("grey-errors");
+        let img = picture(8, 8);
+        for q in [0, 101] {
+            let err = encode_jpeg_grey(&img, q, &dir.join("x.jpg"), None).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput);
+        }
+        let wide = ImageF32::zeros(70_000, 1, 3).unwrap();
+        let err = encode_jpeg_grey(&wide, 90, &dir.join("x.jpg"), None).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        let one = ImageF32::zeros(4, 4, 1).unwrap();
+        let err = encode_tiff16_grey(&one, &dir.join("g.tif"), None).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
     }
 
     /// Export of a 21 MP frame; run with

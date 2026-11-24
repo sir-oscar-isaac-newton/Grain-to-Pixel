@@ -14,7 +14,7 @@ use gtp_core::{AppError, ErrorCode, ExposureInfo, Look, Recipe, RecipeField, Rol
 use serde::{Deserialize, Serialize};
 
 use super::capture_levels::{LevelsScope, SavedLevels};
-use super::export::{ExportFormat, ExportOptions, LONG_EDGE};
+use super::export::{ExportColour, ExportFormat, ExportOptions, LONG_EDGE};
 use super::focus::{validate_reference, Map};
 
 /// Window sizes accepted, in logical pixels.
@@ -115,6 +115,7 @@ pub fn default_export_presets() -> Vec<ExportPreset> {
             template: DEFAULT_TEMPLATE.to_owned(),
             write_metadata: true,
             long_edge,
+            colour: ExportColour::Auto,
         },
     };
     vec![
@@ -1441,6 +1442,7 @@ mod tests {
                 template: "{roll}-{index}".to_owned(),
                 write_metadata: true,
                 long_edge: None,
+                colour: ExportColour::Auto,
             },
         }
     }
@@ -1469,6 +1471,35 @@ mod tests {
         assert_eq!(loaded.export_presets.len(), 1);
         assert_eq!(loaded.export_presets[0].options.long_edge, None);
         assert_eq!(loaded.last_export.unwrap().options.long_edge, None);
+    }
+
+    #[test]
+    fn presets_and_the_last_export_saved_without_a_colour_load_as_auto() {
+        let path = temp_file("colour-old");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let old = r#"{"export_presets":[{"name":"Mine","options":{"format":"jpeg",
+            "space":"srgb","jpeg_quality":80,"dest_dir":"","template":"{roll}"}}],
+            "last_export":{"options":{"format":"jpeg","space":"srgb","jpeg_quality":80,
+            "dest_dir":"","template":"{roll}"},"preset":null}}"#;
+        std::fs::write(&path, old).unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none(), "{note:?}");
+        let loaded = store.get();
+        assert_eq!(loaded.export_presets[0].options.colour, ExportColour::Auto);
+        assert_eq!(
+            loaded.last_export.unwrap().options.colour,
+            ExportColour::Auto
+        );
+        let rgb = old.replace(
+            r#""jpeg_quality":80,"#,
+            r#""jpeg_quality":80,"colour":"rgb","#,
+        );
+        std::fs::write(&path, rgb).unwrap();
+        let (store, _) = SettingsStore::load(&path);
+        assert_eq!(
+            store.get().export_presets[0].options.colour,
+            ExportColour::Rgb
+        );
     }
 
     #[test]

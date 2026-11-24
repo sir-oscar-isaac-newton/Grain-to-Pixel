@@ -10,6 +10,7 @@ const options = (over: Partial<ExportOptions> = {}): ExportOptions => ({
   template: '{roll}_{index:03}',
   write_metadata: true,
   long_edge: null,
+  colour: 'auto',
   ...over,
 });
 
@@ -45,6 +46,7 @@ describe('sameOptions', () => {
       { template: 'x' },
       { write_metadata: false },
       { long_edge: 2048 },
+      { colour: 'rgb' },
     ] as const) {
       expect(sameOptions(options(), options(change))).toBe(false);
     }
@@ -54,6 +56,11 @@ describe('sameOptions', () => {
     const missing = options();
     delete (missing as { long_edge?: unknown }).long_edge;
     expect(sameOptions(missing, options({ long_edge: null }))).toBe(true);
+    const noColour = options();
+    delete (noColour as { colour?: unknown }).colour;
+    expect(sameOptions(noColour, options({ colour: 'auto' }))).toBe(true);
+    expect(sameOptions(noColour, options({ colour: 'rgb' }))).toBe(false);
+    expect(applyPreset(options(), { name: 'P', options: noColour }).colour).toBe('auto');
     expect(sameOptions(missing, options({ long_edge: 2048 }))).toBe(false);
     expect(isModified(options({ long_edge: 2048 }), preset('P', { long_edge: 2048 }))).toBe(false);
     expect(isModified(options({ long_edge: 1600 }), preset('P', { long_edge: 2048 }))).toBe(true);

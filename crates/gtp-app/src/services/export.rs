@@ -20,8 +20,8 @@ use gtp_core::{
     AppError, ErrorCode, ExportResult, ExportedFile, FailedExport, FlatField, Frame, FrameId,
     ImageF32, Look, Recipe, SourceFile,
 };
-use gtp_edit::{apply_sharpen, BalanceMethod};
-use gtp_io::{encode_jpeg, encode_tiff16, JPEG_QUALITY};
+use gtp_edit::{apply_sharpen, BalanceMethod, Curve};
+use gtp_io::{encode_jpeg, encode_jpeg_grey, encode_tiff16, encode_tiff16_grey, JPEG_QUALITY};
 
 use crate::jobs::JobCtx;
 use crate::paths::{canonical_dir, display_path};
@@ -77,6 +77,19 @@ impl ExportFormat {
     }
 }
 
+/// How black-and-white frames are written (ADR 0018).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum ExportColour {
+    /// Greyscale for an untoned black-and-white frame (one channel, a grey profile), RGB for
+    /// everything else.
+    #[default]
+    Auto,
+    /// Always RGB, in the chosen output space.
+    Rgb,
+}
+
 /// What to export and where.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -100,6 +113,11 @@ pub struct ExportOptions {
     /// to 20000 pixels. Settings saved before this option existed load as none.
     #[serde(default)]
     pub long_edge: Option<u32>,
+    /// Whether an untoned black-and-white frame is written as greyscale. Settings saved before
+    /// this option existed load as `auto`. The output space only applies to RGB files: a grey
+    /// file has one profile.
+    #[serde(default)]
+    pub colour: ExportColour,
 }
 
 /// The shortest and longest long edge, in pixels, that the size option accepts.
@@ -108,6 +126,32 @@ pub const LONG_EDGE: std::ops::RangeInclusive<u32> = 256..=20_000;
 /// The value of `write_metadata` when a saved set of options has none.
 fn default_write_metadata() -> bool {
     true
+}
+
+/// Whether a frame with `recipe` is written as greyscale under `colour`: only an untoned
+/// black-and-white frame and only when the option is `auto`. Untoned means a combined density,
+/// both split-tone strengths at 0 (as the render reads them after clamping), and red, green and
+/// blue tone curves that cannot tint: all three are the identity, or all three are the same.
+fn writes_greyscale(recipe: &Recipe, colour: ExportColour) -> bool {
+    let recipe = recipe.clone().clamped();
+    colour == ExportColour::Auto
+        && recipe.invert.combine.is_some()
+        && recipe.color.split_tone.highlight_strength == 0.0
+        && recipe.color.split_tone.shadow_strength == 0.0
+        && neutral_curves(&recipe)
+}
+
+/// The red, green and blue tone curves leave a grey pixel grey: they are all the identity (as
+/// the tone stage reads them), or all three have the same points. A curve that cannot be read
+/// counts as tinting, so the frame is written as RGB.
+fn neutral_curves(recipe: &Recipe) -> bool {
+    let curves = &recipe.tone.curve;
+    if curves.r == curves.g && curves.g == curves.b {
+        return true;
+    }
+    [&curves.r, &curves.g, &curves.b]
+        .into_iter()
+        .all(|points| Curve::new(points).is_ok_and(|curve| curve.is_identity()))
 }
 
 /// The values a template can name.
@@ -437,15 +481,22 @@ fn export_one(
     let metadata = options
         .write_metadata
         .then(|| export_metadata::build(&roll, &frame, env!("CARGO_PKG_VERSION")));
-    match options.format {
-        ExportFormat::Tiff16 => encode_tiff16(&image, options.space, &path, metadata.as_ref())?,
-        ExportFormat::Jpeg => encode_jpeg(
+    let grey = writes_greyscale(&recipe, options.colour);
+    match (options.format, grey) {
+        (ExportFormat::Tiff16, false) => {
+            encode_tiff16(&image, options.space, &path, metadata.as_ref())?;
+        }
+        (ExportFormat::Tiff16, true) => encode_tiff16_grey(&image, &path, metadata.as_ref())?,
+        (ExportFormat::Jpeg, false) => encode_jpeg(
             &image,
             options.space,
             options.jpeg_quality,
             &path,
             metadata.as_ref(),
         )?,
+        (ExportFormat::Jpeg, true) => {
+            encode_jpeg_grey(&image, options.jpeg_quality, &path, metadata.as_ref())?;
+        }
     }
     progress(3.0);
     Ok(path)
@@ -551,6 +602,7 @@ mod tests {
             template: DEFAULT_TEMPLATE.into(),
             write_metadata: true,
             long_edge: None,
+            colour: ExportColour::Auto,
         }
     }
 
@@ -1075,7 +1127,10 @@ mod tests {
         run(
             &t,
             &[id],
-            &options(&out, ExportFormat::Tiff16, OutputSpace::Srgb),
+            &ExportOptions {
+                colour: ExportColour::Rgb,
+                ..options(&out, ExportFormat::Tiff16, OutputSpace::Srgb)
+            },
         )
         .unwrap();
         let stored = t.stored(id).unwrap();
@@ -1098,10 +1153,186 @@ mod tests {
         run(
             &t,
             &[id],
-            &options(&again, ExportFormat::Tiff16, OutputSpace::Srgb),
+            &ExportOptions {
+                colour: ExportColour::Rgb,
+                ..options(&again, ExportFormat::Tiff16, OutputSpace::Srgb)
+            },
         )
         .unwrap();
         assert_eq!(pixels(&again.join("Roll_002.tif")), file);
+    }
+
+    /// A recipe with or without a combined density, the given split-tone strengths and mono on or off.
+    fn recipe_with(combine: bool, highlight: f32, shadow: f32, mono: bool) -> Recipe {
+        let mut recipe = Recipe::default();
+        recipe.invert.combine = combine.then_some([1.0 / 3.0; 3]);
+        recipe.color.split_tone.highlight_strength = highlight;
+        recipe.color.split_tone.shadow_strength = shadow;
+        recipe.mono.enabled = mono;
+        recipe
+    }
+
+    #[test]
+    fn only_an_untoned_black_and_white_frame_is_written_as_greyscale_and_only_on_auto() {
+        use ExportColour::{Auto, Rgb};
+        let colour = recipe_with(false, 0.0, 0.0, false);
+        let mono_on_colour = recipe_with(false, 0.0, 0.0, true);
+        let bw = recipe_with(true, 0.0, 0.0, false);
+        let toned_highlights = recipe_with(true, 25.0, 0.0, false);
+        let toned_shadows = recipe_with(true, 0.0, 25.0, false);
+        let cases = [
+            (&colour, Auto, false),
+            (&mono_on_colour, Auto, false),
+            (&bw, Auto, true),
+            (&toned_highlights, Auto, false),
+            (&toned_shadows, Auto, false),
+            (&bw, Rgb, false),
+        ];
+        for (i, (recipe, option, want)) in cases.into_iter().enumerate() {
+            assert_eq!(writes_greyscale(recipe, option), want, "case {i}");
+        }
+        // A strength outside the range is read as the render reads it: clamped (NaN is a 0 default).
+        let bad = recipe_with(true, f32::NAN, -5.0, false);
+        assert!(writes_greyscale(&bad, Auto));
+    }
+
+    #[test]
+    fn a_black_and_white_frame_with_a_tinting_channel_curve_is_written_as_rgb() {
+        let lifted = vec![[0.0, 0.0], [0.5, 0.6], [1.0, 1.0]];
+        let identity = vec![[0.0, 0.0], [1.0, 1.0]];
+
+        let mut red = recipe_with(true, 0.0, 0.0, false);
+        red.tone.curve.r = lifted.clone();
+        assert!(
+            !writes_greyscale(&red, ExportColour::Auto),
+            "a red curve tints"
+        );
+
+        let mut plain_red = recipe_with(true, 0.0, 0.0, false);
+        plain_red.tone.curve.r = identity;
+        assert!(
+            writes_greyscale(&plain_red, ExportColour::Auto),
+            "an identity curve does not"
+        );
+
+        let mut all_three = recipe_with(true, 0.0, 0.0, false);
+        all_three.tone.curve.r = lifted.clone();
+        all_three.tone.curve.g = lifted.clone();
+        all_three.tone.curve.b = lifted.clone();
+        assert!(
+            writes_greyscale(&all_three, ExportColour::Auto),
+            "equal curves stay grey"
+        );
+
+        let mut master = recipe_with(true, 0.0, 0.0, false);
+        master.tone.curve.master = lifted;
+        assert!(
+            writes_greyscale(&master, ExportColour::Auto),
+            "the master curve stays grey"
+        );
+    }
+
+    /// The channel count of a TIFF.
+    fn channels(path: &Path) -> u8 {
+        read_tiff16(path, &Limits::default()).unwrap().channels
+    }
+
+    /// The number of components of a JPEG (its start-of-frame segment).
+    fn jpeg_components(path: &Path) -> u8 {
+        let bytes = std::fs::read(path).unwrap();
+        let sof = bytes.windows(2).position(|w| w == [0xFF, 0xC0]).unwrap();
+        bytes[sof + 9]
+    }
+
+    #[test]
+    fn an_export_writes_greyscale_for_an_untoned_black_and_white_frame_and_rgb_otherwise() {
+        use crate::services::roll_frame::{roll_update, RollInput};
+        let t = Fixture::new("export-grey");
+        let params = Params {
+            width: 300,
+            height: 200,
+            rebate: [20; 4],
+            pattern: Pattern::Wedge,
+            noise: 0.03,
+            ..Params::default()
+        };
+        let colour = t
+            .service
+            .analyze(&t.library, t.frame_params(1, &params), None)
+            .unwrap()
+            .auto_recipe;
+        let id = t.imported(&params, &colour);
+
+        // A colour frame is RGB, whatever the option says.
+        let out = t.dir.join("colour");
+        run(
+            &t,
+            &[id],
+            &options(&out, ExportFormat::Tiff16, OutputSpace::Srgb),
+        )
+        .unwrap();
+        assert_eq!(channels(&out.join("Roll_002.tif")), 3);
+
+        // The roll turns black and white: the same frame is fitted and written as one channel.
+        roll_update(
+            &t.library,
+            t.roll,
+            RollInput {
+                name: "Roll".into(),
+                film_type: gtp_core::FilmType::BwSilver,
+                ..RollInput::default()
+            },
+        )
+        .unwrap();
+        let grey = t.dir.join("grey");
+        run(
+            &t,
+            &[id],
+            &options(&grey, ExportFormat::Tiff16, OutputSpace::Prophoto),
+        )
+        .unwrap();
+        let file = grey.join("Roll_002.tif");
+        assert_eq!(channels(&file), 1);
+        let bytes = std::fs::read(&file).unwrap();
+        assert!(contains(&bytes, &gtp_io::grey_icc_profile().unwrap()));
+        let jpeg = t.dir.join("grey-jpeg");
+        run(
+            &t,
+            &[id],
+            &options(&jpeg, ExportFormat::Jpeg, OutputSpace::Srgb),
+        )
+        .unwrap();
+        assert_eq!(jpeg_components(&jpeg.join("Roll_002.jpg")), 1);
+
+        // The option forces RGB.
+        let forced = t.dir.join("forced");
+        let rgb = ExportOptions {
+            colour: ExportColour::Rgb,
+            ..options(&forced, ExportFormat::Tiff16, OutputSpace::Srgb)
+        };
+        run(&t, &[id], &rgb).unwrap();
+        assert_eq!(channels(&forced.join("Roll_002.tif")), 3);
+        let forced_jpeg = t.dir.join("forced-jpeg");
+        let rgb = ExportOptions {
+            colour: ExportColour::Rgb,
+            ..options(&forced_jpeg, ExportFormat::Jpeg, OutputSpace::Srgb)
+        };
+        run(&t, &[id], &rgb).unwrap();
+        assert_eq!(jpeg_components(&forced_jpeg.join("Roll_002.jpg")), 3);
+
+        // Toning adds colour: written as RGB.
+        let mut toned = t.stored(id).unwrap();
+        assert!(toned.invert.combine.is_some());
+        toned.color.split_tone.shadow_strength = 30.0;
+        t.library.write(|c| c.save_recipe(id, &toned)).unwrap();
+        let toned_out = t.dir.join("toned");
+        run(
+            &t,
+            &[id],
+            &options(&toned_out, ExportFormat::Tiff16, OutputSpace::Srgb),
+        )
+        .unwrap();
+        assert_eq!(channels(&toned_out.join("Roll_002.tif")), 3);
     }
 
     #[test]

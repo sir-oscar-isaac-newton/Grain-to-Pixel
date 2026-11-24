@@ -16,7 +16,7 @@ export function findPreset(
 
 /**
  * Whether two sets of options are the same. The JPEG quality only counts when the format is JPEG
- * (it is not shown for TIFF), a missing size is the same as none (full size), and `ignoreFolder`
+ * (it is not shown for TIFF), a missing size is the same as none (full size), a missing colour choice is `auto`, and `ignoreFolder`
  * leaves the folder out.
  */
 export function sameOptions(
@@ -31,6 +31,7 @@ export function sameOptions(
     a.template === b.template &&
     a.write_metadata === b.write_metadata &&
     (a.long_edge ?? null) === (b.long_edge ?? null) &&
+    (a.colour ?? 'auto') === (b.colour ?? 'auto') &&
     (ignoreFolder || a.dest_dir === b.dest_dir)
   );
 }
@@ -51,6 +52,7 @@ export function applyPreset(current: ExportOptions, preset: ExportPreset): Expor
   return {
     ...preset.options,
     long_edge: preset.options.long_edge ?? null,
+    colour: preset.options.colour ?? 'auto',
     dest_dir: preset.options.dest_dir === '' ? current.dest_dir : preset.options.dest_dir,
   };
 }

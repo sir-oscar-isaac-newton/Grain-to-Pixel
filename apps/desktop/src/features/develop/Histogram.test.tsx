@@ -22,6 +22,18 @@ describe('Histogram', () => {
     expect(screen.getByText('Black clipped: 1%.')).toBeInTheDocument();
   });
 
+  it('draws only the luma with channels="luma"', () => {
+    render(<Histogram data={data()} label="Histogram" channels="luma" />);
+    expect(screen.getByRole('img', { name: 'Histogram' }).querySelectorAll('path')).toHaveLength(1);
+  });
+
+  it('measures the peak from the luma alone with channels="luma"', () => {
+    const loud = data({ red: flat(1000), green: flat(1000), blue: flat(1000), luma: flat(10) });
+    expect(histogramPeak(loud)).toBe(1000);
+    expect(histogramPeak(loud, 'luma')).toBe(10);
+    expect(histogramPeak(loud, 'rgb')).toBe(1000);
+  });
+
   it('draws an empty frame while there is nothing to show', () => {
     render(<Histogram data={null} label="Histogram" />);
     const picture = screen.getByRole('img', { name: 'Histogram' });

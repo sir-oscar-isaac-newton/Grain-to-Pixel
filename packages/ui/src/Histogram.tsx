@@ -15,7 +15,14 @@ interface HistogramProps {
   label: string;
   /** What the picture says in words (for example how much is clipped), shown beneath it. */
   caption?: string;
+  /**
+   * Which channels are drawn: `rgb` (the default) is luma and red, green and blue; `luma` only the
+   * luma, for a black-and-white picture where the colour channels say nothing more.
+   */
+  channels?: HistogramChannels;
 }
+
+export type HistogramChannels = 'rgb' | 'luma';
 
 const BINS = 256;
 const HEIGHT = 100;
@@ -24,9 +31,10 @@ const HEIGHT = 100;
  * The height every bin is measured against: a high percentile of all the counts, so a spike at
  * pure black or pure white (clipped pixels) does not flatten the rest of the picture.
  */
-export function histogramPeak(data: HistogramData): number {
+export function histogramPeak(data: HistogramData, channels: HistogramChannels = 'rgb'): number {
   const all: number[] = [];
-  for (const channel of [data.red, data.green, data.blue, data.luma]) {
+  const drawn = channels === 'luma' ? [data.luma] : [data.red, data.green, data.blue, data.luma];
+  for (const channel of drawn) {
     for (let i = 0; i < BINS; i += 1) all.push(channel[i] ?? 0);
   }
   all.sort((a, b) => a - b);
@@ -48,8 +56,8 @@ export function histogramPath(counts: ArrayLike<number>, peak: number): string {
  * Luma and red, green and blue histograms of an image, as one picture. The meaning is in the label
  * and caption; the colours only tell the channels apart.
  */
-export function Histogram({ data, label, caption }: HistogramProps) {
-  const peak = data ? histogramPeak(data) : 1;
+export function Histogram({ data, label, caption, channels = 'rgb' }: HistogramProps) {
+  const peak = data ? histogramPeak(data, channels) : 1;
   return (
     <figure className={styles.figure}>
       <svg
@@ -62,9 +70,13 @@ export function Histogram({ data, label, caption }: HistogramProps) {
         {data && (
           <>
             <path d={histogramPath(data.luma, peak)} className={styles.luma} />
-            <path d={histogramPath(data.red, peak)} className={styles.red} />
-            <path d={histogramPath(data.green, peak)} className={styles.green} />
-            <path d={histogramPath(data.blue, peak)} className={styles.blue} />
+            {channels === 'rgb' && (
+              <>
+                <path d={histogramPath(data.red, peak)} className={styles.red} />
+                <path d={histogramPath(data.green, peak)} className={styles.green} />
+                <path d={histogramPath(data.blue, peak)} className={styles.blue} />
+              </>
+            )}
           </>
         )}
       </svg>

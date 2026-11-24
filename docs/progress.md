@@ -1181,6 +1181,15 @@
       "number": 389,
       "title": "Guided import: the scanner and files steps",
       "branch": "feat/issue-389-scanner-files-steps",
+      "status": "completed",
+      "pr": 395,
+      "commit": "f6c070d"
+    },
+    {
+      "id": "U-34",
+      "number": 378,
+      "title": "Black-and-white editing in Develop",
+      "branch": "feat/issue-378-bw-develop",
       "status": "in_progress",
       "pr": null,
       "commit": null

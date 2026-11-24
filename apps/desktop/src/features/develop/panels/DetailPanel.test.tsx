@@ -214,4 +214,10 @@ describe('DetailPanel', () => {
     const { container } = setup();
     await expectNoA11yViolations(container);
   });
+
+  it('hides the colour noise slider for a black-and-white frame and keeps luminance', () => {
+    setup({ recipe: noisy, blackAndWhite: true });
+    expect(slider('Luminance')).toHaveAttribute('aria-valuenow', '40');
+    expect(screen.queryByRole('slider', { name: 'Colour' })).not.toBeInTheDocument();
+  });
 });

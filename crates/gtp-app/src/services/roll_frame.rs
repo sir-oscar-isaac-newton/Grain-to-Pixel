@@ -185,14 +185,15 @@ pub fn roll_set_frame_size(
     })
 }
 
-/// What frame detection may assume about the roll of `frame`, and the roll's id.
+/// The roll of `frame` and what frame detection may assume about it.
 pub(crate) fn hint_for_frame(
     library: &Library,
     frame: FrameId,
-) -> Result<(RollId, Option<gtp_negative::FrameHint>), AppError> {
+) -> Result<(Roll, Option<gtp_negative::FrameHint>), AppError> {
     library.read(|c| {
         let roll = c.get_roll(c.get_frame(frame)?.roll_id)?;
-        Ok((roll.id, crate::pipeline::frame_hint(&roll)))
+        let hint = crate::pipeline::frame_hint(&roll);
+        Ok((roll, hint))
     })
 }
 

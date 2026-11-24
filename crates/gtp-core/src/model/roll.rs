@@ -59,7 +59,8 @@ impl FilmFormat {
 }
 
 /// What kind of film a roll is: colour negative, or black and white on a silver or a chromogenic
-/// (C-41) emulsion. The conversion does not use it yet (P-36).
+/// (C-41) emulsion. A frame of a black-and-white roll is inverted from one combined density, a
+/// frame of a colour roll per channel (P-36, ADR 0017).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
@@ -71,6 +72,12 @@ pub enum FilmType {
 }
 
 impl FilmType {
+    /// True for black-and-white film of either kind: its frames are converted from one combined
+    /// density (ADR 0017).
+    pub fn is_black_and_white(self) -> bool {
+        matches!(self, Self::BwSilver | Self::BwChromogenic)
+    }
+
     /// The text stored in the catalog and written to the UI.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -342,6 +349,13 @@ mod tests {
             assert!((format.aspect() - aspect).abs() < 0.02, "{text}");
         }
         assert_eq!(FilmFormat::parse("8x10"), None);
+    }
+
+    #[test]
+    fn only_the_black_and_white_film_types_are_black_and_white() {
+        assert!(!FilmType::ColorNegative.is_black_and_white());
+        assert!(FilmType::BwSilver.is_black_and_white());
+        assert!(FilmType::BwChromogenic.is_black_and_white());
     }
 
     #[test]

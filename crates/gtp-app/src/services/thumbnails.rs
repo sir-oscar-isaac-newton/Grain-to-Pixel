@@ -16,13 +16,15 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use gtp_core::recipe::OutputSpace;
-use gtp_core::{AppError, ErrorCode, FrameId};
+use gtp_core::{AppError, ErrorCode, FrameId, Look};
+use gtp_edit::BalanceMethod;
 use gtp_io::encode_jpeg;
 
 use crate::jobs::LibraryEvents;
 use crate::library_fs::thumb_rel;
-use crate::pipeline::{analyze_with, render, RenderTarget};
+use crate::pipeline::{analyze_for_film, render, RenderTarget};
 use crate::services::develop::DevelopService;
+use crate::services::film_recipe;
 use crate::services::import::{THUMB_EDGE, THUMB_QUALITY};
 use crate::services::library::Library;
 use crate::services::roll_balance::with_frame_balance;
@@ -160,11 +162,23 @@ impl ThumbnailService {
             Err(err) => return Err(err),
         }
         let input = develop.thumbnail_input(library, frame)?;
+        let (roll, hint) = roll_frame::hint_for_frame(library, frame)?;
         let recipe = match library.read(|c| c.load_recipe(frame))? {
-            Some(recipe) => recipe,
+            // Fitted to the roll's film type first (ADR 0017).
+            Some(saved) => {
+                film_recipe::fit(library, frame, saved, roll.film_type, || Ok(input.clone()))?
+            }
             None => {
-                let hint = roll_frame::hint_for_frame(library, frame)?.1;
-                with_frame_balance(library, frame, analyze_with(&input, hint)?.auto_recipe)?
+                let auto = analyze_for_film(
+                    &input,
+                    hint,
+                    Look::Neutral,
+                    BalanceMethod::Off,
+                    None,
+                    roll.film_type,
+                )?
+                .auto_recipe;
+                with_frame_balance(library, frame, auto)?
             }
         };
         let image = render(
@@ -361,6 +375,41 @@ mod tests {
             without_profile_time(after)
         );
         assert_eq!(svc.renders(), 2);
+    }
+
+    #[test]
+    fn a_thumbnail_of_a_frame_whose_recipe_disagrees_with_its_roll_is_rendered_fitted_to_it() {
+        use crate::services::roll_frame::{roll_update, RollInput};
+        use gtp_core::testing::synthetic::{Params, Pattern};
+        let t = Fixture::new("thumb-film-type");
+        let params = Params {
+            width: 400,
+            height: 280,
+            rebate: [20; 4],
+            pattern: Pattern::Wedge,
+            noise: 0.03,
+            ..Params::default()
+        };
+        let id = t.imported(&params, &Recipe::default());
+        roll_update(
+            &t.library,
+            t.roll,
+            RollInput {
+                name: "Roll".into(),
+                film_type: gtp_core::FilmType::BwChromogenic,
+                ..RollInput::default()
+            },
+        )
+        .unwrap();
+        let svc = ThumbnailService::new(QUICK);
+        let (events, heard) = listener();
+        t.ask(&svc, &events, &[id]);
+        assert_eq!(heard.recv_timeout(WAIT).unwrap(), [id]);
+        let stored = t.stored(id).unwrap();
+        assert!(stored.invert.combine.is_some());
+        assert!(stored.mono.enabled);
+        assert!(!t.edited(id), "fitting the recipe is not an edit");
+        assert!(t.thumb(id).unwrap().starts_with(&[0xFF, 0xD8]));
     }
 
     #[test]

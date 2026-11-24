@@ -142,6 +142,7 @@ mod tests {
         Invert {
             black: [0.1; 3],
             white: [0.1 + span; 3],
+            combine: None,
         }
     }
 

@@ -121,12 +121,25 @@ impl Default for Base {
 }
 
 /// Per-channel density range mapped to the positive image (auto-filled from the histogram).
+///
+/// With `combine` set (a frame of a black-and-white roll, ADR 0017) the three channels carry one
+/// picture, so they are combined into one density before the points are applied; see `combine`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
 pub struct Invert {
     pub black: [f32; 3],
     pub white: [f32; 3],
+    /// Weights of the red, green and blue densities in the combined density of a black-and-white
+    /// frame: every weight is at least 0 and they add up to 1 (`Recipe::clamped` brings bad ones
+    /// to that, or to one third each). Absent, the default, is the colour inversion: each channel
+    /// with its own points. When set, the inversion uses one black point (the mean of the three
+    /// `black` values) and one white point (the mean of the three `white` values) on the combined
+    /// density and writes the result to all three channels, and the colour stages are skipped. A
+    /// colour recipe does not write the field, and a recipe saved before it existed loads without
+    /// it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub combine: Option<[f32; 3]>,
 }
 
 impl Default for Invert {
@@ -134,6 +147,7 @@ impl Default for Invert {
         Self {
             black: [0.0; 3],
             white: [1.0; 3],
+            combine: None,
         }
     }
 }

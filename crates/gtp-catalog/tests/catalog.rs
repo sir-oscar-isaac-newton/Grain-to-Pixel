@@ -310,6 +310,53 @@ fn the_colour_axes_are_written_only_into_recipes_that_were_never_edited() {
 }
 
 #[test]
+fn replacing_a_recipe_keeps_edited_as_it_was_and_never_overwrites_a_newer_edit() {
+    let dir = TempDir::new("replace-recipe");
+    let mut cat = Catalog::open(&dir.db()).unwrap();
+    let r = cat.insert_roll(&roll("R")).unwrap();
+    let untouched = cat
+        .insert_imported_frame(&frame(r.id, 1), &[], &Recipe::default())
+        .unwrap();
+    let edited = cat
+        .insert_imported_frame(&frame(r.id, 2), &[], &Recipe::default())
+        .unwrap();
+    cat.save_recipe(edited.id, &Recipe::default()).unwrap();
+
+    let mut next = Recipe::default();
+    next.invert.combine = Some([0.2, 0.5, 0.3]);
+    for id in [untouched.id, edited.id] {
+        assert!(cat
+            .replace_recipe_if_unchanged(id, &Recipe::default(), &next)
+            .unwrap());
+        assert_eq!(cat.load_recipe(id).unwrap(), Some(next.clone()));
+    }
+    assert!(cat.get_frame(untouched.id).unwrap().edited_at.is_none());
+    assert!(cat.get_frame(edited.id).unwrap().edited_at.is_some());
+
+    // The stored recipe is no longer the one the replacement was made from (the user saved an
+    // edit in between): nothing changes.
+    let mut theirs = next.clone();
+    theirs.tone.exposure_ev = 0.7;
+    cat.save_recipe(edited.id, &theirs).unwrap();
+    assert!(!cat
+        .replace_recipe_if_unchanged(edited.id, &next, &Recipe::default())
+        .unwrap());
+    assert_eq!(cat.load_recipe(edited.id).unwrap(), Some(theirs));
+
+    // A frame with no recipe, or no frame at all, is not found and nothing is made up.
+    let bare = cat.insert_frame(&frame(r.id, 3)).unwrap();
+    for id in [bare.id, FrameId::new()] {
+        assert_eq!(
+            cat.replace_recipe_if_unchanged(id, &Recipe::default(), &next)
+                .unwrap_err()
+                .code,
+            ErrorCode::NotFound
+        );
+        assert_eq!(cat.load_recipe(id).unwrap(), None);
+    }
+}
+
+#[test]
 fn the_format_and_frame_size_of_a_roll_are_stored_and_measurements_average_in() {
     let dir = TempDir::new("frame-size");
     let mut cat = Catalog::open(&dir.db()).unwrap();

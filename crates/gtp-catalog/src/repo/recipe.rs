@@ -43,6 +43,48 @@ impl Catalog {
         tx.commit().map_err(db_error)
     }
 
+    /// Replaces the recipe a frame already has with `recipe`, but only while the stored one is still
+    /// `expected`, and without stamping `edited_at`: for a recipe the app changed by itself (it was
+    /// fitted to the roll's film type), which is not an edit by the user. Returns `false`, changing
+    /// nothing, when the stored recipe is no longer `expected` (the user saved an edit since it was
+    /// read), so that edit is never overwritten. A frame without a recipe is `NotFound`.
+    pub fn replace_recipe_if_unchanged(
+        &mut self,
+        frame: FrameId,
+        expected: &Recipe,
+        recipe: &Recipe,
+    ) -> Result<bool, AppError> {
+        let json = serde_json::to_string(recipe).map_err(|err| {
+            AppError::new(ErrorCode::Internal, "The recipe could not be saved.")
+                .with_details(err.to_string())
+        })?;
+        let tx = self.conn.transaction().map_err(db_error)?;
+        let stored: Option<String> = tx
+            .query_row(
+                "SELECT json FROM recipe WHERE frame_id = ?1",
+                [frame.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        let Some(stored) = stored else {
+            return Err(not_found("recipe", frame));
+        };
+        if migrate(&stored)? != *expected {
+            return Ok(false);
+        }
+        tx.execute(
+            &format!(
+                "UPDATE recipe SET schema_v = ?2, json = ?3, updated_at = {NOW}
+                 WHERE frame_id = ?1"
+            ),
+            params![frame.to_string(), recipe.v, json],
+        )
+        .map_err(db_error)?;
+        tx.commit().map_err(db_error)?;
+        Ok(true)
+    }
+
     /// Saves several frames' recipes in one transaction: an unknown frame saves none of them.
     pub fn save_recipes(&mut self, items: &[(FrameId, Recipe)]) -> Result<(), AppError> {
         let tx = self.conn.transaction().map_err(db_error)?;

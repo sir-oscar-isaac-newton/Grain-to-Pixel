@@ -61,13 +61,13 @@ import {
   curvesOf,
   colourOf,
   levelsIn,
-  levelsOf,
   triple,
   withBase,
   geometryOf,
   withColour,
   withGeometry,
   withCurve,
+  withAutoLevels,
   withLevels,
 } from './recipe-parts';
 import { useCompare } from './use-compare';
@@ -370,7 +370,7 @@ function OpenFrame({ frame }: { frame: DevelopFrame }) {
     setWorking(true);
     try {
       const analysis = await developAnalyze(frame.id, given, null);
-      setRecipe(withLevels(recipe, levelsOf(analysis.auto_recipe)));
+      setRecipe(withAutoLevels(recipe, analysis.auto_recipe));
       setNotice({ tone: 'info', text: t('develop.levels.autoDone') });
     } catch (error) {
       setNotice({

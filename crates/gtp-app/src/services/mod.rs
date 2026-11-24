@@ -8,6 +8,7 @@ pub mod develop;
 pub mod diagnostics;
 pub mod export;
 mod export_metadata;
+mod film_recipe;
 pub mod flat_field;
 pub mod flat_field_capture;
 pub mod focus;

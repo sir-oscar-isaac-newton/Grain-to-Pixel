@@ -39,8 +39,7 @@ use crate::jobs::{JobCtx, LibraryEvents};
 use crate::library_fs::{originals_rel, thumb_rel};
 use crate::paths::display_path;
 use crate::pipeline::{
-    analyze_with_balance, apply_balance_axes, frame_hint, render, LevelsPercentiles, PipelineInput,
-    RenderTarget,
+    analyze_for_film, apply_balance_axes, frame_hint, render, PipelineInput, RenderTarget,
 };
 use crate::services::counters;
 use crate::services::library::Library;
@@ -212,8 +211,9 @@ pub(crate) fn analyse_for_import(
         (FrameKind::ScanRgbIr, None) => BalanceMethod::GreyWorld,
         _ => BalanceMethod::Off,
     };
+    // A black-and-white roll gets the combined inversion and no colour balance (ADR 0017).
     let analyse = |input: &PipelineInput| {
-        analyze_with_balance(input, hint, look, LevelsPercentiles::DEFAULT, method)
+        analyze_for_film(input, hint, look, method, None, current.film_type)
     };
     let mut analysis = analyse(&input)?;
     if measure {
@@ -230,6 +230,7 @@ pub(crate) fn analyse_for_import(
     }
     let mut recipe = analysis.auto_recipe;
     match (kind, current.color_balance) {
+        _ if current.film_type.is_black_and_white() => {}
         (FrameKind::ScanRgbIr, Some(axes)) => apply_balance_axes(&mut recipe, axes),
         // The roll's own correction is not known yet: keep this frame's estimate for it, not in
         // the recipe.
@@ -862,6 +863,62 @@ mod tests {
         .unwrap();
         let frame = s.lib().read(|c| c.get_frame(more.frames[0])).unwrap();
         assert_eq!(frame.index_in_roll, 6);
+    }
+
+    #[test]
+    fn frames_imported_into_a_black_and_white_roll_start_with_the_combined_inversion() {
+        let s = Setup::new("bw-import");
+        let (ctx, _) = JobCtx::standalone();
+        let events = Events::default();
+        let bw = crate::services::roll_frame::roll_create(
+            s.lib(),
+            crate::services::roll_frame::RollInput {
+                name: "BW".into(),
+                film_type: gtp_core::FilmType::BwSilver,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let result = import_tiffs(
+            s.lib(),
+            bw,
+            &[s.scan("a.tif", 1, false), s.scan("b.tif", 2, false)],
+            &ctx,
+            &events,
+        )
+        .unwrap();
+        assert_eq!(result.frames.len(), 2);
+        for id in &result.frames {
+            let recipe = s.lib().read(|c| c.load_recipe(*id)).unwrap().unwrap();
+            assert!(recipe.invert.combine.is_some(), "a combined inversion");
+            assert!(recipe.mono.enabled);
+            assert_eq!(s.axes(*id), [0.0; 3]);
+            let thumb = s.lib().resolve(&thumb_rel(*id)).unwrap();
+            assert!(std::fs::read(&thumb).unwrap().starts_with(&[0xFF, 0xD8]));
+            assert!(!s
+                .lib()
+                .read(|c| c.get_frame(*id))
+                .unwrap()
+                .edited_at
+                .is_some());
+        }
+        assert_eq!(
+            s.balance_of(bw),
+            None,
+            "a black-and-white roll has no balance"
+        );
+
+        // A colour roll's frames are as they were: per channel, mono off.
+        let colour =
+            import_tiffs(s.lib(), s.roll, &[s.scan("c.tif", 3, false)], &ctx, &events).unwrap();
+        let recipe = s
+            .lib()
+            .read(|c| c.load_recipe(colour.frames[0]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(recipe.invert.combine, None);
+        assert!(!recipe.mono.enabled);
     }
 
     #[test]

@@ -91,6 +91,13 @@
   align-items: center;
 }
 
+.tiffFile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+}
+
 .channel {
   font-weight: 600;
 }

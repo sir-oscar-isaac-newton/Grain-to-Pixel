@@ -17,11 +17,19 @@ import { LevelsStep } from './capture/steps/LevelsStep';
 import { SetupStep } from './capture/steps/SetupStep';
 import { cameraStepState, type StepState } from './capture/steps/step-state';
 import { flagsOf } from '../settings/flags';
-import { FilesSection } from './FilesSection';
+import { FilesProvider, useOptionalFiles } from './files/FilesProvider';
+import { filesStepState } from './files/files-state';
+import { FilesStep } from './files/steps/FilesStep';
+import { ImportStep } from './files/steps/ImportStep';
 import { isStepId, steps, type StepId } from './guide-steps';
 import { useGuideStore } from './guide-store';
 import { RollPage } from './RollPage';
-import { ScannerSection } from './ScannerSection';
+import { ScanProvider, useOptionalScan } from './scan/ScanProvider';
+import { scanStepState } from './scan/scan-state';
+import { FramesStep } from './scan/steps/FramesStep';
+import { ScanSettingsStep } from './scan/steps/ScanSettingsStep';
+import { ScanStep } from './scan/steps/ScanStep';
+import { ScannerStep } from './scan/steps/ScannerStep';
 import { StepBar, type StepInfo } from './StepBar';
 import styles from './import.module.css';
 
@@ -39,9 +47,9 @@ function typingIn(target: EventTarget | null): boolean {
 }
 
 /**
- * Importing as a guide: the Roll page, then the pages of the roll's source (the camera has five). The
- * roll's source and last step are kept in the settings, so coming back resumes there; whether a step
- * is done is worked out from what is chosen, never stored.
+ * Importing as a guide: the Roll page, then the pages of the roll's source (the camera has five, the
+ * scanner four, files two). The roll's source and last step are kept in the settings, so coming back
+ * resumes there; whether a step is done is worked out from what is chosen, never stored.
  */
 export function ImportGuide() {
   const rolls = useLibraryStore((s) => s.rolls);
@@ -127,25 +135,30 @@ export function ImportGuide() {
 
   if (entries === null) return null;
 
-  // The camera steps share one rig (light, camera, levels) for as long as the guide is on them.
+  // The steps of a source share what they hold (the camera rig, the scan settings, the files
+  // chosen) for as long as the guide is on that source and roll.
   return (
     <CaptureRigProvider rollId={usable === 'camera' && roll ? roll.id : null}>
-      <GuideBody
-        rolls={rolls}
-        entries={entries}
-        roll={roll}
-        source={source}
-        usable={usable}
-        cameraOn={cameraOn}
-        step={step}
-        ids={ids}
-        onStep={(next) => {
-          setStep(next);
-          if (rollId !== null && source !== null) save(rollId, { source, step: next });
-        }}
-        onRoll={chooseRoll}
-        onSource={chooseSource}
-      />
+      <ScanProvider rollId={usable === 'scanner' && roll ? roll.id : null}>
+        <FilesProvider rollId={usable === 'files' && roll ? roll.id : null}>
+          <GuideBody
+            rolls={rolls}
+            entries={entries}
+            roll={roll}
+            source={source}
+            usable={usable}
+            cameraOn={cameraOn}
+            step={step}
+            ids={ids}
+            onStep={(next) => {
+              setStep(next);
+              if (rollId !== null && source !== null) save(rollId, { source, step: next });
+            }}
+            onRoll={chooseRoll}
+            onSource={chooseSource}
+          />
+        </FilesProvider>
+      </ScanProvider>
     </CaptureRigProvider>
   );
 }
@@ -167,7 +180,7 @@ interface GuideBodyProps {
 
 const NO_STATE: StepState = { mark: null, canPass: true };
 
-/** The step bar, the page of the step and the Back and Next buttons, inside the camera rig when there is one. */
+/** The step bar, the page of the step and the Back and Next buttons, inside what the source's steps share. */
 function GuideBody({
   rolls,
   entries,
@@ -185,18 +198,23 @@ function GuideBody({
   const selectRoll = useLibraryStore((s) => s.selectRoll);
   const setView = useUiStore((s) => s.setView);
   const rig = useOptionalCaptureRig();
+  const scan = useOptionalScan();
+  const files = useOptionalFiles();
   const index = Math.max(0, ids.indexOf(step));
   // While the camera is shooting, nothing may move on or back.
   const busy = rig?.busy ?? false;
 
-  /** How a step stands: the Roll step by its roll and source, the camera steps by the rig. */
+  /** How a step stands: the Roll step by its roll and source, the others by what their source holds. */
   const stateOf = (id: StepId): StepState => {
     if (id === 'roll') {
       return roll !== null && usable !== null
         ? { mark: 'done', canPass: true }
         : { mark: null, canPass: false };
     }
-    return rig ? cameraStepState(id, rig) : NO_STATE;
+    if (rig) return cameraStepState(id, rig);
+    if (scan) return scanStepState(id, scan);
+    if (files) return filesStepState(id, files);
+    return NO_STATE;
   };
   const firstBlocking = ids.findIndex((id) => !stateOf(id).canPass);
 
@@ -236,7 +254,8 @@ function GuideBody({
     }
     // From the Roll page, a roll that was worked on before goes back to the step it was at, but no
     // further than the first step that must be done first (after a restart the light is not
-    // connected, so that is Set up again).
+    // connected, so that is Set up again; the scanner is looked for only once a scanner step is
+    // shown, and no files are chosen, so that is Scanner or Files).
     const saved = entries[roll.id];
     const kept = saved && saved.source === source && isStepId(saved.step) ? saved.step : null;
     const keptAt = kept && kept !== 'roll' ? ids.indexOf(kept) : -1;
@@ -278,10 +297,18 @@ function GuideBody({
         return rig && <LevelsStep />;
       case 'capture':
         return rig && <CaptureStep />;
+      case 'scanner':
+        return scan && <ScannerStep />;
+      case 'frames':
+        return scan && <FramesStep />;
+      case 'scan-settings':
+        return scan && <ScanSettingsStep />;
       case 'scan':
-        return roll && <ScannerSection rollId={roll.id} />;
+        return scan && <ScanStep />;
       case 'files':
-        return roll && <FilesSection rollId={roll.id} />;
+        return files && <FilesStep />;
+      case 'import':
+        return files && <ImportStep />;
       default:
         return (
           <RollPage

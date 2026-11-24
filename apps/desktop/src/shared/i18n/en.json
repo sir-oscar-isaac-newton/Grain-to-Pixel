@@ -899,8 +899,12 @@
         "flatfield": "Flat field",
         "levels": "Light levels",
         "capture": "Capture",
+        "scanner": "Scanner",
+        "frames": "Frames",
+        "scan-settings": "Settings",
         "scan": "Scan",
-        "files": "Files"
+        "files": "Files",
+        "import": "Import"
       },
       "done": "Done",
       "tick": "✓",
@@ -929,8 +933,6 @@
       "attention": "Needs a look"
     },
     "scanner": {
-      "heading": "Scan a roll",
-      "intro": "Scans frames of a roll with the Nikon Coolscan LS-50. Each frame is stored as soon as it is scanned, so stopping or an error keeps the frames before it, and you can continue from the next one.",
       "looking": "Looking for the scanner…",
       "device": "Scanner: {{name}}.",
       "refresh": "Look again",
@@ -1186,13 +1188,21 @@
       "blue": "blue"
     },
     "files": {
-      "heading": "Camera files (RGB triplets)",
-      "intro": "Choose the NEF files of a roll shot as red, green and blue exposures. They are grouped by capture time into triplets; check the order of each one, confirm the ones to import, and start.",
-      "roll": "Import into roll",
-      "noRolls": "This library has no roll yet. Create one in the Library view first.",
+      "kind": {
+        "legend": "What are the files?",
+        "camera": "Camera files (RGB triplets)",
+        "tiff": "TIFF scans"
+      },
       "choose": "Choose camera files…",
+      "chooseTiff": "Choose TIFF scans…",
       "choosing": "Reading the files…",
       "readFailed": "The files could not be grouped: {{message}}",
+      "tiffFailed": "The files could not be chosen: {{message}}",
+      "tiffSummary_one": "{{count}} TIFF scan ready to import",
+      "tiffSummary_other": "{{count}} TIFF scans ready to import",
+      "tiffList": "TIFF scans chosen",
+      "tiffRemove": "Remove {{name}}",
+      "tiffRemoveShort": "Remove",
       "startFailed": "The import could not be started: {{message}}",
       "summary_one": "{{count}} triplet ready to import",
       "summary_other": "{{count}} triplets ready to import",
@@ -1211,6 +1221,8 @@
       "noTime": "no capture time",
       "import_one": "Import {{count}} triplet",
       "import_other": "Import {{count}} triplets",
+      "importTiff_one": "Import {{count}} TIFF scan",
+      "importTiff_other": "Import {{count}} TIFF scans",
       "started": "The import started. Its progress and result are below.",
       "problem": {
         "missing_shots_one": "{{count}} shot is missing, so these files are not a whole triplet.",
@@ -1222,6 +1234,31 @@
       }
     },
     "steps": {
+      "scanner": {
+        "heading": "Find the scanner",
+        "intro": "Switch on the Nikon Coolscan LS-50 and connect it. Each frame is stored as soon as it is scanned, so stopping or an error keeps the frames before it."
+      },
+      "frames": {
+        "heading": "Choose the frames",
+        "intro": "Preview the roll if you like, then choose the first and last frame to scan. Scanning continues after the last frame that was scanned."
+      },
+      "scanSettings": {
+        "heading": "Scan settings",
+        "intro": "The resolution, the samples per pixel and whether the infrared is scanned too. Black-and-white silver film starts without the infrared, other film with it."
+      },
+      "scan": {
+        "heading": "Scan the roll",
+        "intro": "Press Scan to start. You can cancel it; the frames before that stay in the roll, and you can continue from the next one. Press Finish when the roll is done."
+      },
+      "files": {
+        "heading": "Choose the files",
+        "intro": "Choose what the files are, then pick them. Camera files are grouped by capture time into triplets: check the order of each one and confirm the ones to import. A TIFF scan is one frame."
+      },
+      "import": {
+        "heading": "Import the files",
+        "intro": "Starts the import into the roll. Its progress and result are below; press Finish when it is done.",
+        "none": "No files are chosen. Go back to Files to choose some."
+      },
       "setup": {
         "heading": "Set up the camera and light",
         "intro": "Connect the light, find the camera and check its settings.",

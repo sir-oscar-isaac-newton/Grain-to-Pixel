@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useUiStore } from '../../app/store';
@@ -32,6 +32,26 @@ const back = () => screen.getByRole('button', { name: 'Back' });
 /** The entries the settings were asked to keep, in order. */
 const saved = () =>
   state.settingsPatches.flatMap((p) => (p.import_guide_entry ? [p.import_guide_entry] : []));
+
+/** One whole triplet, as the file picker and the grouping answer. */
+function oneTriplet() {
+  const shot = (name: string, n: number) => ({
+    path: `C:\\film\\${name}.NEF`,
+    captured: `2026-10-06T19:43:0${n}.200`,
+    channel: null,
+  });
+  state.pickedCamera = ['C:\\film\\DSC_0001.NEF'];
+  state.triplets = [
+    { files: [shot('DSC_0001', 1), shot('DSC_0002', 2), shot('DSC_0003', 3)], problem: null },
+  ];
+}
+
+/** Chooses the triplet on the Files step. */
+async function chooseTriplet(user: User) {
+  oneTriplet();
+  await user.click(screen.getByRole('button', { name: 'Choose camera files…' }));
+  await screen.findByRole('list', { name: 'Triplets found' });
+}
 
 async function pick(user: User, roll: string, source: string) {
   await user.click(await screen.findByRole('radio', { name: roll }));
@@ -108,15 +128,18 @@ describe('ImportGuide', () => {
     const items = within(stepBar()).getAllByRole('listitem');
     expect(items.map((i) => i.querySelector('button')?.textContent)).toEqual([
       expect.stringContaining('Roll'),
+      'Scanner',
+      expect.stringContaining('Frames'),
+      'Settings',
       'Scan',
     ]);
-    expect(within(stepBar()).getAllByText('Done')).toHaveLength(1);
+    expect(within(items[0] as HTMLElement).getByText('Done')).toBeInTheDocument();
     expect(stepBar()).toHaveTextContent('Harbour, Portra 400, Colour negative');
     expect(within(items.at(-1) as HTMLElement).queryByText('Done')).not.toBeInTheDocument();
 
     await user.click(next());
-    expect(current()).toHaveTextContent('Scan');
-    expect(screen.getByRole('heading', { name: 'Scan a roll' })).toBeInTheDocument();
+    expect(current()).toHaveTextContent('Scanner');
+    expect(screen.getByRole('heading', { name: 'Find the scanner' })).toBeInTheDocument();
     await user.click(within(stepBar()).getByRole('button', { name: /^Roll/ }));
     expect(current()).toHaveTextContent('Roll');
     expect(screen.getByRole('heading', { name: 'Roll' })).toBeInTheDocument();
@@ -129,8 +152,12 @@ describe('ImportGuide', () => {
     await pick(user, 'Harbour', 'Files');
     expect(next()).toHaveTextContent('Next');
     await user.click(next());
+    await chooseTriplet(user);
+    await user.click(next());
     expect(next()).toHaveTextContent('Finish');
     expect(back()).toBeEnabled();
+    await user.click(back());
+    expect(current()).toHaveTextContent('Files');
     await user.click(back());
     expect(current()).toHaveTextContent('Roll');
     expect(back()).toBeDisabled();
@@ -172,7 +199,7 @@ describe('ImportGuide', () => {
     render(<ImportView />);
     await pick(user, 'Harbour', 'Files');
     await user.click(next());
-    expect(screen.getByRole('heading', { name: 'Camera files (RGB triplets)' })).toHaveFocus();
+    expect(screen.getByRole('heading', { name: 'Choose the files' })).toHaveFocus();
     await user.click(back());
     expect(screen.getByRole('heading', { name: 'Roll' })).toHaveFocus();
   });
@@ -187,7 +214,7 @@ describe('ImportGuide', () => {
     await user.click(next());
     expect(saved().at(-1)).toEqual({
       roll_id: roll.id,
-      entry: { source: 'scanner', step: 'scan' },
+      entry: { source: 'scanner', step: 'scanner' },
     });
     await user.click(back());
     expect(saved().at(-1)).toEqual({
@@ -204,8 +231,8 @@ describe('ImportGuide', () => {
     state.importGuide[roll.id] = { source: 'scanner', step: 'scan' };
     useGuideStore.getState().setLastRoll(roll.id);
     render(<ImportView />);
-    expect(await screen.findByRole('heading', { name: 'Scan a roll' })).toBeInTheDocument();
-    expect(current()).toHaveTextContent('Scan');
+    expect(await screen.findByRole('heading', { name: 'Scan the roll' })).toBeInTheDocument();
+    expect(current()).toHaveTextContent(/^Scan$/);
     expect(saved()).toEqual([]);
   });
 
@@ -248,26 +275,24 @@ describe('ImportGuide', () => {
   });
 
   it.each([
-    ['Camera capture', 'Set up the camera and light', 'Next', false],
-    ['Scanner', 'Scan a roll', 'Finish', true],
-    ['Files', 'Camera files (RGB triplets)', 'Finish', true],
-  ])(
-    'shows the page of the %s source without a roll select',
-    async (source, heading, label, on) => {
-      openLibrary(makeRoll({ name: 'Harbour' }), makeRoll({ name: 'Beach' }));
-      const user = userEvent.setup();
-      render(<ImportView />);
-      await pick(user, 'Harbour', source);
-      await user.click(next());
-      expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
-      expect(screen.queryByRole('combobox', { name: 'Import into roll' })).not.toBeInTheDocument();
-      // The scanner and files pages are the last step; the camera's Set up is not done before the
-      // light is connected.
-      const button = screen.getByRole('button', { name: label });
-      if (on) expect(button).toBeEnabled();
-      else expect(button).toBeDisabled();
-    },
-  );
+    ['Camera capture', 'Set up the camera and light', false],
+    ['Scanner', 'Find the scanner', true],
+    ['Files', 'Choose the files', false],
+  ])('shows the first page of the %s source', async (source, heading, on) => {
+    openLibrary(makeRoll({ name: 'Harbour' }), makeRoll({ name: 'Beach' }));
+    const user = userEvent.setup();
+    render(<ImportView />);
+    await pick(user, 'Harbour', source);
+    await user.click(next());
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Import into roll' })).not.toBeInTheDocument();
+    // Each first page has to be done before Next: the camera's light connected, a scanner found,
+    // files chosen.
+    await waitFor(() => {
+      if (on) expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+      else expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+  });
 
   it('ends in the Library with the roll selected', async () => {
     const roll = makeRoll({ name: 'Harbour' });
@@ -275,6 +300,8 @@ describe('ImportGuide', () => {
     const user = userEvent.setup();
     render(<ImportView />);
     await pick(user, 'Harbour', 'Files');
+    await user.click(next());
+    await chooseTriplet(user);
     await user.click(next());
     await user.click(screen.getByRole('button', { name: 'Finish' }));
     expect(useUiStore.getState().view).toBe('library');
@@ -288,7 +315,7 @@ describe('ImportGuide', () => {
     await pick(user, 'Harbour', 'Files');
     await expectNoA11yViolations(container);
     await user.click(next());
-    await screen.findByRole('heading', { name: 'Camera files (RGB triplets)' });
+    await screen.findByRole('heading', { name: 'Choose the files' });
     await expectNoA11yViolations(container);
   });
 });

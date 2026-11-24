@@ -10,7 +10,7 @@ use std::sync::{Mutex, PoisonError};
 
 use gtp_capture::{CaptureProfile, CaptureProfilePatch};
 use gtp_core::recipe::OutputSpace;
-use gtp_core::{AppError, ErrorCode, ExposureInfo, Look, Recipe, RecipeField};
+use gtp_core::{AppError, ErrorCode, ExposureInfo, Look, Recipe, RecipeField, RollId};
 use serde::{Deserialize, Serialize};
 
 use super::capture_levels::{LevelsScope, SavedLevels};
@@ -135,6 +135,46 @@ pub fn default_export_presets() -> Vec<ExportPreset> {
     ]
 }
 
+/// Where a roll's frames come from, as the guided import (U-35) asks for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSource {
+    Camera,
+    Scanner,
+    Files,
+}
+
+/// The longest step id kept, in characters.
+pub const MAX_STEP_CHARS: usize = 32;
+
+/// A roll's place in the guided import: its source and the step it was last at.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ImportGuideEntry {
+    pub source: ImportSource,
+    /// The id of the step, as the UI names it (`roll`, `capture`); the app only checks its shape.
+    pub step: String,
+}
+
+/// Refuses a step id that is empty, too long, or not lower-case letters, digits, `-` and `_`.
+fn check_step(entry: &ImportGuideEntry) -> Result<(), AppError> {
+    let step = &entry.step;
+    let fine = !step.is_empty()
+        && step.chars().count() <= MAX_STEP_CHARS
+        && step
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_');
+    if fine {
+        Ok(())
+    } else {
+        Err(
+            AppError::new(ErrorCode::InvalidInput, "That import step is not valid.")
+                .with_details(format!("{step:?}")),
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
@@ -177,6 +217,10 @@ pub struct Settings {
     #[serde(deserialize_with = "tolerant_develop_presets")]
     #[cfg_attr(feature = "specta", specta(type = Vec<DevelopPreset>))]
     pub develop_presets: Vec<DevelopPreset>,
+    /// The guided import's source and last step per roll (U-35), keyed by the roll id as text. Kept
+    /// per computer, since a capture set-up belongs to the computer that has the rig. Whether a step
+    /// is done is never stored. Deleting a roll removes its entry.
+    pub import_guide: BTreeMap<String, ImportGuideEntry>,
 }
 
 /// Reads the list of presets entry by entry, so one that cannot be read does not make the whole
@@ -212,6 +256,7 @@ impl Default for Settings {
             export_presets: default_export_presets(),
             last_export: None,
             develop_presets: Vec::new(),
+            import_guide: BTreeMap::new(),
         }
     }
 }
@@ -239,6 +284,15 @@ pub struct FlagsPatch {
     pub update_check: Option<bool>,
 }
 
+/// A change to one roll's entry in the guided import.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ImportGuideEntryPatch {
+    pub roll_id: RollId,
+    /// The entry to set (replacing any), or none to remove the roll's entry.
+    pub entry: Option<ImportGuideEntry>,
+}
+
 /// Settings to change; fields left out keep their value. The last library is set by opening one.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -263,6 +317,8 @@ pub struct SettingsPatch {
     /// regard to case; each needs at least one part, none twice; at most
     /// [`MAX_DEVELOP_PRESETS`]). The stored recipes are clamped.
     pub develop_presets: Option<Vec<DevelopPreset>>,
+    /// Sets, replaces or removes one roll's guided import entry (the step id is checked).
+    pub import_guide_entry: Option<ImportGuideEntryPatch>,
 }
 
 /// Refuses a JPEG quality outside 1 to 100 and a long edge outside [`LONG_EDGE`].
@@ -475,6 +531,18 @@ impl Settings {
             check_quality(&last.options)?;
             self.last_export = Some(last.clone());
         }
+        if let Some(change) = &patch.import_guide_entry {
+            let key = change.roll_id.to_string();
+            match &change.entry {
+                Some(entry) => {
+                    check_step(entry)?;
+                    self.import_guide.insert(key, entry.clone());
+                }
+                None => {
+                    self.import_guide.remove(&key);
+                }
+            }
+        }
         if let Some(f) = patch.flags {
             let flags = &mut self.flags;
             for (slot, value) in [
@@ -643,6 +711,18 @@ impl SettingsStore {
         .map(|_| ())
     }
 
+    /// Forgets a deleted roll's guided import entry; a roll without one changes nothing.
+    pub fn forget_import_guide(&self, roll: RollId) -> Result<Settings, AppError> {
+        let key = roll.to_string();
+        if !self.get().import_guide.contains_key(&key) {
+            return Ok(self.get());
+        }
+        self.change(|settings| {
+            settings.import_guide.remove(&key);
+            Ok(())
+        })
+    }
+
     /// Records the library opened last.
     pub fn set_last_library(&self, path: &str) -> Result<Settings, AppError> {
         self.change(|settings| {
@@ -704,6 +784,93 @@ mod tests {
             path: temp.path().join("settings.json"),
             _temp: temp,
         }
+    }
+
+    fn guide(step: &str) -> ImportGuideEntry {
+        ImportGuideEntry {
+            source: ImportSource::Camera,
+            step: step.to_owned(),
+        }
+    }
+
+    fn guide_patch(roll_id: RollId, entry: Option<ImportGuideEntry>) -> SettingsPatch {
+        SettingsPatch {
+            import_guide_entry: Some(ImportGuideEntryPatch { roll_id, entry }),
+            ..SettingsPatch::default()
+        }
+    }
+
+    #[test]
+    fn the_import_guide_entry_is_set_replaced_and_removed() {
+        let path = temp_file("guide");
+        let (store, _) = SettingsStore::load(&path);
+        let (a, b) = (RollId::new(), RollId::new());
+        store
+            .update(&guide_patch(a, Some(guide("capture"))))
+            .unwrap();
+        store.update(&guide_patch(b, Some(guide("roll")))).unwrap();
+        assert_eq!(store.get().import_guide[&a.to_string()], guide("capture"));
+        let replaced = ImportGuideEntry {
+            source: ImportSource::Scanner,
+            step: "scan".to_owned(),
+        };
+        store
+            .update(&guide_patch(a, Some(replaced.clone())))
+            .unwrap();
+        assert_eq!(store.get().import_guide[&a.to_string()], replaced);
+        // It survives a restart.
+        let (again, _) = SettingsStore::load(&path);
+        assert_eq!(again.get().import_guide.len(), 2);
+        store.update(&guide_patch(a, None)).unwrap();
+        let kept = store.get().import_guide;
+        assert_eq!(kept.len(), 1);
+        assert!(kept.contains_key(&b.to_string()));
+    }
+
+    #[test]
+    fn an_invalid_import_step_is_refused() {
+        let path = temp_file("guide-bad");
+        let (store, _) = SettingsStore::load(&path);
+        let long = "a".repeat(MAX_STEP_CHARS + 1);
+        for bad in ["", "Capture", "two words", "scan!", "\u{e9}", long.as_str()] {
+            let err = store
+                .update(&guide_patch(RollId::new(), Some(guide(bad))))
+                .unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
+        }
+        assert!(store.get().import_guide.is_empty());
+        let longest = "a".repeat(MAX_STEP_CHARS);
+        for good in ["roll", "step-2", "a_b", longest.as_str()] {
+            store
+                .update(&guide_patch(RollId::new(), Some(guide(good))))
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn a_settings_file_without_an_import_guide_loads_with_an_empty_map() {
+        let path = temp_file("guide-missing");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none(), "{note:?}");
+        assert!(store.get().import_guide.is_empty());
+    }
+
+    #[test]
+    fn forgetting_a_roll_removes_only_its_import_guide_entry() {
+        let path = temp_file("guide-forget");
+        let (store, _) = SettingsStore::load(&path);
+        let (a, b) = (RollId::new(), RollId::new());
+        store
+            .update(&guide_patch(a, Some(guide("capture"))))
+            .unwrap();
+        store.update(&guide_patch(b, Some(guide("roll")))).unwrap();
+        store.forget_import_guide(a).unwrap();
+        store.forget_import_guide(RollId::new()).unwrap();
+        let (again, _) = SettingsStore::load(&path);
+        let kept = again.get().import_guide;
+        assert_eq!(kept.keys().collect::<Vec<_>>(), vec![&b.to_string()]);
     }
 
     #[test]

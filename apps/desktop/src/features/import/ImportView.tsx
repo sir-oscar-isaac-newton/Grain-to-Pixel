@@ -1,12 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { useLibraryStore } from '../library/library-store';
 import { useLibraryEvents } from '../library/use-library-events';
-import { CaptureSection } from './CaptureSection';
-import { FilesSection } from './FilesSection';
-import { ScannerSection } from './ScannerSection';
+import { ImportGuide } from './ImportGuide';
 import styles from './import.module.css';
 
-/** Bringing frames in: scanning a roll, and camera files shot as red, green and blue exposures. */
+/** Bringing frames in, as a guide that starts with the roll (see `ImportGuide`). */
 export function ImportView() {
   const { t } = useTranslation();
   const ready = useLibraryStore((s) => s.phase === 'ready');
@@ -18,15 +16,7 @@ export function ImportView() {
       <h2 id="import-title" className={styles.title}>
         {t('import.title')}
       </h2>
-      {ready ? (
-        <>
-          <ScannerSection />
-          <FilesSection />
-          <CaptureSection />
-        </>
-      ) : (
-        <p role="status">{t('import.needsLibrary')}</p>
-      )}
+      {ready ? <ImportGuide /> : <p role="status">{t('import.needsLibrary')}</p>}
     </section>
   );
 }

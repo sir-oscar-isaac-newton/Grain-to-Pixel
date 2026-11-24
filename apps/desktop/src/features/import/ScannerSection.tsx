@@ -1,5 +1,5 @@
 import { ProgressList } from '@gtp/ui';
-import { useCallback, useEffect, useId, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   jobCancel,
@@ -14,6 +14,7 @@ import {
 import { describeJob } from '../library/JobsPanel';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import styles from './import.module.css';
+import { useFocusHeading } from './use-focus-heading';
 
 /** The most frames a roll holds. */
 export const MAX_FRAMES = 40;
@@ -54,9 +55,12 @@ function jpegUrl(bytes: number[]): string {
 
 /**
  * Scanning a roll: the scanner, the roll and frames to scan, resolution, samples and infrared, with
- * progress and cancel from the job, resume at the next frame, and a preview of the whole roll.
+ * progress and cancel from the job, resume at the next frame, and a preview of the whole roll. With
+ * `rollId` the section works on that roll and shows no roll picker (the Import guide chooses it).
  */
-export function ScannerSection() {
+export function ScannerSection({ rollId: fixedRoll }: { rollId?: string }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useFocusHeading(headingRef, fixedRoll !== undefined);
   const { t, i18n } = useTranslation();
   const id = useId();
   const rolls = useLibraryStore((s) => s.rolls);
@@ -83,7 +87,7 @@ export function ScannerSection() {
   const [preview, setPreview] = useState<RollPreviewImage | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  const rollId = chosenRoll ?? currentRoll ?? rolls[0]?.id ?? null;
+  const rollId = fixedRoll ?? chosenRoll ?? currentRoll ?? rolls[0]?.id ?? null;
   const roll = rolls.find((r) => r.id === rollId) ?? null;
   const device = devices?.[0] ?? null;
   const problems = frameProblems(first, last);
@@ -166,7 +170,7 @@ export function ScannerSection() {
 
   return (
     <section aria-labelledby={`${id}-heading`} className={styles.section}>
-      <h3 id={`${id}-heading`} className={styles.heading}>
+      <h3 id={`${id}-heading`} ref={headingRef} tabIndex={-1} className={styles.heading}>
         {t('import.scanner.heading')}
       </h3>
       <p className={styles.muted}>{t('import.scanner.intro')}</p>
@@ -193,23 +197,25 @@ export function ScannerSection() {
       {device && rolls.length > 0 && (
         <>
           <div className={styles.row}>
-            <label className={styles.field}>
-              {t('import.files.roll')}
-              <select
-                value={rollId ?? ''}
-                disabled={locked}
-                onChange={(e) => {
-                  setChosenRoll(e.target.value);
-                  setFirstEdited(false);
-                }}
-              >
-                {rolls.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {fixedRoll === undefined && (
+              <label className={styles.field}>
+                {t('import.files.roll')}
+                <select
+                  value={rollId ?? ''}
+                  disabled={locked}
+                  onChange={(e) => {
+                    setChosenRoll(e.target.value);
+                    setFirstEdited(false);
+                  }}
+                >
+                  {rolls.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
           <p className={styles.muted}>

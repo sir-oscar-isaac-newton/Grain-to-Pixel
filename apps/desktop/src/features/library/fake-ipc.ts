@@ -6,6 +6,7 @@ import type {
   Detail,
   DetailRegion,
   CameraInfo,
+  ImportGuideEntry,
   CameraSetting,
   CameraSettingKind,
   CaptureLevels,
@@ -196,6 +197,7 @@ interface SettingsPatchShape {
   export_presets?: ExportPreset[];
   last_export?: LastExport;
   develop_presets?: DevelopPreset[];
+  import_guide_entry?: { roll_id: string; entry: ImportGuideEntry | null };
 }
 
 /** The answer of the focus check before a test changes it. */
@@ -328,6 +330,8 @@ export const state = {
   /** The feature flags now, and the settings changes asked for, in order. */
   flags: { ...DEFAULT_FLAGS },
   settingsPatches: [] as SettingsPatchShape[],
+  /** The guided import's entry per roll id (source and last step). */
+  importGuide: {} as Record<string, ImportGuideEntry>,
   /** The Starting look setting now. */
   startingLook: 'neutral' as 'neutral' | 'film_log' | 'frontier',
   /** The keyboard shortcuts the user changed (action name to key). */
@@ -641,6 +645,7 @@ export const ipc = {
       export_presets: state.exportPresets.map((p) => ({ ...p, options: { ...p.options } })),
       last_export: state.lastExport,
       develop_presets: state.developPresets.map((p) => ({ ...p, fields: [...p.fields] })),
+      import_guide: { ...state.importGuide },
     };
   }),
   settingsDefaults: vi.fn(async () => ({ last_library: null, flags: { ...DEFAULT_FLAGS } })),
@@ -657,6 +662,11 @@ export const ipc = {
     if (patch.export_presets) state.exportPresets = patch.export_presets;
     if (patch.last_export) state.lastExport = patch.last_export;
     if (patch.develop_presets) state.developPresets = patch.develop_presets;
+    if (patch.import_guide_entry) {
+      const { roll_id: id, entry } = patch.import_guide_entry;
+      const rest = Object.entries(state.importGuide).filter(([key]) => key !== id);
+      state.importGuide = Object.fromEntries(entry ? [...rest, [id, entry]] : rest);
+    }
     return {
       last_library: state.lastLibrary,
       starting_look: state.startingLook,
@@ -666,6 +676,7 @@ export const ipc = {
       export_presets: state.exportPresets.map((p) => ({ ...p, options: { ...p.options } })),
       last_export: state.lastExport,
       develop_presets: state.developPresets.map((p) => ({ ...p, fields: [...p.fields] })),
+      import_guide: { ...state.importGuide },
     };
   }),
   updateCheck: vi.fn<(manual: boolean) => Promise<UpdateOutcome>>(async () => {
@@ -1187,6 +1198,7 @@ export function resetFake() {
   state.developPresets = [];
   state.valueApplies = [];
   state.settingsPatches = [];
+  state.importGuide = {};
   state.startingLook = 'neutral';
   state.settingsUnreadable = null;
   state.settingsRefused = null;

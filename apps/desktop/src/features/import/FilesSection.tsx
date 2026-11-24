@@ -1,19 +1,23 @@
 import { ProgressList } from '@gtp/ui';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { importFiles, jobCancel, pickCameraFiles, tripletGroup } from '../../shared/ipc';
 import { describeJob } from '../library/JobsPanel';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import styles from './import.module.css';
+import { useFocusHeading } from './use-focus-heading';
 import { fileName, importPaths, isComplete, moveFile, toGroups, type Group } from './triplets';
 
 const CHANNELS = ['red', 'green', 'blue'] as const;
 
 /**
  * The camera files of a roll: pick NEF files, see them grouped into triplets by capture time, fix
- * the order of each triplet, confirm the ones to import, and start the import job.
+ * the order of each triplet, confirm the ones to import, and start the import job. With `rollId` the
+ * section imports into that roll and shows no roll picker (the Import guide chooses it).
  */
-export function FilesSection() {
+export function FilesSection({ rollId: fixedRoll }: { rollId?: string }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useFocusHeading(headingRef, fixedRoll !== undefined);
   const { t, i18n } = useTranslation();
   const rolls = useLibraryStore((s) => s.rolls);
   const currentRoll = useLibraryStore((s) => s.rollId);
@@ -30,7 +34,7 @@ export function FilesSection() {
   const [error, setError] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
 
-  const rollId = chosenRoll ?? currentRoll ?? rolls[0]?.id ?? null;
+  const rollId = fixedRoll ?? chosenRoll ?? currentRoll ?? rolls[0]?.id ?? null;
   const roll = rolls.find((r) => r.id === rollId) ?? null;
   const paths = importPaths(groups);
   const ready = groups.filter((g) => g.confirmed && isComplete(g)).length;
@@ -82,25 +86,27 @@ export function FilesSection() {
 
   return (
     <section aria-labelledby="import-files" className={styles.section}>
-      <h3 id="import-files" className={styles.heading}>
+      <h3 id="import-files" ref={headingRef} tabIndex={-1} className={styles.heading}>
         {t('import.files.heading')}
       </h3>
       <p className={styles.muted}>{t('import.files.intro')}</p>
 
-      {rolls.length === 0 ? (
+      {rolls.length === 0 && fixedRoll === undefined ? (
         <p role="status">{t('import.files.noRolls')}</p>
       ) : (
         <div className={styles.row}>
-          <label className={styles.field}>
-            {t('import.files.roll')}
-            <select value={rollId ?? ''} onChange={(e) => setChosenRoll(e.target.value)}>
-              {rolls.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {fixedRoll === undefined && (
+            <label className={styles.field}>
+              {t('import.files.roll')}
+              <select value={rollId ?? ''} onChange={(e) => setChosenRoll(e.target.value)}>
+                {rolls.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button type="button" disabled={busy || readOnly} onClick={() => void choose()}>
             {busy && groups.length === 0 && !started
               ? t('import.files.choosing')

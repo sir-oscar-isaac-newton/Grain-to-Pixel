@@ -5,6 +5,7 @@ import { expectNoA11yViolations } from '../../test-support';
 import type { TripletCandidate } from '../../shared/ipc';
 import { ipc, libraryDetails, listeners, makeRoll, resetFake, state } from '../library/fake-ipc';
 import { resetLibraryStore, useLibraryStore } from '../library/library-store';
+import { resetGuideStore } from './guide-store';
 import { ImportView } from './ImportView';
 
 vi.mock('../../shared/ipc', async () => (await import('../library/fake-ipc')).ipc);
@@ -36,6 +37,15 @@ function openLibrary(over = {}) {
   return roll;
 }
 
+/** Renders Import and goes through the guide to the Files page of a roll. */
+async function openFiles(user: ReturnType<typeof userEvent.setup>, rollName = 'Harbour') {
+  const view = render(<ImportView />);
+  await user.click(await screen.findByRole('radio', { name: rollName }));
+  await user.click(screen.getByRole('radio', { name: 'Files' }));
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  return view;
+}
+
 async function choose(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Choose camera files…' }));
   await screen.findByRole('list', { name: 'Triplets found' });
@@ -45,6 +55,7 @@ describe('ImportView: camera files', () => {
   beforeEach(() => {
     resetFake();
     resetLibraryStore();
+    resetGuideStore();
     state.pickedCamera = picked;
   });
 
@@ -54,11 +65,11 @@ describe('ImportView: camera files', () => {
     expect(screen.queryByRole('button', { name: 'Choose camera files…' })).not.toBeInTheDocument();
   });
 
-  it('asks for a roll when the library has none', () => {
+  it('asks for a roll when the library has none: the new roll form is shown at once', async () => {
     state.details = libraryDetails();
     useLibraryStore.setState({ phase: 'ready', library: state.details, rolls: [] });
     render(<ImportView />);
-    expect(screen.getByText(/has no roll yet/)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Create roll' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Choose camera files…' })).not.toBeInTheDocument();
   });
 
@@ -69,7 +80,7 @@ describe('ImportView: camera files', () => {
       whole('DSC_0004', 'DSC_0005', 'DSC_0006', 10),
     ];
     const user = userEvent.setup();
-    render(<ImportView />);
+    await openFiles(user);
     await choose(user);
 
     expect(ipc.tripletGroup).toHaveBeenCalledWith(picked);
@@ -89,7 +100,7 @@ describe('ImportView: camera files', () => {
     const roll = openLibrary();
     state.triplets = [whole('DSC_0001', 'DSC_0002', 'DSC_0003', 0)];
     const user = userEvent.setup();
-    render(<ImportView />);
+    await openFiles(user);
     await choose(user);
 
     await user.click(screen.getByRole('button', { name: 'Move DSC_0001.NEF later' }));
@@ -139,7 +150,7 @@ describe('ImportView: camera files', () => {
       },
     ];
     const user = userEvent.setup();
-    render(<ImportView />);
+    await openFiles(user);
     await choose(user);
 
     expect(screen.getByText(/1 triplet ready to import/)).toHaveTextContent(
@@ -177,7 +188,7 @@ describe('ImportView: camera files', () => {
       whole('DSC_0004', 'DSC_0005', 'DSC_0006', 10),
     ];
     const user = userEvent.setup();
-    render(<ImportView />);
+    await openFiles(user);
     await choose(user);
 
     await user.click(screen.getByRole('checkbox', { name: 'Import triplet 1' }));
@@ -200,8 +211,7 @@ describe('ImportView: camera files', () => {
     useLibraryStore.setState({ rolls: [first, second] });
     state.triplets = [whole('DSC_0001', 'DSC_0002', 'DSC_0003', 0)];
     const user = userEvent.setup();
-    render(<ImportView />);
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Import into roll' }), 'Beach');
+    await openFiles(user, 'Beach');
     await choose(user);
     await user.click(screen.getByRole('button', { name: 'Import 1 triplet' }));
     expect(ipc.importFiles.mock.calls[0]?.[1]).toBe(second.id);
@@ -212,7 +222,7 @@ describe('ImportView: camera files', () => {
     state.triplets = [whole('DSC_0001', 'DSC_0002', 'DSC_0003', 0)];
     ipc.importFiles.mockResolvedValueOnce('job-triplets');
     const user = userEvent.setup();
-    render(<ImportView />);
+    await openFiles(user);
     await choose(user);
     await user.click(screen.getByRole('button', { name: 'Import 1 triplet' }));
 
@@ -257,7 +267,7 @@ describe('ImportView: camera files', () => {
     openLibrary();
     state.tripletsFail = 'The disk is not there.';
     const user = userEvent.setup();
-    render(<ImportView />);
+    await openFiles(user);
     await user.click(screen.getByRole('button', { name: 'Choose camera files…' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The files could not be grouped: The disk is not there.',
@@ -279,19 +289,23 @@ describe('ImportView: camera files', () => {
     openLibrary();
     state.pickedCamera = [];
     const user = userEvent.setup();
-    render(<ImportView />);
+    const view = await openFiles(user);
     await user.click(screen.getByRole('button', { name: 'Choose camera files…' }));
     expect(ipc.tripletGroup).not.toHaveBeenCalled();
     expect(screen.queryByRole('list', { name: 'Triplets found' })).not.toBeInTheDocument();
 
+    view.unmount();
+    resetGuideStore();
+    state.importGuide = {};
     openLibrary({ read_only: true });
-    render(<ImportView />);
-    expect(screen.getAllByRole('button', { name: 'Choose camera files…' })[1]).toBeDisabled();
+    await openFiles(user);
+    expect(screen.getByRole('button', { name: 'Choose camera files…' })).toBeDisabled();
   });
 
   it('has no accessibility violations: empty, with triplets and groups with problems, and with a result', async () => {
     openLibrary();
-    const { container } = render(<ImportView />);
+    const user = userEvent.setup();
+    const { container } = await openFiles(user);
     await expectNoA11yViolations(container);
 
     state.triplets = [
@@ -301,7 +315,6 @@ describe('ImportView: camera files', () => {
         problem: { kind: 'missing_shots', missing: 1 },
       },
     ];
-    const user = userEvent.setup();
     await choose(user);
     await expectNoA11yViolations(container);
 

@@ -1461,6 +1461,30 @@ export type HistogramData = {
 	luma: number[],
 };
 
+/**  A roll's place in the guided import: its source and the step it was last at. */
+export type ImportGuideEntry = {
+	source: ImportSource,
+	/**  The id of the step, as the UI names it (`roll`, `capture`); the app only checks its shape. */
+	step: string,
+};
+
+/**  A change to one roll's entry in the guided import. */
+export type ImportGuideEntryPatch = ImportGuideEntryPatch_Serialize | ImportGuideEntryPatch_Deserialize;
+
+/**  A change to one roll's entry in the guided import. */
+export type ImportGuideEntryPatch_Deserialize = {
+	roll_id: RollId,
+	/**  The entry to set (replacing any), or none to remove the roll's entry. */
+	entry?: ImportGuideEntry | null,
+};
+
+/**  A change to one roll's entry in the guided import. */
+export type ImportGuideEntryPatch_Serialize = {
+	roll_id: RollId,
+	/**  The entry to set (replacing any), or none to remove the roll's entry. */
+	entry: ImportGuideEntry | null,
+};
+
 /**  What kind of files an import brings in. */
 export type ImportKind = 
 /**  16-bit scans, with infrared embedded or as `*_ir.tif`. */
@@ -1524,6 +1548,9 @@ export type ImportResult_Serialize = {
 	 */
 	rebalanced: FrameId[],
 };
+
+/**  Where a roll's frames come from, as the guided import (U-35) asks for it. */
+export type ImportSource = "camera" | "scanner" | "files";
 
 /**  Something to know about an imported frame. */
 export type ImportWarning = {
@@ -2342,6 +2369,8 @@ export type SettingsPatch_Deserialize = {
 	 *  [`MAX_DEVELOP_PRESETS`]). The stored recipes are clamped.
 	 */
 	develop_presets?: DevelopPreset_Deserialize[] | null,
+	/**  Sets, replaces or removes one roll's guided import entry (the step id is checked). */
+	import_guide_entry?: ImportGuideEntryPatch_Deserialize | null,
 };
 
 /**  Settings to change; fields left out keep their value. The last library is set by opening one. */
@@ -2369,6 +2398,8 @@ export type SettingsPatch_Serialize = {
 	 *  [`MAX_DEVELOP_PRESETS`]). The stored recipes are clamped.
 	 */
 	develop_presets: DevelopPreset_Serialize[] | null,
+	/**  Sets, replaces or removes one roll's guided import entry (the step id is checked). */
+	import_guide_entry: ImportGuideEntryPatch_Serialize | null,
 };
 
 export type Settings_Deserialize = {
@@ -2402,6 +2433,12 @@ export type Settings_Deserialize = {
 	 *  (a part name from a newer version, say) is dropped on load and the rest are kept.
 	 */
 	develop_presets?: DevelopPreset_Deserialize[],
+	/**
+	 *  The guided import's source and last step per roll (U-35), keyed by the roll id as text. Kept
+	 *  per computer, since a capture set-up belongs to the computer that has the rig. Whether a step
+	 *  is done is never stored. Deleting a roll removes its entry.
+	 */
+	import_guide?: { [key in string]: ImportGuideEntry },
 };
 
 export type Settings_Serialize = {
@@ -2435,6 +2472,12 @@ export type Settings_Serialize = {
 	 *  (a part name from a newer version, say) is dropped on load and the rest are kept.
 	 */
 	develop_presets: DevelopPreset_Serialize[],
+	/**
+	 *  The guided import's source and last step per roll (U-35), keyed by the roll id as text. Kept
+	 *  per computer, since a capture set-up belongs to the computer that has the rig. Whether a step
+	 *  is done is never stored. Deleting a roll removes its entry.
+	 */
+	import_guide: { [key in string]: ImportGuideEntry },
 };
 
 /**

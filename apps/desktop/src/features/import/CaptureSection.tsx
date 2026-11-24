@@ -18,6 +18,7 @@ import {
 import { flagsOf } from '../settings/flags';
 import { messageOf, useLibraryStore } from '../library/library-store';
 import styles from './import.module.css';
+import { useFocusHeading } from './use-focus-heading';
 import type { Area } from './capture/area';
 import { Calibrate } from './capture/Calibrate';
 import { CameraSettings } from './capture/CameraSettings';
@@ -37,9 +38,10 @@ const sameLevels = (a: Levels, b: Levels) => a.every((v, i) => v === b[i]);
 
 /**
  * Capturing frames with the camera and the Scanlight: status, LED levels, test shots and the Next
- * frame button. Shown only while the guided capture flag is on.
+ * frame button. Shown only while the guided capture flag is on. With `rollId` the section works on
+ * that roll and shows no roll picker (the Import guide chooses the roll).
  */
-export function CaptureSection() {
+export function CaptureSection({ rollId: fixedRoll }: { rollId?: string }) {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -55,10 +57,12 @@ export function CaptureSection() {
       alive = false;
     };
   }, []);
-  return enabled ? <Capture /> : null;
+  return enabled ? <Capture fixedRoll={fixedRoll} /> : null;
 }
 
-function Capture() {
+function Capture({ fixedRoll }: { fixedRoll?: string }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useFocusHeading(headingRef, fixedRoll !== undefined);
   const { t } = useTranslation();
   const running = useLibraryStore((s) =>
     s.jobs.some(
@@ -70,7 +74,7 @@ function Capture() {
   const rolls = useLibraryStore((s) => s.rolls);
   const currentRoll = useLibraryStore((s) => s.rollId);
   const [chosenRoll, setChosenRoll] = useState<string | null>(null);
-  const rollId = chosenRoll ?? currentRoll ?? rolls[0]?.id ?? null;
+  const rollId = fixedRoll ?? chosenRoll ?? currentRoll ?? rolls[0]?.id ?? null;
   const roll = rolls.find((r) => r.id === rollId) ?? null;
   const stock = roll?.film_stock?.trim() || null;
 
@@ -215,7 +219,7 @@ function Capture() {
 
   return (
     <section aria-labelledby="import-capture" className={styles.section}>
-      <h3 id="import-capture" className={styles.heading}>
+      <h3 id="import-capture" ref={headingRef} tabIndex={-1} className={styles.heading}>
         {t('import.capture.heading')}
       </h3>
       <p className={styles.muted}>{t('import.capture.intro')}</p>
@@ -262,7 +266,7 @@ function Capture() {
             : t('import.capture.settings.savedDefault', { exposure: savedExposure })}
         </p>
       )}
-      {rolls.length === 0 ? (
+      {fixedRoll !== undefined ? null : rolls.length === 0 ? (
         <p role="status">{t('import.files.noRolls')}</p>
       ) : (
         <label className={styles.field}>

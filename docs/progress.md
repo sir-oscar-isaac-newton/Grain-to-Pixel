@@ -1145,6 +1145,15 @@
       "number": 375,
       "title": "Film type on the roll",
       "branch": "feat/issue-375-roll-film-type",
+      "status": "completed",
+      "pr": 391,
+      "commit": "2e3ddb8"
+    },
+    {
+      "id": "U-35",
+      "number": 387,
+      "title": "Guided import: the step guide and the Roll page",
+      "branch": "feat/issue-387-guided-import",
       "status": "in_progress",
       "pr": null,
       "commit": null

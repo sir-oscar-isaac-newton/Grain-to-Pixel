@@ -167,6 +167,10 @@ pub fn roll_delete(ctx: State<'_, AppContext>, id: RollId) -> CmdResult<DeleteRe
     let report = roll_frame::roll_delete(&*ctx.library()?, id)?;
     tracing::info!(roll = %id, frames = report.frames_deleted, "roll deleted");
     log_files_left(&report);
+    // The roll's place in the guided import goes with it; a failure here is not the delete's.
+    if let Err(err) = ctx.settings().forget_import_guide(id) {
+        tracing::warn!(roll = %id, "the import guide entry of a deleted roll was kept: {err}");
+    }
     Ok(report)
 }
 
@@ -227,6 +231,45 @@ mod tests {
         assert_eq!(page.total, 0);
         assert_eq!(frame_delete(app.state(), vec![]).unwrap().frames_deleted, 0);
         assert_eq!(roll_delete(app.state(), roll.id).unwrap().frames_deleted, 0);
+    }
+
+    #[test]
+    fn deleting_a_roll_removes_its_import_guide_entry() {
+        use gtp_app::services::settings::{
+            ImportGuideEntry, ImportGuideEntryPatch, ImportSource, SettingsPatch,
+        };
+
+        let dir = gtp_core::testing::TempDir::new("cmd-rollguide");
+        let app = tauri::test::mock_app();
+        let (ctx, _) = AppContext::new(&dir.join("settings.json"));
+        app.manage(ctx);
+        let _release = crate::testkit::ReleaseContext(&app);
+        app.state::<AppContext>()
+            .create_library(&dir.join("lib"), "Cmd")
+            .unwrap();
+        let input = RollInput {
+            name: "Roll".into(),
+            ..RollInput::default()
+        };
+        let roll = roll_create(app.state(), input).unwrap();
+        let other = RollId::new();
+        for id in [roll.id, other] {
+            let patch = SettingsPatch {
+                import_guide_entry: Some(ImportGuideEntryPatch {
+                    roll_id: id,
+                    entry: Some(ImportGuideEntry {
+                        source: ImportSource::Files,
+                        step: "files".into(),
+                    }),
+                }),
+                ..SettingsPatch::default()
+            };
+            app.state::<AppContext>().settings().update(&patch).unwrap();
+        }
+
+        roll_delete(app.state(), roll.id).unwrap();
+        let kept = app.state::<AppContext>().settings().get().import_guide;
+        assert_eq!(kept.keys().collect::<Vec<_>>(), vec![&other.to_string()]);
     }
 
     #[test]

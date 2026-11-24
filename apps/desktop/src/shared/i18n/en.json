@@ -890,6 +890,38 @@
   "import": {
     "title": "Import",
     "needsLibrary": "Open or create a library in the Library view first.",
+    "guide": {
+      "steps": "Import steps",
+      "stepName": {
+        "roll": "Roll",
+        "capture": "Capture",
+        "scan": "Scan",
+        "files": "Files"
+      },
+      "done": "Done",
+      "tick": "✓",
+      "back": "Back",
+      "next": "Next",
+      "finish": "Finish",
+      "summary": {
+        "separator": ", "
+      },
+      "roll": {
+        "heading": "Roll",
+        "intro": "Choose the roll the frames belong to, or start a new one.",
+        "legend": "Roll",
+        "new": "New roll",
+        "create": "Create roll",
+        "resumeAt": "Resume at {{step}}"
+      },
+      "source": {
+        "legend": "Where do the frames come from?",
+        "camera": "Camera capture",
+        "scanner": "Scanner",
+        "files": "Files",
+        "cameraOff": "Camera capture is off. Turn on Guided capture in Settings to use it."
+      }
+    },
     "scanner": {
       "heading": "Scan a roll",
       "intro": "Scans frames of a roll with the Nikon Coolscan LS-50. Each frame is stored as soon as it is scanned, so stopping or an error keeps the frames before it, and you can continue from the next one.",

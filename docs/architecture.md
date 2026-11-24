@@ -185,7 +185,7 @@ grain-to-pixel/
 │  │  ├─ features/
 │  │  │  ├─ library/     LibraryView.tsx  RollSidebar.tsx  FrameGrid.tsx  SearchBar.tsx  use-library.ts
 │  │  │  ├─ develop/     DevelopView.tsx  Canvas.tsx  Filmstrip.tsx  panels/{BaseInvert,Color,Tone,Geometry,Dust}Panel.tsx  use-develop.ts
-│  │  │  ├─ import/      ImportView.tsx  ScannerSection.tsx  FilesSection.tsx  capture/{CaptureRig.tsx,steps/}
+│  │  │  ├─ import/      ImportView.tsx  ImportGuide.tsx  capture/{CaptureRig.tsx,steps/}  scan/{ScanProvider.tsx,steps/}  files/{FilesProvider.tsx,steps/}
 │  │  │  └─ settings/    SettingsView.tsx  FlagsList.tsx
 │  │  └─ shared/         ipc.ts (typed wrappers)  i18n/{index.ts,en.json}  styles/{tokens.css,base.css}  hooks/
 │  └─ src-tauri/

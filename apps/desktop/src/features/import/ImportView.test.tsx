@@ -51,6 +51,13 @@ async function choose(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole('list', { name: 'Triplets found' });
 }
 
+/** Goes on from the Files step to the Import step, and presses the button that starts the import. */
+async function startImport(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await screen.findByRole('heading', { name: 'Import the files' });
+  await user.click(screen.getByRole('button', { name: label }));
+}
+
 describe('ImportView: camera files', () => {
   beforeEach(() => {
     resetFake();
@@ -115,7 +122,7 @@ describe('ImportView: camera files', () => {
     expect(screen.getByRole('button', { name: 'Move DSC_0003.NEF later' })).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Move DSC_0003.NEF earlier' }));
-    await user.click(screen.getByRole('button', { name: 'Import 1 triplet' }));
+    await startImport(user, 'Import 1 triplet');
     expect(ipc.importFiles).toHaveBeenCalledWith(
       ['C:\\film\\DSC_0002.NEF', 'C:\\film\\DSC_0003.NEF', 'C:\\film\\DSC_0001.NEF'],
       roll.id,
@@ -164,7 +171,6 @@ describe('ImportView: camera files', () => {
       'Two of these files were lit in the same colour, so they cannot be red, green and blue.',
     ]);
     // No confirm box or move buttons on them, and the files are numbered, not named by channel.
-    // (The scanner section above has its own checkbox, for the infrared.)
     const found = within(screen.getByRole('list', { name: 'Triplets found' }));
     expect(found.getAllByRole('checkbox')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: /Move DSC_0004/ })).not.toBeInTheDocument();
@@ -173,7 +179,7 @@ describe('ImportView: camera files', () => {
     ).toHaveTextContent('Shot 1');
     expect(screen.getByText('no capture time')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Import 1 triplet' }));
+    await startImport(user, 'Import 1 triplet');
     expect(ipc.importFiles).toHaveBeenCalledWith(
       ['C:\\film\\DSC_0001.NEF', 'C:\\film\\DSC_0002.NEF', 'C:\\film\\DSC_0003.NEF'],
       roll.id,
@@ -194,9 +200,11 @@ describe('ImportView: camera files', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Import triplet 1' }));
     expect(screen.getByText('1 triplet ready to import')).toBeInTheDocument();
     await user.click(screen.getByRole('checkbox', { name: 'Import triplet 2' }));
-    expect(screen.getByRole('button', { name: 'Import 0 triplets' })).toBeDisabled();
+    // With none confirmed the step is not done: Next is off, so the import cannot be reached.
+    expect(screen.getByText('0 triplets ready to import')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     await user.click(screen.getByRole('checkbox', { name: 'Import triplet 2' }));
-    await user.click(screen.getByRole('button', { name: 'Import 1 triplet' }));
+    await startImport(user, 'Import 1 triplet');
     expect(ipc.importFiles.mock.calls[0]?.[0]).toEqual([
       'C:\\film\\DSC_0004.NEF',
       'C:\\film\\DSC_0005.NEF',
@@ -213,7 +221,7 @@ describe('ImportView: camera files', () => {
     const user = userEvent.setup();
     await openFiles(user, 'Beach');
     await choose(user);
-    await user.click(screen.getByRole('button', { name: 'Import 1 triplet' }));
+    await startImport(user, 'Import 1 triplet');
     expect(ipc.importFiles.mock.calls[0]?.[1]).toBe(second.id);
   });
 
@@ -224,10 +232,11 @@ describe('ImportView: camera files', () => {
     const user = userEvent.setup();
     await openFiles(user);
     await choose(user);
-    await user.click(screen.getByRole('button', { name: 'Import 1 triplet' }));
+    await startImport(user, 'Import 1 triplet');
 
     expect(await screen.findByText(/The import started/)).toBeInTheDocument();
-    expect(screen.queryByRole('list', { name: 'Triplets found' })).not.toBeInTheDocument();
+    // The files are cleared once the import started.
+    expect(screen.getByRole('button', { name: 'Import 0 triplets' })).toBeDisabled();
     const bar = await screen.findByRole('progressbar', { name: 'Import into Harbour' });
     expect(bar).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -277,11 +286,13 @@ describe('ImportView: camera files', () => {
     state.triplets = [whole('DSC_0001', 'DSC_0002', 'DSC_0003', 0)];
     ipc.importFiles.mockRejectedValueOnce(new Error('The library is read-only.'));
     await choose(user);
-    await user.click(screen.getByRole('button', { name: 'Import 1 triplet' }));
+    await startImport(user, 'Import 1 triplet');
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The import could not be started: The library is read-only.',
     );
     // The triplets stay, so the user can try again.
+    expect(screen.getByRole('button', { name: 'Import 1 triplet' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByRole('checkbox', { name: 'Import triplet 1' })).toBeChecked();
   });
 
@@ -319,6 +330,9 @@ describe('ImportView: camera files', () => {
     await expectNoA11yViolations(container);
 
     ipc.importFiles.mockResolvedValueOnce('job-a11y');
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByRole('heading', { name: 'Import the files' });
+    await expectNoA11yViolations(container);
     await user.click(screen.getByRole('button', { name: 'Import 1 triplet' }));
     await screen.findByRole('progressbar', { name: 'Import into Harbour' });
     act(() =>

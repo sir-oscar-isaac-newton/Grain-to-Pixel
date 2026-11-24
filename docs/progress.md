@@ -1172,6 +1172,15 @@
       "number": 376,
       "title": "Black-and-white conversion",
       "branch": "feat/issue-376-bw-conversion",
+      "status": "completed",
+      "pr": 394,
+      "commit": "7b7d5fe"
+    },
+    {
+      "id": "U-37",
+      "number": 389,
+      "title": "Guided import: the scanner and files steps",
+      "branch": "feat/issue-389-scanner-files-steps",
       "status": "in_progress",
       "pr": null,
       "commit": null

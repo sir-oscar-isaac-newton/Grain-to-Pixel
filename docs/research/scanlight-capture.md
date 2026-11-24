@@ -341,3 +341,22 @@ The calibration of H-17 measures the whole frame unless it is given an area. The
 - [ ] Capture the flat field again: the dialog says it replaces the roll's one, and `originals/<roll_id>/flat-field/` holds only the three new files.
 - [ ] Capture with the empty carrier in place and once with it taken out (if it can come out without moving anything): record whether a bright band shows inside the carrier's opening on a corrected frame (for P-35).
 - [ ] A flat field capture is refused while a frame capture runs, and Cancel during the calibration stops it with the light off and nothing attached.
+
+## U-36: the guided camera steps
+
+The Import guide splits camera capture into Set up, Focus and framing, Flat field, Light levels and Capture. They share one rig, so moving between steps keeps the connection and the levels. The step bar ticks a step that is done, marks one "Skipped" or "Needs a look" in text, and the light goes off whenever a step is left.
+
+**Hardware checklist for U-36** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
+
+- [ ] Build and start the app as for H-24, open Import, choose a roll and Camera capture, and go from the Roll page to Finish in one go.
+- [ ] Set up: Connect light finds the light and the camera, the settings show, the checklist lists the four lines, and Next is on only once both are found.
+- [ ] Set up: check the camera is in M mode, on manual focus, with the lens ring at its smallest aperture and the release cable connected.
+- [ ] Focus and framing: with a film frame in the carrier, live view and the focus check work, and Next is on without doing anything.
+- [ ] Flat field: with the film out, Capture flat field works, the step shows the aperture and is ticked, and Next goes on.
+- [ ] Light levels: with the film in, calibrate on the rebate and the step is ticked; Use the global levels also ticks it when the levels are the default ones.
+- [ ] Capture: take a few frames; the count and the strip of thumbnails grow, newest last.
+- [ ] Change the aperture by one stop in Set up: the step bar marks Flat field and Light levels "Needs a look", their text says what changed, and Next is off until the flat field is taken again (or skipped) and the levels are set again.
+- [ ] Skip the flat field: the step bar says "Skipped", Next is on, and the step warns that frames will not be corrected.
+- [ ] Back, Next, the step bar and Alt with the arrows are off while a frame, a calibration or the flat field is being captured.
+- [ ] Finish opens the roll in the Library.
+- [ ] The light is off after leaving each step, and after leaving Import (check the LED and the supply).

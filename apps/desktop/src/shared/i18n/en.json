@@ -894,6 +894,10 @@
       "steps": "Import steps",
       "stepName": {
         "roll": "Roll",
+        "setup": "Set up",
+        "focus": "Focus and framing",
+        "flatfield": "Flat field",
+        "levels": "Light levels",
         "capture": "Capture",
         "scan": "Scan",
         "files": "Files"
@@ -920,7 +924,9 @@
         "scanner": "Scanner",
         "files": "Files",
         "cameraOff": "Camera capture is off. Turn on Guided capture in Settings to use it."
-      }
+      },
+      "skipped": "Skipped",
+      "attention": "Needs a look"
     },
     "scanner": {
       "heading": "Scan a roll",
@@ -954,8 +960,6 @@
       "previewCaption": "{{count}} frames found. The lines mark where the frames start if they are evenly spaced."
     },
     "capture": {
-      "heading": "Capture with the camera",
-      "intro": "Shoots each frame as a red, green and blue exposure with the Scanlight and the camera, merges them and stores the frame in the chosen roll. The light is switched off when you leave this view.",
       "light": {
         "off": "Light not connected",
         "connected": "Light connected",
@@ -1215,6 +1219,48 @@
         "extra_shots_other": "{{count}} shots too many: these files do not make whole triplets.",
         "no_capture_time": "These files have no capture time, so they could not be grouped.",
         "channel_mismatch": "Two of these files were lit in the same colour, so they cannot be red, green and blue."
+      }
+    },
+    "steps": {
+      "setup": {
+        "heading": "Set up the camera and light",
+        "intro": "Connect the light, find the camera and check its settings.",
+        "checklist": "Check the rig",
+        "check": {
+          "mode": "The camera is in M mode.",
+          "focus": "The lens is on manual focus.",
+          "aperture": "The lens ring is at its smallest aperture, where the camera needs it.",
+          "cable": "The release cable is connected."
+        }
+      },
+      "focus": {
+        "heading": "Focus and framing",
+        "intro": "Put a film frame in the carrier. Use live view to frame it and the focus check to set the focus."
+      },
+      "flatField": {
+        "heading": "Take the flat field",
+        "intro": "Take the film out and touch nothing else. The flat field is the bare light, which corrects the light's unevenness in every frame.",
+        "skip": "Skip the flat field",
+        "onRoll": "This roll has a flat field, taken at {{aperture}}.",
+        "onRollUnknown": "This roll has a flat field.",
+        "apertureChanged": "The aperture changed since the flat field was taken. Take it again or check the setting.",
+        "skipped": "Skipped. Frames will not be corrected for the light's unevenness.",
+        "copyFailed": "The flat field could not be used: {{message}}"
+      },
+      "levels": {
+        "heading": "Set the light levels",
+        "intro": "Put the film in the carrier. Calibrate on the rebate or a clear part of the frame, then take a test shot and save the levels.",
+        "useGlobal": "Use the global levels",
+        "usingGlobal": "Using the global levels for this roll.",
+        "settingsChanged": "The camera settings changed since these levels were set. Calibrate again or check the settings."
+      },
+      "capture": {
+        "heading": "Capture the frames",
+        "intro": "Shoots each frame as a red, green and blue exposure and stores it in the roll. Press Finish when the roll is done.",
+        "count_one": "{{count}} frame captured",
+        "count_other": "{{count}} frames captured",
+        "strip": "Frames of this roll",
+        "frame": "Frame {{number}}"
       }
     }
   },

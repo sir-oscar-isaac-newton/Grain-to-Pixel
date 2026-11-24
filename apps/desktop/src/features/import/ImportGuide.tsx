@@ -6,10 +6,17 @@ import {
   settingsSet,
   type ImportGuideEntry,
   type ImportSource,
+  type Roll,
 } from '../../shared/ipc';
 import { useLibraryStore } from '../library/library-store';
+import { CaptureRigProvider, useOptionalCaptureRig } from './capture/CaptureRig';
+import { CaptureStep } from './capture/steps/CaptureStep';
+import { FlatFieldStep } from './capture/steps/FlatFieldStep';
+import { FocusStep } from './capture/steps/FocusStep';
+import { LevelsStep } from './capture/steps/LevelsStep';
+import { SetupStep } from './capture/steps/SetupStep';
+import { cameraStepState, type StepState } from './capture/steps/step-state';
 import { flagsOf } from '../settings/flags';
-import { CaptureSection } from './CaptureSection';
 import { FilesSection } from './FilesSection';
 import { isStepId, steps, type StepId } from './guide-steps';
 import { useGuideStore } from './guide-store';
@@ -32,15 +39,12 @@ function typingIn(target: EventTarget | null): boolean {
 }
 
 /**
- * Importing as a guide: the Roll page, then the pages of the roll's source (one each for now). The
+ * Importing as a guide: the Roll page, then the pages of the roll's source (the camera has five). The
  * roll's source and last step are kept in the settings, so coming back resumes there; whether a step
  * is done is worked out from what is chosen, never stored.
  */
 export function ImportGuide() {
-  const { t } = useTranslation();
   const rolls = useLibraryStore((s) => s.rolls);
-  const selectRoll = useLibraryStore((s) => s.selectRoll);
-  const setView = useUiStore((s) => s.setView);
   const setLastRoll = useGuideStore((s) => s.setLastRoll);
 
   // The saved entry of every roll; null until the settings are read.
@@ -94,27 +98,6 @@ export function ImportGuide() {
   // A saved camera source does not count while camera capture is off.
   const usable = source === 'camera' && !cameraOn ? null : source;
   const ids = usable && roll ? steps(usable, roll.film_type) : (['roll'] as StepId[]);
-  const index = Math.max(0, ids.indexOf(step));
-
-  /** Done when it can be told: the Roll step by its roll and source; the last steps have no state yet. */
-  const doneOf = (id: StepId): boolean | null =>
-    id === 'roll' ? roll !== null && usable !== null : null;
-  const firstOpen = ids.findIndex((id) => doneOf(id) !== true);
-
-  const rollSummary = (): string | undefined => {
-    if (!roll) return undefined;
-    const stock = roll.film_stock?.trim();
-    return [roll.name, ...(stock ? [stock] : []), t(`rollEditor.filmTypes.${roll.film_type}`)].join(
-      t('import.guide.summary.separator'),
-    );
-  };
-
-  const infos: StepInfo[] = ids.map((id, i) => ({
-    id,
-    done: doneOf(id),
-    summary: id === 'roll' ? rollSummary() : undefined,
-    reachable: firstOpen === -1 || i <= firstOpen,
-  }));
 
   /** Records where a roll is in the guide, in memory and in the settings. */
   const save = (id: string, entry: ImportGuideEntry) => {
@@ -122,11 +105,6 @@ export function ImportGuide() {
     settingsSet({ import_guide_entry: { roll_id: id, entry } }).catch(() => {
       // The place is only a convenience: it stays in memory when the settings cannot be saved.
     });
-  };
-
-  const goTo = (next: StepId) => {
-    setStep(next);
-    if (rollId !== null && source !== null) save(rollId, { source, step: next });
   };
 
   const chooseRoll = (id: string) => {
@@ -147,25 +125,123 @@ export function ImportGuide() {
     if (rollId !== null) save(rollId, { source: next, step: 'roll' });
   };
 
-  const canBack = index > 0;
+  if (entries === null) return null;
+
+  // The camera steps share one rig (light, camera, levels) for as long as the guide is on them.
+  return (
+    <CaptureRigProvider rollId={usable === 'camera' && roll ? roll.id : null}>
+      <GuideBody
+        rolls={rolls}
+        entries={entries}
+        roll={roll}
+        source={source}
+        usable={usable}
+        cameraOn={cameraOn}
+        step={step}
+        ids={ids}
+        onStep={(next) => {
+          setStep(next);
+          if (rollId !== null && source !== null) save(rollId, { source, step: next });
+        }}
+        onRoll={chooseRoll}
+        onSource={chooseSource}
+      />
+    </CaptureRigProvider>
+  );
+}
+
+interface GuideBodyProps {
+  rolls: Roll[];
+  entries: Entries;
+  roll: Roll | null;
+  source: ImportSource | null;
+  /** The source, but null while it cannot be used. */
+  usable: ImportSource | null;
+  cameraOn: boolean;
+  step: StepId;
+  ids: StepId[];
+  onStep: (step: StepId) => void;
+  onRoll: (id: string) => void;
+  onSource: (source: ImportSource) => void;
+}
+
+const NO_STATE: StepState = { mark: null, canPass: true };
+
+/** The step bar, the page of the step and the Back and Next buttons, inside the camera rig when there is one. */
+function GuideBody({
+  rolls,
+  entries,
+  roll,
+  source,
+  usable,
+  cameraOn,
+  step,
+  ids,
+  onStep,
+  onRoll,
+  onSource,
+}: GuideBodyProps) {
+  const { t } = useTranslation();
+  const selectRoll = useLibraryStore((s) => s.selectRoll);
+  const setView = useUiStore((s) => s.setView);
+  const rig = useOptionalCaptureRig();
+  const index = Math.max(0, ids.indexOf(step));
+  // While the camera is shooting, nothing may move on or back.
+  const busy = rig?.busy ?? false;
+
+  /** How a step stands: the Roll step by its roll and source, the camera steps by the rig. */
+  const stateOf = (id: StepId): StepState => {
+    if (id === 'roll') {
+      return roll !== null && usable !== null
+        ? { mark: 'done', canPass: true }
+        : { mark: null, canPass: false };
+    }
+    return rig ? cameraStepState(id, rig) : NO_STATE;
+  };
+  const firstBlocking = ids.findIndex((id) => !stateOf(id).canPass);
+
+  const rollSummary = (): string | undefined => {
+    if (!roll) return undefined;
+    const stock = roll.film_stock?.trim();
+    return [roll.name, ...(stock ? [stock] : []), t(`rollEditor.filmTypes.${roll.film_type}`)].join(
+      t('import.guide.summary.separator'),
+    );
+  };
+
+  const infos: StepInfo[] = ids.map((id, i) => ({
+    id,
+    mark: stateOf(id).mark,
+    summary: id === 'roll' ? rollSummary() : undefined,
+    reachable: firstBlocking === -1 || i <= firstBlocking,
+  }));
+
+  /** Moves to a step; the camera is left as it should be (live view stopped, the light off). */
+  const goTo = (to: StepId) => {
+    if (busy) return;
+    if (to !== step) rig?.leaveStep();
+    onStep(to);
+  };
+
+  const canBack = index > 0 && !busy;
   const isLast = index === ids.length - 1;
-  const canNext = doneOf(ids[index] ?? 'roll') !== false;
+  const canNext = stateOf(ids[index] ?? 'roll').canPass && !busy;
 
   const next = () => {
     if (!roll || !source) return;
     if (isLast) {
+      rig?.leaveStep();
       selectRoll(roll.id);
       setView('library');
       return;
     }
-    // From the Roll page, a roll that was worked on before goes back to the step it was at.
-    const saved = entries?.[roll.id];
+    // From the Roll page, a roll that was worked on before goes back to the step it was at, but no
+    // further than the first step that must be done first (after a restart the light is not
+    // connected, so that is Set up again).
+    const saved = entries[roll.id];
     const kept = saved && saved.source === source && isStepId(saved.step) ? saved.step : null;
-    goTo(
-      index === 0 && kept && ids.includes(kept) && kept !== 'roll'
-        ? kept
-        : (ids[index + 1] ?? step),
-    );
+    const keptAt = kept && kept !== 'roll' ? ids.indexOf(kept) : -1;
+    const resumeAt = keptAt > 0 && firstBlocking > 0 ? Math.min(keptAt, firstBlocking) : keptAt;
+    goTo(index === 0 && resumeAt > 0 ? (ids[resumeAt] ?? step) : (ids[index + 1] ?? step));
   };
   const back = () => {
     if (canBack) goTo(ids[index - 1] ?? 'roll');
@@ -190,12 +266,18 @@ export function ImportGuide() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (entries === null) return null;
-
   const page = (() => {
     switch (ids[index]) {
+      case 'setup':
+        return rig && <SetupStep />;
+      case 'focus':
+        return rig && <FocusStep />;
+      case 'flatfield':
+        return rig && <FlatFieldStep onSkipped={() => actions.current.next()} />;
+      case 'levels':
+        return rig && <LevelsStep />;
       case 'capture':
-        return roll && <CaptureSection rollId={roll.id} />;
+        return rig && <CaptureStep />;
       case 'scan':
         return roll && <ScannerSection rollId={roll.id} />;
       case 'files':
@@ -205,11 +287,11 @@ export function ImportGuide() {
           <RollPage
             rolls={rolls}
             entries={entries}
-            rollId={rollId}
+            rollId={roll?.id ?? null}
             source={source}
             cameraOn={cameraOn}
-            onRoll={chooseRoll}
-            onSource={chooseSource}
+            onRoll={onRoll}
+            onSource={onSource}
           />
         );
     }
@@ -220,6 +302,7 @@ export function ImportGuide() {
       <StepBar
         steps={infos}
         current={ids[index] ?? 'roll'}
+        disabled={busy}
         onJump={(id) => {
           if (infos.find((i) => i.id === id)?.reachable) goTo(id);
         }}

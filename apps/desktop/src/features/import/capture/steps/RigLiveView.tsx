@@ -1,0 +1,34 @@
+import { useTranslation } from 'react-i18next';
+import styles from '../../import.module.css';
+import { LiveView } from '../LiveView';
+import { useCaptureRig } from '../CaptureRig';
+
+/** The live view of the rig's camera (where the camera backend has one), with its heading. */
+export function RigLiveView() {
+  const { t } = useTranslation();
+  const rig = useCaptureRig();
+  const { profile, cameras, light } = rig;
+  if (!profile) return null;
+  return (
+    <div className={styles.captureLive}>
+      <h4 className={styles.subheading}>{t('import.capture.liveView.heading')}</h4>
+      {profile.camera_backend === 'gphoto' ? (
+        cameras.length > 0 && (
+          <LiveView
+            calibrationArea={rig.calibrationArea}
+            onCalibrationAreaChange={rig.setCalibrationArea}
+            stopRef={rig.liveStop}
+            levels={rig.levels}
+            lightLost={!light.connected || light.status?.tripped === true}
+            blocked={
+              rig.running || rig.shotBusy || rig.calibrating || rig.capturing || rig.focusing
+            }
+            settingsChanging={rig.settingsChanging}
+          />
+        )
+      ) : (
+        <p className={styles.muted}>{t('import.capture.liveView.macOnly')}</p>
+      )}
+    </div>
+  );
+}

@@ -1,4 +1,4 @@
-import type { ExposureInfo } from '../../../shared/ipc';
+import type { CameraSetting, ExposureInfo } from '../../../shared/ipc';
 
 type Ratio = { num: number; den: number };
 
@@ -90,4 +90,56 @@ export function formatShutterChoice(choice: string): string {
   }
   if (seconds > 30) return `${plain(seconds, 2)} s`;
   return `${plain(nearestLog(seconds, LONG_SECONDS), 1)} s`;
+}
+
+/** The camera's current ISO, shutter speed and aperture, as it reports them; null where unknown. */
+export interface CameraValues {
+  iso: string | null;
+  shutter: string | null;
+  aperture: string | null;
+}
+
+/** The aperture of a camera setting ("8", "5.6") as photographers write it ("f/8"); null if unknown. */
+export function apertureOfSetting(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value.replace(/^f\/?/i, ''));
+  return Number.isFinite(n) ? formatAperture({ num: n, den: 1 }) : null;
+}
+
+/** True when the camera's aperture is known and is not the aperture the flat field was taken at. */
+export function apertureDiffers(
+  camera: CameraValues | null,
+  flat: Ratio | null | undefined,
+): boolean {
+  const a = apertureOfSetting(camera?.aperture);
+  const b = formatAperture(flat);
+  return a !== null && b !== null && a !== b;
+}
+
+/**
+ * True when the camera's aperture, shutter time or ISO differ from the exposure the levels were
+ * saved or calibrated with. What either side does not know is no difference.
+ */
+export function cameraDiffers(camera: CameraValues | null, exposure: ExposureInfo | null): boolean {
+  if (!camera || !exposure) return false;
+  if (apertureDiffers(camera, exposure.f_number)) return true;
+  const iso = camera.iso === null ? NaN : Number(camera.iso);
+  if (exposure.iso !== null && Number.isFinite(iso) && iso !== exposure.iso) return true;
+  if (camera.shutter !== null && isRatio(exposure.exposure_time) && /^\d/.test(camera.shutter)) {
+    const mine = formatShutterChoice(camera.shutter);
+    const theirs = formatExposure({
+      exposure_time: exposure.exposure_time,
+      iso: null,
+      f_number: null,
+    });
+    return theirs !== null && mine !== theirs;
+  }
+  return false;
+}
+
+/** The camera values in a list of settings as the camera reports them. */
+export function valuesOf(settings: CameraSetting[]): CameraValues {
+  const value = (kind: CameraSetting['kind']) =>
+    settings.find((s) => s.kind === kind)?.value ?? null;
+  return { iso: value('iso'), shutter: value('shutter_speed'), aperture: value('aperture') };
 }

@@ -6,15 +6,13 @@ import i18n from '../../shared/i18n';
 import type { ImportWarning } from '../../shared/ipc';
 import { ipc, libraryDetails, listeners, makeRoll, resetFake, state } from '../library/fake-ipc';
 import { resetLibraryStore, useLibraryStore } from '../library/library-store';
-import { useLibraryEvents } from '../library/use-library-events';
 import { warningTexts } from './capture/NextFrameButton';
-import { CaptureSection } from './CaptureSection';
+import { RigSteps } from './capture/steps/test-rig';
 
 vi.mock('../../shared/ipc', async () => (await import('../library/fake-ipc')).ipc);
 
 function Capture() {
-  useLibraryEvents(true);
-  return <CaptureSection />;
+  return <RigSteps />;
 }
 
 function openLibrary(rollOver = {}, libraryOver = {}) {
@@ -104,10 +102,16 @@ describe('Capture flat field', () => {
       expect(flatButton()).toBeDisabled();
     });
 
-    it('is off without a roll', async () => {
+    it('is off when the roll is not in the library', async () => {
+      // The guide always has a roll; one that was deleted meanwhile is the nearest to none.
       const user = userEvent.setup();
       state.details = libraryDetails();
-      useLibraryStore.setState({ phase: 'ready', library: state.details, rolls: [], rollId: null });
+      useLibraryStore.setState({
+        phase: 'ready',
+        library: state.details,
+        rolls: [],
+        rollId: 'gone',
+      });
       render(<Capture />);
       await screen.findByText('Camera: Nikon D600');
       await user.click(screen.getByRole('button', { name: 'Connect light' }));

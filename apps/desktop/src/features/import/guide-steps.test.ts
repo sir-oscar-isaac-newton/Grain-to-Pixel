@@ -5,8 +5,15 @@ import { isStepId, steps } from './guide-steps';
 const FILM_TYPES: FilmType[] = ['color_negative', 'bw_silver', 'bw_chromogenic'];
 
 describe('guide steps', () => {
-  it('starts every source with the roll and ends it with its own page', () => {
-    expect(steps('camera', 'color_negative')).toEqual(['roll', 'capture']);
+  it('starts every source with the roll and ends it with its own pages', () => {
+    expect(steps('camera', 'color_negative')).toEqual([
+      'roll',
+      'setup',
+      'focus',
+      'flatfield',
+      'levels',
+      'capture',
+    ]);
     expect(steps('scanner', 'color_negative')).toEqual(['roll', 'scan']);
     expect(steps('files', 'color_negative')).toEqual(['roll', 'files']);
   });
@@ -21,6 +28,7 @@ describe('guide steps', () => {
 
   it('knows which text is a step id', () => {
     expect(isStepId('capture')).toBe(true);
+    expect(isStepId('flatfield')).toBe(true);
     expect(isStepId('flat')).toBe(false);
   });
 });

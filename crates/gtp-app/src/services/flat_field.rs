@@ -4,6 +4,11 @@
 //! the light is across the frame, for each colour. [`build_flat_field`] reduces one to a smooth grid;
 //! [`apply_flat_field`] divides a frame by it, as the frame is loaded, so the originals are never
 //! changed. A roll has at most one, kept in the catalog (see [`flat_field_import`]).
+//!
+//! The film carrier is not light: samples of the capture that it covers, and a margin round them,
+//! are left out of the cell means, and cells that are mostly covered are filled from their open
+//! neighbours (P-35, decisions/0021-flat-field-ignores-the-carrier.md). [`flat_field_rebuild`]
+//! makes a flat field again from the files it kept, with the current method.
 
 use std::path::{Path, PathBuf};
 
@@ -30,6 +35,15 @@ use crate::services::triplets::triplet_group;
 pub const GRID_WIDTH: u32 = 96;
 /// Every how many pixels of a cell is looked at when its mean is taken.
 const SAMPLE_STEP: usize = 3;
+/// A sample whose brightest channel is below this share of the channel's centre level is film
+/// carrier, not light (decisions/0021-flat-field-ignores-the-carrier.md).
+pub const CARRIER_LEVEL: f64 = 0.25;
+/// Open samples this close to a carrier sample (Chebyshev distance on the map of samples, so about
+/// three pixels each) are left out too: the carrier's soft edge and the flare beside it.
+pub const CARRIER_MARGIN_SAMPLES: usize = 4;
+/// A cell with a smaller share of open samples than this is covered and is filled from its
+/// neighbours.
+pub const MIN_OPEN_SHARE: f64 = 0.25;
 
 pub use gtp_core::{FlatFieldInfo, FlatFieldSummary};
 
@@ -40,7 +54,151 @@ fn invalid(message: &str, details: impl Into<String>) -> AppError {
 /// Reduces a merged bare-light picture (3 channels, linear) to a flat field: the mean of each
 /// channel in every cell of the grid, divided by the channel's mean over the centre (3 x 3 cells),
 /// and never below [`FlatField::MIN_LIGHT`].
+///
+/// The film carrier is left out (P-35, decisions/0021-flat-field-ignores-the-carrier.md). A sample
+/// (every [`SAMPLE_STEP`]-th pixel in x and y) is covered when its brightest channel is below
+/// [`CARRIER_LEVEL`] of the channel's centre level; open samples within [`CARRIER_MARGIN_SAMPLES`]
+/// of a covered one are left out too (the soft edge and flare of the carrier). A cell is the mean of
+/// its remaining samples; a cell with less than [`MIN_OPEN_SHARE`] of its samples left is covered,
+/// and is filled from the open cells ring by ring (the mean of its filled 8-neighbours). A picture
+/// with no covered sample gives exactly the cell means of the plain method. A picture whose centre
+/// is covered, or none of whose cells is open, is refused.
 pub fn build_flat_field(image: &ImageF32, sources: Vec<String>) -> Result<FlatField, AppError> {
+    build_flat_field_with(image, sources, CarrierParams::default()).map(|(flat, _)| flat)
+}
+
+/// What decides which samples are the carrier.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CarrierParams {
+    /// A sample below this share of the centre level (brightest channel) is covered.
+    pub level: f64,
+    /// Open samples this close (in samples, Chebyshev) to a covered one are left out too.
+    pub margin: usize,
+}
+
+impl Default for CarrierParams {
+    fn default() -> Self {
+        Self {
+            level: CARRIER_LEVEL,
+            margin: CARRIER_MARGIN_SAMPLES,
+        }
+    }
+}
+
+/// What a build found, for the measurements of decision 0021.
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct BuildStats {
+    /// Samples taken, and samples that were covered (before the margin).
+    pub samples: usize,
+    pub covered_samples: usize,
+    /// Samples left out, margin included.
+    pub excluded_samples: usize,
+    /// Cells that were filled instead of measured.
+    pub covered_cells: usize,
+    /// For each cell, whether it was covered (row by row).
+    pub cell_covered: Vec<bool>,
+    /// The samples left out (1), row by row of the map, and the pixel column and row of each
+    /// sample of the map.
+    pub excluded: Vec<u8>,
+    pub sample_x: Vec<usize>,
+    pub sample_y: Vec<usize>,
+    /// The samples of the map each cell column and each cell row owns.
+    pub cell_columns: Vec<std::ops::Range<usize>>,
+    pub cell_rows: Vec<std::ops::Range<usize>>,
+}
+
+/// The samples along one axis: the pixels `a, a + SAMPLE_STEP, ...` of every cell column (or row),
+/// in order, and the range of them each cell owns.
+struct SampleAxis {
+    at: Vec<usize>,
+    cells: Vec<std::ops::Range<usize>>,
+}
+
+impl SampleAxis {
+    fn new(len: usize, cells: usize) -> Self {
+        let (mut at, mut ranges) = (Vec::new(), Vec::with_capacity(cells));
+        for g in 0..cells {
+            let a = g * len / cells;
+            let b = ((g + 1) * len / cells).max(a + 1);
+            let first = at.len();
+            at.extend((a..b).step_by(SAMPLE_STEP));
+            ranges.push(first..at.len());
+        }
+        Self { at, cells: ranges }
+    }
+}
+
+/// Sum and count of finite values of one cell, per channel, and the number of samples left out.
+/// `excluded` marks the samples to skip (`None`: none). The order is the plain method's: row by
+/// row, so that nothing left out gives its sums exactly.
+fn cell_sums(
+    image: &ImageF32,
+    (xs, ys): (&SampleAxis, &SampleAxis),
+    (gx, gy): (usize, usize),
+    excluded: Option<&[u8]>,
+) -> ([f64; 3], [u64; 3], usize) {
+    let (w, n_x) = (image.width as usize, xs.at.len());
+    let (mut sum, mut n, mut left_out) = ([0.0f64; 3], [0u64; 3], 0usize);
+    for sy in ys.cells[gy].clone() {
+        for sx in xs.cells[gx].clone() {
+            if excluded.is_some_and(|e| e[sy * n_x + sx] != 0) {
+                left_out += 1;
+                continue;
+            }
+            let base = (ys.at[sy] * w + xs.at[sx]) * 3;
+            for ch in 0..3 {
+                let v = image.data[base + ch];
+                if v.is_finite() {
+                    sum[ch] += f64::from(v);
+                    n[ch] += 1;
+                }
+            }
+        }
+    }
+    (sum, n, left_out)
+}
+
+/// The samples of `covered` and those within `margin` samples of one (Chebyshev distance), as 1:
+/// a pass along the rows, then one along the columns.
+fn dilate(covered: &[u8], width: usize, margin: usize) -> Vec<u8> {
+    if margin == 0 || covered.is_empty() {
+        return covered.to_vec();
+    }
+    let height = covered.len() / width;
+    let mut along = vec![0u8; covered.len()];
+    along
+        .par_chunks_mut(width)
+        .zip(covered.par_chunks(width))
+        .for_each(|(out, row)| {
+            // Prefix counts make "any covered in x - margin ..= x + margin" a subtraction.
+            let mut prefix = Vec::with_capacity(width + 1);
+            prefix.push(0u32);
+            for v in row {
+                prefix.push(prefix[prefix.len() - 1] + u32::from(*v != 0));
+            }
+            for (x, o) in out.iter_mut().enumerate() {
+                let (a, b) = (x.saturating_sub(margin), (x + margin + 1).min(width));
+                *o = u8::from(prefix[b] > prefix[a]);
+            }
+        });
+    let mut out = vec![0u8; covered.len()];
+    out.par_chunks_mut(width).enumerate().for_each(|(y, row)| {
+        for yy in y.saturating_sub(margin)..(y + margin + 1).min(height) {
+            for (o, v) in row.iter_mut().zip(&along[yy * width..(yy + 1) * width]) {
+                *o |= *v;
+            }
+        }
+    });
+    out
+}
+
+/// [`build_flat_field`] with the carrier rule given, and what it found.
+pub(crate) fn build_flat_field_with(
+    image: &ImageF32,
+    sources: Vec<String>,
+    params: CarrierParams,
+) -> Result<(FlatField, BuildStats), AppError> {
     if image.channels != 3 {
         return Err(invalid(
             "A flat field needs a picture of three colours.",
@@ -56,51 +214,130 @@ pub fn build_flat_field(image: &ImageF32, sources: Vec<String>) -> Result<FlatFi
             format!("{w}x{h}"),
         ));
     }
+    let (xs, ys) = (SampleAxis::new(w, grid_w), SampleAxis::new(h, grid_h));
+    let axes = (&xs, &ys);
 
-    let cell = |ch: usize, gx: usize, gy: usize| -> f64 {
-        let (x0, x1) = (
-            gx * w / grid_w,
-            ((gx + 1) * w / grid_w).max(gx * w / grid_w + 1),
-        );
-        let (y0, y1) = (
-            gy * h / grid_h,
-            ((gy + 1) * h / grid_h).max(gy * h / grid_h + 1),
-        );
-        let (mut sum, mut n) = (0.0f64, 0u64);
-        for y in (y0..y1).step_by(SAMPLE_STEP) {
-            for x in (x0..x1).step_by(SAMPLE_STEP) {
-                let v = image.data[(y * w + x) * 3 + ch];
-                if v.is_finite() {
-                    sum += f64::from(v);
-                    n += 1;
+    // The centre level of each channel: the mean over the centre cells, every sample counted.
+    let (cx, cy) = (grid_w / 2, grid_h / 2);
+    let centre_cells: Vec<(usize, usize)> = (cy.saturating_sub(1)..=(cy + 1).min(grid_h - 1))
+        .flat_map(|gy| (cx.saturating_sub(1)..=(cx + 1).min(grid_w - 1)).map(move |gx| (gx, gy)))
+        .collect();
+    let mut centre = [0.0f64; 3];
+    for (ch, level) in centre.iter_mut().enumerate() {
+        let total: f64 = centre_cells
+            .iter()
+            .map(|cell| {
+                let (sum, n, _) = cell_sums(image, axes, *cell, None);
+                sum[ch] / n[ch].max(1) as f64
+            })
+            .sum();
+        *level = total / 9.0;
+        if *level <= 1e-6 || !level.is_finite() {
+            return Err(invalid(
+                "The bare-light capture is too dark to use.",
+                format!("channel {ch}: centre {level}"),
+            ));
+        }
+    }
+
+    // Covered samples, then the margin round them.
+    let (n_x, n_y) = (xs.at.len(), ys.at.len());
+    let mut covered = vec![0u8; n_x * n_y];
+    covered
+        .par_chunks_mut(n_x)
+        .zip(ys.at.par_iter())
+        .for_each(|(row, y)| {
+            for (o, x) in row.iter_mut().zip(&xs.at) {
+                let base = (y * w + x) * 3;
+                let mut brightest = f64::NEG_INFINITY;
+                for (ch, level) in centre.iter().enumerate() {
+                    let v = image.data[base + ch];
+                    if v.is_finite() {
+                        brightest = brightest.max(f64::from(v) / level);
+                    }
+                }
+                // No finite channel says nothing about the carrier: the cell sums skip it.
+                *o = u8::from(brightest.is_finite() && brightest < params.level);
+            }
+        });
+    let covered_samples = covered.iter().filter(|v| **v != 0).count();
+    let excluded = dilate(&covered, n_x, params.margin);
+    let excluded_samples = excluded.iter().filter(|v| **v != 0).count();
+
+    // Each cell: the mean of its open samples; covered when too few are open.
+    let cells: Vec<([f64; 3], bool)> = (0..grid_w * grid_h)
+        .into_par_iter()
+        .map(|i| {
+            let (gx, gy) = (i % grid_w, i / grid_w);
+            let (sum, n, left_out) = cell_sums(image, axes, (gx, gy), Some(&excluded));
+            let total = xs.cells[gx].len() * ys.cells[gy].len();
+            let open = (total - left_out) as f64 / total.max(1) as f64;
+            let mut mean = [0.0f64; 3];
+            for ch in 0..3 {
+                mean[ch] = sum[ch] / n[ch].max(1) as f64;
+            }
+            (mean, open >= MIN_OPEN_SHARE)
+        })
+        .collect();
+    let mut means: Vec<[f64; 3]> = cells.iter().map(|(m, _)| *m).collect();
+    let mut filled: Vec<bool> = cells.iter().map(|(_, open)| *open).collect();
+    let cell_covered: Vec<bool> = filled.iter().map(|f| !f).collect();
+    let covered_cells = cell_covered.iter().filter(|c| **c).count();
+    if covered_cells == filled.len() {
+        return Err(invalid(
+            "The bare-light capture has no open light to measure: it is all film carrier.",
+            format!("{covered_cells} cells, all covered"),
+        ));
+    }
+    if let Some((gx, gy)) = centre_cells
+        .iter()
+        .find(|(gx, gy)| !filled[gy * grid_w + gx])
+    {
+        return Err(invalid(
+            "The centre of the bare-light capture is covered, so the light cannot be measured.",
+            format!("centre cell {gx},{gy} is covered"),
+        ));
+    }
+
+    // Ring by ring: a covered cell next to a filled one takes the mean of its filled neighbours,
+    // judged on what was filled before the pass, so the order of the cells does not matter.
+    while filled.iter().any(|f| !f) {
+        let mut pass: Vec<(usize, [f64; 3])> = Vec::new();
+        for gy in 0..grid_h {
+            for gx in 0..grid_w {
+                if filled[gy * grid_w + gx] {
+                    continue;
+                }
+                let (mut sum, mut n) = ([0.0f64; 3], 0usize);
+                for ny in gy.saturating_sub(1)..=(gy + 1).min(grid_h - 1) {
+                    for nx in gx.saturating_sub(1)..=(gx + 1).min(grid_w - 1) {
+                        let j = ny * grid_w + nx;
+                        if filled[j] {
+                            for (s, m) in sum.iter_mut().zip(means[j]) {
+                                *s += m;
+                            }
+                            n += 1;
+                        }
+                    }
+                }
+                if n > 0 {
+                    pass.push((gy * grid_w + gx, sum.map(|s| s / n as f64)));
                 }
             }
         }
-        sum / n.max(1) as f64
-    };
+        if pass.is_empty() {
+            return Err(AppError::internal("a covered cell could not be filled"));
+        }
+        for (i, mean) in pass {
+            means[i] = mean;
+            filled[i] = true;
+        }
+    }
 
     let mut light = vec![0.0f32; grid_w * grid_h * 3];
-    for ch in 0..3 {
-        let means: Vec<f64> = (0..grid_h)
-            .flat_map(|gy| (0..grid_w).map(move |gx| (gx, gy)))
-            .map(|(gx, gy)| cell(ch, gx, gy))
-            .collect();
-        let (cx, cy) = (grid_w / 2, grid_h / 2);
-        let centre: f64 = (cy.saturating_sub(1)..=(cy + 1).min(grid_h - 1))
-            .flat_map(|gy| {
-                (cx.saturating_sub(1)..=(cx + 1).min(grid_w - 1)).map(move |gx| (gx, gy))
-            })
-            .map(|(gx, gy)| means[gy * grid_w + gx])
-            .sum::<f64>()
-            / 9.0;
-        if centre <= 1e-6 || !centre.is_finite() {
-            return Err(invalid(
-                "The bare-light capture is too dark to use.",
-                format!("channel {ch}: centre {centre}"),
-            ));
-        }
-        for (i, mean) in means.iter().enumerate() {
-            light[i * 3 + ch] = ((*mean / centre) as f32).max(FlatField::MIN_LIGHT);
+    for (i, mean) in means.iter().enumerate() {
+        for ch in 0..3 {
+            light[i * 3 + ch] = ((mean[ch] / centre[ch]) as f32).max(FlatField::MIN_LIGHT);
         }
     }
     let flat = FlatField {
@@ -114,11 +351,22 @@ pub fn build_flat_field(image: &ImageF32, sources: Vec<String>) -> Result<FlatFi
         files: Vec::new(),
         created_at: None,
     };
-    if flat.is_valid() {
-        Ok(flat)
-    } else {
-        Err(AppError::internal("the flat field built is not valid"))
+    if !flat.is_valid() {
+        return Err(AppError::internal("the flat field built is not valid"));
     }
+    let stats = BuildStats {
+        samples: n_x * n_y,
+        covered_samples,
+        excluded_samples,
+        covered_cells,
+        cell_covered,
+        excluded,
+        sample_x: xs.at,
+        sample_y: ys.at,
+        cell_columns: xs.cells,
+        cell_rows: ys.cells,
+    };
+    Ok((flat, stats))
 }
 
 /// Divides the picture by the flat field, each channel by its own light, interpolated between the
@@ -428,6 +676,67 @@ pub fn flat_field_copy(
     }
 }
 
+/// Builds the roll's flat field again from the files it kept, with the current method (the film
+/// carrier left out, decisions/0021-flat-field-ignores-the-carrier.md): a flat field made before
+/// that was built without it. The sources, exposure, kept files and date stay as they were. Refused,
+/// with nothing changed, when the roll has no flat field, when it was made from files that were not
+/// kept, or when a kept file is gone. The caller makes the roll's frames and thumbnails follow (see
+/// [`after_flat_field_change`]).
+pub fn flat_field_rebuild(library: &Library, roll: RollId) -> Result<FlatFieldInfo, AppError> {
+    flat_field_rebuild_with(library, roll, &RawlerDecoder)
+}
+
+/// [`flat_field_rebuild`] with the decoder of the camera files given.
+pub(crate) fn flat_field_rebuild_with(
+    library: &Library,
+    roll: RollId,
+    decoder: &dyn RawDecoder,
+) -> Result<FlatFieldInfo, AppError> {
+    library.read(|c| c.get_roll(roll))?;
+    let Some(old) = library.read(|c| c.get_flat_field(roll))? else {
+        return Err(invalid(
+            "This roll has no flat field to build again.",
+            format!("roll {roll}"),
+        ));
+    };
+    if old.files.is_empty() {
+        return Err(invalid(
+            "This flat field was made from files that were not kept, so it cannot be built again. Set a flat field from its three files instead.",
+            "no kept files",
+        ));
+    }
+    let [r, g, b] = old.files.as_slice() else {
+        return Err(invalid(
+            "This flat field does not have its three kept files, so it cannot be built again.",
+            format!("{} kept files", old.files.len()),
+        ));
+    };
+    // All three are looked for before anything is read or written.
+    let mut paths = Vec::with_capacity(3);
+    let mut missing = Vec::new();
+    for rel in [r, g, b] {
+        let path = library.resolve(Path::new(rel))?;
+        if !path.is_file() {
+            missing.push(rel.clone());
+        }
+        paths.push(path);
+    }
+    if !missing.is_empty() {
+        return Err(invalid(
+            "The files this flat field was made from are gone, so it cannot be built again.",
+            missing.join(", "),
+        ));
+    }
+    let merged = merge_triplet(decoder, &paths[0], &paths[1], &paths[2], &Limits::default())?.image;
+    check_frames_fit(library, roll, merged.width, merged.height)?;
+    let mut flat = build_flat_field(&merged, old.sources.clone())?;
+    flat.exposure = old.exposure;
+    // The list is the one stored, so storing removes none of the kept files.
+    flat.files = old.files.clone();
+    flat.created_at = old.created_at.clone();
+    store_flat_field(library, roll, &flat)
+}
+
 /// Removes the files a flat field kept, best effort: what cannot be removed is logged and left,
 /// as a roll delete does. The folder goes too when it is then empty.
 pub(crate) fn remove_kept_files(library: &Library, roll: RollId, files: &[String]) {
@@ -496,6 +805,13 @@ pub fn remeasure_roll_base(library: &Library, roll: RollId) -> Result<bool, AppE
     ensure_roll_base_from_image(library, roll, &image)?;
     Ok(true)
 }
+
+#[cfg(test)]
+mod carrier_tests;
+#[cfg(test)]
+mod measure;
+#[cfg(test)]
+mod reference;
 
 #[cfg(test)]
 mod tests {
@@ -875,5 +1191,134 @@ mod tests {
         assert_eq!(list[0].roll_id, c);
         assert_eq!(list[0].created_at, "2022-06-01T00:00:00Z");
         assert_eq!(list[0].exposure.iso, Some(100));
+    }
+
+    /// Hands out the mosaic of a bare-light exposure by the colour its kept name says (`r-`, `g-`,
+    /// `b-`): a light that falls off towards the edges, with an opaque strip down the left side.
+    struct BareLight;
+
+    impl RawDecoder for BareLight {
+        fn decode(&self, path: &Path, _: &Limits) -> Result<gtp_io::RawLinear, AppError> {
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let lit = ["r-", "g-", "b-"]
+                .iter()
+                .position(|p| name.starts_with(p))
+                .ok_or_else(|| AppError::new(ErrorCode::NotFound, "no such exposure"))?;
+            let (w, h) = (120usize, 80usize);
+            let mut data = Vec::with_capacity(w * h);
+            for y in 0..h {
+                for x in 0..w {
+                    let value = if gtp_io::Cfa::RGGB.color_at(x, y) == lit {
+                        let u = (x as f32 + 0.5) / w as f32 * 2.0 - 1.0;
+                        let v = (y as f32 + 0.5) / h as f32 * 2.0 - 1.0;
+                        let open = if x >= 24 { 1.0 } else { 0.01 };
+                        (1.0 - 0.3 * (u * u + v * v) / 2.0) * open * 9_000.0
+                    } else {
+                        120.0
+                    };
+                    data.push(value.round() as u16);
+                }
+            }
+            Ok(gtp_io::RawLinear {
+                width: w as u32,
+                height: h as u32,
+                cfa: gtp_io::Cfa::RGGB,
+                black: [0.0; 4],
+                white: 10_000.0,
+                data,
+            })
+        }
+    }
+
+    const KEPT: [&str; 3] = [
+        "r-AAAAAAAA-one.NEF",
+        "g-AAAAAAAA-two.NEF",
+        "b-AAAAAAAA-three.NEF",
+    ];
+
+    #[test]
+    fn a_rebuild_makes_the_flat_field_again_from_its_kept_files_and_keeps_all_else() {
+        let p = Pair::new("flat-rebuild");
+        let roll = p.roll("Roll");
+        let before = p.flat(roll, Some("2020-05-01T08:00:00Z"), &KEPT);
+        let [r, g, b] = before.files.clone().try_into().unwrap();
+        let merged = merge_triplet(
+            &BareLight,
+            &p.path(&r),
+            &p.path(&g),
+            &p.path(&b),
+            &Limits::default(),
+        )
+        .unwrap()
+        .image;
+        let expected = build_flat_field(&merged, sources()).unwrap();
+        assert_ne!(expected.light, before.light, "the stored one is another");
+
+        let info = flat_field_rebuild_with(&p.lib, roll, &BareLight).unwrap();
+        let after = p.get(roll).unwrap();
+        assert_eq!(after.light, expected.light, "the current method");
+        assert_eq!(
+            (after.grid_w, after.grid_h),
+            (expected.grid_w, expected.grid_h)
+        );
+        assert_eq!(after.sources, before.sources);
+        assert_eq!(after.exposure, before.exposure);
+        assert_eq!(after.files, before.files);
+        assert_eq!(after.created_at, before.created_at);
+        assert_eq!(info, FlatFieldInfo::from(&after));
+        for rel in &after.files {
+            assert!(p.path(rel).exists(), "{rel} is kept");
+        }
+        assert_eq!(
+            std::fs::read_dir(p.path(&flat_field_rel(roll).to_string_lossy()))
+                .unwrap()
+                .count(),
+            3
+        );
+        assert!(after.light.iter().all(|v| *v >= FlatField::MIN_LIGHT));
+    }
+
+    #[test]
+    fn a_rebuild_that_cannot_be_made_is_refused_and_changes_nothing() {
+        let p = Pair::new("flat-rebuild-refused");
+        let (bare, not_kept, partly, gone) = (
+            p.roll("Bare"),
+            p.roll("Not kept"),
+            p.roll("Partly"),
+            p.roll("Gone"),
+        );
+        let code = |r: Result<FlatFieldInfo, AppError>| r.unwrap_err().code;
+
+        assert_eq!(
+            code(flat_field_rebuild_with(&p.lib, bare, &BareLight)),
+            ErrorCode::InvalidInput,
+            "no flat field"
+        );
+        assert_eq!(
+            code(flat_field_rebuild_with(&p.lib, RollId::new(), &BareLight)),
+            ErrorCode::NotFound
+        );
+
+        let old = p.flat(not_kept, None, &[]);
+        let err = flat_field_rebuild_with(&p.lib, not_kept, &BareLight).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(err.message.contains("not kept"), "{}", err.message);
+        assert_eq!(p.get(not_kept), Some(old));
+
+        let old = p.flat(partly, None, &KEPT[..2]);
+        assert_eq!(
+            code(flat_field_rebuild_with(&p.lib, partly, &BareLight)),
+            ErrorCode::InvalidInput,
+            "two kept files"
+        );
+        assert_eq!(p.get(partly), Some(old));
+
+        let old = p.flat(gone, None, &KEPT);
+        std::fs::remove_file(p.path(&old.files[1])).unwrap();
+        let err = flat_field_rebuild_with(&p.lib, gone, &BareLight).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(err.message.contains("gone"), "{}", err.message);
+        assert_eq!(p.get(gone), Some(old.clone()), "unchanged");
+        assert!(p.path(&old.files[0]).exists() && p.path(&old.files[2]).exists());
     }
 }

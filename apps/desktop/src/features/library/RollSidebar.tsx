@@ -5,6 +5,7 @@ import {
   flatFieldClear,
   flatFieldCopy,
   flatFieldImport,
+  flatFieldRebuild,
   importFiles,
   pickCameraFiles,
   pickTiffFiles,
@@ -119,6 +120,16 @@ export function RollSidebar() {
           <button type="button" disabled={readOnly} onClick={() => setReusing(current)}>
             {t('library.rolls.useFlatField')}
           </button>
+          {current.has_flat_field && (
+            <button
+              type="button"
+              disabled={readOnly}
+              title={t('library.rolls.rebuildFlatFieldTitle')}
+              onClick={() => void changeFlatField(() => flatFieldRebuild(current.id))}
+            >
+              {t('library.rolls.rebuildFlatField')}
+            </button>
+          )}
           {current.has_flat_field && (
             <button
               type="button"

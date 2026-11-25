@@ -1,6 +1,6 @@
 # 0012. The colour mixer works in Oklch, with eight smoothly weighted hue bands
 
-- Status: Accepted (the owner approved the design, issue P-25 / GitHub #302)
+- Status: Accepted; cube root superseded by 0022 (the owner approved the design, issue P-25 / GitHub #302)
 - Date: 2026-11-11
 
 ## Context

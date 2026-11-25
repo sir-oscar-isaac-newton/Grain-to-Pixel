@@ -1235,6 +1235,15 @@
       "number": 264,
       "title": "Remove the SQLite advisory ignore",
       "branch": "chore/issue-264-remove-sqlite-advisory-ignore",
+      "status": "completed",
+      "pr": 403,
+      "commit": "a071baa"
+    },
+    {
+      "id": "P-34",
+      "number": 356,
+      "title": "Faster Oklab conversion where results may change within a tolerance",
+      "branch": "perf/issue-356-faster-cube-root",
       "status": "in_progress",
       "pr": null,
       "commit": null

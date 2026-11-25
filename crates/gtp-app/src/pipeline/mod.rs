@@ -15,6 +15,8 @@
 mod analyze;
 mod display;
 #[cfg(test)]
+mod measure_cbrt;
+#[cfg(test)]
 mod measure_noise;
 mod proxy;
 mod stages;

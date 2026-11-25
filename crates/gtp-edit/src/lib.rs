@@ -4,6 +4,7 @@
 //! so it can be calibrated against reference renders (issue Q-03).
 
 mod balance;
+mod cbrt;
 mod color;
 mod curve;
 mod dust;

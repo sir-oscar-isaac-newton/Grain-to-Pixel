@@ -2,6 +2,7 @@
 //! errors. No I/O (docs/architecture.md section 3.4, docs/specification.md section 4).
 
 pub mod error;
+pub mod highlights;
 pub mod ids;
 pub mod image;
 pub mod job;
@@ -12,6 +13,7 @@ pub mod recipe;
 pub mod testing;
 
 pub use error::{AppError, ErrorCode};
+pub use highlights::{bring_into_range, HIGHLIGHT_KNEE};
 pub use ids::{FrameId, JobId, RollId, TagId};
 pub use image::ImageF32;
 pub use job::{

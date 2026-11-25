@@ -189,7 +189,7 @@ fn values_that_are_not_finite_or_negative_match_the_export() {
 
 /// A synthetic negative rendered with a strongly saturated recipe, optionally brighter: most pixels
 /// have a Rec.2020 channel above 1 and many leave sRGB.
-fn strong_render(pattern: Pattern, seed: u64, exposure_ev: f32) -> ImageF32 {
+pub(super) fn strong_render(pattern: Pattern, seed: u64, exposure_ev: f32) -> ImageF32 {
     let (w, h) = (320u32, 213u32);
     let params = Params {
         width: w,
@@ -294,5 +294,30 @@ fn the_analysis_histogram_is_the_histogram_of_to_rgba8_srgb() {
     assert_eq!(
         analysis.histogram,
         histogram(&to_rgba8_srgb(&image).unwrap())
+    );
+}
+
+#[test]
+fn a_bright_saturated_colour_keeps_its_hue_on_screen_and_in_the_file() {
+    // ADR 0015's colours. Clipping each channel gave the green (0.6, 1, 0.9): a pale cyan-white.
+    let colours = [
+        [0.6, 2.7, 0.9],
+        [0.4, 1.8, 0.6],
+        [1.8, 0.9, 0.2],
+        [1.8, 0.3, 1.5],
+    ];
+    let image = image_of(&colours);
+    let (worst, _) = compare(&image);
+    assert!(worst <= 1, "{worst} levels apart");
+    let screen = screen8(&image);
+    let [green, _, orange, magenta] = [0, 1, 2, 3].map(|i| &screen[i * 3..i * 3 + 3]);
+    // The green stays green: green is clearly the largest and red is below blue, as in the source.
+    assert!(green[1] > green[2] + 20, "{green:?}");
+    assert!(green[2] > green[0], "{green:?}");
+    // The orange keeps red above green above blue, and the magenta red and blue above green.
+    assert!(orange[0] > orange[1] && orange[1] > orange[2], "{orange:?}");
+    assert!(
+        magenta[0] > magenta[1] && magenta[2] > magenta[1],
+        "{magenta:?}"
     );
 }

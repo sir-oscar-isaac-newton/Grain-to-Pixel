@@ -8,7 +8,10 @@
 //! - **ProPhoto RGB** (ROMM RGB primaries): D50, gamma 1.8. The D65 to D50 white change is the
 //!   chromatic adaptation Little CMS applies through its D50 connection space (Bradford).
 //!
-//! Out-of-gamut and out-of-range values are clipped per channel to `[0, 1]` (NaN becomes 0).
+//! Colours above white are brought into `[0, 1]` first by [`gtp_core::bring_into_range`], which keeps
+//! the hue of a colour with a channel above 1 (ADR 0019) and treats every pixel with no channel
+//! above 1 as clipping each channel would (NaN becomes 0). What lies in range but outside the
+//! target space is clipped per channel by Little CMS.
 //!
 //! A black-and-white frame can instead be written as one grey channel ([`to_grey_output`]): a
 //! grey profile with the D65 white point and the sRGB tone curve, whatever the output space is
@@ -184,10 +187,7 @@ pub fn to_output(image: &ImageF32, space: OutputSpace) -> Result<Tiff16Output, A
     out.par_chunks_mut(CHUNK_PIXELS)
         .zip(pixels.par_chunks(CHUNK_PIXELS))
         .for_each(|(dst, src)| {
-            let clean: Vec<[f32; 3]> = src
-                .iter()
-                .map(|p| p.map(|v| if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) }))
-                .collect();
+            let clean: Vec<[f32; 3]> = src.iter().map(|p| gtp_core::bring_into_range(*p)).collect();
             transform.transform_pixels(&clean, dst);
         });
 
@@ -232,10 +232,7 @@ pub fn to_grey_output(image: &ImageF32) -> Result<Grey16Output, AppError> {
     out.par_chunks_mut(CHUNK_PIXELS)
         .zip(pixels.par_chunks(CHUNK_PIXELS))
         .for_each(|(dst, src)| {
-            let clean: Vec<[f32; 3]> = src
-                .iter()
-                .map(|p| p.map(|v| if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) }))
-                .collect();
+            let clean: Vec<[f32; 3]> = src.iter().map(|p| gtp_core::bring_into_range(*p)).collect();
             transform.transform_pixels(&clean, dst);
         });
 
@@ -320,7 +317,202 @@ mod tests {
         let img = ImageF32::new(2, 1, 3, vec![5.0, -1.0, f32::NAN, 1.0, 1.0, 1.0]).unwrap();
         let out = to_output(&img, OutputSpace::Srgb).unwrap();
         assert_eq!(out.data.len(), 6);
-        assert_eq!(out.data[1], 0);
+        // Red 5 with nothing else keeps its hue and rolls off towards white (ADR 0019): red is
+        // the largest channel and green and blue are no longer 0.
+        assert!(out.data[1] > 0);
+        assert!(out.data[0] > out.data[1]);
+    }
+
+    /// Clipping each channel on its own, the rule before P-32, with a transform built here.
+    fn old_clamp_output(
+        image: &ImageF32,
+        target: &Profile<ThreadContext>,
+        context: &ThreadContext,
+    ) -> Vec<[u16; 3]> {
+        let source = working_profile(context).unwrap();
+        let transform: Transform<[f32; 3], [u16; 3], ThreadContext, DisallowCache> =
+            Transform::new_flags_context(
+                context,
+                &source,
+                PixelFormat::RGB_FLT,
+                target,
+                PixelFormat::RGB_16,
+                Intent::RelativeColorimetric,
+                Flags::NO_CACHE,
+            )
+            .unwrap();
+        let clean: Vec<[f32; 3]> = image
+            .data
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|p| p.map(|v| if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) }))
+            .collect();
+        let mut out = vec![[0u16; 3]; clean.len()];
+        transform.transform_pixels(&clean, &mut out);
+        out
+    }
+
+    /// Pixels with no channel above 1: a grid, plus NaN, negative, zero and just-below-one values.
+    fn in_range_image() -> ImageF32 {
+        let levels = [
+            f32::NAN,
+            -2.0,
+            -0.0,
+            0.0,
+            1.0e-4,
+            0.003,
+            0.1,
+            0.18,
+            0.4,
+            0.75,
+            0.999_999,
+            1.0,
+        ];
+        let mut data = Vec::new();
+        for r in levels {
+            for g in levels {
+                for b in levels {
+                    data.extend([r, g, b]);
+                }
+            }
+        }
+        let pixels = data.len() as u32 / 3;
+        ImageF32::new(pixels, 1, 3, data).unwrap()
+    }
+
+    #[test]
+    fn pixels_with_no_channel_above_one_give_the_bytes_of_per_channel_clipping() {
+        let image = in_range_image();
+        for space in ALL {
+            let context = ThreadContext::new();
+            let target = output_profile(&context, space).unwrap();
+            let want = old_clamp_output(&image, &target, &context);
+            let got = to_output(&image, space).unwrap();
+            assert_eq!(got.data, want.into_flattened(), "{space:?}");
+        }
+    }
+
+    #[test]
+    fn the_grey_output_of_in_range_pixels_is_the_bytes_of_per_channel_clipping() {
+        let image = in_range_image();
+        let context = ThreadContext::new();
+        let source = working_profile(&context).unwrap();
+        let target = grey_profile(&context).unwrap();
+        let transform: Transform<[f32; 3], u16, ThreadContext, DisallowCache> =
+            Transform::new_flags_context(
+                &context,
+                &source,
+                PixelFormat::RGB_FLT,
+                &target,
+                PixelFormat::GRAY_16,
+                Intent::RelativeColorimetric,
+                Flags::NO_CACHE,
+            )
+            .unwrap();
+        let clean: Vec<[f32; 3]> = image
+            .data
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|p| p.map(|v| if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) }))
+            .collect();
+        let mut want = vec![0u16; clean.len()];
+        transform.transform_pixels(&clean, &mut want);
+        assert_eq!(to_grey_output(&image).unwrap().data, want);
+    }
+
+    /// `to_output` to sRGB as it was before P-32 (each channel clipped on its own), for timing.
+    fn old_to_output_srgb(image: &ImageF32) -> Vec<u16> {
+        let context = ThreadContext::new();
+        let source = working_profile(&context).unwrap();
+        let target = output_profile(&context, OutputSpace::Srgb).unwrap();
+        let transform: Transform<[f32; 3], [u16; 3], ThreadContext, DisallowCache> =
+            Transform::new_flags_context(
+                &context,
+                &source,
+                PixelFormat::RGB_FLT,
+                &target,
+                PixelFormat::RGB_16,
+                Intent::RelativeColorimetric,
+                Flags::NO_CACHE,
+            )
+            .unwrap();
+        let (pixels, _) = image.data.as_chunks::<3>();
+        let mut out = vec![[0u16; 3]; pixels.len()];
+        out.par_chunks_mut(CHUNK_PIXELS)
+            .zip(pixels.par_chunks(CHUNK_PIXELS))
+            .for_each(|(dst, src)| {
+                let clean: Vec<[f32; 3]> = src
+                    .iter()
+                    .map(|p| p.map(|v| if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) }))
+                    .collect();
+                transform.transform_pixels(&clean, dst);
+            });
+        out.into_flattened()
+    }
+
+    /// Timing for ADR 0019: median of seven runs of the sRGB export of 24 megapixels, with the new
+    /// rule and with the old clip. Run with
+    /// `cargo test --release -p gtp-io measure_time_export -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "timing run, not a check"]
+    fn measure_time_export() {
+        use std::time::Instant;
+        let median = |f: &dyn Fn()| {
+            f();
+            let mut runs: Vec<_> = (0..7)
+                .map(|_| {
+                    let started = Instant::now();
+                    f();
+                    started.elapsed()
+                })
+                .collect();
+            runs.sort();
+            runs[3]
+        };
+        eprintln!(
+            "rayon threads in the global pool: {}",
+            rayon::current_num_threads()
+        );
+        let (w, h) = (6000usize, 4000usize);
+        for (label, share) in [
+            ("no pixel above 1", 0.0f32),
+            ("half the pixels above 1", 0.5),
+        ] {
+            let mut state = 0x9E37_79B9u32;
+            let data: Vec<f32> = (0..w * h * 3)
+                .map(|i| {
+                    state ^= state << 13;
+                    state ^= state >> 17;
+                    state ^= state << 5;
+                    let x = (i / 3 % w) as f32 / w as f32;
+                    let base = x * 0.9 + (state % 1000) as f32 / 10_000.0;
+                    if share > 0.0 && x > 1.0 - share && i % 3 != 2 {
+                        base * 3.0
+                    } else {
+                        base
+                    }
+                })
+                .collect();
+            let image = ImageF32::new(w as u32, h as u32, 3, data).unwrap();
+            let new = median(&|| {
+                to_output(&image, OutputSpace::Srgb).unwrap();
+            });
+            let old = median(&|| {
+                old_to_output_srgb(&image);
+            });
+            eprintln!("6000x4000 to_output (sRGB), {label}: new rule {new:?}, old clip {old:?}");
+        }
+    }
+
+    #[test]
+    fn a_bright_saturated_colour_keeps_its_hue_in_every_space() {
+        // ADR 0015's green: per-channel clipping gave (0.6, 1, 0.9), a pale cyan-white.
+        for space in ALL {
+            let [r, g, b] = convert([0.6, 2.7, 0.9], space);
+            assert!(g > b && b > r, "{space:?}: {r} {g} {b}");
+        }
     }
 
     #[test]

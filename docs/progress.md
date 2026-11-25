@@ -1199,6 +1199,15 @@
       "number": 379,
       "title": "Greyscale export",
       "branch": "feat/issue-379-greyscale-export",
+      "status": "completed",
+      "pr": 397,
+      "commit": "1dcf1e8"
+    },
+    {
+      "id": "P-32",
+      "number": 352,
+      "title": "Bright saturated colours in the output conversion",
+      "branch": "feat/issue-352-bright-colours",
       "status": "in_progress",
       "pr": null,
       "commit": null

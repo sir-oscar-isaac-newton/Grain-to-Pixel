@@ -194,6 +194,15 @@ mod tests {
     }
 
     #[test]
+    fn a_recipe_saved_with_the_guided_noise_reduction_loads_with_the_same_values() {
+        // The block as P-27 saved it; P-29 changed the luminance method, not the recipe.
+        let recipe = migrate(r#"{"v":1,"noise":{"luminance":40,"color":20}}"#).unwrap();
+        assert_eq!(recipe.v, 1);
+        assert_eq!(recipe.noise.luminance, 40.0);
+        assert_eq!(recipe.noise.color, 20.0);
+    }
+
+    #[test]
     fn a_mixer_list_of_the_wrong_length_is_a_malformed_recipe() {
         let err = migrate(r#"{"v":1,"color":{"mixer":{"hue":[1,2,3]}}}"#).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);

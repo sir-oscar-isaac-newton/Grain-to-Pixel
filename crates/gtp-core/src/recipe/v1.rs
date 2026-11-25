@@ -383,14 +383,18 @@ pub enum OutputSpace {
 /// The radius of the output sharpening when none is chosen, in pixels of the exported image.
 pub const DEFAULT_SHARPEN_RADIUS_PX: f32 = 1.0;
 
-/// Noise reduction: a guided filter in Oklab on the positive, before the colour stage
-/// (docs/specification.md section 4.2, ADR 0013). Both amounts run from 0 to 100 and 0 changes
-/// nothing. A recipe saved before it existed loads with zeros.
+/// Noise reduction in Oklab on the positive, before the colour stage: wavelet shrinkage of the
+/// lightness and a guided filter of the colour (docs/specification.md section 4.2, ADR 0013 and
+/// ADR 0020). Both amounts run from 0 to 100 and 0 changes nothing. A recipe saved before it
+/// existed loads with zeros.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
 pub struct Noise {
-    /// 0 to 100: how strongly the lightness is smoothed where it is flat; edges are kept.
+    /// 0 to 100: how much of the coarser noise of the lightness is removed; most of the finest
+    /// grain and the edges are kept. At 100 the wavelet threshold is `NR_WAVELET_STRENGTH` (0.9)
+    /// times the noise level of each scale, and the luminance step costs about 90 ms at 24 MP on
+    /// 6 threads (ADR 0020).
     pub luminance: f32,
     /// 0 to 100: how strongly the colour (the chroma channels) is smoothed, guided by the lightness.
     pub color: f32,

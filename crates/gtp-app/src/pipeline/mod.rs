@@ -14,6 +14,8 @@
 
 mod analyze;
 mod display;
+#[cfg(test)]
+mod measure_noise;
 mod proxy;
 mod stages;
 
@@ -1013,6 +1015,28 @@ mod tests {
                 assert!((a[i] - b[i]).abs() <= 0.05 * a[i].max(0.4), "{a:?} {b:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_recipe_saved_with_the_guided_noise_reduction_loads_and_renders() {
+        // A recipe as P-27 saved it, noise block included, loaded and rendered at full size and
+        // as a preview; the same values reduce the noise of the scan.
+        let s = noisy_scan(400, 200);
+        let mut saved = true_recipe(&s);
+        saved.noise = gtp_core::recipe::Noise {
+            luminance: 40.0,
+            color: 20.0,
+        };
+        let json = serde_json::to_string(&saved).unwrap();
+        let loaded = gtp_core::recipe::migrate(&json).unwrap();
+        assert_eq!((loaded.noise.luminance, loaded.noise.color), (40.0, 20.0));
+        let input = input_of(&s, None);
+        let full = render(&input, &loaded, RenderTarget::Full).unwrap();
+        let preview = render(&input, &loaded, RenderTarget::Preview { max_edge: 200 }).unwrap();
+        assert!(full.data.iter().chain(&preview.data).all(|v| v.is_finite()));
+        let mut plain = loaded.clone();
+        plain.noise = Default::default();
+        assert_ne!(full, render(&input, &plain, RenderTarget::Full).unwrap());
     }
 
     #[test]

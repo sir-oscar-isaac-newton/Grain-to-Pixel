@@ -16,12 +16,13 @@ Architecture Decision Records (ADRs), numbered, immutable once accepted (superse
 | [0010](0010-flat-field.md) | A flat field per roll, applied when a camera frame is read | Accepted |
 | [0011](0011-colour-balance.md) | One colour balance per roll of scanner frames, the median of their mid-tone estimates | Accepted |
 | [0012](0012-colour-mixer.md) | The colour mixer works in Oklch, with eight smoothly weighted hue bands | Accepted |
-| [0013](0013-noise-reduction.md) | Noise reduction is a guided filter in Oklab, between the inversion and the colour stage | Accepted |
+| [0013](0013-noise-reduction.md) | Noise reduction is a guided filter in Oklab, between the inversion and the colour stage | Accepted; luminance method superseded by 0020 |
 | [0014](0014-detail-view.md) | The detail view renders the whole picture at full size and cuts regions from one cached copy | Accepted |
 | [0015](0015-one-colour-conversion.md) | The screen converts as the sRGB export does: each Rec.2020 channel is clipped before the matrix | Accepted |
 | [0016](0016-kept-noise-picture.md) | The detail view keeps the picture after noise reduction, so an edit to a later stage skips the decode and the first five stages | Accepted |
 | [0017](0017-black-and-white-conversion.md) | A black-and-white frame is inverted from one combined density with inverse-variance channel weights, and skips the colour stages | Accepted |
 | [0018](0018-greyscale-export.md) | An untoned black-and-white frame is exported as a one-channel grey file with an sRGB-curve grey profile | Accepted |
 | [0019](0019-highlights-above-white.md) | Colours above white keep their hue and roll off to white by one rule shared by the screen and every export | Accepted |
+| [0020](0020-wavelet-noise-reduction.md) | Wavelet shrinkage replaces the guided filter for the luminance of the noise reduction; the colour stays guided | Accepted |
 
 New ADR: copy [0000-template.md](0000-template.md), take the next number, add a row above.

@@ -245,6 +245,9 @@ cannot show it. It is a jump in tone that was there before, not a fault of `cbrt
 bits of any earlier stage near that luma would move it. A follow-up issue is proposed for the jump;
 it is not fixed here.
 
+*Update:* issue P-38 and [ADR 0023](0023-tone-near-black.md) removed this jump: the tone stage now
+fades to the mapped grey below a luma of 1e-4 instead of switching at 1e-6.
+
 The six goldens (`cargo run -p gtp-benchmark -- golden`) use neither noise reduction nor the mixer
 (their recipes have both at their defaults, and `rgb_to_oklab` has no other caller), so they are
 unchanged: ΔE2000 maximum 0.000 on all six. The benchmark has no render with noise or the mixer.
@@ -255,7 +258,7 @@ No regeneration is needed. A thumbnail is the pipeline's picture as an 8-bit ima
 cases the largest change of an 8-bit value is 1 level on at most 0.014 % of the values (one value
 in 7500), which is not visible and inside the 1 level that the screen and the sRGB export already
 differ by (ADR 0015). The exception above (blacks +100 at luma 1e-6) is the one known place where an
-8-bit value moves further.
+8-bit value moves further. (P-38 / ADR 0023 has since removed that jump.)
 Thumbnails made before the change keep their pixels until they are regenerated for another reason.
 
 ## Other candidates from P-31

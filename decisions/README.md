@@ -26,5 +26,6 @@ Architecture Decision Records (ADRs), numbered, immutable once accepted (superse
 | [0020](0020-wavelet-noise-reduction.md) | Wavelet shrinkage replaces the guided filter for the luminance of the noise reduction; the colour stays guided | Accepted |
 | [0021](0021-flat-field-ignores-the-carrier.md) | The flat field leaves the film carrier out of its cell means and fills covered cells from open ones; a rebuild action applies it to old flat fields | Accepted |
 | [0022](0022-own-cube-root.md) | The Oklab conversion uses our own cube root, the same on every platform | Accepted |
+| [0023](0023-tone-near-black.md) | The tone stage fades a pixel linearly to the mapped grey below a luma of 1e-4, so there is no jump near black | Accepted |
 
 New ADR: copy [0000-template.md](0000-template.md), take the next number, add a row above.

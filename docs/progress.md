@@ -1244,6 +1244,15 @@
       "number": 356,
       "title": "Faster Oklab conversion where results may change within a tolerance",
       "branch": "perf/issue-356-faster-cube-root",
+      "status": "completed",
+      "pr": 404,
+      "commit": "018dd4b"
+    },
+    {
+      "id": "P-38",
+      "number": 405,
+      "title": "No jump in the tone stage near black",
+      "branch": "feat/issue-405-tone-near-black",
       "status": "in_progress",
       "pr": null,
       "commit": null

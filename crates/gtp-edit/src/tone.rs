@@ -13,7 +13,10 @@
 //!    brighten the top, positive blacks lift the bottom, negative blacks crush it.
 //!
 //! Steps 1 to 4 act on the Rec.2020 luma `Y` and scale the pixel by `Y' / Y`, so hue and saturation
-//! stay as they are. Then:
+//! stay as they are. Below [`NEAR_BLACK_LUMA`] the scale would grow without bound (and at 0 is
+//! undefined), so the pixel fades to the mapped grey instead: `c' = Y' * (1 + (c - Y) / T)` with
+//! `T = NEAR_BLACK_LUMA`. This meets the scaling at `Y = T`, is exactly `[Y'; 3]` at `Y = 0`, keeps
+//! the luma at `Y'`, and never divides by `Y` (ADR 0023). Then:
 //!
 //! 5. **Dehaze**, global: positive values remove a uniform veil (film fog, scanner flare) estimated
 //!    as the [`DEHAZE_VEIL_PERCENTILE`] percentile of each pixel's darkest channel, `c' = (c - d*v) /
@@ -49,8 +52,13 @@ pub const DEHAZE_ADD_VEIL: f32 = 0.25;
 /// Saturation change at a dehaze of +-100.
 pub const DEHAZE_SATURATION: f32 = 0.25;
 
-/// Below this luma a pixel is treated as black and set to the mapped grey.
-const LUMA_EPSILON: f32 = 1e-6;
+/// Below this luma the tone stage stops scaling a pixel by `Y' / Y` and blends linearly to the
+/// mapped grey: `c' = Y' * (1 + (c - Y) / T)`. Plain scaling meets this form at `Y = T`, so there
+/// is no jump there; at 0 the pixel is exactly the grey `[Y'; 3]`. With `tone.blacks` at +100,
+/// `Y'` is about 0.048 at black, so a switch to grey at a tiny luma (the former 1e-6) was a
+/// visible step. 1e-4 keeps the largest step per luma change small and loses colour only in the
+/// deepest shadow (ADR 0023).
+pub const NEAR_BLACK_LUMA: f32 = 1e-4;
 /// The veil estimate looks at about this many pixels at most.
 const MAX_VEIL_SAMPLES: u64 = 1_000_000;
 /// The largest veil that is removed (keeps the division well away from zero).
@@ -181,13 +189,16 @@ pub fn apply_tone(image: &mut ImageF32, tone: &Tone) -> Result<(), AppError> {
         }
         let y = luma(*pixel);
         let mapped = map.map(y);
-        if y > LUMA_EPSILON {
+        if y >= NEAR_BLACK_LUMA {
             let ratio = mapped / y;
             for c in pixel.iter_mut() {
                 *c = (*c * ratio).clamp(0.0, MAX_SAMPLE);
             }
         } else {
-            *pixel = [mapped; 3];
+            // `c >= 0` after the input clamp, so `c - y >= -y > -T`: the factor stays positive.
+            for c in pixel.iter_mut() {
+                *c = (mapped * (1.0 + (*c - y) / NEAR_BLACK_LUMA)).clamp(0.0, MAX_SAMPLE);
+            }
         }
     });
 
@@ -515,6 +526,284 @@ mod tests {
         eprintln!("21 MP colour + tone: {:?}", start.elapsed());
     }
 
+    /// The luma threshold of the code before ADR 0023, for the old-formula reference below.
+    const OLD_LUMA_EPSILON: f32 = 1e-6;
+
+    fn run(pixel: [f32; 3], tone: &Tone) -> [f32; 3] {
+        let mut img = ImageF32::new(1, 1, 3, pixel.to_vec()).unwrap();
+        apply_tone(&mut img, tone).unwrap();
+        [img.data[0], img.data[1], img.data[2]]
+    }
+
+    /// The tone stage as it was before ADR 0023 (scale above 1e-6, grey below), then the master
+    /// curve; no dehaze, no channel curves.
+    fn old_run(pixel: [f32; 3], tone: &Tone) -> [f32; 3] {
+        let master = Curve::new(&tone.curve.master).unwrap();
+        let mut p = pixel;
+        for c in p.iter_mut() {
+            *c = if c.is_finite() {
+                c.clamp(0.0, MAX_SAMPLE)
+            } else {
+                0.0
+            };
+        }
+        let map = ToneMap::new(tone);
+        if !map.is_identity() {
+            let y = luma(p);
+            let mapped = map.map(y);
+            if y > OLD_LUMA_EPSILON {
+                let ratio = mapped / y;
+                for c in p.iter_mut() {
+                    *c = (*c * ratio).clamp(0.0, MAX_SAMPLE);
+                }
+            } else {
+                p = [mapped; 3];
+            }
+        }
+        if master.is_identity() {
+            p
+        } else {
+            // apply_tone also runs each (identity) channel curve in this case.
+            let identity = Curve::new(&[]).unwrap();
+            p.map(|c| identity.eval(master.eval(c)))
+        }
+    }
+
+    fn with_luma(colour: [f32; 3], y: f32) -> [f32; 3] {
+        let k = y / luma(colour);
+        colour.map(|c| c * k)
+    }
+
+    const SATURATED: [[f32; 3]; 4] = [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.6, 0.5, 0.4],
+    ];
+
+    fn steep_master() -> Curves {
+        Curves {
+            master: vec![[0.0, 0.0], [0.02, 0.5], [1.0, 1.0]],
+            ..Curves::default()
+        }
+    }
+
+    /// Lumas from 0 to 2 * T: a linear grid of T / 1000, a fine one around the old threshold of
+    /// 1e-6 and one around T.
+    fn luma_sweep() -> Vec<f32> {
+        let t = NEAR_BLACK_LUMA;
+        let mut ys: Vec<f32> = (0..=2000).map(|k| k as f32 * t / 1000.0).collect();
+        ys.extend((0..=200).map(|k| 0.9e-6 + k as f32 * 1e-9));
+        ys.extend((0..=400).map(|k| t - 2e-6 + k as f32 * 1e-8));
+        ys.sort_by(f32::total_cmp);
+        ys.dedup();
+        ys
+    }
+
+    /// Largest slope of the master curve on [0, 1] (the curve is a piecewise linear table with
+    /// intervals wider than the 1e-5 step, so this is its exact largest slope), at least 1.
+    fn largest_curve_slope(curves: &Curves) -> f32 {
+        let curve = Curve::new(&curves.master).unwrap();
+        (0..100_000)
+            .map(|i| {
+                let x = i as f32 * 1e-5;
+                (curve.eval(x + 1e-5) - curve.eval(x)) / 1e-5
+            })
+            .fold(1.0, f32::max)
+    }
+
+    /// Neighbouring outputs of the sweep never differ by more than the formula allows, and no
+    /// step is anywhere near the old jump at luma 1e-6.
+    ///
+    /// Bound: with `r = c / Y` fixed along the sweep (the colour is scaled), below T
+    /// `c' = Y'(Y) * (1 + Y * (r - 1) / T)`, so
+    /// `|dc'/dY| <= Y'_slope * max(1, r) + Y'_max * |r - 1| / T`
+    /// (the factor `1 + Y * (r - 1) / T` lies between 1 and r, r < 1 for a channel below the luma;
+    /// `Y'_slope = 1 / (W - B)` for the whites and blacks used here, `Y'_max = Y'(2T)` since the
+    /// map is monotone). Above T, `c' = r * Y'(Y)` has slope `r * Y'_slope`, which the same bound
+    /// covers. The clamp does not raise a slope. A master curve after the stage multiplies the slope
+    /// by its largest slope `S`. Each pair is allowed `S * L * dY` plus 1e-6 for the rounding of f32.
+    #[test]
+    fn the_output_has_no_jump_across_the_near_black_threshold() {
+        let recipes = [
+            ("blacks +100", 100.0, Curves::default()),
+            ("blacks -100", -100.0, Curves::default()),
+            ("blacks +100, steep curve", 100.0, steep_master()),
+        ];
+        let ys = luma_sweep();
+        for (name, blacks, curve) in recipes {
+            let tone = Tone {
+                blacks,
+                curve: curve.clone(),
+                ..Tone::default()
+            };
+            let slope = largest_curve_slope(&curve);
+            let map = ToneMap::new(&tone);
+            let y_slope = 1.0 / (map.white - map.black);
+            let y_max = map.map(2.0 * NEAR_BLACK_LUMA);
+            for colour in SATURATED {
+                // The old jump at 1e-6 for this colour, through the same curve.
+                let old_jump = {
+                    let above = old_run(with_luma(colour, 1.0e-6 * 1.0001), &tone);
+                    let below = old_run(with_luma(colour, 1.0e-6 * 0.9999), &tone);
+                    (0..3)
+                        .map(|i| (above[i] - below[i]).abs())
+                        .fold(0.0, f32::max)
+                };
+                let pixels: Vec<[f32; 3]> = ys.iter().map(|y| with_luma(colour, *y)).collect();
+                let outs: Vec<[f32; 3]> = pixels.iter().map(|p| run(*p, &tone)).collect();
+                for i in 1..ys.len() {
+                    let y_now = luma(pixels[i]);
+                    let dy = y_now - luma(pixels[i - 1]);
+                    for ch in 0..3 {
+                        let r = pixels[i][ch] / y_now.max(1e-12);
+                        let lipschitz = slope
+                            * (y_slope * r.max(1.0) + y_max * (r - 1.0).abs() / NEAR_BLACK_LUMA);
+                        let allowed = lipschitz * dy + 1e-6;
+                        let step = (outs[i][ch] - outs[i - 1][ch]).abs();
+                        assert!(
+                            step <= allowed,
+                            "{name} {colour:?} y {y_now} ch {ch}: step {step} > {allowed}"
+                        );
+                        if old_jump > 1e-3 {
+                            assert!(step < old_jump * 0.1, "{name} {colour:?}: step {step}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn at_and_above_the_threshold_the_scaling_is_bit_for_bit_the_old_one() {
+        let recipes = [
+            Tone {
+                blacks: 100.0,
+                ..Tone::default()
+            },
+            Tone {
+                blacks: -100.0,
+                whites: 40.0,
+                ..Tone::default()
+            },
+            Tone {
+                exposure_ev: 0.7,
+                contrast: 30.0,
+                shadows: 40.0,
+                highlights: -20.0,
+                ..Tone::default()
+            },
+            Tone {
+                exposure_ev: -2.0,
+                blacks: 60.0,
+                curve: steep_master(),
+                ..Tone::default()
+            },
+        ];
+        let lumas = [
+            NEAR_BLACK_LUMA,
+            NEAR_BLACK_LUMA * 1.0001,
+            3e-4,
+            1e-3,
+            0.05,
+            MID_GREY,
+            0.7,
+            1.0,
+            4.0,
+        ];
+        let mut checked = 0;
+        for tone in &recipes {
+            for colour in SATURATED {
+                for y in lumas {
+                    let pixel = with_luma(colour, y);
+                    // The scaled pixel's own luma can round just under T.
+                    if luma(pixel) < NEAR_BLACK_LUMA {
+                        continue;
+                    }
+                    assert_eq!(
+                        run(pixel, tone).map(f32::to_bits),
+                        old_run(pixel, tone).map(f32::to_bits),
+                        "{colour:?} y {y}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 100, "{checked}");
+    }
+
+    #[test]
+    fn zero_negative_and_non_finite_pixels_give_what_they_gave_before() {
+        let recipes = [
+            Tone {
+                blacks: 100.0,
+                ..Tone::default()
+            },
+            Tone {
+                blacks: -100.0,
+                ..Tone::default()
+            },
+            Tone {
+                exposure_ev: 1.0,
+                shadows: 50.0,
+                ..Tone::default()
+            },
+        ];
+        let pixels = [
+            [0.0; 3],
+            [-0.5, -1.0, -1e-9],
+            [f32::NAN, f32::NAN, f32::NAN],
+            [f32::INFINITY, 0.0, 0.0],
+            [f32::NEG_INFINITY, f32::NAN, 0.0],
+            [f32::INFINITY, f32::NEG_INFINITY, f32::NAN],
+        ];
+        for tone in &recipes {
+            for pixel in pixels {
+                assert_eq!(
+                    run(pixel, tone).map(f32::to_bits),
+                    old_run(pixel, tone).map(f32::to_bits),
+                    "{pixel:?}"
+                );
+            }
+        }
+        let mapped = ToneMap::new(&recipes[0]).map(0.0);
+        assert_eq!(run([0.0; 3], &recipes[0]), [mapped; 3]);
+    }
+
+    #[test]
+    fn below_the_threshold_the_luma_is_the_mapped_luma_and_grey_stays_grey() {
+        let tone = Tone {
+            blacks: 100.0,
+            exposure_ev: 2.0,
+            ..Tone::default()
+        };
+        let map = ToneMap::new(&tone);
+        for colour in SATURATED {
+            for y in [0.0, 1e-9, 1e-7, 1e-6, 1e-5, 5e-5, 9.9e-5] {
+                let pixel = if y == 0.0 {
+                    [0.0; 3]
+                } else {
+                    with_luma(colour, y)
+                };
+                let out = run(pixel, &tone);
+                let want = map.map(luma(pixel));
+                assert!(
+                    (luma(out) - want).abs() <= 1e-6 * want.max(1e-3),
+                    "{colour:?} y {y}: {} vs {want}",
+                    luma(out)
+                );
+            }
+        }
+        for y in [0.0, 1e-9, 1e-6, 5e-5, 9.9e-5] {
+            let out = run([y; 3], &tone);
+            assert!(
+                out.iter()
+                    .all(|c| (c - out[0]).abs() <= 1e-6 * out[0].max(1e-3)),
+                "{y}: {out:?}"
+            );
+        }
+    }
+
     proptest! {
         /// For grey input, brighter in means brighter (or equal) out, for any slider settings.
         #[test]
@@ -538,11 +827,13 @@ mod tests {
         fn the_output_is_finite_and_not_negative(
             data in proptest::collection::vec(proptest::num::f32::ANY, 3..30),
             exposure_ev in -5f32..=5.0, contrast in -100f32..=100.0, dehaze in -100f32..=100.0,
+            blacks in -100f32..=100.0, whites in -100f32..=100.0,
         ) {
             let mut data = data;
             data.truncate(data.len() / 3 * 3);
             let mut img = ImageF32::new((data.len() / 3) as u32, 1, 3, data).unwrap();
-            apply_tone(&mut img, &Tone { exposure_ev, contrast, dehaze, ..Tone::default() }).unwrap();
+            let tone = Tone { exposure_ev, contrast, dehaze, blacks, whites, ..Tone::default() };
+            apply_tone(&mut img, &tone).unwrap();
             prop_assert!(img.data.iter().all(|v| v.is_finite() && *v >= 0.0), "{:?}", img.data);
         }
     }

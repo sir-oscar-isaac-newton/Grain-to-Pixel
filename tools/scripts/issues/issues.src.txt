@@ -3473,3 +3473,30 @@ MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-23. Out of scope: new scanner features.
 
+## U-38
+title: Frame lines and a grid in the live view
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: H-14, H-18, H-20, U-36
+adr: no
+spec: specification sections 6.1 and 7 (Import)
+desc: The live view shows the camera's picture with nothing to line the film up against. Draw frame lines and a grid over it, so that each frame is placed straight and in the same position.
+ac:
+- Two separate switches beside the focus aids, Frame lines and Grid, both off at first and kept on this computer
+- Frame lines draw a rectangle centred in the picture; it uses the roll's stored frame size when there is one, and otherwise the proportions of the roll's film format
+- Its size and position can be adjusted by hand, with the mouse and the keyboard, and reset; the adjusted lines are kept per film format and orientation, so they stay put from frame to frame
+- The lines can be turned between landscape and portrait
+- The grid is thirds or a fine grid, with a centre cross; the lines stay readable on dark and bright film
+- Both stay on the picture at any window size; when the camera is zoomed in they are hidden, with a note, because the app does not know where the zoomed part lies
+- They are a drawing only: they are never in a capture, do not change the crop or frame detection, and do not get in the way of aiming the zoom, the calibration area or focus peaking
+- They appear wherever the live view is shown in the guided import
+- Tests: the line geometry per format and orientation, adjusting and reset, the stored choices, hidden when zoomed, clicks passing through; axe clean
+- [hw] A checklist for the human on the Mac: the lines match a captured frame's position
+tech:
+FILES: apps/desktop/src/features/import/capture (LiveView and a new overlay), en.json, docs/specification.md.
+ROUTES: none expected.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-24. Out of scope: rotating the picture automatically, detecting frames in the live view, other capture backends (the live view works only with gphoto on the Mac).

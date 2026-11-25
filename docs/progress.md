@@ -1190,6 +1190,15 @@
       "number": 378,
       "title": "Black-and-white editing in Develop",
       "branch": "feat/issue-378-bw-develop",
+      "status": "completed",
+      "pr": 396,
+      "commit": "ecb3205"
+    },
+    {
+      "id": "P-37",
+      "number": 379,
+      "title": "Greyscale export",
+      "branch": "feat/issue-379-greyscale-export",
       "status": "in_progress",
       "pr": null,
       "commit": null

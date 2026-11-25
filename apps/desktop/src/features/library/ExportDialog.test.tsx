@@ -175,6 +175,7 @@ describe('ExportDialog', () => {
             template: '{roll}_{index:03}',
             write_metadata: true,
             long_edge: null,
+            colour: 'auto',
           },
         },
       ]);
@@ -211,6 +212,23 @@ describe('ExportDialog', () => {
       await start(user);
       expect(state.exports[0]?.options.write_metadata).toBe(false);
       expect(state.lastExport?.options.write_metadata).toBe(false);
+    });
+
+    it('offers greyscale when untoned by default, explains toned and colour frames, and sends the choice', async () => {
+      const user = await openDialog();
+      const d = within(dialog());
+      expect(d.getByRole('group', { name: 'Black-and-white frames' })).toBeInTheDocument();
+      expect(d.getByRole('radio', { name: 'Greyscale when untoned' })).toBeChecked();
+      expect(
+        d.getByText(
+          /Toned black-and-white frames, and those with a red, green or blue curve, are written as RGB.*Colour frames are always RGB/,
+        ),
+      ).toBeInTheDocument();
+      await user.click(d.getByRole('radio', { name: 'Always RGB' }));
+      expect(d.getByRole('radio', { name: 'Always RGB' })).toBeChecked();
+      await start(user);
+      expect(state.exports[0]?.options.colour).toBe('rgb');
+      expect(state.lastExport?.options.colour).toBe('rgb');
     });
 
     it('lists the frames that could not be exported beside what was written', async () => {

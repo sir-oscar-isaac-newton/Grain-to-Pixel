@@ -76,6 +76,7 @@ mod tests {
             template: "{roll}_{index:03}".into(),
             write_metadata: true,
             long_edge: None,
+            colour: Default::default(),
         };
         let start = |ids: Vec<FrameId>, options: ExportOptions| {
             export_start(app.state(), app.state(), ids, options)

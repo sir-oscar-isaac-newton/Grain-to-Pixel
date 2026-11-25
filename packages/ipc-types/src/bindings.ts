@@ -862,6 +862,16 @@ export type Dust_Serialize = {
 /**  Stable, machine-readable error category. The UI shows `message` and logs the code. */
 export type ErrorCode = "NotFound" | "InvalidInput" | "Io" | "Db" | "UnsupportedFormat" | "ScannerUnavailable" | "ScanFailed" | "Cancelled" | "LibraryTooNew" | "Internal";
 
+/**  How black-and-white frames are written (ADR 0018). */
+export type ExportColour = 
+/**
+ *  Greyscale for an untoned black-and-white frame (one channel, a grey profile), RGB for
+ *  everything else.
+ */
+"auto" | 
+/**  Always RGB, in the chosen output space. */
+"rgb";
+
 /**  The file format of an export. */
 export type ExportFormat = 
 /**  16-bit RGB, Deflate-compressed. */
@@ -897,6 +907,12 @@ export type ExportOptions_Deserialize = {
 	 *  to 20000 pixels. Settings saved before this option existed load as none.
 	 */
 	long_edge?: number | null,
+	/**
+	 *  Whether an untoned black-and-white frame is written as greyscale. Settings saved before
+	 *  this option existed load as `auto`. The output space only applies to RGB files: a grey
+	 *  file has one profile.
+	 */
+	colour?: ExportColour,
 };
 
 /**  What to export and where. */
@@ -924,6 +940,12 @@ export type ExportOptions_Serialize = {
 	 *  to 20000 pixels. Settings saved before this option existed load as none.
 	 */
 	long_edge: number | null,
+	/**
+	 *  Whether an untoned black-and-white frame is written as greyscale. Settings saved before
+	 *  this option existed load as `auto`. The output space only applies to RGB files: a grey
+	 *  file has one profile.
+	 */
+	colour: ExportColour,
 };
 
 /**

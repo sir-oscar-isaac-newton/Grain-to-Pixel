@@ -9,6 +9,11 @@
 //!   chromatic adaptation Little CMS applies through its D50 connection space (Bradford).
 //!
 //! Out-of-gamut and out-of-range values are clipped per channel to `[0, 1]` (NaN becomes 0).
+//!
+//! A black-and-white frame can instead be written as one grey channel ([`to_grey_output`]): a
+//! grey profile with the D65 white point and the sRGB tone curve, whatever the output space is
+//! (ADR 0018). The grey value is the luminance Y of the linear Rec.2020 pixel, encoded with that
+//! curve, which is what the sRGB export of the same pixel has when its three channels are equal.
 
 use gtp_core::recipe::OutputSpace;
 use gtp_core::{AppError, ErrorCode, ImageF32};
@@ -48,6 +53,16 @@ pub struct Tiff16Output {
     pub width: u32,
     pub height: u32,
     pub space: OutputSpace,
+    pub data: Vec<u16>,
+    pub icc: Vec<u8>,
+}
+
+/// An image converted to one grey channel: 16-bit, encoded with the sRGB tone curve, plus the
+/// grey ICC profile to embed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Grey16Output {
+    pub width: u32,
+    pub height: u32,
     pub data: Vec<u16>,
     pub icc: Vec<u8>,
 }
@@ -111,6 +126,24 @@ fn output_profile(
     }
 }
 
+/// The grey profile: D65 white and the sRGB parametric tone curve (type 4: gamma 2.4,
+/// `a = 1/1.055`, `b = 0.055/1.055`, `c = 1/12.92`, `d = 0.04045`).
+fn grey_profile(context: &ThreadContext) -> Result<Profile<ThreadContext>, AppError> {
+    let curve =
+        ToneCurve::new_parametric(4, &[2.4, 1.0 / 1.055, 0.055 / 1.055, 1.0 / 12.92, 0.04045])
+            .map_err(|err| cms_error("Could not build a colour profile.", err))?;
+    let profile = Profile::new_gray_context(context, &D65, &curve)
+        .map_err(|err| cms_error("Could not build a colour profile.", err))?;
+    with_description(profile, "Grey (sRGB tone curve)")
+}
+
+/// The ICC profile embedded in greyscale files (the same whatever the output space).
+pub fn grey_icc_profile() -> Result<Vec<u8>, AppError> {
+    grey_profile(&ThreadContext::new())?
+        .icc()
+        .map_err(|err| cms_error("Could not write a colour profile.", err))
+}
+
 /// The ICC profile embedded in files exported in `space`.
 pub fn icc_profile(space: OutputSpace) -> Result<Vec<u8>, AppError> {
     output_profile(&ThreadContext::new(), space)?
@@ -163,6 +196,53 @@ pub fn to_output(image: &ImageF32, space: OutputSpace) -> Result<Tiff16Output, A
         height: image.height,
         space,
         data: out.into_flattened(),
+        icc,
+    })
+}
+
+/// Converts a linear Rec.2020 image (3 channels) to one grey channel with the sRGB tone curve.
+pub fn to_grey_output(image: &ImageF32) -> Result<Grey16Output, AppError> {
+    if image.channels != 3 {
+        return Err(AppError::new(
+            ErrorCode::InvalidInput,
+            "Only a 3-channel image can be exported.",
+        )
+        .with_details(format!("{} channels", image.channels)));
+    }
+    let context = ThreadContext::new();
+    let source = working_profile(&context)?;
+    let target = grey_profile(&context)?;
+    let icc = target
+        .icc()
+        .map_err(|err| cms_error("Could not write a colour profile.", err))?;
+    let transform: Transform<[f32; 3], u16, ThreadContext, DisallowCache> =
+        Transform::new_flags_context(
+            &context,
+            &source,
+            PixelFormat::RGB_FLT,
+            &target,
+            PixelFormat::GRAY_16,
+            Intent::RelativeColorimetric,
+            Flags::NO_CACHE,
+        )
+        .map_err(|err| cms_error("Could not build the colour transform.", err))?;
+
+    let (pixels, _) = image.data.as_chunks::<3>();
+    let mut out = vec![0u16; pixels.len()];
+    out.par_chunks_mut(CHUNK_PIXELS)
+        .zip(pixels.par_chunks(CHUNK_PIXELS))
+        .for_each(|(dst, src)| {
+            let clean: Vec<[f32; 3]> = src
+                .iter()
+                .map(|p| p.map(|v| if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) }))
+                .collect();
+            transform.transform_pixels(&clean, dst);
+        });
+
+    Ok(Grey16Output {
+        width: image.width,
+        height: image.height,
+        data: out,
         icc,
     })
 }
@@ -258,6 +338,43 @@ mod tests {
                 .unwrap_or_default();
             assert_eq!(description, name);
         }
+    }
+
+    #[test]
+    fn the_grey_profile_parses_back_as_grey_with_its_name() {
+        let icc = grey_icc_profile().unwrap();
+        let parsed = Profile::new_icc(&icc).unwrap();
+        assert_eq!(parsed.color_space(), ColorSpaceSignature::GrayData);
+        let description = parsed
+            .info(lcms2::InfoType::Description, Locale::none())
+            .unwrap_or_default();
+        assert_eq!(description, "Grey (sRGB tone curve)");
+    }
+
+    #[test]
+    fn grey_follows_the_srgb_curve_and_keeps_black_and_white() {
+        let grey = |v: f32| {
+            let img = ImageF32::new(1, 1, 3, vec![v; 3]).unwrap();
+            to_grey_output(&img).unwrap().data[0]
+        };
+        assert_eq!(grey(0.0), 0);
+        assert!(65535 - grey(1.0) <= 2);
+        let got = f64::from(grey(0.18)) / 65535.0;
+        assert!((got - 0.461_356).abs() < 0.002, "{got}");
+        let out = to_grey_output(
+            &ImageF32::new(2, 1, 3, vec![5.0, -1.0, f32::NAN, 1.0, 1.0, 1.0]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(out.data.len(), 2);
+    }
+
+    #[test]
+    fn a_non_rgb_image_is_rejected_for_grey_too() {
+        let gray = ImageF32::zeros(2, 2, 1).unwrap();
+        assert_eq!(
+            to_grey_output(&gray).unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
     }
 
     #[test]

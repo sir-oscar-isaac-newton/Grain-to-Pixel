@@ -202,6 +202,23 @@ describe('ExportDialog presets', () => {
       expect(state.exportPresets[2]?.options.long_edge).toBe(4000);
     });
 
+    it('carries the black-and-white choice in a preset', async () => {
+      const user = await openDialog();
+      await user.selectOptions(presetSelect(), 'Archive (TIFF 16-bit)');
+      const d = within(dialog());
+      expect(d.getByRole('radio', { name: 'Greyscale when untoned' })).toBeChecked();
+      await user.click(d.getByRole('radio', { name: 'Always RGB' }));
+      expect(button('Update')).toBeEnabled();
+      await user.click(button('Update'));
+      await waitFor(() => expect(button('Update')).toBeDisabled());
+      expect(state.exportPresets[0]?.options.colour).toBe('rgb');
+
+      await user.selectOptions(presetSelect(), 'Share (JPEG sRGB)');
+      expect(d.getByRole('radio', { name: 'Greyscale when untoned' })).toBeChecked();
+      await user.selectOptions(presetSelect(), 'Archive (TIFF 16-bit)');
+      expect(d.getByRole('radio', { name: 'Always RGB' })).toBeChecked();
+    });
+
     it('treats a preset without a size as full size', async () => {
       const bare = { ...ARCHIVE.options };
       delete (bare as { long_edge?: unknown }).long_edge;
@@ -310,6 +327,7 @@ describe('ExportDialog presets', () => {
           template: '{roll}_{index:03}',
           write_metadata: true,
           long_edge: null,
+          colour: 'auto',
         },
       });
       expect(within(dialog()).queryByRole('textbox', { name: 'Preset name' })).toBeNull();
@@ -360,6 +378,7 @@ describe('ExportDialog presets', () => {
       template: '{roll}_{index:03}',
       write_metadata: true,
       long_edge: 2048,
+      colour: 'auto',
     });
     expect(state.exportPresets[0]).toEqual(ARCHIVE);
     expect(presetSelect()).toHaveValue('Share (JPEG sRGB)');
@@ -402,6 +421,7 @@ describe('ExportDialog presets', () => {
         template: '{roll}_{index:03}',
         write_metadata: true,
         long_edge: 2048,
+        colour: 'auto',
       },
       preset: 'Share (JPEG sRGB)',
     });

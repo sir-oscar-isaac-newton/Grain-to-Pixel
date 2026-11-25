@@ -21,5 +21,6 @@ Architecture Decision Records (ADRs), numbered, immutable once accepted (superse
 | [0015](0015-one-colour-conversion.md) | The screen converts as the sRGB export does: each Rec.2020 channel is clipped before the matrix | Accepted |
 | [0016](0016-kept-noise-picture.md) | The detail view keeps the picture after noise reduction, so an edit to a later stage skips the decode and the first five stages | Accepted |
 | [0017](0017-black-and-white-conversion.md) | A black-and-white frame is inverted from one combined density with inverse-variance channel weights, and skips the colour stages | Accepted |
+| [0018](0018-greyscale-export.md) | An untoned black-and-white frame is exported as a one-channel grey file with an sRGB-curve grey profile | Accepted |
 
 New ADR: copy [0000-template.md](0000-template.md), take the next number, add a row above.

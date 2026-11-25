@@ -242,6 +242,7 @@ export const DEFAULT_EXPORT_PRESETS: ExportPreset[] = [
       template: '{roll}_{index:03}',
       write_metadata: true,
       long_edge: null,
+      colour: 'auto',
     },
   },
   {
@@ -254,6 +255,7 @@ export const DEFAULT_EXPORT_PRESETS: ExportPreset[] = [
       template: '{roll}_{index:03}',
       write_metadata: true,
       long_edge: 2048,
+      colour: 'auto',
     },
   },
 ];

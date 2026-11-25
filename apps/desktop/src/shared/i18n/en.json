@@ -558,6 +558,12 @@
     "template": "File name",
     "templateHint": "Fields: {roll}, {index}, {index:03}, {frame}. The extension is added.",
     "example": "Example: {{name}}",
+    "colour": "Black-and-white frames",
+    "colourChoice": {
+      "auto": "Greyscale when untoned",
+      "rgb": "Always RGB"
+    },
+    "colourHint": "Toned black-and-white frames, and those with a red, green or blue curve, are written as RGB, because these add colour. Colour frames are always RGB. A greyscale file has one grey profile, so the colour space above does not apply to it.",
     "writeMetadata": "Write metadata",
     "writeMetadataHint": "Adds the film, camera, ISO, first shooting date and notes you entered, and the app name, to the file.",
     "errors": {

@@ -3329,6 +3329,30 @@ ROUTES: the export options gain the greyscale choice. To be approved by the owne
 MIGRATIONS: none.
 NOTES: asked for by the owner on 2026-11-22.
 
+## P-38
+title: No jump in the tone stage near black
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: P-34
+adr: no
+spec: specification section 4.2 (tone)
+desc: A pixel with a luma just above 1e-6 keeps its colour in the tone stage, and one just below becomes neutral grey. With Blacks at +100 the two can differ by 62 levels on screen. Make the step gradual.
+ac:
+- The change from colour to grey near black is gradual, so neighbouring luma values give neighbouring results
+- Pixels clearly above the threshold keep their result bit for bit; the proposal sets where that begins
+- Zero, negative and non-finite pixels behave as before, shown by tests
+- The goldens are unchanged, or the difference is stated
+- The cost of the tone stage is measured before and after
+- Tests: a sweep across the threshold with Blacks at +100, at -100 and with a steep curve
+tech:
+FILES: crates/gtp-edit/src/tone.rs (LUMA_EPSILON), docs/specification.md, rules/colour-pipeline.md.
+ROUTES: none.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: found in the review of P-34 on 2026-11-25 (ADR 0022) and asked for by the owner that day. The jump is older than P-34; it was found by construction, and whether it shows in a real scan is not known. Out of scope: the rest of the tone stage.
+
 ## T-15
 title: Dependency checks pass again after a vulnerability in url
 milestone: M6

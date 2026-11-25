@@ -457,6 +457,7 @@ export const state = {
   /** The flat fields flat_field_list answers (newest first), and the message flat_field_copy refuses with. */
   flatFields: [] as FlatFieldSummary[],
   flatFieldCopyFail: null as string | null,
+  flatFieldRebuildFail: null as string | null,
   /** The id capture_calibrate answers, or the message it fails with. */
   calibrationJob: 'job-calibration-1' as string,
   calibrationFail: null as string | null,
@@ -906,6 +907,20 @@ export const ipc = {
       exposure: source?.exposure ?? { exposure_time: null, iso: null, f_number: null },
     };
   }),
+  flatFieldRebuild: vi.fn(async (id: string) => {
+    if (state.flatFieldRebuildFail) {
+      throw new IpcError({ code: 'InvalidInput', message: state.flatFieldRebuildFail });
+    }
+    if (!state.rolls.find((r) => r.id === id)?.has_flat_field) {
+      throw new IpcError({ code: 'InvalidInput', message: 'This roll has no flat field.' });
+    }
+    return {
+      frame_width: 6016,
+      frame_height: 4016,
+      sources: ['r.NEF', 'g.NEF', 'b.NEF'],
+      exposure: { exposure_time: null, iso: null, f_number: null },
+    };
+  }),
   flatFieldList: vi.fn(async () => state.flatFields),
   flatFieldClear: vi.fn(async (id: string) => {
     const had = state.rolls.find((r) => r.id === id)?.has_flat_field ?? false;
@@ -1273,6 +1288,7 @@ export function resetFake() {
   state.flatFieldFNumber = { num: 56, den: 10 };
   state.flatFields = [];
   state.flatFieldCopyFail = null;
+  state.flatFieldRebuildFail = null;
   state.calibrationJob = 'job-calibration-1';
   state.calibrationFail = null;
   listeners.step.length = 0;

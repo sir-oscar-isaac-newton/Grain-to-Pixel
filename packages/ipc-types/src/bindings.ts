@@ -56,6 +56,13 @@ export const commands = {
 	 *  it has (H-26). Refused for a read-only library, like the other flat-field commands.
 	 */
 	flatFieldCopy: (fromRollId: RollId, toRollId: RollId) => typedError<FlatFieldInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("flat_field_copy", { fromRollId, toRollId })),
+	/**
+	 *  Builds the roll's flat field again from the files it kept, with the current method (the film
+	 *  carrier left out, P-35). Refused when the roll has no flat field, when it was made from files that
+	 *  were not kept, or when a kept file is gone; nothing changes then. Refused for a read-only
+	 *  library, like the other flat-field commands.
+	 */
+	flatFieldRebuild: (id: RollId) => typedError<FlatFieldInfo_Serialize, AppError_Serialize>(__TAURI_INVOKE("flat_field_rebuild", { id })),
 	/**  Every roll that has a flat field, newest first. */
 	flatFieldList: () => typedError<FlatFieldSummary_Serialize[], AppError_Serialize>(__TAURI_INVOKE("flat_field_list")),
 	/**  Deletes a roll with its frames, then their files. */

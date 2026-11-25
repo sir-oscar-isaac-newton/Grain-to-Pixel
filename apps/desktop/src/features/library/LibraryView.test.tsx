@@ -431,6 +431,61 @@ describe('LibraryView', () => {
     });
   });
 
+  describe('the flat field rebuild', () => {
+    it('is offered only for a roll with a flat field and builds it again from its kept files', async () => {
+      const user = userEvent.setup();
+      const { winter } = openLibrary();
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      expect(screen.queryByRole('button', { name: 'Rebuild flat field' })).not.toBeInTheDocument();
+
+      state.rolls = state.rolls.map((r) =>
+        r.id === winter.id ? { ...r, has_flat_field: true, flat_field_f_number: null } : r,
+      );
+      await act(async () => {
+        await useLibraryStore.getState().reloadRolls();
+      });
+      const button = await screen.findByRole('button', { name: 'Rebuild flat field' });
+      expect(button).toHaveAttribute('title', expect.stringMatching(/again from the three files/));
+      await user.click(button);
+      await waitFor(() => expect(ipc.flatFieldRebuild).toHaveBeenCalledWith('winter'));
+      expect(await screen.findByText(/^Flat field set/)).toBeInTheDocument();
+      expect(screen.queryByText(/The flat field could not be changed/)).not.toBeInTheDocument();
+    });
+
+    it('says why when the flat field cannot be built again', async () => {
+      const user = userEvent.setup();
+      const { winter } = openLibrary();
+      state.rolls = state.rolls.map((r) =>
+        r.id === winter.id ? { ...r, has_flat_field: true, flat_field_f_number: null } : r,
+      );
+      state.flatFieldRebuildFail =
+        'This flat field was made from files that were not kept, so it cannot be built again.';
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      await user.click(await screen.findByRole('button', { name: 'Rebuild flat field' }));
+      expect(
+        await screen.findByText(
+          'The flat field could not be changed: This flat field was made from files that were not kept, so it cannot be built again.',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('is disabled in a read-only library', async () => {
+      const user = userEvent.setup();
+      const { winter } = openLibrary({ read_only: true });
+      state.rolls = state.rolls.map((r) =>
+        r.id === winter.id ? { ...r, has_flat_field: true, flat_field_f_number: null } : r,
+      );
+      render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      expect(await screen.findByRole('button', { name: 'Rebuild flat field' })).toBeDisabled();
+    });
+  });
+
   describe("using another roll's flat field", () => {
     const summary = (id: string, name: string, created_at: string, f: number | null) => ({
       roll_id: id,
@@ -845,6 +900,19 @@ describe('LibraryView', () => {
       await screen.findAllByRole('gridcell');
       await user.click(screen.getByRole('button', { name: /Summer/ }));
       await waitFor(() => expect(screen.getAllByRole('gridcell')).toHaveLength(3));
+      await expectNoA11yViolations(container);
+    });
+
+    it('has no violations with a flat field set, its rebuild button included', async () => {
+      const user = userEvent.setup();
+      const { winter } = openLibrary();
+      state.rolls = state.rolls.map((r) =>
+        r.id === winter.id ? { ...r, has_flat_field: true, flat_field_f_number: null } : r,
+      );
+      const { container } = render(<LibraryView />);
+      await screen.findAllByRole('gridcell');
+      await user.click(screen.getByRole('button', { name: /Winter/ }));
+      await screen.findByRole('button', { name: 'Rebuild flat field' });
       await expectNoA11yViolations(container);
     });
 

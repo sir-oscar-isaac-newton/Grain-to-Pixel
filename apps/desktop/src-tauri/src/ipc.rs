@@ -27,6 +27,7 @@ pub fn builder<R: tauri::Runtime>() -> Builder<R> {
             commands::roll::flat_field_import,
             commands::roll::flat_field_clear,
             commands::roll::flat_field_copy,
+            commands::roll::flat_field_rebuild,
             commands::roll::flat_field_list,
             commands::roll::roll_delete,
             commands::frame::frame_list,

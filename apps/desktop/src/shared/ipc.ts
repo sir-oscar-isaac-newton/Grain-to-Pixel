@@ -228,6 +228,11 @@ export async function flatFieldCopy(...args: Args<'flatFieldCopy'>): Promise<Fla
   return unwrap(await commands.flatFieldCopy(...args));
 }
 
+/** Builds a roll's flat field again from the files it kept, with the current method. */
+export async function flatFieldRebuild(...args: Args<'flatFieldRebuild'>): Promise<FlatFieldInfo> {
+  return unwrap(await commands.flatFieldRebuild(...args));
+}
+
 /** The rolls that have a flat field, newest first. */
 export async function flatFieldList(): Promise<FlatFieldSummary[]> {
   return unwrap(await commands.flatFieldList());

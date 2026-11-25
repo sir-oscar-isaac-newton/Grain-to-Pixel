@@ -1217,6 +1217,15 @@
       "number": 315,
       "title": "Wavelet noise reduction that keeps grain texture",
       "branch": "feat/issue-315-wavelet-noise",
+      "status": "completed",
+      "pr": 399,
+      "commit": "acb91ef"
+    },
+    {
+      "id": "P-35",
+      "number": 369,
+      "title": "Flat field that ignores the film carrier",
+      "branch": "feat/issue-369-carrier-flat-field",
       "status": "in_progress",
       "pr": null,
       "commit": null

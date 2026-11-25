@@ -24,5 +24,6 @@ Architecture Decision Records (ADRs), numbered, immutable once accepted (superse
 | [0018](0018-greyscale-export.md) | An untoned black-and-white frame is exported as a one-channel grey file with an sRGB-curve grey profile | Accepted |
 | [0019](0019-highlights-above-white.md) | Colours above white keep their hue and roll off to white by one rule shared by the screen and every export | Accepted |
 | [0020](0020-wavelet-noise-reduction.md) | Wavelet shrinkage replaces the guided filter for the luminance of the noise reduction; the colour stays guided | Accepted |
+| [0021](0021-flat-field-ignores-the-carrier.md) | The flat field leaves the film carrier out of its cell means and fills covered cells from open ones; a rebuild action applies it to old flat fields | Accepted |
 
 New ADR: copy [0000-template.md](0000-template.md), take the next number, add a row above.

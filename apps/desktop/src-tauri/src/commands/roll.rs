@@ -136,6 +136,23 @@ pub fn flat_field_copy(
     Ok(info)
 }
 
+/// Builds the roll's flat field again from the files it kept, with the current method (the film
+/// carrier left out, P-35). Refused when the roll has no flat field, when it was made from files that
+/// were not kept, or when a kept file is gone; nothing changes then. Refused for a read-only
+/// library, like the other flat-field commands.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn flat_field_rebuild(
+    ctx: State<'_, AppContext>,
+    events: State<'_, EventsState>,
+    id: RollId,
+) -> CmdResult<FlatFieldInfo> {
+    let info = flat_field::flat_field_rebuild(&*ctx.library()?, id)?;
+    after_flat_field_change(&ctx, &events, id)?;
+    tracing::info!(roll = %id, "flat field built again");
+    Ok(info)
+}
+
 /// Every roll that has a flat field, newest first.
 #[tauri::command(async)]
 #[specta::specta]
@@ -330,6 +347,11 @@ mod tests {
         assert_eq!(err.code, ErrorCode::InvalidInput);
         assert!(!flat_field_clear(app.state(), app.state(), roll.id).unwrap());
         let err = flat_field_clear(app.state(), app.state(), RollId::new()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        // A rebuild needs a flat field to build again, and a roll.
+        let err = flat_field_rebuild(app.state(), app.state(), roll.id).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        let err = flat_field_rebuild(app.state(), app.state(), RollId::new()).unwrap_err();
         assert_eq!(err.code, ErrorCode::NotFound);
     }
 }

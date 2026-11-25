@@ -1,6 +1,6 @@
 # 0010. A flat field per roll, applied when a camera frame is read
 
-- Status: Accepted (the author approved the design on 2026-11-02, issue P-21 / GitHub #194)
+- Status: Accepted (the author approved the design on 2026-11-02, issue P-21 / GitHub #194). Rule 2, how the cells are measured, is superseded by [0021](0021-flat-field-ignores-the-carrier.md); the grid, the centre and the floor stay.
 - Date: 2026-11-02
 
 ## Context
@@ -13,7 +13,7 @@ red edge cast. Frames shot with the same camera settings share it, so it can be 
 
 1. **A flat field belongs to a roll.** It is made from three bare-light exposures (red, green, blue,
    told apart by colour like any triplet) and stored in the catalog table `flat_field` (migration
-   0006), keyed by `roll_id`, deleted with the roll. A roll has none, or one: attaching replaces it.
+   0007), keyed by `roll_id`, deleted with the roll. A roll has none, or one: attaching replaces it.
 2. **It is a smoothed gain grid, not the capture.** Block means over 96 columns of cells, normalised
    to 1 at the centre (the mean of the centre 3 by 3 cells), floored at 0.05 so a dead corner cannot
    explode the gain. Dust and noise do not survive the averaging; the light does.

@@ -53,6 +53,8 @@
       "import": "Import TIFF files…",
       "setFlatField": "Set flat field…",
       "useFlatField": "Use another roll's flat field…",
+      "rebuildFlatField": "Rebuild flat field",
+      "rebuildFlatFieldTitle": "Builds the flat field again from the three files it kept, with the current method (the film carrier left out).",
       "removeFlatField": "Remove flat field",
       "flatFieldOn": "Flat field set: the roll's camera frames are corrected for uneven light.",
       "flatFieldOnAperture": "Flat field set, shot at {{aperture}}: the roll's camera frames are corrected for uneven light.",

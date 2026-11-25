@@ -4,11 +4,17 @@
 //! The path is linear Rec.2020 -> CIE XYZ (D65) -> LMS (Oklab's first matrix) -> cube root -> Lab
 //! (Oklab's second matrix). The first two matrices are multiplied into one ([`REC2020_TO_LMS`]) and
 //! so are their inverses ([`LMS_TO_REC2020`]); the tests prove both against the published matrices.
-//! The cube root is `cbrt`, which is defined for negative values and keeps the sign, so colours
-//! outside the Rec.2020 gamut (negative components) convert and come back. Nothing is clamped.
+//! The cube root is our own [`crate::cbrt`] (ADR 0022), not the platform's: it is defined for
+//! negative values and keeps the sign, so colours outside the Rec.2020 gamut (negative components)
+//! convert and come back, and it gives the same bits on every platform, so the matrix products
+//! (plain `+` and `*`) and the cube root together make `rgb_to_oklab` the same on Windows and
+//! macOS. Nothing is clamped. The other functions of this module are not yet platform-independent:
+//! `hue_deg` uses `atan2` and `oklch_to_rgb` uses `sin` and `cos` from the maths library.
 //!
 //! Oklch is Lab in polar form: lightness `L`, chroma `C = hypot(a, b)` and hue
 //! `h = atan2(b, a)` in degrees from 0 (included) to 360 (excluded).
+
+use crate::cbrt::cbrt;
 
 /// Linear Rec.2020 to CIE XYZ (D65), ITU-R BT.2020.
 pub const REC2020_TO_XYZ: [[f32; 3]; 3] = [
@@ -60,7 +66,7 @@ fn mul(m: &[[f32; 3]; 3], v: [f32; 3]) -> [f32; 3] {
 
 /// Linear Rec.2020 to Oklab `[L, a, b]`.
 pub fn rgb_to_oklab(rgb: [f32; 3]) -> [f32; 3] {
-    let lms = mul(&REC2020_TO_LMS, rgb).map(f32::cbrt);
+    let lms = mul(&REC2020_TO_LMS, rgb).map(cbrt);
     mul(&LMS_TO_LAB, lms)
 }
 
@@ -247,5 +253,33 @@ mod tests {
         let rgb = [-0.1, 0.5, 0.2];
         let back = oklab_to_rgb(rgb_to_oklab(rgb));
         assert!(back[0] < 0.0 && (back[0] - rgb[0]).abs() < 1e-5, "{back:?}");
+    }
+
+    /// Colours and the bits `rgb_to_oklab` gives them: plain `+` and `*` in a fixed order and our
+    /// own cube root, so the same bits come out on every platform (ADR 0022). The expected bits
+    /// were written down once; a change here means the conversion changed.
+    const FIXED_BITS: [([f32; 3], [u32; 3]); 8] = [
+        ([0.0, 0.0, 0.0], [0x0000_0000, 0x0000_0000, 0x0000_0000]),
+        ([1.0, 1.0, 1.0], [0x3F7F_FFEB, 0xB7B5_C000, 0xB901_3000]),
+        ([0.18, 0.18, 0.18], [0x3F10_8B00, 0xB74F_0000, 0xB891_C000]),
+        ([0.5, 0.2, 0.1], [0x3F29_CDA1, 0x3DE5_469C, 0x3DAE_2560]),
+        ([0.02, 0.3, 0.6], [0x3F1B_AE90, 0xBE33_75BA, 0xBDFD_4000]),
+        // Above 1.
+        ([1.5, 0.02, 0.3], [0x3F4E_8F1B, 0x3ED2_84E7, 0x3D33_7EA0]),
+        // Outside the gamut: a negative component.
+        ([-0.05, 0.3, 0.4], [0x3F11_3493, 0xBE8B_6445, 0xBDA2_F180]),
+        // Dark.
+        (
+            [0.001, 0.0005, 0.002],
+            [0x3DBD_6CF0, 0x3C81_A134, 0xBCA3_60EC],
+        ),
+    ];
+
+    #[test]
+    fn rgb_to_oklab_gives_fixed_bits() {
+        for (rgb, expected) in FIXED_BITS {
+            let got = rgb_to_oklab(rgb).map(f32::to_bits);
+            assert_eq!(got, expected, "{rgb:?}");
+        }
     }
 }

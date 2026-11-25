@@ -1253,6 +1253,15 @@
       "number": 405,
       "title": "No jump in the tone stage near black",
       "branch": "feat/issue-405-tone-near-black",
+      "status": "completed",
+      "pr": 407,
+      "commit": "f86f604"
+    },
+    {
+      "id": "Q-05",
+      "number": 66,
+      "title": "User documentation",
+      "branch": "docs/issue-66-user-guide",
       "status": "in_progress",
       "pr": null,
       "commit": null

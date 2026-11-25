@@ -487,7 +487,7 @@ The scan itself is hardware-bound and not budgeted, but the UI must stay respons
 - **Releases:** the steps (version, tag, draft, publish) and the dry run on a prerelease tag are in [release.md](release.md). `release.yml` builds with `createUpdaterArtifacts` (`tauri.release.conf.json`), so pull request builds need no signing key.
 - **Rollback:** previous releases stay on GitHub; the library is forward-compatible within a major version (§5.3), and migrations back up the DB so a downgrade is a restore.
 - **Environments:** dev (`pnpm dev`) and release only. No staging.
-- **User docs:** `docs/` contains install notes (SmartScreen/Gatekeeper), library backup, scanner setup (Windows driver), and known limitations.
+- **User docs:** [user-guide.md](user-guide.md) covers install (SmartScreen/Gatekeeper), library backup, scanner setup (Windows driver), camera capture setup and known limitations.
 
 ## 16. Roadmap
 

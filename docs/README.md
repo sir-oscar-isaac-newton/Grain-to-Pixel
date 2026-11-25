@@ -8,6 +8,7 @@
 - [workflow.md](workflow.md): how the AI assistant works issue by issue (the game rules).
 - [issues.md](issues.md): the audited backlog (68 issues, area-tagged IDs, AI prompts, JSON for import); [issues_upload_instructions.md](issues_upload_instructions.md): upload it to GitHub with `gh`.
 - [install.md](install.md): installing the unsigned Windows and macOS builds (SmartScreen, Gatekeeper).
+- [user-guide.md](user-guide.md): for people who use the app: install, library backup, LS-50 and camera set-up, known limitations, troubleshooting.
 - [release.md](release.md): making a release (version, tag, draft, publish), the updater signing key, and the dry run.
 - `product/`: idea one-pager ([idea.md](product/idea.md)), requirements, user flows.
 - `architecture/`: system overview, data model, pipeline diagrams.

@@ -22,5 +22,6 @@ Architecture Decision Records (ADRs), numbered, immutable once accepted (superse
 | [0016](0016-kept-noise-picture.md) | The detail view keeps the picture after noise reduction, so an edit to a later stage skips the decode and the first five stages | Accepted |
 | [0017](0017-black-and-white-conversion.md) | A black-and-white frame is inverted from one combined density with inverse-variance channel weights, and skips the colour stages | Accepted |
 | [0018](0018-greyscale-export.md) | An untoned black-and-white frame is exported as a one-channel grey file with an sRGB-curve grey profile | Accepted |
+| [0019](0019-highlights-above-white.md) | Colours above white keep their hue and roll off to white by one rule shared by the screen and every export | Accepted |
 
 New ADR: copy [0000-template.md](0000-template.md), take the next number, add a row above.

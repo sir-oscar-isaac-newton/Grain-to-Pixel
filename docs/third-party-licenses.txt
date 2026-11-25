@@ -20086,8 +20086,8 @@ Source: https://git.maxicarlos.de/maxicarlos08/gphoto2-rs
 ==============================================================================
 Licence: MIT
 Packages:
-  libsqlite3-sys 0.38.2 (crate)
-  rusqlite 0.40.2 (crate)
+  libsqlite3-sys 0.40.0 (crate)
+  rusqlite 0.43.0 (crate)
 
 Copyright (c) 2014 The rusqlite developers
 
@@ -27566,7 +27566,7 @@ SOFTWARE.
 ==============================================================================
 Licence: Apache-2.0
 Packages:
-  rusqlite_migration 2.6.0 (crate)
+  rusqlite_migration 2.9.0 (crate)
 
 Licence: Apache-2.0. This package ships no licence file.
 Authors: Clément Joly <foss@131719.xyz>

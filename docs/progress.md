@@ -1226,6 +1226,15 @@
       "number": 369,
       "title": "Flat field that ignores the film carrier",
       "branch": "feat/issue-369-carrier-flat-field",
+      "status": "completed",
+      "pr": 400,
+      "commit": "923b923"
+    },
+    {
+      "id": "T-10",
+      "number": 264,
+      "title": "Remove the SQLite advisory ignore",
+      "branch": "chore/issue-264-remove-sqlite-advisory-ignore",
       "status": "in_progress",
       "pr": null,
       "commit": null

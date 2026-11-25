@@ -1208,6 +1208,15 @@
       "number": 352,
       "title": "Bright saturated colours in the output conversion",
       "branch": "feat/issue-352-bright-colours",
+      "status": "completed",
+      "pr": 398,
+      "commit": "8b1f106"
+    },
+    {
+      "id": "P-29",
+      "number": 315,
+      "title": "Wavelet noise reduction that keeps grain texture",
+      "branch": "feat/issue-315-wavelet-noise",
       "status": "in_progress",
       "pr": null,
       "commit": null

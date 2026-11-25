@@ -1,36 +1,54 @@
-//! Noise reduction stage (docs/specification.md section 4.2, after step 4, the inversion): a guided
-//! filter (He, Sun and Tang) in Oklab, with no learned model (ADR 0013).
+//! Noise reduction stage (docs/specification.md section 4.2, after step 4, the inversion): wavelet
+//! shrinkage of the lightness and a guided filter (He, Sun and Tang) for the colour, in Oklab, with
+//! no learned model (ADR 0013 for the colour, ADR 0020 for the lightness).
 //!
 //! The positive is converted to the Oklab planes `L`, `a` and `b` (see [`crate::oklab`]).
 //!
-//! **Guided filter.** For a plane `p`, a guide `I`, a radius `r` and a regulariser `eps`, with
-//! `mean` the average over the `(2r+1)^2` window clipped at the image border (divided by the real
-//! number of pixels in the window): `a_k = (mean(I p) - mean(I) mean(p)) / (var(I) + eps)`,
-//! `b_k = mean(p) - a_k mean(I)` and `q = mean(a_k) I + mean(b_k)`. Where the guide has a variance
-//! well above `eps` (an edge) `q` follows `p`; where it is flat, `q` tends to a local mean.
-//!
-//! **Luminance.** `L' = guided(p = L, I = L, r_l, e_l)`.
+//! **Luminance** (ADR 0020). `L` is split by the undecimated a trous transform into the detail
+//! planes `d_0` to `d_4` and a coarse residual: the smoothing `c_j` is `c_(j-1)` filtered along the
+//! rows and then the columns with the B3 spline kernel `[1, 4, 6, 4, 1] / 16` whose taps are `2^j`
+//! samples apart (borders mirrored), and `d_j = c_j - c_(j+1)`. Each detail is soft-thresholded,
+//! `d'_j = sign(d_j) max(|d_j| - T_j, 0)`, with `T_j = luminance / 100 * NR_WAVELET_STRENGTH *
+//! share_j * sigma_j`, and `L' = c_5 + sum d'_j`. `sigma_j` is the median of `|d_j|` over 0.6745,
+//! measured on a fixed grid of patches of the picture being rendered. `share_j` is
+//! `NR_WAVELET_SHARES[j]`: the finest scale has a small share, so fine grain stays.
 //!
 //! **Colour.** `a' = guided(p = a, I = L', r_c, e_c)` and likewise `b'`, so the colour is only
 //! smoothed over areas where the (cleaned) lightness is flat, and a colour edge that comes with a
-//! lightness edge is kept. The guide is the unfiltered `L` when the luminance amount is 0.
+//! lightness edge is kept. The guide is the unfiltered `L` when the luminance amount is 0. For a
+//! plane `p`, a guide `I`, a radius `r` and a regulariser `eps`, with `mean` the average over the
+//! `(2r+1)^2` window clipped at the image border (divided by the real number of pixels in the
+//! window): `a_k = (mean(I p) - mean(I) mean(p)) / (var(I) + eps)`, `b_k = mean(p) - a_k mean(I)`
+//! and `q = mean(a_k) I + mean(b_k)`. Where the guide has a variance well above `eps` (an edge) `q`
+//! follows `p`; where it is flat, `q` tends to a local mean.
 //!
 //! **Scale.** `scale` is the size of the image being processed relative to the full scan (1 at
-//! export, below 1 for a preview made from a smaller proxy). Radii and noise levels are given for
-//! the full scan and scale with the image: `r = round(R * scale)`, at least 1 pixel, and
-//! `e = (amount / 100 * MAX_SIGMA * scale)^2`. A preview can only approximate the full-size
-//! result: fine grain is averaged away by the downscaling, and the smaller radii are whole pixels.
+//! export, below 1 for a preview made from a smaller proxy). The colour radius and noise level are
+//! given for the full scan and scale with the image: `r = round(R * scale)`, at least 1 pixel, and
+//! `e = (amount / 100 * MAX_SIGMA * scale)^2`. The wavelet maps its scales by physical size: at
+//! scale `s` the scale `j` covers `2^j / s` pixels of the full scan, so a preview uses the shares
+//! of the full-size scales of those sizes and fewer scales (at least one), and the coarsest
+//! physical scale stays the same. A preview can only approximate the full-size result: fine grain
+//! is averaged away by the downscaling, and the smaller radii are whole pixels.
 //!
-//! Box averages cost a constant per pixel whatever the radius: a sliding window sum along the rows,
-//! then along the columns, per band of rows (bands in parallel, with a scratch of their own, so no
-//! full-size buffer holds the row sums). Each output sample depends only on its own band, summed in
-//! a fixed order in `f64`, so the result is the same on any number of threads. The shifted planes,
-//! products, slope and offset of the guided filter are computed row by row inside the box averages,
-//! and the full-size planes are reused between the steps of a reduction (`Workspace`).
+//! **Wavelet cost.** The picture is cut into tiles of 256 x 128 pixels. A tile is copied with a
+//! border as wide as all the smoothings reach (62 pixels), taken from the picture mirrored at its
+//! edges, and every scale is computed inside it, in cache, so the picture is read about once and
+//! the result written once. The noise levels are measured first, on the same tile routine, over
+//! patches of 64 x 64 pixels on a grid of 8 x 6 over the picture. Every sample depends only on its
+//! own tile, summed in a fixed order, so the result is the same on any number of threads.
+//!
+//! **Box averages** (colour) cost a constant per pixel whatever the radius: a sliding window sum
+//! along the rows, then along the columns, per band of rows (bands in parallel, with a scratch of
+//! their own, so no full-size buffer holds the row sums). Each output sample depends only on its
+//! own band, summed in a fixed order in `f64`, so the result is the same on any number of threads.
+//! The shifted planes, products, slope and offset of the guided filter are computed row by row
+//! inside the box averages, and the full-size planes are reused between the steps of a reduction
+//! (`Workspace`).
 //!
 //! The result is converted back to linear Rec.2020 and not clamped. Both amounts at 0 return the
 //! image untouched, bit for bit. A pixel with a non-finite value is left as it is and enters the
-//! averages as 0, so it can not spread.
+//! planes as 0, so it can not spread.
 
 use gtp_core::recipe::{Noise, NOISE_AMOUNT_MAX};
 use gtp_core::{AppError, ErrorCode, ImageF32};
@@ -39,15 +57,10 @@ use rayon::prelude::*;
 use crate::oklab::{oklab_to_rgb, rgb_to_oklab};
 use crate::require_rgb;
 
-/// Radius, in pixels of the full scan, of the luminance filter. Like every edit constant it is to
-/// be tuned on real scans (issue Q-03).
-pub const NR_LUMA_RADIUS_PX: f32 = 3.0;
 /// Radius, in pixels of the full scan, of the colour filter (to be tuned on real scans).
 pub const NR_CHROMA_RADIUS_PX: f32 = 8.0;
-/// Standard deviation, in Oklab lightness, that the luminance filter treats as noise at an amount
-/// of 100 (to be tuned on real scans).
-pub const NR_LUMA_MAX_SIGMA: f32 = 0.04;
-/// The same for the colour filter, in Oklab `a` and `b` units (to be tuned on real scans).
+/// Standard deviation, in Oklab `a` and `b` units, that the colour filter treats as noise at an
+/// amount of 100 (to be tuned on real scans).
 pub const NR_CHROMA_MAX_SIGMA: f32 = 0.06;
 
 /// Samples per task when a reduction over a plane is split, a fixed size so the order of the
@@ -242,8 +255,7 @@ fn slope_row(
     }
 }
 
-/// The guided filter of each of `planes` with the same `guide`, radius and regulariser. A plane
-/// that is the guide itself (the same slice) is filtered with the cheaper self-guided form.
+/// The guided filter of each of `planes` with the same `guide`, radius and regulariser.
 ///
 /// Guide and planes are shifted by their means before the sums, which the filter does not mind
 /// (it is shift invariant) and which keeps the variance free of rounding. The shifted planes, the
@@ -277,35 +289,26 @@ fn guided_filter_in(
     let result = planes
         .iter()
         .map(|plane| {
-            let own = std::ptr::eq(plane.as_ptr(), guide.as_ptr());
-            let shift = if own { shift_guide } else { plane_mean(plane) };
-            let mut computed_p = None;
-            let mut computed_products = None;
-            if !own {
-                let mut mean_p = ws.take(count);
-                box_mean_into(&mut mean_p, width, height, r, |y, line| {
-                    for (o, v) in line.iter_mut().zip(row_of(plane, width, y)) {
-                        *o = *v - shift;
-                    }
-                });
-                let mut products = ws.take(count);
-                box_mean_into(&mut products, width, height, r, |y, line| {
-                    let pairs = row_of(guide, width, y).iter().zip(row_of(plane, width, y));
-                    for (o, (g, v)) in line.iter_mut().zip(pairs) {
-                        *o = (*g - shift_guide) * (*v - shift);
-                    }
-                });
-                computed_p = Some(mean_p);
-                computed_products = Some(products);
-            }
-            let mean_p: &[f32] = computed_p.as_deref().unwrap_or(&mean_guide);
-            let mean_products: &[f32] = computed_products.as_deref().unwrap_or(&mean_squares);
+            let shift = plane_mean(plane);
+            let mut mean_p = ws.take(count);
+            box_mean_into(&mut mean_p, width, height, r, |y, line| {
+                for (o, v) in line.iter_mut().zip(row_of(plane, width, y)) {
+                    *o = *v - shift;
+                }
+            });
+            let mut mean_products = ws.take(count);
+            box_mean_into(&mut mean_products, width, height, r, |y, line| {
+                let pairs = row_of(guide, width, y).iter().zip(row_of(plane, width, y));
+                for (o, (g, v)) in line.iter_mut().zip(pairs) {
+                    *o = (*g - shift_guide) * (*v - shift);
+                }
+            });
             let slope_of = |y: usize, line: &mut [f32]| {
                 slope_row(
                     line,
-                    row_of(mean_products, width, y),
+                    row_of(&mean_products, width, y),
                     row_of(&mean_guide, width, y),
-                    row_of(mean_p, width, y),
+                    row_of(&mean_p, width, y),
                     row_of(&mean_squares, width, y),
                     eps,
                 );
@@ -317,7 +320,11 @@ fn guided_filter_in(
             box_mean_into(&mut mean_offset, width, height, r, |y, line| {
                 slope_of(y, line);
                 let guide_row = row_of(&mean_guide, width, y);
-                for ((o, p), g) in line.iter_mut().zip(row_of(mean_p, width, y)).zip(guide_row) {
+                for ((o, p), g) in line
+                    .iter_mut()
+                    .zip(row_of(&mean_p, width, y))
+                    .zip(guide_row)
+                {
                     *o = *p - *o * *g;
                 }
             });
@@ -330,12 +337,8 @@ fn guided_filter_in(
                     *q = *q * centred + *offset + shift;
                 });
             ws.give(mean_offset);
-            if let Some(buffer) = computed_p {
-                ws.give(buffer);
-            }
-            if let Some(buffer) = computed_products {
-                ws.give(buffer);
-            }
+            ws.give(mean_p);
+            ws.give(mean_products);
             mean_slope
         })
         .collect();
@@ -363,6 +366,330 @@ pub(crate) fn guided_filter(
         r,
         eps,
     )
+}
+
+/// Number of detail scales of the luminance wavelet at full size: scale `j` (0 to 4) holds the
+/// detail between a smoothing with a kernel dilated by `2^j` and the next one, so it covers
+/// features of about `2^j` to `2^(j+1)` pixels of the full scan.
+pub const NR_WAVELET_LEVELS: usize = 5;
+/// Share of the noise level that each full-size scale removes at the full luminance amount (to be
+/// tuned in Q-11). The finest scale has a smaller share so that fine grain stays; the coarser
+/// scales, where grain looks like blotches, have the full share.
+pub const NR_WAVELET_SHARES: [f32; NR_WAVELET_LEVELS] = [0.3, 0.8, 1.0, 1.0, 1.0];
+/// Soft threshold, in units of the noise level of a scale, at the full luminance amount and a
+/// share of 1. The owner chose 0.9 after measuring 0.3, 0.6, 0.9 and 1.2: it is the lowest of the
+/// candidates that clearly reduces coarse noise at 100 on the coarse stocks while it keeps most of
+/// the fine grain (to be tuned in Q-11; see decision 0020).
+pub const NR_WAVELET_STRENGTH: f32 = 0.9;
+/// The noise level of each scale is measured on patches of this many pixels on a side (less on a
+/// smaller picture), laid out on a fixed grid so the result never depends on the number of threads.
+pub const NR_WAVELET_PATCH_PX: usize = 64;
+/// Number of measuring patches across the picture.
+pub const NR_WAVELET_PATCHES_ACROSS: usize = 8;
+/// Number of measuring patches down the picture.
+pub const NR_WAVELET_PATCHES_DOWN: usize = 6;
+/// A median of absolute values of Gaussian noise is this fraction of its standard deviation.
+const MEDIAN_OF_ABSOLUTE_GAUSS: f32 = 0.6745;
+/// Width and height, in pixels, of a tile of the wavelet; the tile and its border of the reach of
+/// the smoothings are processed in cache.
+const WAVELET_TILE_W: usize = 256;
+const WAVELET_TILE_H: usize = 128;
+
+/// The taps of the B3 spline kernel of the a trous transform, before the division by
+/// [`B3_SPLINE_NORM`]: `[1, 4, 6, 4, 1] / 16`, symmetric, applied `d` samples apart at scale `d`.
+/// Kept as integers and a divisor (not as five fractions) so the sums round exactly as the plain
+/// definition does.
+const B3_SPLINE_TAPS: [f32; 5] = [1.0, 4.0, 6.0, 4.0, 1.0];
+/// The sum of [`B3_SPLINE_TAPS`], by which a smoothing divides.
+const B3_SPLINE_NORM: f32 = 16.0;
+
+/// The index of a sample at `i` (which may lie outside `0..n`) with the line mirrored at both ends
+/// without repeating the end sample.
+fn mirrored(i: isize, n: usize) -> usize {
+    if n <= 1 {
+        return 0;
+    }
+    let period = 2 * (n as isize - 1);
+    let m = i.rem_euclid(period);
+    (if m >= n as isize { period - m } else { m }) as usize
+}
+
+/// The part of a detail that stays when it is soft-thresholded by `threshold`: the detail reduced
+/// towards 0 by that much. A threshold that is NaN or negative counts as 0 (the detail stays), so
+/// the clamp can never panic.
+fn shrunk(detail: f32, threshold: f32) -> f32 {
+    let threshold = if threshold.is_nan() {
+        0.0
+    } else {
+        threshold.max(0.0)
+    };
+    detail - detail.clamp(-threshold, threshold)
+}
+
+/// How far the smoothings of `levels` scales reach: each smoothing of dilation `d` reads `2 d`
+/// samples to each side.
+fn wavelet_reach(levels: usize) -> usize {
+    2 * ((1_usize << levels) - 1)
+}
+
+/// The first full-size scale this render's finest scale stands for, and the number of scales it
+/// uses: at render scale `s` the scale `j` covers `2^j / s` pixels of the full scan, so it takes
+/// the share of the full-size scale of that size, and the coarsest physical scale stays the same.
+fn wavelet_plan(scale: f32) -> (usize, usize) {
+    let first = (-scale.log2())
+        .round()
+        .clamp(0.0, (NR_WAVELET_LEVELS - 1) as f32) as usize;
+    (first, NR_WAVELET_LEVELS - first)
+}
+
+/// Planes of one tile of the wavelet (see [`run_tile`]); one set per task, reused between tiles.
+#[derive(Default)]
+struct TileScratch {
+    /// The smoothing of the current scale, `(w + 2 reach) x (h + 2 reach)` samples.
+    current: Vec<f32>,
+    /// The smoothing of the next scale.
+    next: Vec<f32>,
+    /// The row pass of a smoothing.
+    rows: Vec<f32>,
+    /// The shrunk details of the tile, `w x h` samples.
+    sum: Vec<f32>,
+}
+
+/// One step of the a trous transform inside a padded tile `width x height` samples: `next` is
+/// `current` smoothed along the rows and then the columns with the B3 spline kernel
+/// `[1, 4, 6, 4, 1] / 16` whose taps are `d` samples apart. `current` is valid (a true smoothing)
+/// at `margin` samples or more from the tile edge, and `next` is computed there at `margin + 2 d`
+/// or more, so no sample is read outside the tile.
+fn smooth_valid(
+    current: &[f32],
+    next: &mut [f32],
+    rows: &mut [f32],
+    (width, height): (usize, usize),
+    d: usize,
+    margin: usize,
+) {
+    let reach = 2 * d;
+    let inner = margin + reach;
+    let count = width - 2 * inner;
+    for y in margin..height - margin {
+        let line = &current[y * width..(y + 1) * width];
+        let far_left = &line[margin..margin + count];
+        let near_left = &line[margin + d..margin + d + count];
+        let centre = &line[inner..inner + count];
+        let near_right = &line[inner + d..inner + d + count];
+        let far_right = &line[inner + reach..inner + reach + count];
+        let out = &mut rows[y * width + inner..y * width + inner + count];
+        let [outer, inner_tap, middle, _, _] = B3_SPLINE_TAPS;
+        for i in 0..count {
+            out[i] = (outer * (far_left[i] + far_right[i])
+                + inner_tap * (near_left[i] + near_right[i])
+                + middle * centre[i])
+                / B3_SPLINE_NORM;
+        }
+    }
+    for y in inner..height - inner {
+        let at = |row: usize| &rows[row * width + inner..row * width + inner + count];
+        let (a, b, c, e, f) = (at(y - reach), at(y - d), at(y), at(y + d), at(y + reach));
+        let out = &mut next[y * width + inner..y * width + inner + count];
+        let [outer, inner_tap, middle, _, _] = B3_SPLINE_TAPS;
+        for i in 0..count {
+            out[i] = (outer * (a[i] + f[i]) + inner_tap * (b[i] + e[i]) + middle * c[i])
+                / B3_SPLINE_NORM;
+        }
+    }
+}
+
+/// The a trous transform of the tile of `src` (`width x height`) whose top left sample is `origin`
+/// and which is `size` samples big, with `levels` scales. The tile is first copied with
+/// [`wavelet_reach`] samples of border on every side, taken from the picture mirrored at its
+/// edges (so the smoothings agree with a mirrored border at every scale), then smoothed scale by
+/// scale. After each scale `detail(level, current, next, stride, offset)` is called with the
+/// smoothing before and after it, laid out with `stride` samples per row, the tile itself starting
+/// at `offset` samples from the top and the left. When it returns, `scratch.current` holds the
+/// coarse residual in the same layout.
+fn run_tile(
+    scratch: (&mut Vec<f32>, &mut Vec<f32>, &mut Vec<f32>),
+    src: &[f32],
+    (width, height): (usize, usize),
+    (x0, y0): (usize, usize),
+    (tile_w, tile_h): (usize, usize),
+    levels: usize,
+    mut detail: impl FnMut(usize, &[f32], &[f32], usize, usize),
+) {
+    let (current, next, rows) = scratch;
+    let reach = wavelet_reach(levels);
+    let (pw, ph) = (tile_w + 2 * reach, tile_h + 2 * reach);
+    current.resize(pw * ph, 0.0);
+    next.resize(pw * ph, 0.0);
+    rows.resize(pw * ph, 0.0);
+    let inside = x0 >= reach && x0 + tile_w + reach <= width;
+    for (py, line) in current.chunks_mut(pw).enumerate() {
+        let sy = mirrored(y0 as isize + py as isize - reach as isize, height);
+        let source = &src[sy * width..(sy + 1) * width];
+        if inside {
+            line.copy_from_slice(&source[x0 - reach..x0 - reach + pw]);
+        } else {
+            for (px, v) in line.iter_mut().enumerate() {
+                *v = source[mirrored(x0 as isize + px as isize - reach as isize, width)];
+            }
+        }
+    }
+    let mut margin = 0;
+    for level in 0..levels {
+        let d = 1_usize << level;
+        smooth_valid(current, next, rows, (pw, ph), d, margin);
+        margin += 2 * d;
+        detail(level, current, next, pw, reach);
+        std::mem::swap(current, next);
+    }
+}
+
+/// The places the noise level is measured at: patches of [`NR_WAVELET_PATCH_PX`] samples (less on
+/// a smaller picture) centred on a fixed grid of [`NR_WAVELET_PATCHES_ACROSS`] by
+/// [`NR_WAVELET_PATCHES_DOWN`] over the picture, as `(x, y, width, height)`.
+fn wavelet_patches(width: usize, height: usize) -> Vec<(usize, usize, usize, usize)> {
+    let (pw, ph) = (
+        NR_WAVELET_PATCH_PX.min(width),
+        NR_WAVELET_PATCH_PX.min(height),
+    );
+    let mut patches = Vec::new();
+    for j in 0..NR_WAVELET_PATCHES_DOWN {
+        for i in 0..NR_WAVELET_PATCHES_ACROSS {
+            let cx = (2 * i + 1) * width / (2 * NR_WAVELET_PATCHES_ACROSS);
+            let cy = (2 * j + 1) * height / (2 * NR_WAVELET_PATCHES_DOWN);
+            let x = cx.saturating_sub(pw / 2).min(width - pw);
+            let y = cy.saturating_sub(ph / 2).min(height - ph);
+            patches.push((x, y, pw, ph));
+        }
+    }
+    patches
+}
+
+/// The median of `values` over 0.6745 (the standard deviation of Gaussian noise from the median of
+/// its absolute values); 0 when there are none.
+fn sigma_from_absolute_values(mut values: Vec<f32>) -> f32 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let middle = values.len() / 2;
+    let (_, median, _) = values.select_nth_unstable_by(middle, f32::total_cmp);
+    *median / MEDIAN_OF_ABSOLUTE_GAUSS
+}
+
+/// The noise level of each of the first `levels` scales of `l`: the median of the absolute detail
+/// over the patches of [`wavelet_patches`], divided by 0.6745.
+fn wavelet_sigmas(l: &[f32], (width, height): (usize, usize), levels: usize) -> Vec<f32> {
+    let patches = wavelet_patches(width, height);
+    let per_patch: Vec<Vec<Vec<f32>>> = patches
+        .par_iter()
+        .map_init(
+            || (Vec::new(), Vec::new(), Vec::new()),
+            |(current, next, rows), &(x, y, pw, ph)| {
+                let mut found = vec![Vec::with_capacity(pw * ph); levels];
+                run_tile(
+                    (&mut *current, &mut *next, &mut *rows),
+                    l,
+                    (width, height),
+                    (x, y),
+                    (pw, ph),
+                    levels,
+                    |level, current, next, stride, offset| {
+                        for row in 0..ph {
+                            let at = (offset + row) * stride + offset;
+                            let pairs = current[at..at + pw].iter().zip(&next[at..at + pw]);
+                            found[level].extend(pairs.map(|(c, n)| (c - n).abs()));
+                        }
+                    },
+                );
+                found
+            },
+        )
+        .collect();
+    (0..levels)
+        .map(|level| {
+            let values = per_patch.iter().flat_map(|p| p[level].iter().copied());
+            sigma_from_absolute_values(values.collect())
+        })
+        .collect()
+}
+
+/// Undecimated wavelet shrinkage of the lightness plane `l` (see the module docs): `l` is replaced
+/// by the result (the old plane goes back to the workspace). `strength` is
+/// [`NR_WAVELET_STRENGTH`] (a parameter so the measurements can try other strengths).
+///
+/// The picture is cut into tiles that run in parallel (rows of tiles per task). A tile is copied
+/// with a border of the reach of all the smoothings, taken from the picture mirrored at its edges,
+/// and every scale is computed inside it, in cache; so each sample of the picture is read about
+/// once and the result written once, whatever the number of scales.
+fn wavelet_luminance_in(
+    ws: &mut Workspace,
+    l: &mut Vec<f32>,
+    (width, height): (usize, usize),
+    amount: f32,
+    scale: f32,
+    strength: f32,
+) {
+    let (first, levels) = wavelet_plan(scale);
+    let sigmas = wavelet_sigmas(l, (width, height), levels);
+    let thresholds: Vec<f32> = sigmas
+        .iter()
+        .enumerate()
+        .map(|(level, sigma)| {
+            amount / NOISE_AMOUNT_MAX * strength * NR_WAVELET_SHARES[first + level] * sigma
+        })
+        .collect();
+    let mut out = ws.take(width * height);
+    let src: &[f32] = l;
+    out.par_chunks_mut(WAVELET_TILE_H * width)
+        .enumerate()
+        .for_each_init(TileScratch::default, |scratch, (band, out_band)| {
+            let y0 = band * WAVELET_TILE_H;
+            let tile_h = out_band.len() / width;
+            for x0 in (0..width).step_by(WAVELET_TILE_W) {
+                let tile_w = WAVELET_TILE_W.min(width - x0);
+                let TileScratch {
+                    current,
+                    next,
+                    rows,
+                    sum,
+                } = scratch;
+                sum.clear();
+                sum.resize(tile_w * tile_h, 0.0);
+                run_tile(
+                    (&mut *current, &mut *next, &mut *rows),
+                    src,
+                    (width, height),
+                    (x0, y0),
+                    (tile_w, tile_h),
+                    levels,
+                    |level, current, next, stride, offset| {
+                        for row in 0..tile_h {
+                            let at = (offset + row) * stride + offset;
+                            let pairs = current[at..at + tile_w].iter().zip(&next[at..at + tile_w]);
+                            let sum_row = &mut sum[row * tile_w..(row + 1) * tile_w];
+                            for (s, (c, n)) in sum_row.iter_mut().zip(pairs) {
+                                *s += shrunk(c - n, thresholds[level]);
+                            }
+                        }
+                    },
+                );
+                // `current` holds the coarse residual of the tile.
+                let stride = tile_w + 2 * wavelet_reach(levels);
+                let offset = wavelet_reach(levels);
+                for row in 0..tile_h {
+                    let at = (offset + row) * stride + offset;
+                    let dst = &mut out_band[row * width + x0..row * width + x0 + tile_w];
+                    let parts = current[at..at + tile_w]
+                        .iter()
+                        .zip(&sum[row * tile_w..(row + 1) * tile_w]);
+                    for (o, (c, s)) in dst.iter_mut().zip(parts) {
+                        *o = c + s;
+                    }
+                }
+            }
+        });
+    std::mem::swap(l, &mut out);
+    ws.give(out);
 }
 
 /// Reduces the noise of `image` (linear Rec.2020, 3 channels) in place; see the module docs.
@@ -404,10 +731,15 @@ pub fn apply_noise_reduction(
 
     let mut workspace = Workspace::default();
     if luminance > 0.0 {
-        let r = scaled_radius(NR_LUMA_RADIUS_PX, scale);
-        let eps = regulariser(luminance, NR_LUMA_MAX_SIGMA, scale);
-        let mut out = guided_filter_in(&mut workspace, &l, &[&l], width, height, r, eps);
-        workspace.give(std::mem::replace(&mut l, out.swap_remove(0)));
+        let dims = (width, height);
+        wavelet_luminance_in(
+            &mut workspace,
+            &mut l,
+            dims,
+            luminance,
+            scale,
+            NR_WAVELET_STRENGTH,
+        );
     }
     if color > 0.0 {
         let r = scaled_radius(NR_CHROMA_RADIUS_PX, scale);
@@ -438,8 +770,21 @@ pub fn apply_noise_reduction(
 }
 
 #[cfg(test)]
+mod measure;
+#[cfg(test)]
+mod reference;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    pub(super) fn stream_for_measure(seed: u32) -> impl FnMut() -> f32 {
+        stream(seed)
+    }
+
+    pub(super) fn gauss_for_measure(next: &mut impl FnMut() -> f32, sigma: f32) -> f32 {
+        gauss(next, sigma)
+    }
 
     fn stream(seed: u32) -> impl FnMut() -> f32 {
         let mut state = seed;
@@ -647,6 +992,40 @@ mod tests {
         assert_eq!(on_one_thread(run), run());
     }
 
+    #[test]
+    fn the_tiled_wavelet_matches_the_plain_one_on_every_size_and_scale() {
+        for (n, &(width, height)) in [(1, 1), (2, 9), (7, 5), (40, 70), (300, 270)]
+            .iter()
+            .enumerate()
+        {
+            let mut next = stream(900 + n as u32);
+            let plane: Vec<f32> = (0..width * height)
+                .map(|i| 0.4 + 0.2 * ((i % width) as f32 / 9.0).sin() + gauss(&mut next, 0.03))
+                .collect();
+            for scale in [2.5, 1.0, 0.5, 0.2, 0.05] {
+                let want = reference::wavelet_reference(&plane, (width, height), 80.0, scale, 0.5);
+                let mut got = plane.clone();
+                wavelet_luminance_in(
+                    &mut Workspace::default(),
+                    &mut got,
+                    (width, height),
+                    80.0,
+                    scale,
+                    0.5,
+                );
+                let worst = got
+                    .iter()
+                    .zip(&want)
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0.0, f32::max);
+                assert!(
+                    worst < 2e-5,
+                    "{width}x{height} scale {scale}: worst {worst}"
+                );
+            }
+        }
+    }
+
     fn flat(width: u32, height: u32, rgb: [f32; 3]) -> ImageF32 {
         let data = (0..width * height).flat_map(|_| rgb).collect();
         ImageF32::new(width, height, 3, data).unwrap()
@@ -711,9 +1090,23 @@ mod tests {
         assert_eq!(bits(&image), bits(&before));
     }
 
+    /// A grey patch, 256 x 192, with grain on the three channels: white noise plus the same
+    /// smoothed through two and through three scales of the a trous cascade (about 4 and 8 pixel
+    /// blotches), each of the three with a deviation of `sigma`. Seeded.
+    fn grain_patch(sigma: f32) -> ImageF32 {
+        let (width, height) = (256_usize, 192_usize);
+        let noise = reference::grain(width, height, 33, sigma, &[2, 3]);
+        let data = noise.iter().flat_map(|n| [0.3 + n; 3]).collect();
+        ImageF32::new(width as u32, height as u32, 3, data).unwrap()
+    }
+
+    fn lightness_of(image: &ImageF32) -> Vec<f32> {
+        planes(image)[0].clone()
+    }
+
     #[test]
-    fn luminance_noise_drops_with_the_amount() {
-        let patch = luma_noise_patch(0.02);
+    fn luminance_grain_drops_with_the_amount() {
+        let patch = grain_patch(0.01);
         let spread = |image: &ImageF32| mean_and_deviation(&planes(image)[0]).1;
         let before = spread(&patch);
         let at = |amount: f32| {
@@ -722,10 +1115,107 @@ mod tests {
             spread(&image)
         };
         let (weak, strong) = (at(30.0), at(100.0));
-        eprintln!("luma noise: {before} -> {weak} at 30, {strong} at 100");
-        assert!(strong * 5.0 < before, "{strong} against {before}");
-        assert!(weak < before * 0.8, "{weak} against {before}");
+        eprintln!("luma grain: {before} -> {weak} at 30, {strong} at 100");
         assert!(strong < weak, "monotonic: {strong} against {weak}");
+        assert!(weak < before, "{weak} against {before}");
+        // Measured: 0.01316 -> 0.01134 at 30, 0.00796 at 100 (the deviation of the lightness).
+        assert!(strong < before * 0.75, "{strong} against {before}");
+    }
+
+    #[test]
+    fn grain_at_the_finest_scale_stays_while_the_coarse_scales_drop() {
+        // The measure of decision 0020: the fraction of the energy of the finest a trous scale of
+        // the lightness that is left, against the fraction left in the scales 2 to 4.
+        let patch = grain_patch(0.01);
+        let (width, height) = (patch.width as usize, patch.height as usize);
+        let before = reference::energies(&lightness_of(&patch), width, height);
+        let mut image = patch.clone();
+        apply_noise_reduction(&mut image, &noise(100.0, 0.0), 1.0).unwrap();
+        let after = reference::energies(&lightness_of(&image), width, height);
+        let fine = after[0] / before[0];
+        let coarse = reference::coarse(&after) / reference::coarse(&before);
+        // The guided filter of P-27 at its strongest, on the same patch.
+        let l = lightness_of(&patch);
+        let sigma = NR_LUMA_MAX_SIGMA;
+        let guided = guided_filter(&l, &[&l], width, height, 3, sigma * sigma).swap_remove(0);
+        let guided_after = reference::energies(&guided, width, height);
+        let guided_fine = guided_after[0] / before[0];
+        let guided_coarse = reference::coarse(&guided_after) / reference::coarse(&before);
+        eprintln!(
+            "wavelet at 100: fine kept {fine}, coarse kept {coarse}; guided at 100: fine kept {guided_fine}, coarse kept {guided_coarse}"
+        );
+        // Measured at strength 0.9: wavelet 0.60 and 0.17; guided 0.005 and 0.56.
+        assert!(fine > 0.45, "fine energy kept {fine}");
+        assert!(coarse < 0.3, "coarse energy kept {coarse}");
+        assert!(
+            fine > 0.3 + guided_fine,
+            "wavelet {fine} against guided {guided_fine}"
+        );
+        assert!(
+            coarse < guided_coarse + 0.1,
+            "coarse {coarse} against guided {guided_coarse}"
+        );
+    }
+
+    #[test]
+    fn a_step_edge_stays_in_place_and_sharp_at_the_full_luminance_amount() {
+        let (width, height, edge) = (192_usize, 96_usize, 96_usize);
+        let mut image = flat(width as u32, height as u32, [0.0; 3]);
+        let grain = reference::grain(width, height, 34, 0.008, &[2, 3]);
+        for (i, pixel) in image.data.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+            let level = if i % width >= edge { 0.5 } else { 0.1 };
+            *pixel = [level + grain[i]; 3];
+        }
+        let before = lightness_of(&image);
+        apply_noise_reduction(&mut image, &noise(100.0, 0.0), 1.0).unwrap();
+        let after = lightness_of(&image);
+        let profile = |plane: &[f32]| -> Vec<f32> {
+            (0..width)
+                .map(|x| (0..height).map(|y| plane[y * width + x]).sum::<f32>() / height as f32)
+                .collect()
+        };
+        let (p_before, p_after) = (profile(&before), profile(&after));
+        // The mean profile of the rows is the same away from the edge (worst change measured
+        // 0.0167 at strength 0.9), and the step is as sharp: the jump between the two pixels at
+        // the edge keeps at least 85 percent of its size (measured 0.330 to 0.302, 91 percent).
+        let worst = (0..width)
+            .filter(|x| x + 4 <= edge || *x >= edge + 4)
+            .map(|x| (p_before[x] - p_after[x]).abs())
+            .fold(0.0, f32::max);
+        let jump = |p: &[f32]| p[edge] - p[edge - 1];
+        eprintln!(
+            "edge: worst change {worst}, jump {} -> {}",
+            jump(&p_before),
+            jump(&p_after)
+        );
+        assert!(worst < 0.025, "worst change of the profile {worst}");
+        assert!(
+            jump(&p_after) > 0.85 * jump(&p_before),
+            "the edge got softer"
+        );
+    }
+
+    #[test]
+    fn the_wavelet_is_the_same_on_one_thread_as_on_many_across_tiles() {
+        // 600 x 300: three tiles across and three down, the last ones cut short.
+        let (width, height) = (600_usize, 300_usize);
+        let mut next = stream(70);
+        let plane: Vec<f32> = (0..width * height)
+            .map(|i| 0.4 + 0.3 * ((i % width) as f32 / 40.0).sin() + gauss(&mut next, 0.03))
+            .collect();
+        let run = || {
+            let mut out = plane.clone();
+            wavelet_luminance_in(
+                &mut Workspace::default(),
+                &mut out,
+                (width, height),
+                90.0,
+                1.0,
+                NR_WAVELET_STRENGTH,
+            );
+            out
+        };
+        assert_eq!(on_one_thread(run), pool(5).install(run));
     }
 
     #[test]
@@ -874,6 +1364,103 @@ mod tests {
     }
 
     #[test]
+    fn a_preview_at_quarter_size_agrees_with_the_full_size_result() {
+        let full = picture(192, 0.02, 41);
+        let mut full_result = full.clone();
+        apply_noise_reduction(&mut full_result, &noise(60.0, 60.0), 1.0).unwrap();
+        let reference = halved(&halved(&full_result));
+        let mut small = halved(&halved(&full));
+        let untouched = small.clone();
+        apply_noise_reduction(&mut small, &noise(60.0, 60.0), 0.25).unwrap();
+        let error = mean_difference(&reference, &small);
+        let change = mean_difference(&reference, &untouched);
+        eprintln!("quarter: mean difference {error}, the filter changes the picture by {change}");
+        assert!(error < 0.004, "mean difference {error}");
+    }
+
+    #[test]
+    fn the_shrinkage_of_a_nan_or_negative_threshold_keeps_the_detail() {
+        assert_eq!(shrunk(0.5, f32::NAN), 0.5);
+        assert_eq!(shrunk(-0.5, f32::NAN), -0.5);
+        assert_eq!(shrunk(0.5, -1.0), 0.5);
+        assert!(shrunk(f32::NAN, 0.1).is_nan());
+        assert_eq!(shrunk(0.5, f32::INFINITY), 0.0);
+        assert_eq!(shrunk(0.5, 0.2), 0.5 - 0.2);
+        assert_eq!(shrunk(-0.5, 0.2), -0.5 + 0.2);
+        assert_eq!(shrunk(0.1, 0.2), 0.0);
+    }
+
+    #[test]
+    fn a_pixel_near_the_largest_float_does_not_panic() {
+        let mut image = picture(64, 0.02, 52);
+        image.data[100 * 3] = f32::MAX / 2.0;
+        image.data[100 * 3 + 1] = f32::MAX / 2.0;
+        image.data[100 * 3 + 2] = f32::MAX / 2.0;
+        apply_noise_reduction(&mut image, &noise(100.0, 100.0), 1.0).unwrap();
+    }
+
+    #[test]
+    fn a_flat_image_comes_back_unchanged_at_the_full_luminance_amount() {
+        let image = flat(70, 50, [0.2, 0.35, 0.5]);
+        let mut result = image.clone();
+        apply_noise_reduction(&mut result, &noise(100.0, 0.0), 1.0).unwrap();
+        let worst = result
+            .data
+            .iter()
+            .zip(&image.data)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f32::max);
+        assert!(worst < 1e-5, "worst change {worst}");
+    }
+
+    #[test]
+    fn with_every_threshold_at_zero_the_wavelet_returns_the_plane() {
+        // A strength of 0 makes every threshold 0, so the scales and the residual add up to the
+        // plane again, up to rounding.
+        let (width, height) = (200_usize, 150_usize);
+        let mut next = stream(808);
+        let l: Vec<f32> = (0..width * height)
+            .map(|_| 0.4 + gauss(&mut next, 0.03))
+            .collect();
+        for scale in [1.0, 0.5, 0.2] {
+            let mut got = l.clone();
+            wavelet_luminance_in(
+                &mut Workspace::default(),
+                &mut got,
+                (width, height),
+                100.0,
+                scale,
+                0.0,
+            );
+            let worst = got
+                .iter()
+                .zip(&l)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0, f32::max);
+            assert!(worst < 1e-6, "scale {scale}: worst {worst}");
+        }
+    }
+
+    #[test]
+    fn tiny_images_go_through_the_whole_stage_with_finite_results() {
+        for (n, &(width, height)) in [(1_u32, 1_u32), (2, 9), (7, 5)].iter().enumerate() {
+            let mut next = stream(700 + n as u32);
+            let data = (0..width * height * 3)
+                .map(|_| 0.3 + gauss(&mut next, 0.05))
+                .collect();
+            let image = ImageF32::new(width, height, 3, data).unwrap();
+            for scale in [1.0, 0.2] {
+                let mut result = image.clone();
+                apply_noise_reduction(&mut result, &noise(100.0, 100.0), scale).unwrap();
+                assert!(
+                    result.data.iter().all(|v| v.is_finite()),
+                    "{width}x{height} at scale {scale}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn non_finite_pixels_are_kept_and_do_not_spread() {
         let width = 64_usize;
         let mut image = picture(64, 0.02, 51);
@@ -920,15 +1507,13 @@ mod tests {
 
     #[test]
     fn radii_are_whole_pixels_and_at_least_one() {
-        assert_eq!(scaled_radius(NR_LUMA_RADIUS_PX, 1.0), 3);
         assert_eq!(scaled_radius(NR_CHROMA_RADIUS_PX, 1.0), 8);
-        assert_eq!(scaled_radius(NR_LUMA_RADIUS_PX, 0.5), 2);
         assert_eq!(scaled_radius(NR_CHROMA_RADIUS_PX, 0.5), 4);
-        assert_eq!(scaled_radius(NR_LUMA_RADIUS_PX, 0.01), 1);
+        assert_eq!(scaled_radius(NR_CHROMA_RADIUS_PX, 0.01), 1);
     }
 
-    /// Cost of the stage on a 6000 x 4000 image; run with
-    /// `cargo test -p gtp-edit --release -- --ignored noise_timing --nocapture`.
+    /// Cost of the stage on a 6000 x 4000 image, with both amounts at 50 and with each alone; run
+    /// with `cargo test -p gtp-edit --release -- --ignored noise_timing --nocapture`.
     #[test]
     #[ignore = "timing only"]
     fn noise_timing_on_a_6000_by_4000_image() {
@@ -937,14 +1522,23 @@ mod tests {
         for c in image.data.iter_mut() {
             *c = 0.3 + gauss(&mut next, 0.02);
         }
-        let start = std::time::Instant::now();
-        apply_noise_reduction(&mut image, &noise(50.0, 50.0), 1.0).unwrap();
-        eprintln!(
-            "noise reduction of 6000 x 4000: {:?} on {} threads",
-            start.elapsed(),
-            rayon::current_num_threads()
-        );
+        for (luminance, color) in [(50.0, 50.0), (50.0, 0.0), (0.0, 50.0)] {
+            let mut work = image.clone();
+            let start = std::time::Instant::now();
+            apply_noise_reduction(&mut work, &noise(luminance, color), 1.0).unwrap();
+            eprintln!(
+                "noise reduction of 6000 x 4000, luminance {luminance} colour {color}: {:?} on {} \
+                 threads",
+                start.elapsed(),
+                rayon::current_num_threads()
+            );
+        }
     }
+
+    /// The constants of the guided luminance filter of P-27, which the frozen copies below still
+    /// use (the live code has the wavelet for luminance since P-29).
+    const NR_LUMA_RADIUS_PX: f32 = 3.0;
+    const NR_LUMA_MAX_SIGMA: f32 = 0.04;
 
     // ---- Frozen copies of the code before P-31 phase 2 (a full-size buffer per step). The new code
     // ---- must give the same bits as these.
@@ -1307,14 +1901,10 @@ mod tests {
     }
 
     #[test]
-    fn noise_reduction_has_the_same_bits_as_before_p31() {
-        let amounts = [
-            (50.0, 0.0),
-            (0.0, 50.0),
-            (70.0, 40.0),
-            (100.0, 100.0),
-            (0.0, 0.0),
-        ];
+    fn colour_noise_reduction_has_the_same_bits_as_before_p31() {
+        // Only amounts with the luminance at 0: the luminance has the wavelet since P-29, the
+        // colour is still the guided filter of before.
+        let amounts = [(0.0, 50.0), (0.0, 100.0), (0.0, 0.0)];
         for threads in [1, 6] {
             pool(threads).install(|| {
                 for (n, &(width, height)) in [(1, 1), (7, 5), (40, 70), (97, 67)].iter().enumerate()

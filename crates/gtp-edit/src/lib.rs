@@ -51,8 +51,9 @@ pub use mixer::{
     apply_mixer, MIXER_BAND_HUES, MIXER_CHROMA_KNEE, MIXER_HUE_MAX_DEG, MIXER_LIGHTNESS_MAX_EV,
 };
 pub use noise::{
-    apply_noise_reduction, NR_CHROMA_MAX_SIGMA, NR_CHROMA_RADIUS_PX, NR_LUMA_MAX_SIGMA,
-    NR_LUMA_RADIUS_PX,
+    apply_noise_reduction, NR_CHROMA_MAX_SIGMA, NR_CHROMA_RADIUS_PX, NR_WAVELET_LEVELS,
+    NR_WAVELET_PATCHES_ACROSS, NR_WAVELET_PATCHES_DOWN, NR_WAVELET_PATCH_PX, NR_WAVELET_SHARES,
+    NR_WAVELET_STRENGTH,
 };
 pub use oklab::{
     hue_deg, oklab_to_rgb, oklch_to_rgb, rgb_to_oklab, rgb_to_oklch, FULL_TURN_DEG, LAB_TO_LMS,

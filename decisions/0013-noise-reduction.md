@@ -1,6 +1,6 @@
 # 0013. Noise reduction is a guided filter in Oklab, between the inversion and the colour stage
 
-- Status: Accepted (the owner approved the design, issue P-27 / GitHub #304)
+- Status: Accepted; luminance method superseded by 0020 (the owner approved the design, issue P-27 / GitHub #304)
 - Date: 2026-11-11
 
 ## Context

@@ -2026,31 +2026,44 @@ export type Mono_Serialize = {
 };
 
 /**
- *  Noise reduction: a guided filter in Oklab on the positive, before the colour stage
- *  (docs/specification.md section 4.2, ADR 0013). Both amounts run from 0 to 100 and 0 changes
- *  nothing. A recipe saved before it existed loads with zeros.
+ *  Noise reduction in Oklab on the positive, before the colour stage: wavelet shrinkage of the
+ *  lightness and a guided filter of the colour (docs/specification.md section 4.2, ADR 0013 and
+ *  ADR 0020). Both amounts run from 0 to 100 and 0 changes nothing. A recipe saved before it
+ *  existed loads with zeros.
  */
 export type Noise = Noise_Serialize | Noise_Deserialize;
 
 /**
- *  Noise reduction: a guided filter in Oklab on the positive, before the colour stage
- *  (docs/specification.md section 4.2, ADR 0013). Both amounts run from 0 to 100 and 0 changes
- *  nothing. A recipe saved before it existed loads with zeros.
+ *  Noise reduction in Oklab on the positive, before the colour stage: wavelet shrinkage of the
+ *  lightness and a guided filter of the colour (docs/specification.md section 4.2, ADR 0013 and
+ *  ADR 0020). Both amounts run from 0 to 100 and 0 changes nothing. A recipe saved before it
+ *  existed loads with zeros.
  */
 export type Noise_Deserialize = {
-	/**  0 to 100: how strongly the lightness is smoothed where it is flat; edges are kept. */
+	/**
+	 *  0 to 100: how much of the coarser noise of the lightness is removed; most of the finest
+	 *  grain and the edges are kept. At 100 the wavelet threshold is `NR_WAVELET_STRENGTH` (0.9)
+	 *  times the noise level of each scale, and the luminance step costs about 90 ms at 24 MP on
+	 *  6 threads (ADR 0020).
+	 */
 	luminance?: number | null,
 	/**  0 to 100: how strongly the colour (the chroma channels) is smoothed, guided by the lightness. */
 	color?: number | null,
 };
 
 /**
- *  Noise reduction: a guided filter in Oklab on the positive, before the colour stage
- *  (docs/specification.md section 4.2, ADR 0013). Both amounts run from 0 to 100 and 0 changes
- *  nothing. A recipe saved before it existed loads with zeros.
+ *  Noise reduction in Oklab on the positive, before the colour stage: wavelet shrinkage of the
+ *  lightness and a guided filter of the colour (docs/specification.md section 4.2, ADR 0013 and
+ *  ADR 0020). Both amounts run from 0 to 100 and 0 changes nothing. A recipe saved before it
+ *  existed loads with zeros.
  */
 export type Noise_Serialize = {
-	/**  0 to 100: how strongly the lightness is smoothed where it is flat; edges are kept. */
+	/**
+	 *  0 to 100: how much of the coarser noise of the lightness is removed; most of the finest
+	 *  grain and the edges are kept. At 100 the wavelet threshold is `NR_WAVELET_STRENGTH` (0.9)
+	 *  times the noise level of each scale, and the luminance step costs about 90 ms at 24 MP on
+	 *  6 threads (ADR 0020).
+	 */
 	luminance: number | null,
 	/**  0 to 100: how strongly the colour (the chroma channels) is smoothed, guided by the lightness. */
 	color: number | null,

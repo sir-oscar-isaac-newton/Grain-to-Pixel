@@ -1262,6 +1262,15 @@
       "number": 66,
       "title": "User documentation",
       "branch": "docs/issue-66-user-guide",
+      "status": "completed",
+      "pr": 408,
+      "commit": "c2dbeb1"
+    },
+    {
+      "id": "U-38",
+      "number": 401,
+      "title": "Frame lines and a grid in the live view",
+      "branch": "feat/issue-401-live-view-guides",
       "status": "in_progress",
       "pr": null,
       "commit": null

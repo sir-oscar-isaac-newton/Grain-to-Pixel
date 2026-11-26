@@ -360,3 +360,17 @@ The Import guide splits camera capture into Set up, Focus and framing, Flat fiel
 - [ ] Back, Next, the step bar and Alt with the arrows are off while a frame, a calibration or the flat field is being captured.
 - [ ] Finish opens the roll in the Library.
 - [ ] The light is off after leaving each step, and after leaving Import (check the LED and the supply).
+
+## Frame lines and grid (U-38)
+
+The live view can draw frame lines and a grid over the camera's picture, so each frame is placed straight and in the same position. They are a drawing in the app only: they are never in a capture and do not change the crop or the frame detection. The frame lines are a rectangle centred in the picture, at the roll's stored frame size or else the proportions of its film format (the largest rectangle that fits in 90 % of the picture), and can be turned to portrait, moved and resized by hand (mouse or keyboard), and reset; adjusted lines are kept per film format and orientation. The grid is thirds or a fine grid, both with a centre cross. The choices are kept in `settings.json` on this computer. When the camera is zoomed in both are hidden, with a note, because the app does not know where the zoomed part lies.
+
+**Hardware checklist for U-38** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
+
+- [ ] [hw] Start live view, switch on Frame lines and line a film frame up with them.
+- [ ] [hw] Capture the frame and check the captured frame sits where the lines were, in landscape.
+- [ ] [hw] Turn the lines to portrait, line up a frame turned a quarter turn, capture, and check the captured frame sits where the lines were.
+- [ ] [hw] Adjust the lines (drag inside, drag a corner, arrow keys and Shift with the arrows), leave and reopen live view: the adjusted lines are still there; Reset returns them to the default.
+- [ ] [hw] Switch on the Grid in both kinds on dark film and on bright film (or a bare light): the lines and the centre cross stay readable.
+- [ ] [hw] Zoom in on the camera: the lines and the grid are hidden with a note, and come back at the whole frame.
+- [ ] [hw] Peaking, aiming the zoom and drawing the calibration area still work with the lines and grid on (and while not in adjust mode).

@@ -1483,6 +1483,20 @@ export type Geometry_Serialize = {
 	flip_v: boolean,
 };
 
+/**
+ *  The grid of the live view's guides (U-38): none, thirds, or a fine grid. Both kinds also draw a
+ *  centre cross.
+ */
+export type GuideGrid = "off" | "thirds" | "fine";
+
+/**  A rectangle on the live view's picture, as fractions of the picture (`x`, `y` the top left). */
+export type GuideRect = {
+	x: number | null,
+	y: number | null,
+	w: number | null,
+	h: number | null,
+};
+
 /**  256-bin histograms of the display values, one list of 256 counts per channel. */
 export type HistogramData = {
 	red: number[],
@@ -1947,6 +1961,40 @@ export type LightStatus_Serialize = {
 	temp_c: number | null,
 	vbus_mv: number | null,
 	tripped: boolean,
+};
+
+/**
+ *  The frame lines and grid drawn over the camera's live view (U-38). A drawing only: nothing here
+ *  reaches a capture. Kept on this computer.
+ */
+export type LiveViewGuides = LiveViewGuides_Serialize | LiveViewGuides_Deserialize;
+
+/**
+ *  The frame lines and grid drawn over the camera's live view (U-38). A drawing only: nothing here
+ *  reaches a capture. Kept on this computer.
+ */
+export type LiveViewGuides_Deserialize = {
+	frame_lines?: boolean,
+	grid?: GuideGrid,
+	/**
+	 *  The frame lines the user moved or resized, keyed `<format>-<landscape|portrait>` (for
+	 *  example `35mm-portrait`). A key that is not here uses the default lines.
+	 */
+	adjusted?: { [key in string]: GuideRect },
+};
+
+/**
+ *  The frame lines and grid drawn over the camera's live view (U-38). A drawing only: nothing here
+ *  reaches a capture. Kept on this computer.
+ */
+export type LiveViewGuides_Serialize = {
+	frame_lines: boolean,
+	grid: GuideGrid,
+	/**
+	 *  The frame lines the user moved or resized, keyed `<format>-<landscape|portrait>` (for
+	 *  example `35mm-portrait`). A key that is not here uses the default lines.
+	 */
+	adjusted: { [key in string]: GuideRect },
 };
 
 /**  What the automatic conversion starts from. */
@@ -2451,6 +2499,8 @@ export type SettingsPatch_Deserialize = {
 	develop_presets?: DevelopPreset_Deserialize[] | null,
 	/**  Sets, replaces or removes one roll's guided import entry (the step id is checked). */
 	import_guide_entry?: ImportGuideEntryPatch_Deserialize | null,
+	/**  Replaces the live view's frame lines and grid choices (U-38; the adjusted lines are checked). */
+	live_view_guides?: LiveViewGuides_Deserialize | null,
 };
 
 /**  Settings to change; fields left out keep their value. The last library is set by opening one. */
@@ -2480,6 +2530,8 @@ export type SettingsPatch_Serialize = {
 	develop_presets: DevelopPreset_Serialize[] | null,
 	/**  Sets, replaces or removes one roll's guided import entry (the step id is checked). */
 	import_guide_entry: ImportGuideEntryPatch_Serialize | null,
+	/**  Replaces the live view's frame lines and grid choices (U-38; the adjusted lines are checked). */
+	live_view_guides: LiveViewGuides_Serialize | null,
 };
 
 export type Settings_Deserialize = {
@@ -2519,6 +2571,8 @@ export type Settings_Deserialize = {
 	 *  is done is never stored. Deleting a roll removes its entry.
 	 */
 	import_guide?: { [key in string]: ImportGuideEntry },
+	/**  The frame lines and grid of the camera's live view (U-38). */
+	live_view_guides?: LiveViewGuides_Deserialize,
 };
 
 export type Settings_Serialize = {
@@ -2558,6 +2612,8 @@ export type Settings_Serialize = {
 	 *  is done is never stored. Deleting a roll removes its entry.
 	 */
 	import_guide: { [key in string]: ImportGuideEntry },
+	/**  The frame lines and grid of the camera's live view (U-38). */
+	live_view_guides: LiveViewGuides_Serialize,
 };
 
 /**

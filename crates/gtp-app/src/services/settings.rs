@@ -10,7 +10,7 @@ use std::sync::{Mutex, PoisonError};
 
 use gtp_capture::{CaptureProfile, CaptureProfilePatch};
 use gtp_core::recipe::OutputSpace;
-use gtp_core::{AppError, ErrorCode, ExposureInfo, Look, Recipe, RecipeField, RollId};
+use gtp_core::{AppError, ErrorCode, ExposureInfo, FilmFormat, Look, Recipe, RecipeField, RollId};
 use serde::{Deserialize, Serialize};
 
 use super::capture_levels::{LevelsScope, SavedLevels};
@@ -176,6 +176,76 @@ fn check_step(entry: &ImportGuideEntry) -> Result<(), AppError> {
     }
 }
 
+/// The grid of the live view's guides (U-38): none, thirds, or a fine grid. Both kinds also draw a
+/// centre cross.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "lowercase")]
+pub enum GuideGrid {
+    #[default]
+    Off,
+    Thirds,
+    Fine,
+}
+
+/// A rectangle on the live view's picture, as fractions of the picture (`x`, `y` the top left).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct GuideRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+/// The frame lines and grid drawn over the camera's live view (U-38). A drawing only: nothing here
+/// reaches a capture. Kept on this computer.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct LiveViewGuides {
+    pub frame_lines: bool,
+    pub grid: GuideGrid,
+    /// The frame lines the user moved or resized, keyed `<format>-<landscape|portrait>` (for
+    /// example `35mm-portrait`). A key that is not here uses the default lines.
+    pub adjusted: BTreeMap<String, GuideRect>,
+}
+
+/// Smallest side of an adjusted rectangle, as a fraction of the picture.
+const MIN_GUIDE_SIDE: f32 = 0.02;
+
+/// The key is `<film format>-<landscape|portrait>`, each rectangle finite, at least
+/// [`MIN_GUIDE_SIDE`] on each side and inside the picture.
+fn check_guides(guides: &LiveViewGuides) -> Result<(), AppError> {
+    let invalid = |message: &str, details: String| {
+        AppError::new(ErrorCode::InvalidInput, message).with_details(details)
+    };
+    for (key, rect) in &guides.adjusted {
+        let key_ok = key.split_once('-').is_some_and(|(format, orientation)| {
+            FilmFormat::parse(format).is_some() && matches!(orientation, "landscape" | "portrait")
+        });
+        if !key_ok {
+            return Err(invalid("That frame lines name is not valid.", key.clone()));
+        }
+        let finite = [rect.x, rect.y, rect.w, rect.h]
+            .iter()
+            .all(|v| v.is_finite());
+        let inside = rect.x >= 0.0
+            && rect.y >= 0.0
+            && rect.w >= MIN_GUIDE_SIDE
+            && rect.h >= MIN_GUIDE_SIDE
+            && rect.x + rect.w <= 1.0 + 1e-4
+            && rect.y + rect.h <= 1.0 + 1e-4;
+        if !(finite && inside) {
+            return Err(invalid(
+                "The frame lines must lie inside the picture.",
+                format!("{key}: {rect:?}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
@@ -222,6 +292,8 @@ pub struct Settings {
     /// per computer, since a capture set-up belongs to the computer that has the rig. Whether a step
     /// is done is never stored. Deleting a roll removes its entry.
     pub import_guide: BTreeMap<String, ImportGuideEntry>,
+    /// The frame lines and grid of the camera's live view (U-38).
+    pub live_view_guides: LiveViewGuides,
 }
 
 /// Reads the list of presets entry by entry, so one that cannot be read does not make the whole
@@ -258,6 +330,7 @@ impl Default for Settings {
             last_export: None,
             develop_presets: Vec::new(),
             import_guide: BTreeMap::new(),
+            live_view_guides: LiveViewGuides::default(),
         }
     }
 }
@@ -320,6 +393,8 @@ pub struct SettingsPatch {
     pub develop_presets: Option<Vec<DevelopPreset>>,
     /// Sets, replaces or removes one roll's guided import entry (the step id is checked).
     pub import_guide_entry: Option<ImportGuideEntryPatch>,
+    /// Replaces the live view's frame lines and grid choices (U-38; the adjusted lines are checked).
+    pub live_view_guides: Option<LiveViewGuides>,
 }
 
 /// Refuses a JPEG quality outside 1 to 100 and a long edge outside [`LONG_EDGE`].
@@ -543,6 +618,10 @@ impl Settings {
                     self.import_guide.remove(&key);
                 }
             }
+        }
+        if let Some(guides) = &patch.live_view_guides {
+            check_guides(guides)?;
+            self.live_view_guides = guides.clone();
         }
         if let Some(f) = patch.flags {
             let flags = &mut self.flags;
@@ -1819,5 +1898,108 @@ mod tests {
             })
             .unwrap();
         assert_eq!(saved.last_export, Some(last));
+    }
+
+    fn guides(adjusted: &[(&str, GuideRect)]) -> LiveViewGuides {
+        LiveViewGuides {
+            frame_lines: true,
+            grid: GuideGrid::Thirds,
+            adjusted: adjusted
+                .iter()
+                .map(|(k, r)| ((*k).to_owned(), *r))
+                .collect(),
+        }
+    }
+
+    fn rect(x: f32, y: f32, w: f32, h: f32) -> GuideRect {
+        GuideRect { x, y, w, h }
+    }
+
+    fn with_guides(guides: LiveViewGuides) -> SettingsPatch {
+        SettingsPatch {
+            live_view_guides: Some(guides),
+            ..SettingsPatch::default()
+        }
+    }
+
+    #[test]
+    fn the_live_view_guides_are_off_by_default_and_an_old_file_loads_with_them_off() {
+        let defaults = Settings::default().live_view_guides;
+        assert!(!defaults.frame_lines && defaults.grid == GuideGrid::Off);
+        assert!(defaults.adjusted.is_empty());
+        let path = temp_file("guides-old");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"theme":"light"}"#).unwrap();
+        let (store, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert_eq!(store.get().live_view_guides, LiveViewGuides::default());
+    }
+
+    #[test]
+    fn the_live_view_guides_are_saved_and_kept_across_a_reload() {
+        let path = temp_file("guides-roundtrip");
+        let (store, _) = SettingsStore::load(&path);
+        let wanted = guides(&[
+            ("35mm-landscape", rect(0.1, 0.2, 0.5, 0.4)),
+            ("6x6-portrait", rect(0.0, 0.0, 1.0, 1.0)),
+        ]);
+        let updated = store.update(&with_guides(wanted.clone())).unwrap();
+        assert_eq!(updated.live_view_guides, wanted);
+        let (reloaded, note) = SettingsStore::load(&path);
+        assert!(note.is_none());
+        assert_eq!(reloaded.get().live_view_guides, wanted);
+        // A patch without the field leaves the choices alone.
+        let after = reloaded
+            .update(&SettingsPatch {
+                theme: Some(Theme::Dark),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        assert_eq!(after.live_view_guides, wanted);
+        // The grid kinds are written as plain words.
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"grid\": \"thirds\""));
+    }
+
+    #[test]
+    fn invalid_live_view_guides_are_refused_and_change_nothing() {
+        let path = temp_file("guides-refused");
+        let (store, _) = SettingsStore::load(&path);
+        let good = guides(&[("35mm-landscape", rect(0.1, 0.1, 0.5, 0.5))]);
+        store.update(&with_guides(good.clone())).unwrap();
+        let bad_rects = [
+            rect(f32::NAN, 0.0, 0.5, 0.5),
+            rect(0.0, 0.0, f32::INFINITY, 0.5),
+            rect(0.0, 0.0, 0.0, 0.5),
+            rect(0.0, 0.0, 0.5, -0.1),
+            rect(-0.1, 0.0, 0.5, 0.5),
+            rect(0.6, 0.0, 0.5, 0.5),
+            rect(0.0, 0.6, 0.5, 0.5),
+            rect(0.0, 0.0, 1.5, 0.5),
+        ];
+        for bad in bad_rects {
+            let err = store
+                .update(&with_guides(guides(&[("35mm-landscape", bad)])))
+                .unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
+        }
+        let keys = [
+            "",
+            "35mm",
+            "35mm-",
+            "35mm-sideways",
+            "8x10-landscape",
+            "-landscape",
+            "Landscape",
+        ];
+        for key in keys {
+            let err = store
+                .update(&with_guides(guides(&[(key, rect(0.1, 0.1, 0.5, 0.5))])))
+                .unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidInput, "{key:?}");
+        }
+        assert_eq!(store.get().live_view_guides, good);
+        let (reloaded, _) = SettingsStore::load(&path);
+        assert_eq!(reloaded.get().live_view_guides, good);
     }
 }

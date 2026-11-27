@@ -3524,3 +3524,30 @@ ROUTES: none expected.
 MIGRATIONS: none.
 TESTS: as in ac.
 NOTES: asked for by the owner on 2026-11-24. Out of scope: rotating the picture automatically, detecting frames in the live view, other capture backends (the live view works only with gphoto on the Mac).
+
+## U-39
+title: Guided import: live view in Capture, camera settings in Flat field and Light levels
+milestone: M6
+type: feature
+size: S
+estimate: 0.5d
+deps: U-36, U-38
+adr: no
+spec: specification sections 6.1 and 7 (Import)
+desc: In the guided camera steps the live view is only in Focus and framing, and the camera's settings only in Set up. Show the live view in the Capture step, so each frame can be lined up before it is taken, and the camera settings in the Flat field and Light levels steps, so the exposure can be changed where it is needed (for example a longer shutter for the flat field when a colour's level is coarse).
+ac:
+- Capture: the live view with its controls (zoom, focus peaking, frame lines and grid) above Next frame; it stops while a frame is captured and comes back after it, as in Focus and framing
+- Flat field: the camera's aperture, shutter speed and ISO, as in Set up, before Capture flat field
+- Light levels: the same settings, before calibrating and the test shot
+- One set of settings: a change made in any step is the camera's, and every step shows it
+- The rule of U-36 still holds: a change after the flat field or the levels marks those steps as needing a look; a change in the Flat field step before it is captured marks nothing; changing the aperture in Light levels says that the flat field must be taken again
+- The settings cannot be changed while a capture, a calibration or the flat field runs, as today
+- Nothing touches the real camera or light in the tests; the light is off when a step is left, as today
+- Tests: component tests with mocked ipc for the three steps, the needs-a-look rules for changes made in each step, live view stopped and restarted around a capture; axe clean
+- [hw] A checklist for the human on the Mac: frame with the live view in Capture; change the shutter in Flat field and in Light levels and see the steps marked as the rule says
+tech:
+FILES: apps/desktop/src/features/import/capture/steps (CaptureStep, FlatFieldStep, LevelsStep, step-state), en.json, docs/specification.md, docs/research/scanlight-capture.md.
+ROUTES: none expected.
+MIGRATIONS: none.
+TESTS: as in ac.
+NOTES: asked for by the owner on 2026-11-27. Out of scope: settings other than aperture, shutter speed and ISO; automatic exposure for the flat field; the H-24 falloff and colour cast found on 2026-11-27.

@@ -496,3 +496,94 @@
   display: block;
   font-size: 0.85em;
 }
+
+/* Frame lines and grid over the picture (U-38): a drawing only. The wrapper has the picture's own
+   shape, centred in the frame, so fractions of it are fractions of the picture. */
+.captureLiveFrame {
+  container-type: size;
+}
+
+.captureLiveGuides {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(100cqw, calc(100cqh * var(--picture-ratio, 1.5)));
+  aspect-ratio: var(--picture-ratio, 1.5);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.captureLiveGuidesDrawing {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Light lines with a dark edge read on dark and on bright film. */
+.captureLiveGuideEdge {
+  stroke: rgb(0 0 0 / 70%);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.captureLiveGuideLine {
+  stroke: rgb(255 255 255 / 90%);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.captureLiveFrameLines {
+  position: absolute;
+  pointer-events: none;
+  outline: 1px solid rgb(255 255 255 / 95%);
+  outline-offset: -1px;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 70%),
+    inset 0 0 0 1px rgb(0 0 0 / 70%);
+}
+
+.captureLiveFrameLinesAdjust {
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+}
+
+.captureLiveFrameLinesAdjust:focus-visible {
+  outline: 2px solid #ff0;
+}
+
+.captureLiveHandle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: rgb(255 255 255 / 95%);
+  border: 1px solid #000;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.captureLiveHandle[data-corner='nw'] {
+  top: -7px;
+  left: -7px;
+  cursor: nwse-resize;
+}
+
+.captureLiveHandle[data-corner='ne'] {
+  top: -7px;
+  right: -7px;
+  cursor: nesw-resize;
+}
+
+.captureLiveHandle[data-corner='sw'] {
+  bottom: -7px;
+  left: -7px;
+  cursor: nesw-resize;
+}
+
+.captureLiveHandle[data-corner='se'] {
+  right: -7px;
+  bottom: -7px;
+  cursor: nwse-resize;
+}

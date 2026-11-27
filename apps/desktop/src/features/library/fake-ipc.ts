@@ -7,6 +7,7 @@ import type {
   DetailRegion,
   CameraInfo,
   ImportGuideEntry,
+  LiveViewGuides,
   CameraSetting,
   CameraSettingKind,
   CaptureLevels,
@@ -198,6 +199,7 @@ interface SettingsPatchShape {
   last_export?: LastExport;
   develop_presets?: DevelopPreset[];
   import_guide_entry?: { roll_id: string; entry: ImportGuideEntry | null };
+  live_view_guides?: LiveViewGuides;
 }
 
 /** The answer of the focus check before a test changes it. */
@@ -334,6 +336,8 @@ export const state = {
   settingsPatches: [] as SettingsPatchShape[],
   /** The guided import's entry per roll id (source and last step). */
   importGuide: {} as Record<string, ImportGuideEntry>,
+  /** The frame lines and grid choices kept in the settings. */
+  liveViewGuides: { frame_lines: false, grid: 'off', adjusted: {} } as LiveViewGuides,
   /** The Starting look setting now. */
   startingLook: 'neutral' as 'neutral' | 'film_log' | 'frontier',
   /** The keyboard shortcuts the user changed (action name to key). */
@@ -649,6 +653,7 @@ export const ipc = {
       last_export: state.lastExport,
       develop_presets: state.developPresets.map((p) => ({ ...p, fields: [...p.fields] })),
       import_guide: { ...state.importGuide },
+      live_view_guides: structuredClone(state.liveViewGuides),
     };
   }),
   settingsDefaults: vi.fn(async () => ({ last_library: null, flags: { ...DEFAULT_FLAGS } })),
@@ -665,6 +670,7 @@ export const ipc = {
     if (patch.export_presets) state.exportPresets = patch.export_presets;
     if (patch.last_export) state.lastExport = patch.last_export;
     if (patch.develop_presets) state.developPresets = patch.develop_presets;
+    if (patch.live_view_guides) state.liveViewGuides = structuredClone(patch.live_view_guides);
     if (patch.import_guide_entry) {
       const { roll_id: id, entry } = patch.import_guide_entry;
       const rest = Object.entries(state.importGuide).filter(([key]) => key !== id);
@@ -680,6 +686,7 @@ export const ipc = {
       last_export: state.lastExport,
       develop_presets: state.developPresets.map((p) => ({ ...p, fields: [...p.fields] })),
       import_guide: { ...state.importGuide },
+      live_view_guides: structuredClone(state.liveViewGuides),
     };
   }),
   updateCheck: vi.fn<(manual: boolean) => Promise<UpdateOutcome>>(async () => {
@@ -1216,6 +1223,7 @@ export function resetFake() {
   state.valueApplies = [];
   state.settingsPatches = [];
   state.importGuide = {};
+  state.liveViewGuides = { frame_lines: false, grid: 'off', adjusted: {} };
   state.startingLook = 'neutral';
   state.settingsUnreadable = null;
   state.settingsRefused = null;

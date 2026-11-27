@@ -14,7 +14,9 @@ import {
 import { messageOf } from '../../library/library-store';
 import styles from '../import.module.css';
 import { canAnalyse, createAnalyser } from './analyse-frame';
+import { useOptionalCaptureRig } from './CaptureRig';
 import { areaBetween, areaPercents, DRAG_THRESHOLD_PX, type Area } from './area';
+import { GuideControls, GuideOverlay, useGuides } from './LiveViewGuides';
 import {
   MAX_SENSITIVITY,
   MIN_SENSITIVITY,
@@ -126,6 +128,14 @@ export function LiveView({
   const [zoomIndex, setZoomIndex] = useState(0);
   const [area, setArea] = useState<{ x: number; y: number } | null>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
+  // Frame lines and grid: the roll (when the live view is inside the capture rig) gives the format.
+  const rig = useOptionalCaptureRig();
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
+  const guides = useGuides(
+    { format: rig?.roll?.format ?? '35mm', frameSize: rig?.roll?.frame_size ?? null },
+    natural,
+  );
+  const guidesWanted = guides.choices.frame_lines || guides.choices.grid !== 'off';
   const analyser = useRef(createAnalyser());
   const analysing = useRef(false);
   const bestRef = useRef<number | null>(null);
@@ -405,6 +415,7 @@ export function LiveView({
             </label>
           </>
         )}
+        <GuideControls guides={guides} />
       </div>
       {running && (
         <div className={styles.captureLiveSharpness}>
@@ -461,7 +472,16 @@ export function LiveView({
       )}
       <div className={styles.captureLiveFrame}>
         {url ? (
-          <img src={url} alt={t('import.capture.liveView.imageAlt')} draggable={false} />
+          <img
+            src={url}
+            alt={t('import.capture.liveView.imageAlt')}
+            draggable={false}
+            onLoad={(e) => {
+              const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+              if (w > 0 && h > 0)
+                setNatural((old) => (old?.w === w && old.h === h ? old : { w, h }));
+            }}
+          />
         ) : (
           <span className={styles.muted}>
             {running ? t('import.capture.liveView.waiting') : t('import.capture.liveView.idle')}
@@ -548,6 +568,7 @@ export function LiveView({
             }}
           />
         )}
+        {url && zoomIndex === 0 && guidesWanted && <GuideOverlay guides={guides} />}
         {area && zoomIndex === 0 && (
           <span
             className={styles.captureLiveMarker}
@@ -556,6 +577,9 @@ export function LiveView({
           />
         )}
       </div>
+      {url && zoomIndex > 0 && guidesWanted && (
+        <p className={styles.muted}>{t('import.capture.liveView.guides.zoomedNote')}</p>
+      )}
       {error && <p role="alert">{error}</p>}
     </div>
   );

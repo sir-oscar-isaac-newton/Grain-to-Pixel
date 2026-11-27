@@ -367,10 +367,10 @@ The live view can draw frame lines and a grid over the camera's picture, so each
 
 **Hardware checklist for U-38** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
 
-- [ ] [hw] Start live view, switch on Frame lines and line a film frame up with them.
-- [ ] [hw] Capture the frame and check the captured frame sits where the lines were, in landscape.
-- [ ] [hw] Turn the lines to portrait, line up a frame turned a quarter turn, capture, and check the captured frame sits where the lines were.
-- [ ] [hw] Adjust the lines (drag inside, drag a corner, arrow keys and Shift with the arrows), leave and reopen live view: the adjusted lines are still there; Reset returns them to the default.
-- [ ] [hw] Switch on the Grid in both kinds on dark film and on bright film (or a bare light): the lines and the centre cross stay readable.
-- [ ] [hw] Zoom in on the camera: the lines and the grid are hidden with a note, and come back at the whole frame.
-- [ ] [hw] Peaking, aiming the zoom and drawing the calibration area still work with the lines and grid on (and while not in adjust mode).
+- [x] [hw] Start live view, switch on Frame lines and line a film frame up with them.
+- [x] [hw] Capture the frame and check the captured frame sits where the lines were, in landscape.
+- [x] [hw] Turn the lines to portrait, line up a frame turned a quarter turn, capture, and check the captured frame sits where the lines were.
+- [x] [hw] Adjust the lines (drag inside, drag a corner, arrow keys and Shift with the arrows), leave and reopen live view: the adjusted lines are still there; Reset returns them to the default.
+- [x] [hw] Switch on the Grid in both kinds on dark film and on bright film (or a bare light): the lines and the centre cross stay readable.
+- [x] [hw] Zoom in on the camera: the lines and the grid are hidden with a note, and come back at the whole frame.
+- [x] [hw] Peaking, aiming the zoom and drawing the calibration area still work with the lines and grid on (and while not in adjust mode).

@@ -7,6 +7,7 @@ import { useThumbnail } from '../../../library/use-thumbnail';
 import styles from '../../import.module.css';
 import { useCaptureRig } from '../CaptureRig';
 import { NextFrameButton } from '../NextFrameButton';
+import { RigLiveView } from './RigLiveView';
 import { StepSection } from './StepSection';
 
 /** How many of the newest frames the strip shows. */
@@ -44,7 +45,10 @@ function FrameThumb({ frame, number }: { frame: FrameSummary; number: number }) 
   return <StatusBadge tone="neutral">{label}</StatusBadge>;
 }
 
-/** Step "Capture": the Next frame button, how many frames the roll has and the newest ones. */
+/**
+ * Step "Capture": the live view to line up each frame, the Next frame button, how many frames the
+ * roll has and the newest ones.
+ */
 export function CaptureStep() {
   const { t } = useTranslation();
   const rig = useCaptureRig();
@@ -72,6 +76,7 @@ export function CaptureStep() {
   return (
     <StepSection id="import-capture" heading={t('import.steps.capture.heading')}>
       <p className={styles.muted}>{t('import.steps.capture.intro')}</p>
+      <RigLiveView resumeAfterBlock />
       <NextFrameButton
         ready={rig.usable && !rig.settingsChanging && !rig.running}
         roll={rig.roll}

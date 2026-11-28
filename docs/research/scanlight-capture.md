@@ -374,3 +374,20 @@ The live view can draw frame lines and a grid over the camera's picture, so each
 - [x] [hw] Switch on the Grid in both kinds on dark film and on bright film (or a bare light): the lines and the centre cross stay readable.
 - [x] [hw] Zoom in on the camera: the lines and the grid are hidden with a note, and come back at the whole frame.
 - [x] [hw] Peaking, aiming the zoom and drawing the calibration area still work with the lines and grid on (and while not in adjust mode).
+
+## U-39: live view in Capture, settings in Flat field and Light levels
+
+The Capture step now shows the live view above Next frame, with its controls (zoom, focus peaking, frame lines and grid), so each frame can be lined up before it is taken. Live view stops while a frame is captured, as in every step, and starts again by itself once the capture has ended, with the light colour it had, as long as it was running, the light did not trip or get lost, no error was shown and the user did not stop it; it waits a moment after the last capture state has ended, so a flicker in the middle of a capture never restarts it. The other steps keep their live view as before and do not start it again. Flat field and Light levels show the camera's ISO, shutter speed and aperture, as in Set up, so the exposure can be changed where it is needed (for example a longer shutter for the flat field when a colour's level is coarse). There is one set of settings: a change made in any step is the camera's, and every step shows it. The settings cannot be changed while a capture, a calibration, a test shot, a focus check or the flat field runs. The rule of U-36 holds: Flat field depends on the aperture only, Light levels on the whole exposure; a change before the flat field exists marks nothing on the Flat field step, and a new aperture in Light levels also says that the flat field must be taken again in the Flat field step.
+
+**Hardware checklist for U-39** (the author, on the Mac with the D600 and the Scanlight; none of these is ticked until it was done on the real hardware).
+
+- [ ] [hw] Capture: start live view, switch on a light colour and frame a film frame with the frame lines or the grid; press Next frame and check the live view stops and the light is off during the capture, then comes back after the frame with the same light colour.
+- [ ] [hw] Capture: stop live view yourself, press Next frame, and check live view stays off after the frame.
+- [ ] [hw] Capture: take three frames in a row with live view running and check it comes back after each frame, never in the middle of one, and the frames sit where the lines were.
+- [ ] [hw] Flat field, before a flat field is taken: change the shutter speed (and the aperture) and check the step and the step bar show nothing marked; take the flat field with the new shutter speed.
+- [ ] [hw] Flat field, after a flat field was taken: change the shutter speed and check Flat field stays ticked; change the aperture and check it is marked "Needs a look" with its message.
+- [ ] [hw] Light levels, with levels set: change the shutter speed and check Light levels is marked "Needs a look" and Flat field is not; calibrate again and check it is ticked.
+- [ ] [hw] Light levels, with a flat field and levels set: change the aperture and check Light levels and Flat field are both marked, and the step says the flat field must be taken again in the Flat field step.
+- [ ] [hw] Change a setting in Light levels, then go Back to Flat field and Set up: every step shows the camera's new value.
+- [ ] [hw] The settings are off while a capture, a calibration, a test shot and the flat field run, and are on again after each.
+- [ ] [hw] The light is off after leaving Flat field, Light levels and Capture (check the LED and the supply).

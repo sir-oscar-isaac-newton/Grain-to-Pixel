@@ -433,6 +433,105 @@ describe('Import guide: the camera steps', () => {
     );
   });
 
+  describe('Camera settings in Flat field and Light levels', () => {
+    const SETTINGS_CHANGED =
+      'The camera settings changed since these levels were set. Calibrate again or check the settings.';
+    const APERTURE_DIFFERS =
+      'The aperture now differs from the one the flat field was taken at. Take the flat field again in the Flat field step.';
+    const setting = (label: string) => screen.getByRole('combobox', { name: label });
+    const marked = (step: RegExp) => within(stepButton(step)).queryByText('Needs a look');
+
+    it('changes nothing in the steps when a setting is changed in Flat field before the flat field', async () => {
+      const user = userEvent.setup();
+      await begin(user, 'Flat field');
+      await user.selectOptions(setting('Shutter speed'), '0.0200s');
+      await user.selectOptions(setting('Aperture'), '11');
+      expect(marked(/^Flat field/)).not.toBeInTheDocument();
+      expect(marked(/^Light levels/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(
+          'The aperture changed since the flat field was taken. Take it again or check the setting.',
+        ),
+      ).not.toBeInTheDocument();
+      expect(next()).toBeDisabled();
+    });
+
+    it('keeps the flat field done when the shutter speed is changed in its step', async () => {
+      const user = userEvent.setup();
+      await begin(user, 'Flat field', FLAT);
+      await user.selectOptions(setting('Shutter speed'), '0.0200s');
+      expect(within(current()).getByText('Done')).toBeInTheDocument();
+      expect(marked(/^Flat field/)).not.toBeInTheDocument();
+      expect(next()).toBeEnabled();
+    });
+
+    it('needs a look on Flat field when the aperture is changed in its step', async () => {
+      const user = userEvent.setup();
+      await begin(user, 'Flat field', FLAT);
+      await user.selectOptions(setting('Aperture'), '11');
+      expect(within(current()).getByText('Needs a look')).toBeInTheDocument();
+      expect(next()).toBeDisabled();
+    });
+
+    it('marks Light levels, and not Flat field, when the shutter speed is changed in Light levels', async () => {
+      const user = userEvent.setup();
+      saveStockLevels(SAME_EXPOSURE);
+      await begin(user, 'Light levels', { ...FLAT, film_stock: 'Portra 400' });
+      expect(within(current()).getByText('Done')).toBeInTheDocument();
+      await user.selectOptions(setting('Shutter speed'), '0.0200s');
+      expect(await screen.findByText(SETTINGS_CHANGED)).toBeInTheDocument();
+      expect(within(current()).getByText('Needs a look')).toBeInTheDocument();
+      expect(marked(/^Flat field/)).not.toBeInTheDocument();
+      expect(screen.queryByText(APERTURE_DIFFERS)).not.toBeInTheDocument();
+      expect(next()).toBeDisabled();
+    });
+
+    it('marks Light levels and Flat field, and says to take the flat field again, when the aperture is changed in Light levels', async () => {
+      const user = userEvent.setup();
+      saveStockLevels(SAME_EXPOSURE);
+      await begin(user, 'Light levels', { ...FLAT, film_stock: 'Portra 400' });
+      await user.selectOptions(setting('Aperture'), '11');
+      expect(await screen.findByText(APERTURE_DIFFERS)).toBeInTheDocument();
+      expect(screen.getByText(SETTINGS_CHANGED)).toBeInTheDocument();
+      expect(within(current()).getByText('Needs a look')).toBeInTheDocument();
+      expect(marked(/^Flat field/)).toBeInTheDocument();
+      await user.selectOptions(setting('Aperture'), '8');
+      await waitFor(() => expect(screen.queryByText(APERTURE_DIFFERS)).not.toBeInTheDocument());
+      expect(marked(/^Flat field/)).not.toBeInTheDocument();
+      expect(within(current()).getByText('Done')).toBeInTheDocument();
+    });
+
+    it('shows a change made in one step in every other step', async () => {
+      const user = userEvent.setup();
+      await begin(user, 'Flat field', { ...FLAT, film_stock: 'Portra 400' });
+      await user.selectOptions(setting('Shutter speed'), '0.0200s');
+      await user.click(next());
+      expect(current()).toHaveTextContent('Light levels');
+      await waitFor(() => expect(setting('Shutter speed')).toHaveValue('0.0200s'));
+      await user.selectOptions(setting('ISO'), '200');
+      await user.click(back());
+      expect(current()).toHaveTextContent('Flat field');
+      await waitFor(() => expect(setting('ISO')).toHaveValue('200'));
+      expect(setting('Shutter speed')).toHaveValue('0.0200s');
+      await user.click(back());
+      expect(current()).toHaveTextContent('Focus');
+      await user.click(back());
+      expect(current()).toHaveTextContent('Set up');
+      await waitFor(() => expect(setting('ISO')).toHaveValue('200'));
+      expect(setting('Shutter speed')).toHaveValue('0.0200s');
+    });
+
+    it('has no accessibility violations in Flat field and Light levels with their settings', async () => {
+      const user = userEvent.setup();
+      const { container } = await begin(user, 'Flat field', FLAT);
+      await screen.findByRole('combobox', { name: 'ISO' });
+      await expectNoA11yViolations(container);
+      await user.click(next());
+      await screen.findByRole('combobox', { name: 'ISO' });
+      await expectNoA11yViolations(container);
+    });
+  });
+
   describe('Capture', () => {
     it('counts the frames of the roll and shows them as a strip, newest last', async () => {
       const user = userEvent.setup();

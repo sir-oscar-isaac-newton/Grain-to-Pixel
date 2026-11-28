@@ -1271,6 +1271,15 @@
       "number": 401,
       "title": "Frame lines and a grid in the live view",
       "branch": "feat/issue-401-live-view-guides",
+      "status": "completed",
+      "pr": 409,
+      "commit": "b2fbca5"
+    },
+    {
+      "id": "U-39",
+      "number": 412,
+      "title": "Guided import: live view in Capture, camera settings in Flat field and Light levels",
+      "branch": "feat/issue-412-camera-step-controls",
       "status": "in_progress",
       "pr": null,
       "commit": null

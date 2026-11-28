@@ -29,6 +29,12 @@ import {
 /** The frame rate is measured over this many milliseconds. */
 const RATE_WINDOW_MS = 1000;
 
+/**
+ * With `resumeAfterBlock`, live view starts again only after `blocked` has stayed false this long,
+ * so a flicker in the middle of one capture never restarts it.
+ */
+export const RESUME_SETTLE_MS = 400;
+
 const COLOURS = ['off', 'red', 'green', 'blue', 'all'] as const;
 type Colour = (typeof COLOURS)[number];
 
@@ -80,6 +86,11 @@ interface LiveViewProps {
    */
   settingsChanging?: boolean;
   /**
+   * True to start live view again, with its light colour, once `blocked` has ended, when it was
+   * running when `blocked` began. Not after a lost light, an error or a stop by the user.
+   */
+  resumeAfterBlock?: boolean;
+  /**
    * Set to a function that stops the loop and takes the camera out of live view (nothing happens
    * when it is not running). The section calls it first when it closes, before the light goes off:
    * a ref of the panel itself would already be detached by then.
@@ -103,6 +114,7 @@ export function LiveView({
   lightLost,
   blocked,
   settingsChanging = false,
+  resumeAfterBlock = false,
   stopRef,
 }: LiveViewProps) {
   const { t } = useTranslation();
@@ -161,6 +173,10 @@ export function LiveView({
   const [lightError, setLightError] = useState<string | null>(null);
   const colourRef = useRef(colour);
   colourRef.current = colour;
+  // What a blocked live view comes back with (see `resumeAfterBlock`); null when it does not.
+  const resume = useRef<{ colour: Colour } | null>(null);
+  const failed = useRef(false);
+  failed.current = error !== null || lightError !== null;
   // Light commands go one after another; a newer one makes the older ones that wait skip.
   const generation = useRef(0);
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -280,6 +296,8 @@ export function LiveView({
 
   const start = () => {
     if (run.current) return;
+    // A start (by the user or by the resume) settles a waiting resume: a later stop is the user's.
+    resume.current = null;
     const current: Run = { stopped: false };
     run.current = current;
     setError(null);
@@ -328,15 +346,45 @@ export function LiveView({
   // goes back to Off here, without a switch-off that could cut a colour of the running shot. A
   // trip or lost connection has switched the light off already.
   useEffect(() => {
-    if (blocked) haltRef.current(false);
+    if (blocked) {
+      // Only a view that is running is remembered; a flicker (blocked back to false and true
+      // again before the view restarted) keeps what was remembered.
+      if (resumeAfterBlock && run.current && !lightLost && !resume.current) {
+        resume.current = { colour: colourRef.current };
+      }
+      haltRef.current(false);
+    }
+    if (lightLost) resume.current = null;
     if ((blocked || lightLost) && colourRef.current !== 'off') {
       generation.current += 1;
       setColour('off');
     }
   }, [blocked, lightLost]);
 
+  // Live view comes back once nothing has blocked it for a moment. Each change of `blocked`
+  // starts the wait again, and a view that was started or has failed meanwhile is left alone.
+  const startRef = useRef(start);
+  startRef.current = start;
+  useEffect(() => {
+    if (blocked || !resume.current) return;
+    const timer = setTimeout(() => {
+      const back = resume.current;
+      resume.current = null;
+      if (!back || run.current || failed.current) return;
+      startRef.current();
+      if (back.colour !== 'off' && colourRef.current === 'off') setColour(back.colour);
+    }, RESUME_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [blocked]);
+
   // Leaving the view stops the loop (the capture section also does it first, before the light).
-  useEffect(() => () => haltRef.current(false), []);
+  useEffect(
+    () => () => {
+      resume.current = null;
+      haltRef.current(false);
+    },
+    [],
+  );
 
   return (
     <div className={styles.captureLive}>

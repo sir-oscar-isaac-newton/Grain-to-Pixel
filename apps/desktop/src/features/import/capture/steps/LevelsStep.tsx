@@ -1,12 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import styles from '../../import.module.css';
 import { Calibrate } from '../Calibrate';
+import { CameraSettings } from '../CameraSettings';
 import { sameLevels, useCaptureRig } from '../CaptureRig';
 import { LevelSliders } from '../LevelSliders';
 import { SaveLevels } from '../SaveLevels';
 import { TestShot } from '../TestShot';
 import { RigLiveView } from './RigLiveView';
-import { levelsState } from './step-state';
+import { flatFieldState, levelsState } from './step-state';
 import { StepSection } from './StepSection';
 
 /** Step "Light levels": the levels of the light, calibrated, tried with a test shot and saved. */
@@ -15,6 +16,8 @@ export function LevelsStep() {
   const rig = useCaptureRig();
   const { levels, saved, roll, stock } = rig;
   const state = levelsState(rig);
+  // The aperture is part of the flat field: with another one it has to be taken again.
+  const flatFieldApertureChanged = flatFieldState(rig).mark === 'attention';
 
   const showDefaultNotice =
     levels !== null &&
@@ -39,6 +42,13 @@ export function LevelsStep() {
     <StepSection id="import-levels" heading={t('import.steps.levels.heading')}>
       <p className={styles.muted}>{t('import.steps.levels.intro')}</p>
       <RigLiveView />
+      <CameraSettings
+        cameras={rig.cameras}
+        running={rig.busy}
+        onChanging={rig.setSettingsChanging}
+        onValues={rig.onCameraSettings}
+      />
+      {flatFieldApertureChanged && <p role="alert">{t('import.steps.levels.apertureChanged')}</p>}
       {levels && (
         <>
           <LevelSliders

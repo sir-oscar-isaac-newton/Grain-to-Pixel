@@ -4,6 +4,7 @@ import { flatFieldCopy, type Roll } from '../../../../shared/ipc';
 import { messageOf, useLibraryStore } from '../../../library/library-store';
 import { UseFlatFieldDialog } from '../../../library/UseFlatFieldDialog';
 import styles from '../../import.module.css';
+import { CameraSettings } from '../CameraSettings';
 import { useCaptureRig } from '../CaptureRig';
 import { formatAperture } from '../exposure';
 import { FlatFieldCapture } from '../FlatFieldCapture';
@@ -41,6 +42,12 @@ export function FlatFieldStep({ onSkipped }: FlatFieldStepProps) {
   return (
     <StepSection id="import-flat-field" heading={t('import.steps.flatField.heading')}>
       <p className={styles.muted}>{t('import.steps.flatField.intro')}</p>
+      <CameraSettings
+        cameras={rig.cameras}
+        running={rig.busy}
+        onChanging={rig.setSettingsChanging}
+        onValues={rig.onCameraSettings}
+      />
       <FlatFieldCapture
         ready={rig.usable && !rig.settingsChanging && !rig.running}
         roll={roll}

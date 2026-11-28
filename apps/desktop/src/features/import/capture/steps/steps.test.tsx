@@ -13,6 +13,7 @@ import {
   state,
 } from '../../../library/fake-ipc';
 import { resetLibraryStore, useLibraryStore } from '../../../library/library-store';
+import { RESUME_SETTLE_MS } from '../LiveView';
 import { DEFAULT_STEPS, RigSteps, type CameraStep } from './test-rig';
 
 vi.mock('../../../../shared/ipc', async () => (await import('../../../library/fake-ipc')).ipc);
@@ -890,6 +891,7 @@ describe('camera steps', () => {
         iso: 200,
         f_number: { num: 56, den: 10 },
       };
+      shown = ['setup'];
       await ready();
       expect(
         await screen.findByText('Default levels were saved at 1/125 s, ISO 200, f/5.6'),
@@ -912,6 +914,7 @@ describe('camera steps', () => {
         rolls: [portra],
         rollId: portra.id,
       });
+      shown = ['setup'];
       render(<Capture />);
       expect(
         await screen.findByText('Levels for Portra 400 were saved at 2 s, ISO 100, f/8'),
@@ -1630,7 +1633,7 @@ describe('camera steps', () => {
 
   describe('focus check', () => {
     beforeEach(() => {
-      shown = ['setup', 'focus', 'capture'];
+      shown = ['setup', 'focus', 'next'];
     });
     const checkButton = () => screen.getByRole('button', { name: /^(Focus check|Checking)/ });
     const colours = () => within(screen.getByRole('group', { name: 'Focus check' }));
@@ -1784,6 +1787,395 @@ describe('camera steps', () => {
       const { user, container } = await ready();
       await run(user);
       await expectNoA11yViolations(container);
+    });
+  });
+
+  describe('guided steps', () => {
+    type RollOver = Parameters<typeof makeRoll>[0];
+
+    /** The exposure of the fake camera (1/100 s, ISO 100, f/8). */
+    const CAMERA_EXPOSURE = {
+      exposure_time: { num: 1, den: 100 },
+      iso: 100,
+      f_number: { num: 8, den: 1 },
+    };
+    /** A flat field taken at f/8, which is the aperture of the fake camera. */
+    const FLAT = { has_flat_field: true, flat_field_f_number: { num: 8, den: 1 } };
+    const SETTINGS_CHANGED =
+      'The camera settings changed since these levels were set. Calibrate again or check the settings.';
+    const APERTURE_DIFFERS =
+      'The aperture now differs from the one the flat field was taken at. Take the flat field again in the Flat field step.';
+    const FLAT_APERTURE_CHANGED =
+      'The aperture changed since the flat field was taken. Take it again or check the setting.';
+
+    const select = (name: string) => screen.getByRole('combobox', { name });
+    const startLive = () => screen.getByRole('button', { name: 'Start live view' });
+    const stopLive = () => screen.queryByRole('button', { name: 'Stop live view' });
+    const wait = (ms: number) => act(() => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const precedes = (a: HTMLElement, b: HTMLElement) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+    /** Like `ready`, with a roll made to order, and the camera's settings shown. */
+    async function readyRoll(rollOver: RollOver = {}, stock?: string) {
+      const user = userEvent.setup();
+      if (stock) {
+        state.savedStocks[stock.toLowerCase()] = {
+          levels: [60, 30, 4],
+          source: 'stock',
+          stock,
+          exposure: CAMERA_EXPOSURE,
+        };
+      }
+      openLibrary();
+      const roll = makeRoll({
+        name: 'Harbour',
+        ...(stock ? { film_stock: stock } : {}),
+        ...rollOver,
+      });
+      state.rolls = [roll];
+      useLibraryStore.setState({ rolls: [roll], rollId: roll.id });
+      const view = render(<Capture />);
+      await screen.findByText('Camera: Nikon D600');
+      await user.click(screen.getByRole('button', { name: 'Connect light' }));
+      await screen.findByText('Light connected');
+      await screen.findByRole('combobox', { name: 'Aperture' });
+      return { user, roll, ...view };
+    }
+
+    const flatFieldDone = (id: string) =>
+      act(() =>
+        listeners.done.forEach((cb) =>
+          cb({
+            id,
+            result: {
+              kind: 'FlatField',
+              info: {
+                frame_width: 6016,
+                frame_height: 4016,
+                sources: ['r.NEF', 'g.NEF', 'b.NEF'],
+                exposure: CAMERA_EXPOSURE,
+              },
+              levels: [40, 20, 3],
+            } as never,
+          }),
+        ),
+      );
+
+    describe('Flat field', () => {
+      beforeEach(() => {
+        shown = ['status', 'flatfield'];
+      });
+
+      it('shows ISO, shutter speed and aperture before Capture flat field', async () => {
+        await readyRoll();
+        const capture = screen.getByRole('button', { name: 'Capture flat field' });
+        for (const name of ['ISO', 'Shutter speed', 'Aperture']) {
+          expect(select(name)).toBeEnabled();
+          expect(precedes(select(name), capture)).toBe(true);
+        }
+        expect(select('Aperture')).toHaveValue('8');
+      });
+
+      it('sets a change on the camera', async () => {
+        const { user } = await readyRoll();
+        await user.selectOptions(select('Shutter speed'), '0.0200s');
+        expect(ipc.cameraSettingsSet).toHaveBeenCalledWith('shutter_speed', '0.0200s');
+        await waitFor(() => expect(select('Shutter speed')).toHaveValue('0.0200s'));
+      });
+
+      it('is locked while the flat field is taken, and free again after it', async () => {
+        const { user } = await readyRoll();
+        await user.click(screen.getByRole('button', { name: 'Capture flat field' }));
+        const dialog = await screen.findByRole('alertdialog');
+        await user.click(within(dialog).getByRole('button', { name: 'Capture' }));
+        await waitFor(() => expect(useLibraryStore.getState().jobs).toHaveLength(1));
+        for (const name of ['ISO', 'Shutter speed', 'Aperture']) {
+          expect(select(name)).toBeDisabled();
+        }
+        ipc.cameraSettingsGet.mockClear();
+        flatFieldDone(state.flatFieldJob);
+        await waitFor(() => expect(select('Shutter speed')).toBeEnabled());
+        expect(ipc.cameraSettingsGet).toHaveBeenCalled();
+      });
+
+      it('marks nothing when a setting changes before a flat field is taken', async () => {
+        const { user } = await readyRoll();
+        await user.selectOptions(select('Aperture'), '11');
+        await user.selectOptions(select('Shutter speed'), '0.0200s');
+        expect(screen.queryByText(FLAT_APERTURE_CHANGED)).not.toBeInTheDocument();
+        expect(screen.queryByText(/This roll has a flat field/)).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Skip the flat field' })).toBeInTheDocument();
+      });
+
+      it('marks the step for a new aperture after the flat field, and for no other setting', async () => {
+        const { user } = await readyRoll(FLAT);
+        const taken = 'This roll has a flat field, taken at f/8.';
+        expect(screen.getByText(taken)).toBeInTheDocument();
+        await user.selectOptions(select('Shutter speed'), '0.0200s');
+        await user.selectOptions(select('ISO'), '200');
+        expect(screen.getByText(taken)).toBeInTheDocument();
+        expect(screen.queryByText(FLAT_APERTURE_CHANGED)).not.toBeInTheDocument();
+        await user.selectOptions(select('Aperture'), '11');
+        expect(await screen.findByText(FLAT_APERTURE_CHANGED)).toBeInTheDocument();
+        expect(screen.queryByText(/This roll has a flat field/)).not.toBeInTheDocument();
+        await user.selectOptions(select('Aperture'), '8');
+        expect(await screen.findByText(taken)).toBeInTheDocument();
+      });
+
+      it('has no accessibility violations with the settings and a mark', async () => {
+        const { user, container } = await readyRoll(FLAT);
+        await expectNoA11yViolations(container);
+        await user.selectOptions(select('Aperture'), '11');
+        await screen.findByText(FLAT_APERTURE_CHANGED);
+        await expectNoA11yViolations(container);
+      });
+    });
+
+    describe('Light levels', () => {
+      beforeEach(() => {
+        shown = ['status', 'levels'];
+      });
+
+      it('shows ISO, shutter speed and aperture before the test shot and Calibrate', async () => {
+        await readyRoll();
+        const shot = screen.getByRole('button', { name: 'Test shot, red' });
+        for (const name of ['ISO', 'Shutter speed', 'Aperture']) {
+          expect(precedes(select(name), shot)).toBe(true);
+          expect(precedes(select(name), calibrateButton())).toBe(true);
+        }
+      });
+
+      it('is locked while a calibration runs, and free again after it', async () => {
+        const { user } = await readyRoll();
+        const id = await startCalibration(user);
+        for (const name of ['ISO', 'Shutter speed', 'Aperture']) {
+          expect(select(name)).toBeDisabled();
+        }
+        calibrationDone(id, { ...CALIBRATED, exposure: CAMERA_EXPOSURE });
+        await waitFor(() => expect(select('ISO')).toBeEnabled());
+      });
+
+      it('is locked while a test shot is taken', async () => {
+        const { user } = await readyRoll();
+        let release: () => void = () => undefined;
+        ipc.captureTest.mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              release = () => resolve({ ...state.testShot });
+            }),
+        );
+        await user.click(screen.getByRole('button', { name: 'Test shot, red' }));
+        await waitFor(() => expect(select('ISO')).toBeDisabled());
+        expect(select('Aperture')).toBeDisabled();
+        act(() => release());
+        await waitFor(() => expect(select('ISO')).toBeEnabled());
+      });
+
+      it('marks nothing before levels are set', async () => {
+        const { user } = await readyRoll();
+        await user.selectOptions(select('Shutter speed'), '0.0200s');
+        await user.selectOptions(select('Aperture'), '11');
+        expect(screen.queryByText(SETTINGS_CHANGED)).not.toBeInTheDocument();
+      });
+
+      it.each([
+        ['ISO', '200'],
+        ['Shutter speed', '0.0200s'],
+      ])('marks the levels, not the flat field, for a new %s', async (label, value) => {
+        const { user } = await readyRoll(FLAT, 'Portra 400');
+        await screen.findByRole('slider', { name: 'Red level' });
+        expect(screen.queryByText(SETTINGS_CHANGED)).not.toBeInTheDocument();
+        await user.selectOptions(select(label), value);
+        expect(await screen.findByText(SETTINGS_CHANGED)).toBeInTheDocument();
+        expect(screen.queryByText(APERTURE_DIFFERS)).not.toBeInTheDocument();
+      });
+
+      it('marks the levels after a calibration when the exposure changes', async () => {
+        const { user } = await readyRoll(FLAT);
+        const id = await startCalibration(user);
+        calibrationDone(id, { ...CALIBRATED, exposure: CAMERA_EXPOSURE });
+        await screen.findByText(/Blue ended at level 5/);
+        await waitFor(() => expect(select('Shutter speed')).toBeEnabled());
+        expect(screen.queryByText(SETTINGS_CHANGED)).not.toBeInTheDocument();
+        await user.selectOptions(select('Shutter speed'), '0.0200s');
+        expect(await screen.findByText(SETTINGS_CHANGED)).toBeInTheDocument();
+      });
+
+      it('says the flat field must be taken again when the aperture changes', async () => {
+        const { user } = await readyRoll(FLAT, 'Portra 400');
+        await screen.findByRole('slider', { name: 'Red level' });
+        await user.selectOptions(select('Aperture'), '11');
+        const alert = await screen.findByText(APERTURE_DIFFERS);
+        expect(alert).toHaveAttribute('role', 'alert');
+        // The levels are marked too: the aperture is part of their exposure.
+        expect(screen.getByText(SETTINGS_CHANGED)).toBeInTheDocument();
+        await user.selectOptions(select('Aperture'), '8');
+        await waitFor(() => expect(screen.queryByText(APERTURE_DIFFERS)).not.toBeInTheDocument());
+      });
+
+      it('does not mention the flat field when the roll has none', async () => {
+        const { user } = await readyRoll({}, 'Portra 400');
+        await screen.findByRole('slider', { name: 'Red level' });
+        await user.selectOptions(select('Aperture'), '11');
+        expect(await screen.findByText(SETTINGS_CHANGED)).toBeInTheDocument();
+        expect(screen.queryByText(APERTURE_DIFFERS)).not.toBeInTheDocument();
+      });
+
+      it('has no accessibility violations with the settings and both messages', async () => {
+        const { user, container } = await readyRoll(FLAT, 'Portra 400');
+        await screen.findByRole('slider', { name: 'Red level' });
+        await expectNoA11yViolations(container);
+        await user.selectOptions(select('Aperture'), '11');
+        await screen.findByText(APERTURE_DIFFERS);
+        await expectNoA11yViolations(container);
+      });
+    });
+
+    describe('Capture', () => {
+      beforeEach(() => {
+        shown = ['status', 'capture'];
+      });
+
+      /** Waits longer than a block may flicker for. */
+      const settled = () => wait(RESUME_SETTLE_MS * 1.5);
+
+      it('shows the live view with its controls above Next frame', async () => {
+        const { user } = await ready();
+        expect(precedes(startLive(), next())).toBe(true);
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        const zoom = await screen.findByRole('radio', { name: '25 %' });
+        expect(screen.getByRole('checkbox', { name: 'Focus peaking' })).toBeInTheDocument();
+        expect(screen.getByRole('checkbox', { name: 'Frame lines' })).toBeInTheDocument();
+        expect(screen.getByRole('checkbox', { name: 'Grid' })).toBeInTheDocument();
+        expect(precedes(zoom, next())).toBe(true);
+      });
+
+      it('stops live view while a frame is captured and starts it again after, with its light', async () => {
+        const { user } = await ready();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        await user.click(screen.getByRole('radio', { name: 'Green' }));
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenLastCalledWith([0, 22, 0]));
+        const id = await startCapture(user);
+        expect(stopLive()).toBeNull();
+        expect(startLive()).toBeDisabled();
+        // It stays off for the whole capture, however long that takes.
+        ipc.cameraPreviewFrame.mockClear();
+        ipc.lightSet.mockClear();
+        await settled();
+        expect(stopLive()).toBeNull();
+        expect(ipc.cameraPreviewFrame).not.toHaveBeenCalled();
+        expect(ipc.lightSet).not.toHaveBeenCalled();
+        finish(id, 'frame-1');
+        expect(await screen.findByRole('button', { name: 'Stop live view' })).toBeInTheDocument();
+        expect(screen.getByRole('radio', { name: 'Green' })).toBeChecked();
+        await waitFor(() => expect(ipc.cameraPreviewFrame).toHaveBeenCalled());
+        await waitFor(() => expect(ipc.lightSet).toHaveBeenLastCalledWith([0, 22, 0]));
+      });
+
+      it('starts again after a capture that failed', async () => {
+        const { user } = await ready();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        const id = await startCapture(user);
+        act(() =>
+          listeners.error.forEach((cb) =>
+            cb({ id, error: { code: 'Io', message: 'The capture failed.' } as never }),
+          ),
+        );
+        await screen.findByText('The capture failed.');
+        expect(await screen.findByRole('button', { name: 'Stop live view' })).toBeInTheDocument();
+      });
+
+      it('does not start when it was not running', async () => {
+        const { user } = await ready();
+        const id = await startCapture(user);
+        finish(id, 'frame-1');
+        await screen.findByText(/stored/);
+        await settled();
+        expect(stopLive()).toBeNull();
+        expect(startLive()).toBeEnabled();
+        expect(ipc.cameraPreviewFrame).not.toHaveBeenCalled();
+      });
+
+      it('does not start when the user had stopped it', async () => {
+        const { user } = await ready();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        await user.click(screen.getByRole('button', { name: 'Stop live view' }));
+        ipc.cameraPreviewFrame.mockClear();
+        const id = await startCapture(user);
+        finish(id, 'frame-1');
+        await settled();
+        expect(stopLive()).toBeNull();
+        expect(ipc.cameraPreviewFrame).not.toHaveBeenCalled();
+      });
+
+      it('does not start when the light tripped during the capture', async () => {
+        const { user } = await ready();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        await user.click(screen.getByRole('radio', { name: 'Red' }));
+        const id = await startCapture(user);
+        ipc.cameraPreviewFrame.mockClear();
+        emitLight(reading({ temp_c: 70, tripped: true }));
+        await screen.findByText('Light too hot and switched off');
+        finish(id, 'frame-1');
+        await settled();
+        expect(stopLive()).toBeNull();
+        expect(ipc.cameraPreviewFrame).not.toHaveBeenCalled();
+        expect(screen.getByRole('radio', { name: 'Off' })).toBeChecked();
+      });
+
+      it('does not start after the step was closed', async () => {
+        const { user, unmount } = await ready();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        const id = await startCapture(user);
+        finish(id, 'frame-1');
+        ipc.cameraPreviewFrame.mockClear();
+        unmount();
+        await settled();
+        expect(ipc.cameraPreviewFrame).not.toHaveBeenCalled();
+      });
+
+      it('has no accessibility violations with the live view running', async () => {
+        const { user, container } = await ready();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        await screen.findByRole('radio', { name: '25 %' });
+        await expectNoA11yViolations(container);
+      });
+    });
+
+    describe('other steps', () => {
+      it('Light levels does not start live view again after a calibration', async () => {
+        shown = ['status', 'levels'];
+        const { user } = await readyRoll();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        const id = await startCalibration(user);
+        expect(stopLive()).toBeNull();
+        ipc.cameraPreviewFrame.mockClear();
+        calibrationDone(id, { ...CALIBRATED, exposure: CAMERA_EXPOSURE });
+        await screen.findByText(/Blue ended at level 5/);
+        await wait(RESUME_SETTLE_MS * 1.5);
+        expect(stopLive()).toBeNull();
+        expect(startLive()).toBeEnabled();
+        expect(ipc.cameraPreviewFrame).not.toHaveBeenCalled();
+      });
+
+      it('Focus and framing does not start live view again after a focus check', async () => {
+        shown = ['status', 'focus'];
+        const { user } = await ready();
+        await user.click(startLive());
+        await screen.findByRole('img', { name: 'Live view of the camera' });
+        await user.click(screen.getByRole('button', { name: /^Focus check/ }));
+        await screen.findByRole('img', { name: /full size/ });
+        await wait(RESUME_SETTLE_MS * 1.5);
+        expect(stopLive()).toBeNull();
+      });
     });
   });
 

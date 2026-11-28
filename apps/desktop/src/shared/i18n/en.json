@@ -1325,7 +1325,8 @@
         "intro": "Put the film in the carrier. Calibrate on the rebate or a clear part of the frame, then take a test shot and save the levels.",
         "useGlobal": "Use the global levels",
         "usingGlobal": "Using the global levels for this roll.",
-        "settingsChanged": "The camera settings changed since these levels were set. Calibrate again or check the settings."
+        "settingsChanged": "The camera settings changed since these levels were set. Calibrate again or check the settings.",
+        "apertureChanged": "The aperture now differs from the one the flat field was taken at. Take the flat field again in the Flat field step."
       },
       "capture": {
         "heading": "Capture the frames",

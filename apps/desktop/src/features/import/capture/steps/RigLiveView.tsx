@@ -3,8 +3,13 @@ import styles from '../../import.module.css';
 import { LiveView } from '../LiveView';
 import { useCaptureRig } from '../CaptureRig';
 
+interface RigLiveViewProps {
+  /** True where live view must come back after a capture (the Capture step). */
+  resumeAfterBlock?: boolean;
+}
+
 /** The live view of the rig's camera (where the camera backend has one), with its heading. */
-export function RigLiveView() {
+export function RigLiveView({ resumeAfterBlock = false }: RigLiveViewProps) {
   const { t } = useTranslation();
   const rig = useCaptureRig();
   const { profile, cameras, light } = rig;
@@ -24,6 +29,7 @@ export function RigLiveView() {
               rig.running || rig.shotBusy || rig.calibrating || rig.capturing || rig.focusing
             }
             settingsChanging={rig.settingsChanging}
+            resumeAfterBlock={resumeAfterBlock}
           />
         )
       ) : (

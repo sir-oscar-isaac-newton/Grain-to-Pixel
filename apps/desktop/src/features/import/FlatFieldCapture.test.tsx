@@ -12,7 +12,7 @@ import { RigSteps } from './capture/steps/test-rig';
 vi.mock('../../shared/ipc', async () => (await import('../library/fake-ipc')).ipc);
 
 function Capture() {
-  return <RigSteps />;
+  return <RigSteps steps={['status', 'flatfield']} />;
 }
 
 function openLibrary(rollOver = {}, libraryOver = {}) {
